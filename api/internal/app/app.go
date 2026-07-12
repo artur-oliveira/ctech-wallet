@@ -1,0 +1,193 @@
+// Package app wires the wallet API using Fx dependency injection.
+package app
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"time"
+
+	apiv1 "github.com/artur-oliveira/ctech-wallet/api/internal/api/v1"
+	"github.com/artur-oliveira/ctech-wallet/api/internal/awsclient"
+	"github.com/artur-oliveira/ctech-wallet/api/internal/cache"
+	"github.com/artur-oliveira/ctech-wallet/api/internal/config"
+	"github.com/artur-oliveira/ctech-wallet/api/internal/kycclient"
+	"github.com/artur-oliveira/ctech-wallet/api/internal/lock"
+	"github.com/artur-oliveira/ctech-wallet/api/internal/pix"
+	"github.com/artur-oliveira/ctech-wallet/api/internal/problem"
+	"github.com/artur-oliveira/ctech-wallet/api/internal/repositories"
+	"github.com/artur-oliveira/ctech-wallet/api/internal/secrets"
+	"github.com/artur-oliveira/ctech-wallet/api/internal/services"
+
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/cors"
+	"github.com/gofiber/fiber/v3/middleware/logger"
+	"github.com/gofiber/fiber/v3/middleware/requestid"
+	"go.uber.org/fx"
+)
+
+// Module is the root Fx module for the wallet API.
+var Module = fx.Options(
+	fx.Provide(
+		config.Load,
+		newAWSClients,
+		newDynamoDBClient,
+		newCacheBackend,
+		newLocker,
+		newInterMTLS,
+		newPixClient,
+		newWebhookSecret,
+		newKYCClient,
+		repositories.NewWalletRepository,
+		repositories.NewUserRepository,
+		repositories.NewAuditRepository,
+		newWalletService,
+		newUserService,
+		newFiberApp,
+	),
+	fx.Invoke(registerRoutes),
+	fx.Invoke(startServer),
+)
+
+func newAWSClients(cfg *config.Config) (*awsclient.Clients, error) {
+	return awsclient.New(context.Background(), cfg)
+}
+
+func newDynamoDBClient(clients *awsclient.Clients) *dynamodb.Client {
+	return clients.DynamoDB
+}
+
+func newCacheBackend(lc fx.Lifecycle, cfg *config.Config) cache.Backend {
+	if cfg.RedisURL == "" {
+		slog.Warn("VALKEY_URL not set — using in-memory cache/lock (not shared across replicas)")
+		return cache.NewMemoryBackend(1000)
+	}
+	rb, err := cache.NewRedisBackend(cfg.RedisURL)
+	if err != nil {
+		slog.Warn("redis connection failed, falling back to in-memory", "err", err)
+		return cache.NewMemoryBackend(1000)
+	}
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error { return rb.Ping(ctx) },
+		OnStop:  func(context.Context) error { return rb.Client().Close() },
+	})
+	slog.Info("cache: Redis backend active", "url", cfg.RedisURL)
+	return rb
+}
+
+func newLocker(c cache.Backend) *lock.Locker {
+	return lock.NewLocker(c)
+}
+
+// newInterMTLS loads the Inter mTLS keypair from SSM SecureString. In dev (no
+// INTER_CLIENT_ID) it returns nil so the fake PIX client is used; in production
+// the certificate is mandatory and a failure to load is fatal.
+func newInterMTLS(cfg *config.Config, clients *awsclient.Clients) (*secrets.MTLSKeypair, error) {
+	if cfg.InterClientID == "" {
+		if cfg.Env == "prod" {
+			return nil, fmt.Errorf("config: INTER_CLIENT_ID is required in production")
+		}
+		slog.Warn("Inter: INTER_CLIENT_ID not set — skipping SSM certificate load (dev only)")
+		return nil, nil
+	}
+	kp, err := secrets.NewStore(clients.SSM, cfg.Env).LoadInterMTLS(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("inter: load mTLS keypair from SSM: %w", err)
+	}
+	return kp, nil
+}
+
+// newPixClient returns the real Inter client when the certificate was loaded,
+// otherwise a fake (dev only). In production a real client is required.
+func newPixClient(cfg *config.Config, kp *secrets.MTLSKeypair) (pix.PixClient, error) {
+	if kp != nil {
+		return pix.NewInterClient(cfg, kp)
+	}
+	if cfg.Env == "prod" {
+		return nil, fmt.Errorf("pix: Inter credentials required in production")
+	}
+	slog.Warn("PIX: Inter credentials not set — using fake PIX client (dev only)")
+	return pix.NewFake(), nil
+}
+
+// newWebhookSecret is the shared secret the Inter webhook must present. It comes
+// from the environment (start.sh exports it from SSM SecureString).
+func newWebhookSecret(cfg *config.Config) apiv1.WebhookSecret {
+	return apiv1.WebhookSecret(cfg.InterWebhookSecret)
+}
+
+func newKYCClient(cfg *config.Config) services.KYCClient {
+	return kycclient.New(cfg)
+}
+
+func newWalletService(repo *repositories.WalletRepository, users *repositories.UserRepository, audit *repositories.AuditRepository, l *lock.Locker, p pix.PixClient, k services.KYCClient) *services.WalletService {
+	return services.NewWalletService(repo, users, audit, l, p, k)
+}
+
+func newUserService(repo *repositories.UserRepository, audit *repositories.AuditRepository) *services.UserService {
+	return services.NewUserService(repo, audit)
+}
+
+func newFiberApp(cfg *config.Config) *fiber.App {
+	app := fiber.New(fiber.Config{
+		AppName:      "ctech-wallet-api",
+		ReadTimeout:  time.Duration(cfg.ReadTimeout) * time.Second,
+		WriteTimeout: time.Duration(cfg.WriteTimeout) * time.Second,
+		IdleTimeout:  time.Duration(cfg.IdleTimeout) * time.Second,
+		ProxyHeader:  fiber.HeaderXForwardedFor,
+		TrustProxy:   len(cfg.TrustedProxies) > 0,
+		TrustProxyConfig: fiber.TrustProxyConfig{
+			Proxies: cfg.TrustedProxies,
+		},
+		ErrorHandler: errorHandler,
+	})
+	// AllowCredentials requires explicit origins (a wildcard is rejected by Fiber),
+	// so only enable it when origins are configured (production); in dev, allow all.
+	corsCfg := cors.Config{
+		AllowMethods: []string{"GET", "POST", "OPTIONS"},
+		AllowHeaders: []string{"Origin", "Content-Type", "Authorization", "X-Request-ID", apiv1.HeaderIdempotencyKey},
+		MaxAge:       3600,
+	}
+	if len(cfg.CorsAllowedOrigins) > 0 {
+		corsCfg.AllowOrigins = cfg.CorsAllowedOrigins
+		corsCfg.AllowCredentials = true
+	}
+	app.Use(cors.New(corsCfg))
+	app.Use(requestid.New())
+	app.Use(logger.New(logger.Config{
+		Format: `{"time":"${time}","status":${status},"latency":"${latency}","method":"${method}","path":"${path}","request-id":"${request-id}"}` + "\n",
+	}))
+	return app
+}
+
+func registerRoutes(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsclient.Clients, pixClient pix.PixClient, svc *services.WalletService, userSvc *services.UserService, ws apiv1.WebhookSecret) {
+	apiv1.Register(app, c, cfg, clients, pixClient, svc, userSvc, ws)
+}
+
+func startServer(lc fx.Lifecycle, app *fiber.App, cfg *config.Config) {
+	lc.Append(fx.Hook{
+		OnStart: func(context.Context) error {
+			addr := fmt.Sprintf(":%d", cfg.Port)
+			slog.Info("starting ctech-wallet-api", "addr", addr, "env", cfg.Env)
+			go func() {
+				if err := app.Listen(addr); err != nil {
+					slog.Error("server error", "err", err)
+				}
+			}()
+			return nil
+		},
+		OnStop: func(ctx context.Context) error {
+			slog.Info("shutting down server")
+			return app.ShutdownWithContext(ctx)
+		},
+	})
+}
+
+func errorHandler(c fiber.Ctx, err error) error {
+	if f, ok := errors.AsType[*fiber.Error](err); ok {
+		return problem.FromFiber(f).Send(c)
+	}
+	return problem.InternalServer(err.Error()).Send(c)
+}

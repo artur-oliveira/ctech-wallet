@@ -1,0 +1,20 @@
+{
+  "name": "ctech-wallet-cdk",
+  "version": "0.1.0",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "deploy:prod": "ENVIRONMENT=prod cdk deploy \"CtechWallet-Prod-*\" --require-approval never --profile ctech",
+    "cdk": "cdk"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.2",
+    "aws-cdk": "^2.1126.0",
+    "ts-node": "^10.9.2",
+    "typescript": "~6.0.3"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.258.0",
+    "constructs": "^10.6.0"
+  }
+}

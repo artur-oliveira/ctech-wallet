@@ -1,0 +1,20 @@
+.idea/
+cmd/bin/
+node_modules/
+api/.env
+.env.local
+out/
+
+# Go build / test artifacts
+dist/
+coverage.out
+*.test
+.claude
+
+# CDK synth output (cdk.context.json IS tracked — it caches VPC/AZ lookups)
+cdk.out/
+
+# Next.js build output
+ui/.next/
+ui/next-env.d.ts
+ui/tsconfig.tsbuildinfo
