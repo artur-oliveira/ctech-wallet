@@ -6,6 +6,7 @@ import {IAMStack} from '../lib/iam-stack';
 import {ApiStack} from '../lib/api-stack';
 import {FrontendStack} from '../lib/frontend-stack';
 import {ReconcileStack} from '../lib/reconcile-stack';
+import {PixGatewayStack} from '../lib/pix-gateway-stack';
 import {OidcStack} from '../lib/oidc-stack';
 import {Environment} from '../lib/types';
 import {
@@ -75,15 +76,30 @@ const dynamodbStack = new DynamoDBStack(app, id('DynamoDB'), {
     description: `CTech Wallet DynamoDB - ${ENVIRONMENT}`,
 });
 
+// =====================
+// pix-gateway (2 Lambdas + mTLS HTTP API custom domain)
+// =====================
+const pixGatewayStack = new PixGatewayStack(app, id('PixGateway'), {
+    env,
+    environment: ENVIRONMENT,
+    certificateArn: CERT_ARN,
+    interBaseUrl: INTER_BASE_URL,
+    interPixKey: INTER_PIX_KEY,
+    walletApiUrl: `https://${domainForEnv(ENVIRONMENT, APP_DOMAIN_PREFIX)}`,
+    description: `CTech Wallet pix-gateway (Inter integration Lambdas) - ${ENVIRONMENT}`,
+});
+
 const iamStack = new IAMStack(app, id('IAM'), {
     env,
     environment: ENVIRONMENT,
     deploymentsBucketArn: `arn:aws:s3:::${CTECH_DEPLOYMENTS_BUCKET}`,
     logsBucketArn: `arn:aws:s3:::${CTECH_LOGS_BUCKET}`,
     dynamoDBTables: dynamodbStack.tables,
+    pixGatewayOutboundFunctionArn: pixGatewayStack.outboundFunctionArn,
     description: `CTech Wallet IAM Roles - ${ENVIRONMENT}`,
 });
 iamStack.addDependency(dynamodbStack);
+iamStack.addDependency(pixGatewayStack);
 
 // =====================
 // API (EC2 + ASG, shared ALB from ctech-cdk)
@@ -97,26 +113,33 @@ const apiStack = new ApiStack(app, id('API'), {
     instanceProfileName: iamStack.instanceProfileName,
     deploymentsBucketName: CTECH_DEPLOYMENTS_BUCKET,
     logsBucketName: CTECH_LOGS_BUCKET,
-    interBaseUrl: INTER_BASE_URL,
-    interPixKey: INTER_PIX_KEY,
+    pixGatewayFunctionName: pixGatewayStack.outboundFunctionName,
     description: `CTech Wallet API (EC2 + ASG + ALB) - ${ENVIRONMENT}`,
 });
 // instanceProfileName is a plain string, not a CFN token — CDK cannot infer the
 // dependency. Force it so the instance profile exists before the ASG validates
 // the launch template.
 apiStack.addDependency(iamStack);
+apiStack.addDependency(pixGatewayStack);
 
 // =====================
 // Withdrawal reconciliation (Lambda + EventBridge Scheduler)
 // =====================
+// cmd/reconcile invokes pix-gateway's outbound Lambda (LambdaPixClient) for its
+// QueryTransfer calls, same as api's server — it no longer builds InterClient
+// directly (the design spec's Solution section: "services/reconcile.go keep
+// calling [PixClient] exactly as today. Only the implementation swaps" — the
+// swap is not scoped to cmd/server only).
 const reconcileStack = new ReconcileStack(app, id('Reconcile'), {
     env,
     environment: ENVIRONMENT,
     dynamoDBTables: dynamodbStack.tables,
-    interBaseUrl: INTER_BASE_URL,
+    pixGatewayOutboundFunctionArn: pixGatewayStack.outboundFunctionArn,
+    pixGatewayOutboundFunctionName: pixGatewayStack.outboundFunctionName,
     description: `CTech Wallet withdrawal reconciliation - ${ENVIRONMENT}`,
 });
 reconcileStack.addDependency(dynamodbStack);
+reconcileStack.addDependency(pixGatewayStack);
 
 // =====================
 // Frontend (S3 + CloudFront)
