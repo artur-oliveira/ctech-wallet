@@ -17,10 +17,11 @@ import (
 	"github.com/artur-oliveira/ctech-wallet/api/internal/pix"
 	"github.com/artur-oliveira/ctech-wallet/api/internal/problem"
 	"github.com/artur-oliveira/ctech-wallet/api/internal/repositories"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/secrets"
 	"github.com/artur-oliveira/ctech-wallet/api/internal/services"
 
+	awscfg "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/cors"
 	"github.com/gofiber/fiber/v3/middleware/logger"
@@ -36,8 +37,8 @@ var Module = fx.Options(
 		newDynamoDBClient,
 		newCacheBackend,
 		newLocker,
-		newInterMTLS,
-		newPixClient,
+		newLambdaClient,
+		newLambdaPixClient,
 		newWebhookSecret,
 		newKYCClient,
 		repositories.NewWalletRepository,
@@ -81,41 +82,27 @@ func newLocker(c cache.Backend) *lock.Locker {
 	return lock.NewLocker(c)
 }
 
-// newInterMTLS loads the Inter mTLS keypair from SSM SecureString. In dev (no
-// INTER_CLIENT_ID) it returns nil so the fake PIX client is used; in production
-// the certificate is mandatory and a failure to load is fatal.
-func newInterMTLS(cfg *config.Config, clients *awsclient.Clients) (*secrets.MTLSKeypair, error) {
-	if cfg.InterClientID == "" {
-		if cfg.Env == "prod" {
-			return nil, fmt.Errorf("config: INTER_CLIENT_ID is required in production")
-		}
-		slog.Warn("Inter: INTER_CLIENT_ID not set — skipping SSM certificate load (dev only)")
-		return nil, nil
-	}
-	kp, err := secrets.NewStore(clients.SSM, cfg.Env).LoadInterMTLS(context.Background())
+// newLambdaClient builds the AWS Lambda SDK client used to invoke pix-gateway's
+// outbound function.
+func newLambdaClient(cfg *config.Config) (*lambda.Client, error) {
+	awsCfg, err := awscfg.LoadDefaultConfig(context.Background(), awscfg.WithRegion(cfg.AWSRegion))
 	if err != nil {
-		return nil, fmt.Errorf("inter: load mTLS keypair from SSM: %w", err)
+		return nil, fmt.Errorf("aws config: %w", err)
 	}
-	return kp, nil
+	return lambda.NewFromConfig(awsCfg), nil
 }
 
-// newPixClient returns the real Inter client when the certificate was loaded,
-// otherwise a fake (dev only). In production a real client is required.
-func newPixClient(cfg *config.Config, kp *secrets.MTLSKeypair) (pix.PixClient, error) {
-	if kp != nil {
-		return pix.NewInterClient(cfg, kp)
-	}
-	if cfg.Env == "prod" {
-		return nil, fmt.Errorf("pix: Inter credentials required in production")
-	}
-	slog.Warn("PIX: Inter credentials not set — using fake PIX client (dev only)")
-	return pix.NewFake(), nil
+// newLambdaPixClient wraps the Lambda client as api's PixClient implementation.
+// api never talks to Inter directly — pix-gateway does.
+func newLambdaPixClient(client *lambda.Client, cfg *config.Config) pix.PixClient {
+	return pix.NewLambdaPixClient(client, cfg.PixGatewayFunctionName)
 }
 
-// newWebhookSecret is the shared secret the Inter webhook must present. It comes
-// from the environment (start.sh exports it from SSM SecureString).
+// newWebhookSecret is removed in a later task alongside the webhook route
+// itself (Task 6) — DO NOT delete this function yet, only the Inter-specific
+// providers above it.
 func newWebhookSecret(cfg *config.Config) apiv1.WebhookSecret {
-	return apiv1.WebhookSecret(cfg.InterWebhookSecret)
+	return apiv1.WebhookSecret("") // placeholder: cfg.InterWebhookSecret no longer exists after Step 6
 }
 
 func newKYCClient(cfg *config.Config) services.KYCClient {

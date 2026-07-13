@@ -43,18 +43,10 @@ type Config struct {
 	WalletClientID     string `env:"WALLET_CLIENT_ID"`
 	WalletClientSecret string `env:"WALLET_CLIENT_SECRET"`
 
-	// PIX / Inter partner bank.
-	//
-	// The short secrets arrive as env vars, exported by start.sh from SSM
-	// SecureString — same pattern as ctech-account's GOOGLE_CLIENT_SECRET.
-	// The mTLS certificate/key PEMs are NOT env vars: they are read from SSM at
-	// runtime (see internal/secrets), so the bank certificate can be rotated
-	// without a redeploy and never has to travel through shell/systemd.
-	InterBaseURL       string `env:"INTER_BASE_URL" envDefault:"https://cdpj.partners.bancointer.com.br"`
-	InterClientID      string `env:"INTER_CLIENT_ID"`
-	InterClientSecret  string `env:"INTER_CLIENT_SECRET"`
-	InterWebhookSecret string `env:"INTER_WEBHOOK_SECRET"`
-	InterPixKey        string `env:"INTER_PIX_KEY"` // receiving key for immediate charges (cob)
+	// PixGatewayFunctionName is pix-gateway's outbound Lambda — api invokes it
+	// synchronously for every PixClient call. api no longer talks to Inter
+	// directly (see docs/specs/2026-07-13-pix-gateway-lambda-design.md).
+	PixGatewayFunctionName string `env:"PIX_GATEWAY_FUNCTION_NAME,required"`
 
 	// Cache / lock
 	RedisURL string `env:"VALKEY_URL"` // Redis/Valkey URL — optional; falls back to in-memory

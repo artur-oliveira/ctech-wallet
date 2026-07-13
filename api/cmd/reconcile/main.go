@@ -12,7 +12,9 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/aws/aws-lambda-go/lambda"
+	awslambda "github.com/aws/aws-lambda-go/lambda"
+	awscfg "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/lambda"
 
 	"github.com/artur-oliveira/ctech-wallet/api/internal/awsclient"
 	"github.com/artur-oliveira/ctech-wallet/api/internal/cache"
@@ -21,7 +23,6 @@ import (
 	"github.com/artur-oliveira/ctech-wallet/api/internal/lock"
 	"github.com/artur-oliveira/ctech-wallet/api/internal/pix"
 	"github.com/artur-oliveira/ctech-wallet/api/internal/repositories"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/secrets"
 	"github.com/artur-oliveira/ctech-wallet/api/internal/services"
 )
 
@@ -37,7 +38,7 @@ func main() {
 
 	// AWS_LAMBDA_FUNCTION_NAME is set by the Lambda runtime; locally it is empty.
 	if os.Getenv("AWS_LAMBDA_FUNCTION_NAME") != "" {
-		lambda.Start(handler)
+		awslambda.Start(handler)
 		return
 	}
 
@@ -74,7 +75,7 @@ func run(ctx context.Context) (*Result, error) {
 	if err != nil {
 		return nil, fmt.Errorf("aws: %w", err)
 	}
-	pixClient, err := newPix(ctx, cfg, clients)
+	pixClient, err := newPix(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("pix: %w", err)
 	}
@@ -91,33 +92,15 @@ func run(ctx context.Context) (*Result, error) {
 	return &Result{Resolved: resolved, Reversed: reversed, Alarmed: alarmed}, nil
 }
 
-// newPix builds the real Inter client, reading the mTLS keypair AND the OAuth
-// client secret from SSM — the Lambda has no start.sh to export env vars.
-//
-// FAIL CLOSED: outside local dev a missing credential is fatal. Falling back to
-// the fake client here would be catastrophic: its QueryTransfer reports every
-// payout as NAO_ENCONTRADO, so the job would reverse every processing withdrawal
-// and credit back money the bank had in fact already sent.
-func newPix(ctx context.Context, cfg *config.Config, clients *awsclient.Clients) (pix.PixClient, error) {
-	if cfg.InterClientID == "" {
-		if cfg.Env != "dev" {
-			return nil, fmt.Errorf("INTER_CLIENT_ID is required in %s — refusing to reconcile with the fake PIX client", cfg.Env)
-		}
-		slog.Warn("reconcile: Inter credentials not set — using fake PIX client (local dev only)")
-		return pix.NewFake(), nil
-	}
-
-	store := secrets.NewStore(clients.SSM, cfg.Env)
-	kp, err := store.LoadInterMTLS(ctx)
+// newPix builds api's PixClient the same way cmd/server does — by invoking
+// pix-gateway's outbound Lambda. Reconciliation's QueryTransfer call is one of
+// the 7 ops that Lambda multiplexes; reconcile no longer talks to Inter
+// directly, same as the rest of api (see
+// docs/specs/2026-07-13-pix-gateway-lambda-design.md).
+func newPix(ctx context.Context, cfg *config.Config) (pix.PixClient, error) {
+	awsCfg, err := awscfg.LoadDefaultConfig(ctx, awscfg.WithRegion(cfg.AWSRegion))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("aws config: %w", err)
 	}
-	if cfg.InterClientSecret == "" {
-		s, err := store.LoadInterClientSecret(ctx)
-		if err != nil {
-			return nil, err
-		}
-		cfg.InterClientSecret = s
-	}
-	return pix.NewInterClient(cfg, kp)
+	return pix.NewLambdaPixClient(lambda.NewFromConfig(awsCfg), cfg.PixGatewayFunctionName), nil
 }
