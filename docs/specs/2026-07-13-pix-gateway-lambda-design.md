@@ -67,14 +67,16 @@ too) supports this directly via a **Trust Store**: a CA bundle in a versioned S3
   unrelated to Inter's client cert), issued for use with the custom domain.
 - The Trust Store holds Inter's webhook CA/certificate. API Gateway rejects any TLS handshake that
   doesn't chain to it — untrusted calls never reach Lambda.
-- The webhook Lambda handler **never trusts the payload** (existing invariant, preserved): on receipt it
-  re-queries the charge from Inter (via the same outbound Inter client code, in-process — no extra
-  Lambda-to-Lambda hop) to confirm amount, status, and payer CPF.
-- Once confirmed, it calls a **new internal endpoint on `api`**, `POST
-  /internal/pix/confirm-deposit`, over the public domain (`wallet.aoctech.app` — already CloudFront-fronted,
-  dual-stack; the Lambda is not VPC-attached so it gets normal internet egress and needs no special
-  networking to reach it). Authenticated the same way every other internal caller is: M2M
-  `client_credentials` JWT, scoped e.g. `internal:pix:confirm-deposit`.
+- The webhook Lambda handler **never trusts the payload** (existing invariant, preserved) — but it also
+  does not re-query Inter itself. It only parses the webhook body for the `txid`(s) and calls a **new
+  internal endpoint on `api`**, `POST /internal/pix/confirm-deposit`, over the public domain
+  (`wallet.aoctech.app` — already CloudFront-fronted, dual-stack; the Lambda is not VPC-attached so it gets
+  normal internet egress and needs no special networking to reach it). Authenticated the same way every
+  other internal caller is: M2M `client_credentials` JWT, scoped `internal:pix:confirm-deposit`.
+  `WalletService.ConfirmDeposit` (unchanged business logic) does the actual re-query — through `api`'s own
+  `LambdaPixClient`, which invokes the same outbound Lambda from the previous section. This means the
+  webhook Lambda needs no Inter mTLS credentials of its own; the only Inter contact anywhere in the system
+  goes through the one outbound Lambda.
 - `api`'s existing `pixWebhook` handler, the `X-Webhook-Secret` check, and `POST
   /internal/pix/webhook` route are deleted. (That header check was never going to work in production —
   neither Inter's nor Bacen's docs describe Inter sending a shared-secret header; the real authentication
