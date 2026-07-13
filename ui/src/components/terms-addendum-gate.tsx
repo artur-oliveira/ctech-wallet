@@ -17,19 +17,19 @@ import {Button} from '@/components/ui/button'
 export function TermsAddendumGate() {
   const qc = useQueryClient()
   const [checked, setChecked] = useState(false)
-
+  
   const accept = useMutation({
     mutationFn: () => apiClient.acceptTermsAddendum(),
     onSuccess: () => qc.invalidateQueries({queryKey: ['me']}),
   })
-
+  
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-login px-4">
       <div className="w-full max-w-md space-y-5 rounded-2xl border border-brand-100 bg-white p-6 shadow-card">
         <div className="flex size-10 items-center justify-center rounded-lg bg-brand-600 text-white">
-          <ShieldCheck size={20} />
+          <ShieldCheck size={20}/>
         </div>
-
+        
         <div>
           <h1 className="text-lg font-semibold text-gray-900">Só mais um passo</h1>
           <p className="mt-1 text-sm leading-relaxed text-gray-600">
@@ -37,11 +37,11 @@ export function TermsAddendumGate() {
             termos específicos da CTech Wallet.
           </p>
         </div>
-
+        
         {accept.isError && (
           <p className="text-sm text-red-600">Não foi possível confirmar. Tente de novo.</p>
         )}
-
+        
         <label className="flex items-start gap-2 text-sm text-gray-600">
           <input
             type="checkbox"
@@ -62,7 +62,7 @@ export function TermsAddendumGate() {
             .
           </span>
         </label>
-
+        
         <Button
           variant="brand"
           className="w-full"

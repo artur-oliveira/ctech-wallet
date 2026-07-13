@@ -9,16 +9,16 @@ import {Button} from '@/components/ui/button'
 export default function LoginPage() {
   const {authenticated, loading, login} = useAuth()
   const router = useRouter()
-
+  
   useEffect(() => {
     if (!loading && authenticated) router.replace('/dashboard')
   }, [loading, authenticated, router])
-
+  
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-login p-6">
       <div className="w-full max-w-sm rounded-2xl border border-brand-100 bg-white p-8 text-center shadow-card">
         <div className="mx-auto flex size-12 items-center justify-center rounded-xl bg-brand-600 text-white">
-          <WalletIcon size={22} />
+          <WalletIcon size={22}/>
         </div>
         <h1 className="mt-4 text-2xl font-bold text-gray-900">CTech Wallet</h1>
         <p className="mt-2 text-sm leading-relaxed text-gray-600">

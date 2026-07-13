@@ -17,18 +17,18 @@ interface AmountDialogProps {
 
 /** Shared amount entry used by deposit, withdrawal, and credit purchase. */
 export function AmountDialog({
-  title,
-  description,
-  submitLabel,
-  withPixKey,
-  pending,
-  onSubmit,
-  onClose,
-}: AmountDialogProps) {
+                               title,
+                               description,
+                               submitLabel,
+                               withPixKey,
+                               pending,
+                               onSubmit,
+                               onClose,
+                             }: AmountDialogProps) {
   const [amount, setAmount] = useState('')
   const [pixKey, setPixKey] = useState('')
   const [error, setError] = useState<string | null>(null)
-
+  
   function submit(e: React.FormEvent) {
     e.preventDefault()
     const centavos = parseCentavos(amount)
@@ -43,7 +43,7 @@ export function AmountDialog({
     setError(null)
     onSubmit(centavos, withPixKey ? pixKey.trim() : undefined)
   }
-
+  
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/40 p-4">
       <form
@@ -52,11 +52,12 @@ export function AmountDialog({
       >
         <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
         <p className="mt-1 text-sm leading-relaxed text-gray-500">{description}</p>
-
+        
         <label className="mt-5 block text-sm font-medium text-gray-700" htmlFor="amount">
           Valor
         </label>
-        <div className="mt-1.5 flex items-center gap-2 rounded-lg border border-gray-300 px-3 focus-within:border-brand-500 focus-within:ring-3 focus-within:ring-brand-500/20">
+        <div
+          className="mt-1.5 flex items-center gap-2 rounded-lg border border-gray-300 px-3 focus-within:border-brand-500 focus-within:ring-3 focus-within:ring-brand-500/20">
           <span className="text-sm text-gray-400">R$</span>
           <input
             id="amount"
@@ -68,7 +69,7 @@ export function AmountDialog({
             className="h-10 w-full border-0 bg-transparent font-mono tabular-nums outline-none"
           />
         </div>
-
+        
         {withPixKey && (
           <>
             <label className="mt-4 block text-sm font-medium text-gray-700" htmlFor="pixkey">
@@ -86,9 +87,9 @@ export function AmountDialog({
             </p>
           </>
         )}
-
+        
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
-
+        
         <div className="mt-6 flex gap-2">
           <Button type="button" variant="ghost" className="flex-1" onClick={onClose} disabled={pending}>
             Cancelar

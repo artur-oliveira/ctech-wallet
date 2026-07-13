@@ -25,15 +25,15 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://wallet.aoctech.app'),
-
+  
   title: {
     default: 'CTech Wallet',
     template: '%s | CTech Wallet',
   },
-
+  
   description:
     'Carteira digital do ecossistema CTech. Centralize seu saldo para pagar assinaturas, utilizar serviços e jogar com uma única carteira.',
-
+  
   keywords: [
     'CTech Wallet',
     'wallet',
@@ -49,13 +49,13 @@ export const metadata: Metadata = {
     'credits',
     'ecossistema CTech',
   ],
-
+  
   authors: [
     {
       name: 'CTech',
     },
   ],
-
+  
   openGraph: {
     title: 'CTech Wallet',
     description:
@@ -64,7 +64,7 @@ export const metadata: Metadata = {
     siteName: 'CTech Wallet',
     locale: 'pt_BR',
     type: 'website',
-
+    
     images: [
       {
         url: '/og-image.png',
@@ -74,7 +74,7 @@ export const metadata: Metadata = {
       },
     ],
   },
-
+  
   twitter: {
     card: 'summary_large_image',
     title: 'CTech Wallet',
@@ -82,14 +82,14 @@ export const metadata: Metadata = {
       'Seu saldo para todo o ecossistema CTech.',
     images: ['/og-image.png'],
   },
-
+  
   robots: {
     index: false,
     follow: false,
   },
-
+  
   manifest: '/site.webmanifest',
-
+  
   icons: {
     icon: '/favicon.ico',
     shortcut: '/favicon.ico',
@@ -123,11 +123,11 @@ export default function RootLayout({
             dark:to-violet-950
           "
     />
-
+    
     <QueryProvider>
       <AuthProvider>{children}</AuthProvider>
     </QueryProvider>
-
+    
     <Toaster
       richColors
       position="top-right"

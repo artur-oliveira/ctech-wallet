@@ -20,20 +20,20 @@ export function decodeIdToken(idToken: string): IdTokenClaims | null {
   try {
     const payload = idToken.split('.')[1]
     if (!payload) return null
-
+    
     let b64 = payload.replace(/-/g, '+').replace(/_/g, '/')
     b64 += '='.repeat((4 - (b64.length % 4)) % 4)
-
+    
     // atob yields a binary string; re-decode as UTF-8 so accented names survive.
     const json = decodeURIComponent(
       Array.from(atob(b64), (c) => '%' + c.charCodeAt(0).toString(16).padStart(2, '0')).join(''),
     )
     const claims = JSON.parse(json) as Record<string, unknown>
-
+    
     const firstName = typeof claims.given_name === 'string' ? claims.given_name : undefined
     const lastName = typeof claims.family_name === 'string' ? claims.family_name : undefined
     const username = typeof claims.preferred_username === 'string' ? claims.preferred_username : undefined
-
+    
     if (!firstName && !lastName && !username) return null
     return {username, first_name: firstName, last_name: lastName}
   } catch {
@@ -59,11 +59,11 @@ export async function startOAuthFlow(returnTo = '/'): Promise<void> {
   const state = randomHex(16)
   const verifier = randomHex(32)
   const challenge = await sha256base64url(verifier)
-
+  
   sessionStorage.setItem('oauth_state', state)
   sessionStorage.setItem('oauth_verifier', verifier)
   sessionStorage.setItem('oauth_return_to', returnTo)
-
+  
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: CLIENT_ID,
@@ -73,7 +73,7 @@ export async function startOAuthFlow(returnTo = '/'): Promise<void> {
     code_challenge: challenge,
     code_challenge_method: 'S256',
   })
-
+  
   window.location.href = `${CTECH_URL}/v1.0/authorize?${params}`
 }
 
@@ -83,14 +83,14 @@ export async function exchangeCode(
 ): Promise<{ accessToken: string; refreshToken: string; idToken: string | null; returnTo: string }> {
   const storedState = sessionStorage.getItem('oauth_state')
   if (storedState !== state) throw new Error('OAuth state mismatch')
-
+  
   const verifier = sessionStorage.getItem('oauth_verifier') ?? ''
   const returnTo = sessionStorage.getItem('oauth_return_to') ?? '/'
-
+  
   sessionStorage.removeItem('oauth_state')
   sessionStorage.removeItem('oauth_verifier')
   sessionStorage.removeItem('oauth_return_to')
-
+  
   const body = new URLSearchParams({
     grant_type: 'authorization_code',
     code,
@@ -98,19 +98,19 @@ export async function exchangeCode(
     client_id: CLIENT_ID,
     redirect_uri: `${window.location.origin}/callback`,
   })
-
+  
   const res = await fetch(`${CTECH_URL}/v1.0/token`, {
     method: 'POST',
     headers: {'Content-Type': 'application/x-www-form-urlencoded'},
     credentials: 'include',
     body: body.toString(),
   })
-
+  
   if (!res.ok) {
     const text = await res.text()
     throw new Error(`Token exchange failed (${res.status}): ${text}`)
   }
-
+  
   const data = await res.json()
   return {
     accessToken: data.access_token,
@@ -129,14 +129,14 @@ export async function doRefresh(
       refresh_token: refreshToken,
       client_id: CLIENT_ID,
     })
-
+    
     const res = await fetch(`${CTECH_URL}/v1.0/token`, {
       method: 'POST',
       headers: {'Content-Type': 'application/x-www-form-urlencoded'},
       credentials: 'include',
       body: body.toString(),
     })
-
+    
     if (!res.ok) return null
     const data = await res.json()
     return {accessToken: data.access_token, refreshToken: data.refresh_token}

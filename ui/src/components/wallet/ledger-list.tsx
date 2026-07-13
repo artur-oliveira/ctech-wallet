@@ -8,17 +8,17 @@ import type {WalletType} from '@/lib/types/api'
 
 const DATE = new Intl.DateTimeFormat('pt-BR', {day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'})
 
-export function LedgerList({type}: {type: WalletType}) {
+export function LedgerList({type}: { type: WalletType }) {
   const real = type === 'real'
   const {data, isLoading, error} = useQuery({
     queryKey: ['ledger', type],
     queryFn: () => apiClient.getLedger(type),
   })
-
+  
   if (isLoading) {
     return <p className="px-5 py-8 text-center text-sm text-gray-400">Carregando extrato...</p>
   }
-
+  
   if (error) {
     return (
       <p className="px-5 py-8 text-center text-sm text-gray-500">
@@ -26,9 +26,9 @@ export function LedgerList({type}: {type: WalletType}) {
       </p>
     )
   }
-
+  
   const items = data?.items ?? []
-
+  
   if (items.length === 0) {
     return (
       <p className="px-5 py-10 text-center text-sm text-gray-500">
@@ -38,7 +38,7 @@ export function LedgerList({type}: {type: WalletType}) {
       </p>
     )
   }
-
+  
   return (
     <ul className="divide-y divide-gray-100">
       {items.map((entry) => (

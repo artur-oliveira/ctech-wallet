@@ -1,9 +1,4 @@
-import axios, {
-  AxiosError,
-  type AxiosInstance,
-  type AxiosRequestConfig,
-  type AxiosResponse,
-} from 'axios'
+import axios, {AxiosError, type AxiosInstance, type AxiosRequestConfig, type AxiosResponse,} from 'axios'
 import type {
   Balances,
   DepositResult,
@@ -38,6 +33,7 @@ interface ProblemBody {
   detail?: string
   title?: string
   type?: string
+  
   [key: string]: unknown
 }
 
@@ -65,16 +61,16 @@ function createAxiosInstance(): AxiosInstance {
     baseURL: API_BASE_URL,
     headers: {'Content-Type': 'application/json'},
   })
-
+  
   instance.interceptors.request.use((config) => {
     if (_accessToken) config.headers.Authorization = `Bearer ${_accessToken}`
     return config
   })
-
+  
   instance.interceptors.response.use(
     (response) => response,
     async (error: AxiosError) => {
-      const original = error.config as (AxiosRequestConfig & {_retry?: boolean}) | undefined
+      const original = error.config as (AxiosRequestConfig & { _retry?: boolean }) | undefined
       if (error.response?.status === 401 && original && !original._retry && _refreshFn) {
         original._retry = true
         const newToken = await _refreshFn()
@@ -95,7 +91,7 @@ function createAxiosInstance(): AxiosInstance {
       throw new ApiError(error.response?.status ?? 0, detail, data?.type, data)
     },
   )
-
+  
   return instance
 }
 
@@ -106,63 +102,66 @@ function idemConfig(key: string): AxiosRequestConfig {
 
 class ApiClient {
   private readonly http: AxiosInstance
-
+  
   constructor() {
     this.http = createAxiosInstance()
   }
-
+  
   setToken(token: string | null): void {
     _accessToken = token
   }
-
+  
   async me(): Promise<MeResponse> {
     return (await this.http.get<MeResponse>('/v1.0/auth/me')).data
   }
-
+  
   async acceptTermsAddendum(): Promise<void> {
     await this.http.post('/v1.0/auth/terms-addendum/accept')
   }
-
+  
   async getBalances(): Promise<Balances> {
     return (await this.http.get<Balances>('/v1.0/wallet')).data
   }
-
+  
   async createDeposit(amount: number): Promise<DepositResult> {
     return (await this.http.post<DepositResult>('/v1.0/wallet/deposits', {amount})).data
   }
-
+  
   async createWithdrawal(amount: number, pixKey: string, idempotencyKey: string): Promise<Withdrawal> {
     return (
-      await this.http.post<Withdrawal>('/v1.0/wallet/withdrawals', {amount, pix_key: pixKey}, idemConfig(idempotencyKey))
+      await this.http.post<Withdrawal>('/v1.0/wallet/withdrawals', {
+        amount,
+        pix_key: pixKey
+      }, idemConfig(idempotencyKey))
     ).data
   }
-
+  
   /** Buys sandbox credits with the GAME balance — never with the real balance. */
   async purchaseSandbox(amount: number, idempotencyKey: string): Promise<Transfer> {
     return (
       await this.http.post('/v1.0/wallet/sandbox/purchase', {amount}, idemConfig(idempotencyKey))
     ).data
   }
-
+  
   /** Opts into the game + sandbox wallets. Requires verified KYC. */
-  async activateGambling(): Promise<{game: Wallet; sandbox: Wallet}> {
+  async activateGambling(): Promise<{ game: Wallet; sandbox: Wallet }> {
     return (await this.http.post('/v1.0/wallet/gambling/activate', {accept_addendum: true})).data
   }
-
+  
   /** real → game. The edge the user's personal limits are enforced on. */
   async fundGame(amount: number, idempotencyKey: string): Promise<Transfer> {
     return (
       await this.http.post('/v1.0/wallet/game/deposit', {amount}, idemConfig(idempotencyKey))
     ).data
   }
-
+  
   /** game → real. Never limited, never charged — this is not a PIX payout. */
   async returnFromGame(amount: number, idempotencyKey: string): Promise<Transfer> {
     return (
       await this.http.post('/v1.0/wallet/game/withdraw', {amount}, idemConfig(idempotencyKey))
     ).data
   }
-
+  
   async getLedger(type: WalletType, cursor?: string, limit = 50): Promise<LedgerPage> {
     const params = new URLSearchParams({limit: String(limit)})
     if (cursor) params.set('cursor', cursor)

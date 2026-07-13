@@ -52,7 +52,7 @@ function problemMessage(err: unknown): string {
     case '/problems/gambling-terms-required':
       return 'Aceite o termo de jogo responsável para continuar.'
     case '/problems/deposit-out-of-range': {
-      const {min_amount: min, max_amount: max} = (err.raw ?? {}) as {min_amount?: number; max_amount?: number}
+      const {min_amount: min, max_amount: max} = (err.raw ?? {}) as { min_amount?: number; max_amount?: number }
       if (min == null || max == null) return err.detail
       return `O depósito precisa ser entre ${formatBRL(min)} e ${formatBRL(max)}.`
     }
@@ -72,14 +72,14 @@ function DashboardInner() {
   const [flow, setFlow] = useState<Flow>(null)
   const [charge, setCharge] = useState<DepositResult | null>(null)
   const [tab, setTab] = useState<WalletType>('real')
-
+  
   const balances = useQuery({queryKey: ['balances'], queryFn: () => apiClient.getBalances()})
-
+  
   function refresh() {
     void qc.invalidateQueries({queryKey: ['balances']})
     void qc.invalidateQueries({queryKey: ['ledger']})
   }
-
+  
   const deposit = useMutation({
     mutationFn: (amount: number) => apiClient.createDeposit(amount),
     onSuccess: (result) => {
@@ -88,7 +88,7 @@ function DashboardInner() {
     },
     onError: (err) => toast.error(problemMessage(err)),
   })
-
+  
   const withdraw = useMutation({
     mutationFn: ({amount, pixKey}: { amount: number; pixKey: string }) =>
       apiClient.createWithdrawal(amount, pixKey, newIdemKey()),
@@ -103,7 +103,7 @@ function DashboardInner() {
     },
     onError: (err) => toast.error(problemMessage(err)),
   })
-
+  
   const buyCredits = useMutation({
     mutationFn: (amount: number) => apiClient.purchaseSandbox(amount, newIdemKey()),
     onSuccess: () => {
@@ -113,7 +113,7 @@ function DashboardInner() {
     },
     onError: (err) => toast.error(problemMessage(err)),
   })
-
+  
   const fundGame = useMutation({
     mutationFn: (amount: number) => apiClient.fundGame(amount, newIdemKey()),
     onSuccess: () => {
@@ -123,7 +123,7 @@ function DashboardInner() {
     },
     onError: (err) => toast.error(problemMessage(err)),
   })
-
+  
   const returnFromGame = useMutation({
     mutationFn: (amount: number) => apiClient.returnFromGame(amount, newIdemKey()),
     onSuccess: () => {
@@ -133,9 +133,9 @@ function DashboardInner() {
     },
     onError: (err) => toast.error(problemMessage(err)),
   })
-
+  
   const name = profile?.first_name ?? profile?.username ?? ''
-
+  
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="border-b border-gray-200 bg-white">
@@ -157,18 +157,18 @@ function DashboardInner() {
           </div>
         </div>
       </header>
-
+      
       <main className="mx-auto max-w-4xl space-y-6 px-6 py-8">
         {balances.isLoading && (
           <div className="h-44 animate-pulse rounded-2xl bg-gray-200" aria-label="Carregando saldos"/>
         )}
-
+        
         {balances.error && (
           <p className="rounded-xl border border-gray-200 bg-white p-5 text-sm text-gray-600">
             Não foi possível carregar seus saldos. Atualize a página para tentar de novo.
           </p>
         )}
-
+        
         {balances.data && (
           <>
             <BalanceCards
@@ -179,7 +179,7 @@ function DashboardInner() {
               onFundGame={() => setFlow('fund-game')}
               onReturnFromGame={() => setFlow('return-game')}
             />
-
+            
             <section className="overflow-hidden rounded-xl border border-gray-200 bg-white">
               <div className="flex border-b border-gray-100">
                 {ledgerTabs(balances.data.activated).map((t) => (
@@ -201,7 +201,7 @@ function DashboardInner() {
           </>
         )}
       </main>
-
+      
       {flow === 'deposit' && (
         <AmountDialog
           title="Depositar via PIX"
@@ -212,7 +212,7 @@ function DashboardInner() {
           onClose={() => setFlow(null)}
         />
       )}
-
+      
       {flow === 'withdraw' && (
         <AmountDialog
           title="Sacar para o PIX"
@@ -224,7 +224,7 @@ function DashboardInner() {
           onClose={() => setFlow(null)}
         />
       )}
-
+      
       {flow === 'credits' && (
         <AmountDialog
           title="Comprar créditos sandbox"
@@ -235,7 +235,7 @@ function DashboardInner() {
           onClose={() => setFlow(null)}
         />
       )}
-
+      
       {flow === 'fund-game' && (
         <AmountDialog
           title="Enviar para a carteira de jogo"
@@ -246,7 +246,7 @@ function DashboardInner() {
           onClose={() => setFlow(null)}
         />
       )}
-
+      
       {flow === 'return-game' && (
         <AmountDialog
           title="Devolver ao saldo real"
@@ -257,7 +257,7 @@ function DashboardInner() {
           onClose={() => setFlow(null)}
         />
       )}
-
+      
       {charge && <PixChargeDialog deposit={charge} onClose={() => setCharge(null)}/>}
     </div>
   )

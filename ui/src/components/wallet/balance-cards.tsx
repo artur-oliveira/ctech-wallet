@@ -32,15 +32,15 @@ interface BalanceCardsProps {
  * of the opt-in, so the entry point is one quiet link, never a banner or an upsell.
  */
 export function BalanceCards({
-  balances,
-  onDeposit,
-  onWithdraw,
-  onBuyCredits,
-  onFundGame,
-  onReturnFromGame,
-}: BalanceCardsProps) {
+                               balances,
+                               onDeposit,
+                               onWithdraw,
+                               onBuyCredits,
+                               onFundGame,
+                               onReturnFromGame,
+                             }: BalanceCardsProps) {
   const {game, sandbox, activated} = balances
-
+  
   return (
     <div className="space-y-4">
       <div className={activated ? 'grid gap-4 md:grid-cols-[1.4fr_1fr]' : 'grid gap-4'}>
@@ -55,14 +55,14 @@ export function BalanceCards({
               <p className="mt-2 text-sm text-brand-100">Depósito e saque via PIX</p>
             </div>
           </div>
-
+          
           <div className="mt-6 flex flex-wrap gap-2">
             <Button
               variant="secondary"
               className="bg-white text-brand-700 hover:bg-brand-50"
               onClick={onDeposit}
             >
-              <ArrowDownToLine size={16} />
+              <ArrowDownToLine size={16}/>
               Depositar
             </Button>
             <Button
@@ -70,7 +70,7 @@ export function BalanceCards({
               className="border-brand-400/60 bg-transparent text-white hover:bg-brand-500"
               onClick={onWithdraw}
             >
-              <ArrowUpFromLine size={16} />
+              <ArrowUpFromLine size={16}/>
               Sacar
             </Button>
             {activated && (
@@ -79,69 +79,69 @@ export function BalanceCards({
                 className="border-brand-400/60 bg-transparent text-white hover:bg-brand-500"
                 onClick={onFundGame}
               >
-                <Dice5 size={16} />
+                <Dice5 size={16}/>
                 Enviar para jogos
               </Button>
             )}
           </div>
         </section>
-
+        
         {/* Game — real money, ring-fenced */}
         {activated && game && (
           <section className="flex flex-col rounded-2xl border-2 border-brand-200 bg-white p-6">
             <div className="flex items-center gap-2">
-              <Dice5 size={16} className="text-brand-500" />
+              <Dice5 size={16} className="text-brand-500"/>
               <p className="font-mono text-xs uppercase tracking-widest text-brand-500">Saldo de jogo</p>
             </div>
-
+            
             <p className="mt-3 text-3xl font-semibold tabular-nums tracking-tight text-gray-900">
               {formatBRL(game.balance)}
             </p>
-
+            
             <p className="mt-2 text-sm leading-relaxed text-gray-500">
               Dinheiro real reservado para jogos. Pode voltar para o saldo real quando você quiser.
             </p>
-
+            
             <div className="mt-auto flex flex-wrap gap-2 pt-6">
               <Button variant="outline" className="flex-1" onClick={onReturnFromGame}>
-                <ArrowUpFromLine size={16} />
+                <ArrowUpFromLine size={16}/>
                 Devolver
               </Button>
               <Button variant="outline" className="flex-1" onClick={onBuyCredits}>
-                <Plus size={16} />
+                <Plus size={16}/>
                 Créditos
               </Button>
             </div>
           </section>
         )}
       </div>
-
+      
       {/* Sandbox — not money */}
       {activated && sandbox && (
         <section className="flex flex-col rounded-2xl border border-dashed border-gray-300 bg-white p-6">
           <div className="flex items-center gap-2">
-            <Gamepad2 size={16} className="text-gray-400" />
+            <Gamepad2 size={16} className="text-gray-400"/>
             <p className="font-mono text-xs uppercase tracking-widest text-gray-400">Créditos sandbox</p>
           </div>
-
+          
           <p className="mt-3 text-3xl font-semibold tabular-nums tracking-tight text-gray-700">
             {formatCredits(sandbox.balance)}
           </p>
-
+          
           <p className="mt-2 text-sm leading-relaxed text-gray-500">
             Moeda virtual para partidas, comprada com o saldo de jogo. Não tem valor em dinheiro e não pode ser
             sacada nem convertida de volta.
           </p>
         </section>
       )}
-
+      
       {/* Not activated — one quiet link, never an upsell. */}
       {!activated && (
         <Link
           href="/gambling/activate"
           className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-500 transition hover:border-gray-300 hover:text-gray-700"
         >
-          <ShieldCheck size={16} className="text-gray-400" />
+          <ShieldCheck size={16} className="text-gray-400"/>
           Vai usar a carteira para jogos? Ative a carteira de jogo.
         </Link>
       )}

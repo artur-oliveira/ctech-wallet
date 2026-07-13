@@ -32,7 +32,7 @@ function ActivateGamblingInner() {
   const router = useRouter()
   const qc = useQueryClient()
   const [checked, setChecked] = useState(false)
-
+  
   const activate = useMutation({
     mutationFn: () => apiClient.activateGambling(),
     onSuccess: () => {
@@ -42,14 +42,14 @@ function ActivateGamblingInner() {
     },
     onError: (err) => toast.error(activationMessage(err)),
   })
-
+  
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-login px-4">
       <div className="w-full max-w-md space-y-5 rounded-2xl border border-brand-100 bg-white p-6 shadow-card">
         <div className="flex size-10 items-center justify-center rounded-lg bg-brand-600 text-white">
-          <Dice5 size={20} />
+          <Dice5 size={20}/>
         </div>
-
+        
         <div>
           <h1 className="text-lg font-semibold text-gray-900">Ativar a carteira de jogo</h1>
           <p className="mt-1 text-sm leading-relaxed text-gray-600">
@@ -57,7 +57,7 @@ function ActivateGamblingInner() {
             quando você quiser — sem taxa e sem limite.
           </p>
         </div>
-
+        
         <ul className="space-y-2 rounded-xl bg-gray-50 p-4 text-sm leading-relaxed text-gray-600">
           <li>
             É a <strong className="font-medium text-gray-900">única</strong> porta para jogos: não dá para jogar
@@ -72,7 +72,7 @@ function ActivateGamblingInner() {
             <strong className="font-medium text-gray-900">nunca</strong> voltam a virar dinheiro.
           </li>
         </ul>
-
+        
         <label className="flex items-start gap-2 text-sm text-gray-600">
           <input
             type="checkbox"
@@ -93,7 +93,7 @@ function ActivateGamblingInner() {
             .
           </span>
         </label>
-
+        
         <div className="flex gap-2">
           <Button variant="outline" className="flex-1" onClick={() => router.push('/dashboard')}>
             Agora não
@@ -115,7 +115,7 @@ function ActivateGamblingInner() {
 export default function ActivateGamblingPage() {
   return (
     <ProtectedRoute>
-      <ActivateGamblingInner />
+      <ActivateGamblingInner/>
     </ProtectedRoute>
   )
 }

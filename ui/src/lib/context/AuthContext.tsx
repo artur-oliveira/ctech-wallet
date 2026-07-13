@@ -17,19 +17,19 @@ interface AuthContextType {
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-export function AuthProvider({children}: {children: ReactNode}) {
+export function AuthProvider({children}: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [authenticated, setAuthenticated] = useState(false)
   const [loading, setLoading] = useState(true)
   const refreshTokenRef = useRef<string | null>(null)
-
+  
   const persistToken = useCallback((accessToken: string, refreshToken: string) => {
     refreshTokenRef.current = refreshToken
     sessionStorage.setItem(SESSION_KEY_REFRESH, refreshToken)
     apiClient.setToken(accessToken)
     setAuthenticated(true)
   }, [])
-
+  
   const tryRefresh = useCallback(async (): Promise<string | null> => {
     const rt = refreshTokenRef.current ?? sessionStorage.getItem(SESSION_KEY_REFRESH)
     if (!rt) return null
@@ -43,15 +43,15 @@ export function AuthProvider({children}: {children: ReactNode}) {
     persistToken(result.accessToken, result.refreshToken)
     return result.accessToken
   }, [persistToken])
-
+  
   useEffect(() => {
     registerRefreshFn(tryRefresh)
   }, [tryRefresh])
-
+  
   const login = useCallback(() => {
     void startOAuthFlow(window.location.pathname)
   }, [])
-
+  
   // Clearing local state is not a logout: the ctech_session SSO cookie survives
   // it, so /authorize would silently re-authenticate on the next login. The
   // revoke must land before we navigate away, hence the await.
@@ -68,7 +68,7 @@ export function AuthProvider({children}: {children: ReactNode}) {
       endSessionRedirect()
     })()
   }, [])
-
+  
   const handleCallback = useCallback(
     async (accessToken: string, refreshToken: string, idToken: string | null) => {
       persistToken(accessToken, refreshToken)
@@ -80,7 +80,7 @@ export function AuthProvider({children}: {children: ReactNode}) {
     },
     [persistToken],
   )
-
+  
   // On mount: attempt a silent refresh from the stored refresh token.
   useEffect(() => {
     void (async () => {
@@ -96,7 +96,7 @@ export function AuthProvider({children}: {children: ReactNode}) {
       setLoading(false)
     })()
   }, [tryRefresh])
-
+  
   return (
     <AuthContext.Provider value={{profile, authenticated, loading, login, logout, handleCallback}}>
       {children}

@@ -17,7 +17,7 @@ export default function GamblingAddendumPage() {
   return (
     <LegalPage title="Termo de Jogo Responsável — CTech Wallet" updatedAt={UPDATED_AT}>
       <p className="text-xs text-gray-400">Versão {ADDENDUM_VERSION}</p>
-
+      
       <p>
         Este termo é <strong>específico para o uso da carteira em jogos</strong> e complementa os{' '}
         <a href="/terms-addendum" className="underline underline-offset-4">
@@ -26,7 +26,7 @@ export default function GamblingAddendumPage() {
         . Aceitar os Termos Adicionais <strong>não</strong> significa aceitar este termo: são documentos
         separados, e você só precisa deste se quiser usar a carteira para jogos.
       </p>
-
+      
       <LegalSection heading="1. A carteira de jogo">
         <p>
           Ao ativar, criamos uma <strong>carteira de jogo</strong> separada do seu saldo real. O dinheiro na
@@ -39,7 +39,7 @@ export default function GamblingAddendumPage() {
           possível jogar nem comprar créditos direto do saldo real.
         </p>
       </LegalSection>
-
+      
       <LegalSection heading="2. Limites pessoais">
         <p>
           Você define <strong>quanto pode transferir do saldo real para a carteira de jogo</strong> por dia, por
@@ -56,7 +56,7 @@ export default function GamblingAddendumPage() {
           proteger mais.
         </p>
       </LegalSection>
-
+      
       <LegalSection heading="3. Créditos sandbox">
         <p>
           Créditos sandbox são comprados com o saldo da <strong>carteira de jogo</strong> e servem para participar
@@ -67,7 +67,7 @@ export default function GamblingAddendumPage() {
           dinheiro — nem para a carteira de jogo, nem para o saldo real. A conversão é definitiva.
         </p>
       </LegalSection>
-
+      
       <LegalSection heading="4. Quem pode ativar">
         <p>
           É necessário ter 18 anos ou mais e ter concluído a verificação de identidade da sua conta CTech. A
@@ -75,7 +75,7 @@ export default function GamblingAddendumPage() {
           relacionado a jogos aparece na sua carteira.
         </p>
       </LegalSection>
-
+      
       <LegalSection heading="5. Jogue com responsabilidade">
         <p>
           Jogos com dinheiro podem causar dependência. Aposte apenas o que você pode perder, e use os limites — eles
