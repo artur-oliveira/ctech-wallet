@@ -3,6 +3,7 @@ package v1
 import (
 	"bufio"
 	"context"
+	"log/slog"
 	"os"
 	"runtime"
 	"strconv"
@@ -12,8 +13,10 @@ import (
 	"github.com/artur-oliveira/ctech-wallet/api/internal/awsclient"
 	"github.com/artur-oliveira/ctech-wallet/api/internal/cache"
 	"github.com/artur-oliveira/ctech-wallet/api/internal/config"
+	"github.com/artur-oliveira/ctech-wallet/api/internal/domain/wallet"
 	"github.com/artur-oliveira/ctech-wallet/api/internal/middleware"
 	"github.com/artur-oliveira/ctech-wallet/api/internal/pix"
+	"github.com/artur-oliveira/ctech-wallet/api/internal/repositories"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -123,7 +126,7 @@ func RegisterHealth(router fiber.Router, clients *awsclient.Clients, cacheBacken
 		ctx, cancel := context.WithTimeout(c.Context(), checkTimeout)
 		defer cancel()
 
-		dynamo := checkDynamoDB(ctx, clients.DynamoDB, nowStr)
+		dynamo := checkDynamoDB(ctx, clients.DynamoDB, repositories.TableName(cfg, wallet.TableWallets), nowStr)
 		cachec := checkCache(ctx, cacheBackend, nowStr)
 		pixc := checkPix(ctx, pixClient, nowStr)
 		jwksc := checkJWKS(ctx, verifier, nowStr)
@@ -181,13 +184,17 @@ func aggregate(checks map[string]healthEntry) (string, int) {
 }
 
 // checkDynamoDB is the only check that can fail the probe — no table, no wallet.
-func checkDynamoDB(ctx context.Context, db *dynamodb.Client, nowStr string) healthEntry {
+// It describes the wallets table rather than listing tables: DescribeTable is
+// resource-scoped (the IAM role has no account-level dynamodb:ListTables) and it
+// verifies the load-bearing table actually exists, which ListTables never did.
+func checkDynamoDB(ctx context.Context, db *dynamodb.Client, tableName, nowStr string) healthEntry {
 	t0 := time.Now()
-	_, err := db.ListTables(ctx, &dynamodb.ListTablesInput{Limit: aws.Int32(1)})
+	_, err := db.DescribeTable(ctx, &dynamodb.DescribeTableInput{TableName: aws.String(tableName)})
 	ms := float64(time.Since(t0).Milliseconds())
 	st := statusPass
 	if err != nil {
 		st = statusFail
+		slog.Error("health check failed", "component", componentDynamoDB, "table", tableName, "error", err)
 	}
 	return healthEntry{componentDynamoDB, measureResponse, typeDatastoreDB, ms, unitMillisecond, st, nowStr}
 }
@@ -202,6 +209,7 @@ func checkCache(ctx context.Context, cb cache.Backend, nowStr string) healthEntr
 	st := statusPass
 	if err != nil {
 		st = statusWarn
+		slog.Warn("health check degraded", "component", componentCache, "error", err)
 	}
 	return healthEntry{componentCache, measureResponse, typeDatastoreCch, ms, unitMillisecond, st, nowStr}
 }
@@ -218,6 +226,7 @@ func checkPix(ctx context.Context, pc pix.PixClient, nowStr string) healthEntry 
 	st := statusPass
 	if err != nil {
 		st = statusWarn
+		slog.Warn("health check degraded", "component", componentPix, "error", err)
 	}
 	return healthEntry{componentPix, measureResponse, typeComponentSvc, ms, unitMillisecond, st, nowStr}
 }
@@ -232,6 +241,7 @@ func checkJWKS(ctx context.Context, v *middleware.Verifier, nowStr string) healt
 	st := statusPass
 	if err != nil {
 		st = statusWarn
+		slog.Warn("health check degraded", "component", componentJWKS, "error", err)
 	}
 	return healthEntry{componentJWKS, measureResponse, typeComponentSvc, ms, unitMillisecond, st, nowStr}
 }

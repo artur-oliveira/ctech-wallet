@@ -40,7 +40,7 @@ type healthBody struct {
 func healthApp(t *testing.T) *fiber.App {
 	t.Helper()
 	app := fiber.New()
-	cfg := &config.Config{AppVersion: testAppVersion}
+	cfg := &config.Config{AppVersion: testAppVersion, TablePrefix: tablePrefix}
 	apiv1.RegisterHealth(app.Group("/v1.0"), &awsclient.Clients{DynamoDB: db}, cache.NewMemoryBackend(16), pix.NewFake(), nil, cfg)
 	return app
 }

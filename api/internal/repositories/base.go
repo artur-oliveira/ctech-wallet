@@ -30,11 +30,18 @@ type Base struct {
 	tablePrefix string
 }
 
+// TableName returns the environment-prefixed physical table name
+// ({prefix}_{table}). Exported for call sites outside the repository layer
+// that need the physical name without a repository (e.g. the health probe).
+func TableName(cfg *config.Config, table string) string {
+	return fmt.Sprintf("%s_%s", cfg.TablePrefix, table)
+}
+
 // NewBase creates a Base repository with an environment-prefixed table name.
 func NewBase(db *dynamodb.Client, cfg *config.Config, table string) Base {
 	return Base{
 		db:          db,
-		TableName:   fmt.Sprintf("%s_%s", cfg.TablePrefix, table),
+		TableName:   TableName(cfg, table),
 		tablePrefix: cfg.TablePrefix,
 	}
 }
