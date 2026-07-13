@@ -16,6 +16,22 @@ permissions:
   pull-requests: write
 
 jobs:
+  test:
+    name: Test pix-gateway
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: pix-gateway/go.mod
+          cache-dependency-path: pix-gateway/go.sum
+
+      - name: Run tests
+        working-directory: pix-gateway
+        run: go test ./... -race -count=1
+
   diff:
     name: CDK Diff
     runs-on: ubuntu-24.04-arm
@@ -92,7 +108,8 @@ jobs:
   deploy:
     name: CDK Deploy
     runs-on: ubuntu-24.04-arm
-    if: github.event_name != 'pull_request'
+    needs: test
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && github.event_name != 'pull_request' }}
 
     steps:
       - uses: actions/checkout@v6

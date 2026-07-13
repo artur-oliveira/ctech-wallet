@@ -57,6 +57,7 @@ jobs:
           filters: |
             infra:
               - 'cdk/**'
+              - 'pix-gateway/**'
               - '.github/workflows/infra.yml'
             api:
               - 'api/**'
