@@ -58,9 +58,13 @@ over REST API — proxy-only integration, lower cost/latency, and HTTP APIs supp
 too) supports this directly via a **Trust Store**: a CA bundle in a versioned S3 bucket, attached to a
 **regional** custom domain (mTLS custom domains cannot be edge-optimized).
 
-- New subdomain `pix.wallet.aoctech.app`, a plain alias/CNAME to the API Gateway's regional domain —
-  independent of CloudFront and Cloudflare. The domain still needs its own ordinary ACM server
-  certificate (standard HTTPS, unrelated to Inter's client cert).
+- New subdomain `pix.wallet.aoctech.app`: an API Gateway **custom domain name** resource is created for
+  it (regional, mTLS-enabled), which generates its own target regional domain name. The Cloudflare DNS
+  record for `pix.wallet.aoctech.app` is a CNAME to that generated target and **must be DNS-only (grey
+  cloud, unproxied)** — if Cloudflare proxies it, Cloudflare terminates the TLS handshake itself and
+  Inter's client certificate never reaches API Gateway, the same failure mode this design exists to avoid
+  at the ALB. The domain still needs its own ordinary ACM server certificate (regional, standard HTTPS,
+  unrelated to Inter's client cert), issued for use with the custom domain.
 - The Trust Store holds Inter's webhook CA/certificate. API Gateway rejects any TLS handshake that
   doesn't chain to it — untrusted calls never reach Lambda.
 - The webhook Lambda handler **never trusts the payload** (existing invariant, preserved): on receipt it
