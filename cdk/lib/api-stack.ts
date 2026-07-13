@@ -38,10 +38,12 @@ interface ApiStackProps extends cdk.StackProps {
   instanceProfileName: string;
   deploymentsBucketName: string;
   logsBucketName: string;
-  /** Inter partner-bank API base URL (sandbox vs production differ). */
-  interBaseUrl: string;
-  /** Receiving PIX key for immediate charges (cob). Not a secret. */
-  interPixKey: string;
+  /**
+   * pix-gateway's outbound Lambda function name — api invokes it for every
+   * PixClient call (LambdaPixClient). api no longer talks to Inter directly;
+   * see docs/specs/2026-07-13-pix-gateway-lambda-design.md.
+   */
+  pixGatewayFunctionName: string;
 }
 
 export class ApiStack extends cdk.Stack {
@@ -58,8 +60,7 @@ export class ApiStack extends cdk.Stack {
       instanceProfileName,
       deploymentsBucketName,
       logsBucketName,
-      interBaseUrl,
-      interPixKey,
+      pixGatewayFunctionName,
     } = props;
 
     const shared = SSM_SHARED(environment);
@@ -415,8 +416,7 @@ export class ApiStack extends cdk.Stack {
       `AWS_USE_DUALSTACK_ENDPOINT=true`,
       `PORT=${APP_PORT}`,
       `SERVICE_AUDIENCE=https://${domainName}`,
-      `INTER_BASE_URL=${interBaseUrl}`,
-      `INTER_PIX_KEY=${interPixKey}`,
+      `PIX_GATEWAY_FUNCTION_NAME=${pixGatewayFunctionName}`,
       `TRUSTED_PROXIES=127.0.0.1`,
       `CORS_ALLOWED_ORIGINS=https://${appDomainName}`,
       `ENV`,
@@ -424,10 +424,8 @@ export class ApiStack extends cdk.Stack {
       // ── start.sh: fetches secrets from SSM then exec-replaces into the binary
       // $ENVIRONMENT comes from systemd EnvironmentFile at runtime.
       //
-      // NOT fetched here: the Inter mTLS certificate and private key
-      // (/ctech-wallet/{env}/inter/mtls-{cert,key}). The Go app reads and decrypts
-      // them from SSM itself at boot (internal/secrets) so the bank certificate can
-      // be rotated without a redeploy and the PEMs never travel through shell env.
+      // api no longer reads any Inter secret or the mTLS keypair — all Inter
+      // contact moved to pix-gateway (docs/specs/2026-07-13-pix-gateway-lambda-design.md).
       `cat > /opt/app/start.sh << 'START'`,
       `#!/bin/bash`,
       // APP_VERSION ships inside the release artifact (release.env), written by CI.
@@ -444,13 +442,8 @@ export class ApiStack extends cdk.Stack {
       // Wallet's own M2M client — used to call ctech-account internal:kyc.
       `WALLET_CLIENT_ID=$(aws ssm get-parameter --name "${wallet.walletClientId}" --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
       `WALLET_CLIENT_SECRET=$(aws ssm get-parameter --name "${wallet.walletClientSecret}" --with-decryption --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
-      // Inter partner bank (short secrets only — see the mTLS note above).
-      `INTER_CLIENT_ID=$(aws ssm get-parameter --name "${wallet.interClientId}" --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
-      `INTER_CLIENT_SECRET=$(aws ssm get-parameter --name "${wallet.interClientSecret}" --with-decryption --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
-      `INTER_WEBHOOK_SECRET=$(aws ssm get-parameter --name "${wallet.interWebhookSecret}" --with-decryption --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
       `export VALKEY_URL CTECH_URL CTECH_JWKS_URL`,
       `export WALLET_CLIENT_ID WALLET_CLIENT_SECRET`,
-      `export INTER_CLIENT_ID INTER_CLIENT_SECRET INTER_WEBHOOK_SECRET`,
       `exec /opt/app/current/app`,
       `START`,
       `chmod +x /opt/app/start.sh`,
