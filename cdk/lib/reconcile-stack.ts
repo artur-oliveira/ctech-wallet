@@ -8,8 +8,8 @@ import * as ssm from 'aws-cdk-lib/aws-ssm';
 import {aws_dynamodb} from 'aws-cdk-lib';
 import {Construct} from 'constructs';
 import path from 'node:path';
-import {spawnSync} from 'child_process';
 import {Environment} from './types';
+import {goLambdaCode} from './go-lambda';
 import {
   SERVICE,
   SSM_ACCOUNT,
@@ -28,55 +28,18 @@ const RECONCILE_TABLES = ['wallets', 'ledger_entries', 'idempotency', 'withdrawa
 /** How often the job sweeps withdrawals stuck in `processing`. */
 const RECONCILE_RATE_MINUTES = 5;
 
-// resolveGo returns the absolute path to the go binary.
-// Checks PATH first, then falls back to ~/sdk/go*/bin/go (Google's default SDK dir).
-function resolveGo(): string {
-  const lookup = spawnSync('bash', ['-c',
-    'which go 2>/dev/null || ls "${HOME}/sdk/go"*/bin/go 2>/dev/null | sort -rV | head -1',
-  ], {stdio: 'pipe', env: process.env});
-  if (lookup.status === 0 && lookup.stdout) {
-    const found = lookup.stdout.toString().trim();
-    if (found) return found;
-  }
-  return 'go';
-}
-
-// goCode builds a Go Lambda binary from the api module.
-// Local bundling (no Docker) is attempted first; Docker is the fallback.
-function goCode(cmd: string): lambda.AssetCode {
-  return lambda.Code.fromAsset(API_DIR, {
-    bundling: {
-      local: {
-        tryBundle(outputDir: string): boolean {
-          const r = spawnSync(
-            resolveGo(),
-            ['build', '-tags', 'lambda.norpc', '-ldflags', '-s -w', '-o', path.join(outputDir, 'bootstrap'), `./cmd/${cmd}`],
-            {
-              cwd: API_DIR,
-              env: {...process.env, GOOS: 'linux', GOARCH: 'arm64', CGO_ENABLED: '0'},
-              stdio: ['ignore', 'pipe', 'pipe'],
-            },
-          );
-          if (r.status !== 0) process.stderr.write(r.stderr ?? Buffer.alloc(0));
-          return r.status === 0;
-        },
-      },
-      image: lambda.Runtime.PROVIDED_AL2023.bundlingImage,
-      // GOCACHE/GOPATH must be writable; Docker runs as uid 1000:1000 with no HOME.
-      environment: {GOCACHE: '/tmp/go-build', GOPATH: '/tmp/go'},
-      command: [
-        'bash', '-c',
-        `GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -tags lambda.norpc -ldflags '-s -w' -o /asset-output/bootstrap ./cmd/${cmd}`,
-      ],
-    },
-  });
-}
-
 interface ReconcileStackProps extends cdk.StackProps {
   environment: Environment;
   dynamoDBTables: Map<string, aws_dynamodb.TableV2>;
-  /** Inter partner-bank API base URL. */
-  interBaseUrl: string;
+  /**
+   * pix-gateway's outbound Lambda — cmd/reconcile invokes it (via
+   * LambdaPixClient) for QueryTransfer, same as api's server does. Reconcile
+   * no longer talks to Inter directly (see
+   * docs/specs/2026-07-13-pix-gateway-lambda-design.md and the note on
+   * cmd/reconcile in the pix-gateway migration plan).
+   */
+  pixGatewayOutboundFunctionArn: string;
+  pixGatewayOutboundFunctionName: string;
 }
 
 /**
@@ -96,7 +59,7 @@ export class ReconcileStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ReconcileStackProps) {
     super(scope, id, props);
 
-    const {environment, dynamoDBTables, interBaseUrl} = props;
+    const {environment, dynamoDBTables, pixGatewayOutboundFunctionArn, pixGatewayOutboundFunctionName} = props;
 
     this.functionName = reconcileFunctionName(environment);
 
@@ -151,23 +114,30 @@ export class ReconcileStack extends cdk.Stack {
       resources: [ledgerArn, `${ledgerArn}/index/*`],
     }));
 
-    // ── SSM: Inter credentials + mTLS PEMs (SecureString, AWS-managed
-    // alias/aws/ssm key → no explicit kms:Decrypt needed) and the account base URL.
-    // Same caveat as iam-stack: a customer-managed KMS key would require an
-    // explicit kms:Decrypt statement here.
+    // ── SSM: only wallet-client-id/secret (for the internal:kyc M2M call) and
+    // the account base URL — reconcile no longer talks to Inter directly, so it
+    // needs none of the inter/* secrets (see pixGatewayOutboundFunctionArn above).
     role.addToPolicy(new iam.PolicyStatement({
       actions: ['ssm:GetParameter'],
       resources: [
-        `arn:aws:ssm:*:*:parameter${SSM_WALLET(environment).namespace}/*`,
+        `arn:aws:ssm:*:*:parameter${SSM_WALLET(environment).walletClientId}`,
+        `arn:aws:ssm:*:*:parameter${SSM_WALLET(environment).walletClientSecret}`,
         `arn:aws:ssm:*:*:parameter${SSM_ACCOUNT(environment).namespace}/*`,
       ],
+    }));
+
+    // ── Lambda: invoke pix-gateway's outbound function for QueryTransfer, same
+    // permission api's role gets (see iam-stack.ts).
+    role.addToPolicy(new iam.PolicyStatement({
+      actions: ['lambda:InvokeFunction'],
+      resources: [pixGatewayOutboundFunctionArn],
     }));
 
     const fn = new lambda.Function(this, 'ReconcileFunction', {
       functionName: this.functionName,
       runtime: lambda.Runtime.PROVIDED_AL2023,
       handler: 'bootstrap',
-      code: goCode('reconcile'),
+      code: goLambdaCode(API_DIR, 'reconcile'),
       role,
       architecture: lambda.Architecture.ARM_64,
       timeout: Duration.minutes(5),
@@ -176,21 +146,19 @@ export class ReconcileStack extends cdk.Stack {
         ENVIRONMENT: environment,
         TABLE_PREFIX: tablePrefix(environment),
         AWS_USE_DUALSTACK_ENDPOINT: 'true',
-        INTER_BASE_URL: interBaseUrl,
+        PIX_GATEWAY_FUNCTION_NAME: pixGatewayOutboundFunctionName,
         // Non-secret values, resolved from SSM at deploy time (they land in the
         // CFN template as plaintext — never do this with a SecureString).
         CTECH_URL: ssm.StringParameter.valueForStringParameter(this, SSM_ACCOUNT(environment).baseUrl),
-        INTER_CLIENT_ID: ssm.StringParameter.valueForStringParameter(this, SSM_WALLET(environment).interClientId),
         WALLET_CLIENT_ID: ssm.StringParameter.valueForStringParameter(this, SSM_WALLET(environment).walletClientId),
         // AWS_REGION is a reserved Lambda variable — set by the runtime, never here.
       },
-      // NOTE: a Lambda has no /opt/app/start.sh, so INTER_CLIENT_SECRET,
-      // INTER_WEBHOOK_SECRET and WALLET_CLIENT_SECRET cannot be exported into the
-      // environment the way the EC2 API does — and a SecureString must never be
-      // resolved into a CFN template. cmd/reconcile must read them from SSM itself
-      // at start-up (extend internal/secrets, which already holds an SSM client and
-      // loads the mTLS PEMs). The ssm:GetParameter grant above already covers them,
-      // so this needs no IAM change.
+      // NOTE: a Lambda has no /opt/app/start.sh, so WALLET_CLIENT_SECRET cannot be
+      // exported into the environment the way the EC2 API does — and a
+      // SecureString must never be resolved into a CFN template. cmd/reconcile's
+      // kycclient reads it itself. Reconcile no longer needs any Inter secret at
+      // all — it invokes pix-gateway's outbound Lambda instead of talking to
+      // Inter directly.
     });
 
     new scheduler.Schedule(this, 'ReconcileSchedule', {
