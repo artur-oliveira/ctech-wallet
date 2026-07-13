@@ -30,7 +30,7 @@ func routerApp(t *testing.T, gamblingEnabled bool) *fiber.App {
 		TablePrefix:     "test",
 		GamblingEnabled: gamblingEnabled,
 	}
-	Register(app, cache.NewMemoryBackend(testCacheSize), cfg, nil, nil, nil, nil, WebhookSecret(""))
+	Register(app, cache.NewMemoryBackend(testCacheSize), cfg, nil, nil, nil, nil)
 	return app
 }
 

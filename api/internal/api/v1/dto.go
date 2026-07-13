@@ -36,10 +36,12 @@ type SandboxOpRequest struct {
 	Reason         string `json:"reason"`
 }
 
-// WebhookPayload is the minimal shape read from the Inter PIX webhook. It is a
-// wake-up signal only — the txid is re-queried before any credit.
-type WebhookPayload struct {
-	Pix []struct {
-		Txid string `json:"txid"`
-	} `json:"pix"`
+// ConfirmDepositRequest is pix-gateway's webhook-Lambda call after it has
+// already re-queried the charge at Inter. Only the txid crosses this
+// boundary — api re-derives amount/status/payer CPF itself via
+// WalletService.ConfirmDeposit, which re-queries Inter again through
+// LambdaPixClient. Neither this call nor the original webhook payload is ever
+// trusted for money movement (Financial Safety Invariant 11).
+type ConfirmDepositRequest struct {
+	Txid string `json:"txid" validate:"required"`
 }

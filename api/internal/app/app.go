@@ -39,7 +39,6 @@ var Module = fx.Options(
 		newLocker,
 		newLambdaClient,
 		newLambdaPixClient,
-		newWebhookSecret,
 		newKYCClient,
 		repositories.NewWalletRepository,
 		repositories.NewUserRepository,
@@ -98,13 +97,6 @@ func newLambdaPixClient(client *lambda.Client, cfg *config.Config) pix.PixClient
 	return pix.NewLambdaPixClient(client, cfg.PixGatewayFunctionName)
 }
 
-// newWebhookSecret is removed in a later task alongside the webhook route
-// itself (Task 6) — DO NOT delete this function yet, only the Inter-specific
-// providers above it.
-func newWebhookSecret(cfg *config.Config) apiv1.WebhookSecret {
-	return apiv1.WebhookSecret("") // placeholder: cfg.InterWebhookSecret no longer exists after Step 6
-}
-
 func newKYCClient(cfg *config.Config) services.KYCClient {
 	return kycclient.New(cfg)
 }
@@ -149,8 +141,8 @@ func newFiberApp(cfg *config.Config) *fiber.App {
 	return app
 }
 
-func registerRoutes(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsclient.Clients, pixClient pix.PixClient, svc *services.WalletService, userSvc *services.UserService, ws apiv1.WebhookSecret) {
-	apiv1.Register(app, c, cfg, clients, pixClient, svc, userSvc, ws)
+func registerRoutes(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsclient.Clients, pixClient pix.PixClient, svc *services.WalletService, userSvc *services.UserService) {
+	apiv1.Register(app, c, cfg, clients, pixClient, svc, userSvc)
 }
 
 func startServer(lc fx.Lifecycle, app *fiber.App, cfg *config.Config) {

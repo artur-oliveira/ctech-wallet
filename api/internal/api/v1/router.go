@@ -12,20 +12,15 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// WebhookSecret is the shared secret the Inter PIX webhook must present. It is a
-// distinct type so fx injects it unambiguously; the value comes from SSM.
-type WebhookSecret string
-
 // handlers bundles the dependencies every route closure needs.
 type handlers struct {
-	svc           *services.WalletService
-	userSvc       *services.UserService
-	webhookSecret string
+	svc     *services.WalletService
+	userSvc *services.UserService
 }
 
 // Register mounts all wallet routes under /v1.0.
-func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsclient.Clients, pixClient pix.PixClient, svc *services.WalletService, userSvc *services.UserService, webhookSecret WebhookSecret) {
-	h := &handlers{svc: svc, userSvc: userSvc, webhookSecret: string(webhookSecret)}
+func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsclient.Clients, pixClient pix.PixClient, svc *services.WalletService, userSvc *services.UserService) {
+	h := &handlers{svc: svc, userSvc: userSvc}
 	verifier := middleware.NewVerifier(cfg.CtechJWKSURL, cfg.ServiceAudience, cfg.CtechURL, c)
 	auth := verifier.Middleware()
 
@@ -68,12 +63,11 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 		w.Post("/game/deposit", middleware.RequireKYC(middleware.KYCVerified), h.gameDeposit)
 	}
 
-	// Internal routes.
-	internal := v1.Group("/internal")
-	// PIX webhook: authenticated by shared secret, not the account JWT.
-	internal.Post("/pix/webhook", h.pixWebhook)
-	// Sandbox M2M: client_credentials + scope, gated after auth.
-	sb := internal.Group("/wallet/sandbox", auth)
+	// Internal routes — all M2M client_credentials + scope, gated after auth.
+	internal := v1.Group("/internal", auth)
+	// pix-gateway's webhook Lambda, after it has already re-queried Inter.
+	internal.Post("/pix/confirm-deposit", middleware.RequireScope(middleware.ScopePixConfirmDeposit), h.confirmDeposit)
+	sb := internal.Group("/wallet/sandbox")
 	sb.Post("/credit", middleware.RequireScope(middleware.ScopeWalletCredit), h.sandboxCredit)
 	sb.Post("/debit", middleware.RequireScope(middleware.ScopeWalletDebit), h.sandboxDebit)
 }

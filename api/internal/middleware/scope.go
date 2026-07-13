@@ -6,10 +6,12 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// Scopes the wallet defines for its own internal callers (poker/dominó/billing).
+// Scopes the wallet defines for its own internal callers (poker/dominó/billing,
+// and pix-gateway's webhook Lambda).
 const (
-	ScopeWalletCredit = "internal:wallet:credit"
-	ScopeWalletDebit  = "internal:wallet:debit"
+	ScopeWalletCredit      = "internal:wallet:credit"
+	ScopeWalletDebit       = "internal:wallet:debit"
+	ScopePixConfirmDeposit = "internal:pix:confirm-deposit"
 )
 
 // KYC levels are defined once, in the domain — services gate on them too.
