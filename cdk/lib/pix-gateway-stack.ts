@@ -167,6 +167,12 @@ export class PixGatewayStack extends cdk.Stack {
     const httpApi = new apigwv2.HttpApi(this, 'WebhookHttpApi', {
       apiName: `${environment}-${SERVICE}-pix-gateway-webhook`,
       defaultDomainMapping: {domainName: domain},
+      // The mTLS client-certificate check happens only at the custom domain
+      // (pix.wallet.aoctech.app). HttpApi's auto-generated execute-api.amazonaws.com
+      // endpoint is enabled by default and would let anyone POST fake txids
+      // straight to the webhook Lambda, bypassing that check entirely. Disabling
+      // it makes the custom domain the only way in.
+      disableExecuteApiEndpoint: true,
     });
     httpApi.addRoutes({
       path: '/pix/webhook',
