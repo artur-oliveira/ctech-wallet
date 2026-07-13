@@ -109,7 +109,11 @@ jobs:
     name: CDK Deploy
     runs-on: ubuntu-24.04-arm
     needs: test
-    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && github.event_name != 'pull_request' }}
+    # Explicit success check, not the double-negative !contains(...,'failure')
+    # pattern used elsewhere for skippable stages: that pattern treats a
+    # cancelled test job as non-failure, so deploy would fire without tests
+    # ever having actually passed. Only an explicit 'success' unblocks deploy.
+    if: ${{ github.event_name != 'pull_request' && needs.test.result == 'success' }}
 
     steps:
       - uses: actions/checkout@v6
