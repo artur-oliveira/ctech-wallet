@@ -95,6 +95,32 @@ connection table):
   `{"type": "deposit_confirmed", "wallet_id", "amount", ...}` to that user's registry key. Any
   ASG instance holding that user's socket delivers it via the Valkey channel `ws:{user_id}`.
 
+### UI: WebSocket connection + polling fallback
+
+`ui` ports `ctech-dfe`'s hook pair, adapted from org-scoped to user-scoped:
+
+- `useWebSocket` (`ui/src/lib/hooks/useWebSocket.ts`) — copied essentially as-is (generic reconnect
+  logic keyed by URL, exponential backoff, ping/pong keepalive; nothing org-specific in this hook).
+- `useWalletRealtime` (new, mirrors `useRealtimeUpdates`) — builds `GET /v1.0/ws?token=<jwt>` (no
+  `org_pk`, the wallet has no organization concept), and on `deposit_confirmed` invalidates the
+  `['balances']` and `['ledger']` React Query caches and fires a success toast. Connected once at the
+  dashboard level (`DashboardInner`), same lifetime as the session, not scoped to a single charge — so it
+  also covers a deposit confirmed while the charge dialog isn't even open.
+
+**Polling fallback (`PixChargeDialog`):** the WebSocket is the primary path, but the dialog does not
+depend on it exclusively — the socket can be down, reconnecting, or the browser tab backgrounded and
+throttled. `PixChargeDialog` starts a timer on mount; if the charge hasn't resolved within **30s**, it
+begins polling `['balances']` (`refetchInterval`, e.g. every 5s) until either:
+  - a `deposit_confirmed` WebSocket message arrives for this charge (checked by comparing the
+    broadcast wallet/amount against the open charge — whichever arrives first wins), or
+  - the polled balance reflects the credit,
+
+at which point the dialog closes itself and shows the same success toast the WebSocket path would have
+shown, and polling stops. If the charge's own 15-minute expiry (`chargeExpirySec`) elapses first, polling
+stops and the dialog reverts to its current expired-charge state. No new backend endpoint is needed for
+this — it reuses the existing `GET /wallet/balances` the dashboard already polls-on-demand via
+`apiClient.getBalances()`.
+
 ### Resilience — no SNS/SQS added
 
 Inter already retries a failed webhook delivery itself (4 attempts: 20/30/60/120 min, per Inter's docs).
