@@ -1,4 +1,4 @@
-package pix
+package inter
 
 import (
 	"context"
@@ -69,14 +69,5 @@ func TestInterCreateChargeAndTokenReuse(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&tokenCalls); got != 1 {
 		t.Errorf("token fetched %d times, want 1 (should be cached)", got)
-	}
-}
-
-func TestFakeSatisfiesInterface(t *testing.T) {
-	f := NewFake()
-	f.StageCharge("tx", 500, ChargeCompleted, "12345678901", "E2E-1")
-	ch, err := f.QueryCharge(context.Background(), "tx")
-	if err != nil || ch.PayerCPF != "12345678901" {
-		t.Fatalf("fake query: %+v err=%v", ch, err)
 	}
 }

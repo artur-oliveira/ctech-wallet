@@ -1,4 +1,4 @@
-package pix
+package inter
 
 import (
 	"bytes"
@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/artur-oliveira/ctech-wallet/api/internal/config"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/secrets"
+	"github.com/artur-oliveira/ctech-wallet/pix-gateway/internal/config"
+	"github.com/artur-oliveira/ctech-wallet/pix-gateway/internal/secrets"
 )
 
 // InterClient is the production PixClient talking to Banco Inter's PIX/Banking
