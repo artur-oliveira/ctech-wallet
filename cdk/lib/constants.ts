@@ -62,6 +62,10 @@ export const frontendBucketName = (env: Environment) => `${env}-${SERVICE}-front
 export const routeStoreName = (env: Environment) => `${env}-${SERVICE}-routes`;
 export const reconcileFunctionName = (env: Environment) => `${env}-${SERVICE}-reconcile`;
 export const reconcileRoleName = (env: Environment) => `${env}-${SERVICE}-reconcile-role`;
+export const pixGatewayOutboundFunctionName = (env: Environment) => `${env}-${SERVICE}-pix-gateway-outbound`;
+export const pixGatewayWebhookFunctionName = (env: Environment) => `${env}-${SERVICE}-pix-gateway-webhook`;
+export const pixGatewayOutboundRoleName = (env: Environment) => `${env}-${SERVICE}-pix-gateway-outbound-role`;
+export const pixGatewayWebhookRoleName = (env: Environment) => `${env}-${SERVICE}-pix-gateway-webhook-role`;
 
 /**
  * DynamoDB table prefix. repositories.NewBase joins prefix and table with "_",
@@ -74,6 +78,7 @@ export const GHA_API_ROLE = `${SERVICE}-gha-api`;
 export const GHA_FRONTEND_ROLE = `${SERVICE}-gha-frontend`;
 export const GHA_INFRA_ROLE = `${SERVICE}-gha-infra`;
 export const GHA_RECONCILE_ROLE = `${SERVICE}-gha-reconcile`;
+export const GHA_PIX_GATEWAY_ROLE = `${SERVICE}-gha-pix-gateway`;
 
 // ── SSM parameter paths ─────────────────────────────────────────────────────
 /** Shared infra owned by ctech-cdk. */
@@ -95,7 +100,13 @@ export const SSM_SHARED = (env: Environment) => ({
  */
 export const VALKEY_DB = 2;
 
-/** Wallet-owned SSM namespace (seeded operationally; never written by CDK). */
+/**
+ * Wallet-owned SSM namespace (seeded operationally; never written by CDK).
+ * The `inter/*` leaves are read only by pix-gateway's own IAM role now — api
+ * no longer talks to Inter directly (see
+ * docs/specs/2026-07-13-pix-gateway-lambda-design.md), but the paths stay
+ * here since they're still under the wallet's shared namespace.
+ */
 export const SSM_WALLET = (env: Environment) => ({
   namespace: `/${SERVICE}/${env}`,
   walletClientId: `/${SERVICE}/${env}/wallet-client-id`,
@@ -103,7 +114,7 @@ export const SSM_WALLET = (env: Environment) => ({
   interClientId: `/${SERVICE}/${env}/inter/client-id`,
   interClientSecret: `/${SERVICE}/${env}/inter/client-secret`, // SecureString
   interWebhookSecret: `/${SERVICE}/${env}/inter/webhook-secret`, // SecureString
-  // Read by the Go app itself at boot (internal/secrets), never exported to env.
+  // Read by pix-gateway's outbound Lambda at cold start, never exported to env.
   interMtlsCert: `/${SERVICE}/${env}/inter/mtls-cert`, // SecureString
   interMtlsKey: `/${SERVICE}/${env}/inter/mtls-key`, // SecureString
 });
@@ -113,6 +124,13 @@ export const SSM_ACCOUNT = (env: Environment) => ({
   namespace: `/ctech-account/${env}`,
   baseUrl: `/ctech-account/${env}/base-url`,
   jwksUrl: `/ctech-account/${env}/jwks-url`,
+});
+
+/** pix-gateway-owned SSM namespace (seeded operationally; never written by CDK). */
+export const SSM_PIX_GATEWAY = (env: Environment) => ({
+  namespace: `/${SERVICE}/${env}/pix-gateway`,
+  clientId: `/${SERVICE}/${env}/pix-gateway/client-id`,
+  clientSecret: `/${SERVICE}/${env}/pix-gateway/client-secret`, // SecureString
 });
 
 // ── Domain helper (identical to ctech-dfe's) ────────────────────────────────

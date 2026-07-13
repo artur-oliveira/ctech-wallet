@@ -18,6 +18,7 @@ interface IAMStackProps extends cdk.StackProps {
   deploymentsBucketArn: string;
   logsBucketArn: string;
   dynamoDBTables: Map<string, aws_dynamodb.TableV2>;
+  pixGatewayOutboundFunctionArn: string;
 }
 
 /**
@@ -32,7 +33,7 @@ export class IAMStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: IAMStackProps) {
     super(scope, id, props);
 
-    const {environment, deploymentsBucketArn, logsBucketArn, dynamoDBTables} = props;
+    const {environment, deploymentsBucketArn, logsBucketArn, dynamoDBTables, pixGatewayOutboundFunctionArn} = props;
 
     this.apiRole = new iam.Role(this, 'ApiExecutionRole', {
       roleName: instanceRoleName(environment),
@@ -112,17 +113,12 @@ export class IAMStack extends cdk.Stack {
     }));
 
     // ── SSM ───────────────────────────────────────────────────────────────────
-    // Scope list mirrors ctech-dfe: own namespace + ctech-account + shared ctech.
-    //
-    // The Inter mTLS certificate and key are SecureStrings at
-    // /ctech-wallet/{env}/inter/mtls-cert and .../mtls-key. The Go app reads and
-    // decrypts them itself at boot (internal/secrets). They are encrypted with the
-    // AWS-managed key `alias/aws/ssm`, for which ssm:GetParameter with
-    // --with-decryption needs NO explicit kms:Decrypt grant.
-    // IMPORTANT: if these parameters are ever re-created under a customer-managed
-    // KMS key, an explicit statement must be added here:
-    //   { actions: ['kms:Decrypt'], resources: ['<cmk-arn>'] }
-    // otherwise the app fails to start with an AccessDenied on decryption.
+    // api's role is scoped to exactly the two parameters it still reads —
+    // wallet-client-id/secret (for the internal:kyc M2M call to ctech-account) —
+    // plus ctech-account's own namespace and the shared /ctech/{env}/* values.
+    // The Inter mTLS keypair, OAuth client secret, and webhook secret moved to
+    // pix-gateway's own IAM role (see pix-gateway-stack.ts) — api no longer
+    // talks to Inter at all (docs/specs/2026-07-13-pix-gateway-lambda-design.md).
     const walletSsm = SSM_WALLET(environment);
     const accountSsm = SSM_ACCOUNT(environment);
     this.apiRole.addManagedPolicy(new iam.ManagedPolicy(this, 'SsmPolicy', {
@@ -131,12 +127,23 @@ export class IAMStack extends cdk.Stack {
         new iam.PolicyStatement({
           actions: ['ssm:GetParameter'],
           resources: [
-            `arn:aws:ssm:*:*:parameter${walletSsm.namespace}/*`,
+            `arn:aws:ssm:*:*:parameter${walletSsm.walletClientId}`,
+            `arn:aws:ssm:*:*:parameter${walletSsm.walletClientSecret}`,
             `arn:aws:ssm:*:*:parameter${accountSsm.namespace}/*`,
             `arn:aws:ssm:*:*:parameter/ctech/${environment}/*`,
           ],
         }),
       ],
+    }));
+
+    // ── Lambda ────────────────────────────────────────────────────────────────
+    // api invokes pix-gateway's outbound function synchronously for every
+    // PixClient call (LambdaPixClient) — this is the only Lambda permission the
+    // api role needs; it never invokes the webhook function (that one is only
+    // ever triggered by API Gateway).
+    this.apiRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['lambda:InvokeFunction'],
+      resources: [pixGatewayOutboundFunctionArn],
     }));
 
     // ── S3 ────────────────────────────────────────────────────────────────────
