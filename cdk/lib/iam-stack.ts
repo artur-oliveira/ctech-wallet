@@ -173,6 +173,15 @@ export class IAMStack extends cdk.Stack {
       ],
     }));
 
+    // ── EC2 ───────────────────────────────────────────────────────────────────
+    // update-realip.sh reads the AWS-managed CloudFront origin-facing prefix
+    // list. Both actions are read-only and do not support resource-level
+    // permissions, so Resource must be *.
+    this.apiRole.addToPrincipalPolicy(new iam.PolicyStatement({
+      actions: ['ec2:DescribeManagedPrefixLists', 'ec2:GetManagedPrefixListEntries'],
+      resources: ['*'],
+    }));
+
     new cdk.CfnOutput(this, 'ApiRoleArn', {value: this.apiRole.roleArn});
   }
 }
