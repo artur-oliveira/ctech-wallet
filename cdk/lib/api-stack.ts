@@ -302,7 +302,12 @@ export class ApiStack extends cdk.Stack {
       `set -euo pipefail`,
       `CONF=/etc/nginx/conf.d/realip.conf`,
       `TMP=$(mktemp)`,
-      `RANGES=$(curl -sf --retry 3 --retry-delay 2 https://ip-ranges.amazonaws.com/ip-ranges.json)`,
+      // connect-timeout/max-time: this host has no AAAA record, so an IPv6-only
+      // instance without NAT64 can hang here indefinitely on the TCP handshake —
+      // a bare --retry never kicks in because the connection attempt itself never
+      // fails. Bounding it lets the || fallback in the caller actually run instead
+      // of blocking cloud-init's runcmd (and the ASG) forever.
+      `RANGES=$(curl -sf --connect-timeout 5 --max-time 15 --retry 3 --retry-delay 2 https://ip-ranges.amazonaws.com/ip-ranges.json)`,
       `PREFIXES=$(echo "$RANGES" | jq -r '(.prefixes[] | select(.service == "CLOUDFRONT_ORIGIN_FACING") | .ip_prefix), (.ipv6_prefixes[] | select(.service == "CLOUDFRONT_ORIGIN_FACING") | .ipv6_prefix)')`,
       // A partial list is worse than the old file: an unlisted edge would be treated
       // as the client and become the rate-limit key. Bail and keep what we have.
