@@ -18,6 +18,7 @@ import (
 	"github.com/artur-oliveira/ctech-wallet/api/internal/problem"
 	"github.com/artur-oliveira/ctech-wallet/api/internal/repositories"
 	"github.com/artur-oliveira/ctech-wallet/api/internal/services"
+	"github.com/artur-oliveira/ctech-wallet/api/internal/ws"
 
 	awscfg "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -37,7 +38,9 @@ var Module = fx.Options(
 		newDynamoDBClient,
 		newCacheBackend,
 		newLocker,
+		newWsRegistry,
 		newLambdaClient,
+		newInterTokenManager,
 		newLambdaPixClient,
 		newKYCClient,
 		repositories.NewWalletRepository,
@@ -81,6 +84,24 @@ func newLocker(c cache.Backend) *lock.Locker {
 	return lock.NewLocker(c)
 }
 
+// newWsRegistry builds the WebSocket fan-out registry. Reuses the same Redis
+// (Valkey) connection as the cache backend when one is configured — falls back
+// to an in-memory (single-instance) registry otherwise, exactly like
+// newCacheBackend's own Redis/in-memory fallback.
+func newWsRegistry(lc fx.Lifecycle, c cache.Backend) ws.Registry {
+	rb, ok := c.(*cache.RedisBackend)
+	if !ok {
+		slog.Warn("ws: no Redis backend — using in-memory registry (not shared across replicas)")
+		return ws.NewMemoryRegistry()
+	}
+	reg := ws.NewRedisRegistry(rb.Client())
+	lc.Append(fx.Hook{
+		OnStart: reg.Start,
+		OnStop:  reg.Stop,
+	})
+	return reg
+}
+
 // newLambdaClient builds the AWS Lambda SDK client used to invoke pix-gateway's
 // outbound function.
 func newLambdaClient(cfg *config.Config) (*lambda.Client, error) {
@@ -91,10 +112,37 @@ func newLambdaClient(cfg *config.Config) (*lambda.Client, error) {
 	return lambda.NewFromConfig(awsCfg), nil
 }
 
+// newInterTokenManager builds the token owner and registers its lifecycle:
+// prime on startup (so first traffic never blocks on a fetch) and a background
+// refresh loop for the process lifetime.
+func newInterTokenManager(lc fx.Lifecycle, client *lambda.Client, cfg *config.Config, locker *lock.Locker) *pix.InterTokenManager {
+	m := pix.NewInterTokenManager(client, cfg, locker)
+	var cancel context.CancelFunc
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			if _, err := m.Get(ctx, false); err != nil {
+				slog.Warn("inter token prime failed (will retry on first use)", "err", err)
+			}
+			loopCtx, c := context.WithCancel(context.Background())
+			cancel = c
+			go m.RefreshLoop(loopCtx)
+			return nil
+		},
+		OnStop: func(context.Context) error {
+			if cancel != nil {
+				cancel()
+			}
+			return nil
+		},
+	})
+	return m
+}
+
 // newLambdaPixClient wraps the Lambda client as api's PixClient implementation.
-// api never talks to Inter directly — pix-gateway does.
-func newLambdaPixClient(client *lambda.Client, cfg *config.Config) pix.PixClient {
-	return pix.NewLambdaPixClient(client, cfg.PixGatewayFunctionName)
+// api never talks to Inter directly — pix-gateway does. The token manager
+// supplies the bearer for every call.
+func newLambdaPixClient(client *lambda.Client, cfg *config.Config, tokenMgr *pix.InterTokenManager) pix.PixClient {
+	return pix.NewLambdaPixClient(client, cfg.PixGatewayFunctionName, tokenMgr)
 }
 
 func newKYCClient(cfg *config.Config) services.KYCClient {
@@ -141,8 +189,9 @@ func newFiberApp(cfg *config.Config) *fiber.App {
 	return app
 }
 
-func registerRoutes(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsclient.Clients, pixClient pix.PixClient, svc *services.WalletService, userSvc *services.UserService) {
-	apiv1.Register(app, c, cfg, clients, pixClient, svc, userSvc)
+func registerRoutes(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsclient.Clients, pixClient pix.PixClient, svc *services.WalletService, userSvc *services.UserService, wsRegistry ws.Registry) {
+	svc.SetBroadcaster(wsRegistry)
+	apiv1.Register(app, c, cfg, clients, pixClient, svc, userSvc, wsRegistry)
 }
 
 func startServer(lc fx.Lifecycle, app *fiber.App, cfg *config.Config) {

@@ -12,7 +12,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/artur-oliveira/ctech-wallet/pix-gateway/internal/config"
@@ -30,7 +29,14 @@ type InterClient struct {
 	base   string
 	pixKey string
 	http   *http.Client
-	tokens *tokenManager
+
+	// OAuth client credentials for the GetToken op. pix-gateway is the only
+	// place that talks to Inter's token endpoint; the bearer itself is passed
+	// per call by api (see bearer.go) and never fetched here except via GetToken.
+	clientID     string
+	clientSecret string
+	scope        string
+	tokenURL     string
 }
 
 // Inter API paths (centralized — no scattered literals).
@@ -64,18 +70,49 @@ func NewInterClient(cfg *config.Config, kp *secrets.MTLSKeypair) (*InterClient, 
 		},
 	}
 	c := &InterClient{
-		base:   strings.TrimRight(cfg.InterBaseURL, "/"),
-		pixKey: cfg.InterPixKey,
-		http:   httpClient,
-	}
-	c.tokens = &tokenManager{
-		client:       httpClient,
-		tokenURL:     c.base + pathToken,
+		base:         strings.TrimRight(cfg.InterBaseURL, "/"),
+		pixKey:       cfg.InterPixKey,
+		http:         httpClient,
 		clientID:     cfg.InterClientID,
 		clientSecret: cfg.InterClientSecret,
 		scope:        tokenScope,
+		tokenURL:     strings.TrimRight(cfg.InterBaseURL, "/") + pathToken,
 	}
 	return c, nil
+}
+
+// GetToken fetches a fresh OAuth bearer using pix-gateway's own client
+// credentials. It is the only place in pix-gateway that talks to Inter's token
+// endpoint. It does NOT write to SSM — api owns the value.
+func (c *InterClient) GetToken(ctx context.Context) (TokenResult, error) {
+	form := url.Values{
+		"client_id":     {c.clientID},
+		"client_secret": {c.clientSecret},
+		"grant_type":    {"client_credentials"},
+		"scope":         {c.scope},
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.tokenURL, strings.NewReader(form.Encode()))
+	if err != nil {
+		return TokenResult{}, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return TokenResult{}, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return TokenResult{}, &statusError{Method: http.MethodPost, Path: c.tokenURL, Code: resp.StatusCode, Body: string(raw)}
+	}
+	var tr struct {
+		AccessToken string `json:"access_token"`
+		ExpiresIn   int    `json:"expires_in"`
+	}
+	if err := json.Unmarshal(raw, &tr); err != nil {
+		return TokenResult{}, err
+	}
+	return TokenResult{Token: tr.AccessToken, ExpiresIn: tr.ExpiresIn}, nil
 }
 
 func (c *InterClient) CreateCharge(ctx context.Context, txid string, amount int64, payerHintCPF string) (*Charge, error) {
@@ -192,11 +229,13 @@ func (c *InterClient) Refund(ctx context.Context, e2eID string, amount int64, id
 	return &TransferResult{E2EID: e2eID, Status: resp.Status}, nil
 }
 
-// Ping asks the token manager for a token. A cached token satisfies it without
-// a network call; otherwise it exercises the mTLS channel and the credentials.
+// Ping validates that a bearer was supplied for this call. api owns the token
+// lifecycle; pix-gateway only forwards what it receives (no Inter call).
 func (c *InterClient) Ping(ctx context.Context) error {
-	_, err := c.tokens.get(ctx)
-	return err
+	if bearerFromContext(ctx) == "" {
+		return fmt.Errorf("inter: ping requires an OAuth bearer (none supplied)")
+	}
+	return nil
 }
 
 // --- HTTP plumbing ---
@@ -206,9 +245,9 @@ func (c *InterClient) do(ctx context.Context, method, path string, body, out any
 }
 
 func (c *InterClient) doIdem(ctx context.Context, method, path string, body, out any, idemKey string) error {
-	token, err := c.tokens.get(ctx)
-	if err != nil {
-		return err
+	token := bearerFromContext(ctx)
+	if token == "" {
+		return fmt.Errorf("inter: missing OAuth bearer on %s %s", method, path)
 	}
 	var rdr io.Reader
 	if body != nil {
@@ -261,58 +300,6 @@ func (e *statusError) Error() string {
 func isStatus(err error, code int) bool {
 	var se *statusError
 	return errors.As(err, &se) && se.Code == code
-}
-
-// tokenManager fetches and caches the OAuth2 client_credentials token.
-type tokenManager struct {
-	client       *http.Client
-	tokenURL     string
-	clientID     string
-	clientSecret string
-	scope        string
-
-	mu     sync.Mutex
-	token  string
-	expiry time.Time
-}
-
-func (t *tokenManager) get(ctx context.Context) (string, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.token != "" && time.Now().Before(t.expiry) {
-		return t.token, nil
-	}
-	form := url.Values{
-		"client_id":     {t.clientID},
-		"client_secret": {t.clientSecret},
-		"grant_type":    {"client_credentials"},
-		"scope":         {t.scope},
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.tokenURL, strings.NewReader(form.Encode()))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := t.client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("inter token: status %d: %s", resp.StatusCode, string(raw))
-	}
-	var tr struct {
-		AccessToken string `json:"access_token"`
-		ExpiresIn   int    `json:"expires_in"`
-	}
-	if err := json.Unmarshal(raw, &tr); err != nil {
-		return "", err
-	}
-	t.token = tr.AccessToken
-	// Refresh 30s before expiry to avoid edge-of-expiry 401s.
-	t.expiry = time.Now().Add(time.Duration(tr.ExpiresIn-30) * time.Second)
-	return t.token, nil
 }
 
 // --- money conversion (Inter uses "R$" decimal strings; wallet uses centavos) ---

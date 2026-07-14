@@ -4,7 +4,7 @@ node_modules/
 api/.env
 .env.local
 out/
-
+tmp/
 # Go build / test artifacts
 dist/
 coverage.out

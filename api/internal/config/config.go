@@ -13,7 +13,7 @@ import (
 type Config struct {
 	// Server
 	AppVersion string `env:"APP_VERSION" envDefault:"0.0.1"`
-	Port       int    `env:"PORT" envDefault:"8000"`
+	Port       int    `env:"PORT" envDefault:"8002"`
 	Env        string `env:"ENVIRONMENT" envDefault:"dev"`
 
 	// GamblingEnabled gates the entire game-wallet surface: activation and both

@@ -73,81 +73,87 @@ func newInter(ctx context.Context, cfg *config.Config) (inter.PixClient, error) 
 // transport failures, not business/bank errors, so api's LambdaPixClient reads
 // a normal (non-error) Invoke response and inspects Response.Error itself.
 func (h *handler) handle(ctx context.Context, req rpc.Request) rpc.Response {
+	// Seed the bearer api passed per call; inter reads it from ctx in do/doIdem.
+	ctx = inter.WithBearer(ctx, req.OAuthToken)
 	switch req.Op {
 	case rpc.OpCreateCharge:
 		var a rpc.CreateChargeArgs
 		if err := json.Unmarshal(req.Payload, &a); err != nil {
-			return errResp(err)
+			return toResp(err)
 		}
 		c, err := h.pix.CreateCharge(ctx, a.Txid, a.Amount, a.PayerHintCPF)
 		if err != nil {
-			return errResp(err)
+			return toResp(err)
 		}
 		return okResp(chargeResult(c))
 
 	case rpc.OpQueryCharge:
 		var a rpc.QueryChargeArgs
 		if err := json.Unmarshal(req.Payload, &a); err != nil {
-			return errResp(err)
+			return toResp(err)
 		}
 		c, err := h.pix.QueryCharge(ctx, a.Txid)
 		if err != nil {
-			return errResp(err)
+			return toResp(err)
 		}
 		return okResp(chargeResult(c))
 
 	case rpc.OpDictLookup:
 		var a rpc.DictLookupArgs
 		if err := json.Unmarshal(req.Payload, &a); err != nil {
-			return errResp(err)
+			return toResp(err)
 		}
 		d, err := h.pix.DictLookup(ctx, a.PixKey)
 		if err != nil {
-			if errors.Is(err, inter.ErrKeyNotFound) {
-				return rpc.Response{Error: rpc.ErrKeyNotFoundSentinel}
-			}
-			return errResp(err)
+			return toResp(err)
 		}
 		return okResp(rpc.DictResult{Key: d.Key, CPF: d.CPF, Name: d.Name})
 
 	case rpc.OpTransfer:
 		var a rpc.TransferArgs
 		if err := json.Unmarshal(req.Payload, &a); err != nil {
-			return errResp(err)
+			return toResp(err)
 		}
 		r, err := h.pix.Transfer(ctx, a.PixKey, a.Amount, a.IdemKey)
 		if err != nil {
-			return errResp(err)
+			return toResp(err)
 		}
 		return okResp(transferResult(r))
 
 	case rpc.OpQueryTransfer:
 		var a rpc.QueryTransferArgs
 		if err := json.Unmarshal(req.Payload, &a); err != nil {
-			return errResp(err)
+			return toResp(err)
 		}
 		r, err := h.pix.QueryTransfer(ctx, a.IdemKey)
 		if err != nil {
-			return errResp(err)
+			return toResp(err)
 		}
 		return okResp(transferResult(r))
 
 	case rpc.OpRefund:
 		var a rpc.RefundArgs
 		if err := json.Unmarshal(req.Payload, &a); err != nil {
-			return errResp(err)
+			return toResp(err)
 		}
 		r, err := h.pix.Refund(ctx, a.E2EID, a.Amount, a.IdemKey)
 		if err != nil {
-			return errResp(err)
+			return toResp(err)
 		}
 		return okResp(transferResult(r))
 
 	case rpc.OpPing:
 		if err := h.pix.Ping(ctx); err != nil {
-			return errResp(err)
+			return toResp(err)
 		}
 		return rpc.Response{}
+
+	case rpc.OpGetToken:
+		t, err := h.pix.GetToken(ctx)
+		if err != nil {
+			return toResp(err)
+		}
+		return okResp(rpc.GetTokenResult{Token: t.Token, ExpiresIn: t.ExpiresIn})
 
 	default:
 		return errResp(fmt.Errorf("unknown op %q", req.Op))
@@ -171,6 +177,19 @@ func okResp(v any) rpc.Response {
 		return errResp(err)
 	}
 	return rpc.Response{Payload: b}
+}
+
+// toResp maps inter errors to the wire sentinels api knows how to handle:
+// a missing DICT owner, and an Inter 401 (bad/expired bearer). Everything else
+// is an opaque bank/transport failure string.
+func toResp(err error) rpc.Response {
+	if errors.Is(err, inter.ErrKeyNotFound) {
+		return rpc.Response{Error: rpc.ErrKeyNotFoundSentinel}
+	}
+	if inter.IsUnauthorized(err) {
+		return rpc.Response{Error: rpc.ErrUnauthorizedSentinel}
+	}
+	return errResp(err)
 }
 
 func errResp(err error) rpc.Response {

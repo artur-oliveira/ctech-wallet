@@ -8,6 +8,7 @@ import (
 	"github.com/artur-oliveira/ctech-wallet/api/internal/middleware"
 	"github.com/artur-oliveira/ctech-wallet/api/internal/pix"
 	"github.com/artur-oliveira/ctech-wallet/api/internal/services"
+	"github.com/artur-oliveira/ctech-wallet/api/internal/ws"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -19,7 +20,7 @@ type handlers struct {
 }
 
 // Register mounts all wallet routes under /v1.0.
-func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsclient.Clients, pixClient pix.PixClient, svc *services.WalletService, userSvc *services.UserService) {
+func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsclient.Clients, pixClient pix.PixClient, svc *services.WalletService, userSvc *services.UserService, wsRegistry ws.Registry) {
 	h := &handlers{svc: svc, userSvc: userSvc}
 	verifier := middleware.NewVerifier(cfg.CtechJWKSURL, cfg.ServiceAudience, cfg.CtechURL, c)
 	auth := verifier.Middleware()
@@ -30,6 +31,7 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 	// /v1.0/health-check is the detailed dependency report the ALB target group
 	// probes (it accepts 200 and 207).
 	RegisterHealth(v1, clients, c, pixClient, verifier, cfg)
+	RegisterWS(v1, verifier, wsRegistry)
 
 	// Caller state + terms addendum acceptance.
 	a := v1.Group("/auth", auth)

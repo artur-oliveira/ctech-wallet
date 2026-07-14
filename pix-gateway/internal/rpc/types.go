@@ -19,6 +19,7 @@ const (
 	OpQueryTransfer Op = "QueryTransfer"
 	OpRefund        Op = "Refund"
 	OpPing          Op = "Ping"
+	OpGetToken      Op = "GetToken"
 )
 
 // ErrKeyNotFoundSentinel is the Response.Error value that means
@@ -26,11 +27,24 @@ const (
 // a generic bank/transport failure.
 const ErrKeyNotFoundSentinel = "key_not_found"
 
-// Request is the Lambda Invoke payload. Payload is re-decoded per Op into the
-// matching *Args struct below.
+// ErrUnauthorizedSentinel is the Response.Error value that means Inter rejected
+// the passed bearer (HTTP 401). api force-refreshes and retries once.
+const ErrUnauthorizedSentinel = "unauthorized"
+
+// Request is the Lambda Invoke payload. OAuthToken is supplied by api's
+// InterTokenManager on every call and must never be logged. Payload is
+// re-decoded per Op into the matching *Args struct below.
 type Request struct {
-	Op      Op              `json:"op"`
-	Payload json.RawMessage `json:"payload"`
+	Op         Op              `json:"op"`
+	OAuthToken string          `json:"oauth_token"`
+	Payload    json.RawMessage `json:"payload"`
+}
+
+// GetTokenResult is the payload of a GetToken response: the bearer and its
+// lifetime in seconds, as reported by Inter.
+type GetTokenResult struct {
+	Token     string `json:"token"`
+	ExpiresIn int    `json:"expires_in"`
 }
 
 // Response is the Lambda Invoke result. Error is empty on success; Payload is

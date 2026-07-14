@@ -43,15 +43,21 @@ func (a *awsLambdaInvoker) invoke(ctx context.Context, payload []byte) ([]byte, 
 }
 
 // LambdaPixClient implements PixClient by invoking pix-gateway's outbound
-// Lambda. It never talks to Inter directly.
+// Lambda. It never talks to Inter directly. On every call it pulls a fresh
+// bearer from the InterTokenManager and passes it to pix-gateway on the wire.
 type LambdaPixClient struct {
-	invoker lambdaInvoker
+	invoker  lambdaInvoker
+	tokenMgr *InterTokenManager
 }
 
 // NewLambdaPixClient builds the client. functionName is the pix-gateway
-// outbound Lambda's name or ARN (config.PixGatewayFunctionName).
-func NewLambdaPixClient(client *lambda.Client, functionName string) *LambdaPixClient {
-	return &LambdaPixClient{invoker: &awsLambdaInvoker{client: client, functionName: functionName}}
+// outbound Lambda's name or ARN (config.PixGatewayFunctionName). tokenMgr
+// supplies the OAuth bearer for each call.
+func NewLambdaPixClient(client *lambda.Client, functionName string, tokenMgr *InterTokenManager) *LambdaPixClient {
+	return &LambdaPixClient{
+		invoker:  &awsLambdaInvoker{client: client, functionName: functionName},
+		tokenMgr: tokenMgr,
+	}
 }
 
 func (c *LambdaPixClient) call(ctx context.Context, op rpcOp, args any, out any) error {
@@ -59,7 +65,11 @@ func (c *LambdaPixClient) call(ctx context.Context, op rpcOp, args any, out any)
 	if err != nil {
 		return err
 	}
-	reqJSON, err := json.Marshal(rpcRequest{Op: op, Payload: argsJSON})
+	token, err := c.tokenMgr.Get(ctx, false)
+	if err != nil {
+		return err
+	}
+	reqJSON, err := json.Marshal(rpcRequest{Op: op, OAuthToken: token, Payload: argsJSON})
 	if err != nil {
 		return err
 	}
@@ -70,6 +80,27 @@ func (c *LambdaPixClient) call(ctx context.Context, op rpcOp, args any, out any)
 	var resp rpcResponse
 	if err := json.Unmarshal(respJSON, &resp); err != nil {
 		return err
+	}
+	// Inter rejected the bearer (401). Force-refresh and retry the op once.
+	if resp.Error == errUnauthorizedSentinel {
+		newToken, ferr := c.tokenMgr.Get(ctx, true)
+		if ferr != nil {
+			return errors.New(resp.Error)
+		}
+		reqJSON, err = json.Marshal(rpcRequest{Op: op, OAuthToken: newToken, Payload: argsJSON})
+		if err != nil {
+			return err
+		}
+		respJSON, err = c.invoker.invoke(ctx, reqJSON)
+		if err != nil {
+			return err
+		}
+		// Reset: json.Unmarshal leaves fields absent from the JSON intact, so the
+		// prior attempt's Error would otherwise leak into the retried response.
+		resp = rpcResponse{}
+		if err := json.Unmarshal(respJSON, &resp); err != nil {
+			return err
+		}
 	}
 	if resp.Error != "" {
 		if resp.Error == errKeyNotFoundSentinel {

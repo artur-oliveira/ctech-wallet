@@ -8,6 +8,7 @@
 package validation
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -37,14 +38,6 @@ func get() *validator.Validate {
 			}
 			return name
 		})
-
-		// Brazilian document / UF / timezone validators.
-		_ = v.RegisterValidation("uf", ufValidator)
-		_ = v.RegisterValidation("timezone", timezoneValidator)
-		_ = v.RegisterValidation("cpf", cpfValidator)
-		_ = v.RegisterValidation("cnpj", cnpjValidator)
-		_ = v.RegisterValidation("cpfcnpj", cpfCnpjValidator)
-
 		instance = v
 	})
 	return instance
@@ -61,7 +54,8 @@ func Struct(v any) *problem.Problem {
 	if asInvalid(err, &invalid) {
 		return problem.InternalServer("validation misconfigured: " + err.Error())
 	}
-	ve, ok := err.(validator.ValidationErrors)
+	var ve validator.ValidationErrors
+	ok := errors.As(err, &ve)
 	if !ok {
 		return problem.InternalServer("validation failed: " + err.Error())
 	}
@@ -79,7 +73,7 @@ func Struct(v any) *problem.Problem {
 // asInvalid reports whether err is an *InvalidValidationError (programmer error,
 // e.g. validating a non-struct). Kept tiny to avoid importing errors twice.
 func asInvalid(err error, target **validator.InvalidValidationError) bool {
-	if e, ok := err.(*validator.InvalidValidationError); ok {
+	if e, ok := errors.AsType[*validator.InvalidValidationError](err); ok {
 		*target = e
 		return true
 	}

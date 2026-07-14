@@ -13,6 +13,7 @@ import {LedgerList} from '@/components/wallet/ledger-list'
 import {AmountDialog} from '@/components/wallet/amount-dialog'
 import {PixChargeDialog} from '@/components/wallet/pix-charge-dialog'
 import {Button} from '@/components/ui/button'
+import {useWalletRealtime} from '@/lib/hooks/useWalletRealtime'
 import type {DepositResult, WalletType} from '@/lib/types/api'
 import Image from 'next/image';
 
@@ -69,6 +70,7 @@ function newIdemKey(): string {
 function DashboardInner() {
   const {profile, logout} = useAuth()
   const qc = useQueryClient()
+  useWalletRealtime()
   const [flow, setFlow] = useState<Flow>(null)
   const [charge, setCharge] = useState<DepositResult | null>(null)
   const [tab, setTab] = useState<WalletType>('real')
@@ -258,7 +260,14 @@ function DashboardInner() {
         />
       )}
       
-      {charge && <PixChargeDialog deposit={charge} onClose={() => setCharge(null)}/>}
+      {charge && (
+        <PixChargeDialog
+          deposit={charge}
+          initialRealBalance={balances.data?.real?.balance ?? 0}
+          onClose={() => setCharge(null)}
+          onConfirmed={() => setCharge(null)}
+        />
+      )}
     </div>
   )
 }

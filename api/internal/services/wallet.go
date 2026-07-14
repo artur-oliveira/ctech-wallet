@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -62,18 +63,34 @@ type Auditor interface {
 	Append(ctx context.Context, e *wallet.AuditEvent) error
 }
 
+// Broadcaster pushes a real-time event to every WebSocket connection for a
+// user. Optional — nil in cmd/reconcile and in unit tests, where no user is
+// ever connected to receive it.
+type Broadcaster interface {
+	Broadcast(ctx context.Context, userID string, payload []byte)
+}
+
 // WalletService implements the wallet business flows.
 type WalletService struct {
-	repo  Repo
-	users UserRepo
-	audit Auditor
-	lock  Locker
-	pix   pix.PixClient
-	kyc   KYCClient
+	repo        Repo
+	users       UserRepo
+	audit       Auditor
+	lock        Locker
+	pix         pix.PixClient
+	kyc         KYCClient
+	broadcaster Broadcaster // optional; see SetBroadcaster
 }
 
 func NewWalletService(repo Repo, users UserRepo, audit Auditor, lock Locker, pixClient pix.PixClient, kyc KYCClient) *WalletService {
 	return &WalletService{repo: repo, users: users, audit: audit, lock: lock, pix: pixClient, kyc: kyc}
+}
+
+// SetBroadcaster wires the WebSocket registry after construction — kept as a
+// setter rather than a constructor parameter so cmd/reconcile and every
+// existing unit test's NewWalletService(...) call stays unchanged; a nil
+// broadcaster makes ConfirmDeposit's broadcast a no-op.
+func (s *WalletService) SetBroadcaster(b Broadcaster) {
+	s.broadcaster = b
 }
 
 // ActivateGambling opens the caller's game + sandbox wallets. Gates: KYC
@@ -234,7 +251,32 @@ func (s *WalletService) ConfirmDeposit(ctx context.Context, txid string) error {
 			slog.Error("kyc confirm on first deposit failed", "user_id", dep.UserID, "err", err)
 		}
 	}
-	return s.repo.UpdateDepositStatus(ctx, txid, wallet.DepositConfirmed, charge.E2EID)
+	if err := s.repo.UpdateDepositStatus(ctx, txid, wallet.DepositConfirmed, charge.E2EID); err != nil {
+		return err
+	}
+	s.broadcastDepositConfirmed(ctx, dep.UserID, dep.WalletID, txid, charge.Amount)
+	return nil
+}
+
+// broadcastDepositConfirmed pushes a real-time event to the user's connected
+// WebSocket(s), if any (best-effort — a missed broadcast never blocks or fails
+// the deposit; the ledger credit already committed). A nil broadcaster (e.g.
+// cmd/reconcile, unit tests) is a silent no-op.
+func (s *WalletService) broadcastDepositConfirmed(ctx context.Context, userID, walletID, txid string, amount int64) {
+	if s.broadcaster == nil {
+		return
+	}
+	payload, err := json.Marshal(map[string]any{
+		"type":      "deposit_confirmed",
+		"wallet_id": walletID,
+		"txid":      txid,
+		"amount":    amount,
+	})
+	if err != nil {
+		slog.Error("broadcast deposit_confirmed: marshal failed", "user_id", userID, "err", err)
+		return
+	}
+	s.broadcaster.Broadcast(ctx, userID, payload)
 }
 
 func (s *WalletService) rejectMismatch(ctx context.Context, dep *wallet.PixDeposit, charge *pix.Charge) error {

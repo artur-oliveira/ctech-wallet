@@ -17,13 +17,29 @@ const (
 	opQueryTransfer rpcOp = "QueryTransfer"
 	opRefund        rpcOp = "Refund"
 	opPing          rpcOp = "Ping"
+	opGetToken      rpcOp = "GetToken"
 )
 
 const errKeyNotFoundSentinel = "key_not_found"
 
+// errUnauthorizedSentinel means Inter rejected the passed bearer (HTTP 401).
+// LambdaPixClient force-refreshes the token and retries the op once.
+const errUnauthorizedSentinel = "unauthorized"
+
+// rpcRequest is the Lambda Invoke payload. OAuthToken is injected by
+// LambdaPixClient from the InterTokenManager on every call and must never be
+// logged.
 type rpcRequest struct {
-	Op      rpcOp           `json:"op"`
-	Payload json.RawMessage `json:"payload"`
+	Op         rpcOp           `json:"op"`
+	OAuthToken string          `json:"oauth_token"`
+	Payload    json.RawMessage `json:"payload"`
+}
+
+// rpcGetTokenResult is the payload of a GetToken response: the bearer and its
+// lifetime in seconds, as reported by Inter.
+type rpcGetTokenResult struct {
+	Token     string `json:"token"`
+	ExpiresIn int    `json:"expires_in"`
 }
 
 type rpcResponse struct {

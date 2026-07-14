@@ -1,27 +1,60 @@
 'use client'
 
-import {useState} from 'react'
+import {useEffect, useState} from 'react'
+import {useQuery} from '@tanstack/react-query'
 import {Check, Copy} from 'lucide-react'
 import {toast} from 'sonner'
 import {Button} from '@/components/ui/button'
 import {formatBRL} from '@/lib/utils/money'
+import {apiClient} from '@/lib/api/client'
 import type {DepositResult} from '@/lib/types/api'
+
+const POLL_DELAY_MS = 30_000 // start polling only after this — the WS path is primary
+const POLL_INTERVAL_MS = 5_000
 
 /**
  * Shown after a deposit is opened. The charge expires in 15 minutes and the
  * balance only updates after the bank confirms the payment — so the copy is
  * explicit that closing this window is safe.
  */
-export function PixChargeDialog({deposit, onClose}: { deposit: DepositResult; onClose: () => void }) {
+export function PixChargeDialog(
+  {deposit, initialRealBalance, onClose, onConfirmed}: {
+    deposit: DepositResult
+    initialRealBalance: number
+    onClose: () => void
+    onConfirmed: () => void
+  },
+) {
   const [copied, setCopied] = useState(false)
-  
+  const [polling, setPolling] = useState(false)
+
+  useEffect(() => {
+    const t = setTimeout(() => setPolling(true), POLL_DELAY_MS)
+    return () => clearTimeout(t)
+  }, [])
+
+  const balances = useQuery({
+    queryKey: ['balances'],
+    queryFn: () => apiClient.getBalances(),
+    enabled: polling,
+    refetchInterval: polling ? POLL_INTERVAL_MS : false,
+  })
+
+  useEffect(() => {
+    const realBalance = balances.data?.real?.balance
+    if (realBalance != null && realBalance >= initialRealBalance + deposit.amount) {
+      toast.success('Depósito confirmado')
+      onConfirmed()
+    }
+  }, [balances.data, initialRealBalance, deposit.amount, onConfirmed])
+
   async function copy() {
     await navigator.clipboard.writeText(deposit.pix_copia_e_cola)
     setCopied(true)
     toast.success('Código PIX copiado')
     setTimeout(() => setCopied(false), 2000)
   }
-  
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/40 p-4">
       <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-modal">

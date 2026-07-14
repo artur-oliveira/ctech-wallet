@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync/atomic"
 	"testing"
 )
 
@@ -22,52 +21,86 @@ func TestCentavosReaisRoundTrip(t *testing.T) {
 	}
 }
 
-func TestInterCreateChargeAndTokenReuse(t *testing.T) {
-	var tokenCalls int32
+// newTestClient builds an InterClient against a plain (non-mTLS) httptest
+// server, so tests never touch SSM or real Inter. Credentials are set directly
+// for the GetToken op.
+func newTestClient(base string, httpClient *http.Client) *InterClient {
+	base = strings.TrimRight(base, "/")
+	return &InterClient{
+		base:         base,
+		pixKey:       "test-pix-key",
+		http:         httpClient,
+		clientID:     "cid",
+		clientSecret: "csec",
+		scope:        tokenScope,
+		tokenURL:     base + pathToken,
+	}
+}
+
+func TestGetToken(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == pathToken:
-			atomic.AddInt32(&tokenCalls, 1)
-			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "tok-123", "expires_in": 3600})
-		case strings.HasPrefix(r.URL.Path, "/pix/v2/cob/"):
-			if got := r.Header.Get("Authorization"); got != "Bearer tok-123" {
-				t.Errorf("missing/bad bearer: %q", got)
-			}
-			var body map[string]any
-			_ = json.NewDecoder(r.Body).Decode(&body)
-			if body["chave"] != "wallet-key" {
-				t.Errorf("chave not sent: %v", body)
-			}
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"txid": "tx1", "status": ChargeActive, "pixCopiaECola": "EMV-PAYLOAD",
-			})
-		default:
-			w.WriteHeader(http.StatusNotFound)
+		if r.URL.Path != pathToken {
+			t.Errorf("unexpected token path %q", r.URL.Path)
 		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "AT", "expires_in": 3600})
 	}))
 	defer srv.Close()
 
-	c := &InterClient{
-		base:   srv.URL,
-		pixKey: "wallet-key",
-		http:   srv.Client(),
+	c := newTestClient(srv.URL, srv.Client())
+	res, err := c.GetToken(context.Background())
+	if err != nil {
+		t.Fatalf("GetToken: %v", err)
 	}
-	c.tokens = &tokenManager{client: srv.Client(), tokenURL: srv.URL + pathToken, clientID: "id", clientSecret: "sec", scope: tokenScope}
+	if res.Token != "AT" || res.ExpiresIn != 3600 {
+		t.Fatalf("bad token result: %+v", res)
+	}
+}
 
-	ctx := context.Background()
-	ch, err := c.CreateCharge(ctx, "tx1", 12345, "")
+// TestDoSetsBearer verifies the bearer api passes per call is forwarded as
+// Authorization: Bearer <tok> — pix-gateway is a pure transport.
+func TestDoSetsBearer(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"txid": "tx1", "status": ChargeActive, "pixCopiaECola": "EMV"})
+	}))
+	defer srv.Close()
+
+	c := newTestClient(srv.URL, srv.Client())
+	ctx := WithBearer(context.Background(), "BEARER123")
+	ch, err := c.CreateCharge(ctx, "tx1", 500, "")
 	if err != nil {
 		t.Fatalf("CreateCharge: %v", err)
 	}
-	if ch.QRCode != "EMV-PAYLOAD" || ch.Status != ChargeActive || ch.Amount != 12345 {
+	if gotAuth != "Bearer BEARER123" {
+		t.Fatalf("expected Authorization Bearer BEARER123, got %q", gotAuth)
+	}
+	if ch.Txid != "tx1" || ch.Status != ChargeActive {
 		t.Fatalf("bad charge: %+v", ch)
 	}
+}
 
-	// Second call reuses the cached token.
-	if _, err := c.CreateCharge(ctx, "tx1", 12345, ""); err != nil {
-		t.Fatalf("second CreateCharge: %v", err)
+// TestDoMissingBearer proves the tokenManager is gone: without a supplied
+// bearer, do refuses instead of fetching one.
+func TestDoMissingBearer(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer srv.Close()
+
+	c := newTestClient(srv.URL, srv.Client())
+	_, err := c.CreateCharge(context.Background(), "tx1", 500, "")
+	if err == nil || !strings.Contains(err.Error(), "missing OAuth bearer") {
+		t.Fatalf("expected missing-bearer error, got %v", err)
 	}
-	if got := atomic.LoadInt32(&tokenCalls); got != 1 {
-		t.Errorf("token fetched %d times, want 1 (should be cached)", got)
+}
+
+func TestPingValidatesBearer(t *testing.T) {
+	c := newTestClient("http://example.invalid", &http.Client{})
+	if err := c.Ping(WithBearer(context.Background(), "X")); err != nil {
+		t.Fatalf("Ping with bearer should succeed: %v", err)
+	}
+	if err := c.Ping(context.Background()); err == nil {
+		t.Fatal("Ping without bearer should fail")
 	}
 }

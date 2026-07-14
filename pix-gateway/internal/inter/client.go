@@ -49,6 +49,12 @@ type TransferResult struct {
 	Status string
 }
 
+// TokenResult is a freshly issued OAuth bearer.
+type TokenResult struct {
+	Token     string
+	ExpiresIn int // seconds
+}
+
 // PixClient is the partner-bank contract. The real implementation talks to
 // Inter over mTLS.
 type PixClient interface {
@@ -67,7 +73,11 @@ type PixClient interface {
 	QueryTransfer(ctx context.Context, idemKey string) (*TransferResult, error)
 	// Refund issues a devolução for a received payment identified by e2eID.
 	Refund(ctx context.Context, e2eID string, amount int64, idemKey string) (*TransferResult, error)
-	// Ping reports whether the partner bank is reachable and the credentials are
-	// accepted. It performs no money movement and is used by the health check.
+	// GetToken fetches a fresh OAuth bearer using pix-gateway's own client
+	// credentials. api invokes this; pix-gateway is the only place that talks to
+	// Inter's token endpoint.
+	GetToken(ctx context.Context) (TokenResult, error)
+	// Ping reports whether the partner bank is reachable. The bearer is supplied
+	// per call; Ping only validates it is present (no Inter call).
 	Ping(ctx context.Context) error
 }

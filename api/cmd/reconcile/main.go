@@ -102,5 +102,8 @@ func newPix(ctx context.Context, cfg *config.Config) (pix.PixClient, error) {
 	if err != nil {
 		return nil, fmt.Errorf("aws config: %w", err)
 	}
-	return pix.NewLambdaPixClient(lambda.NewFromConfig(awsCfg), cfg.PixGatewayFunctionName), nil
+	lc := lambda.NewFromConfig(awsCfg)
+	// Reconcile is single-process; an in-memory locker guards token refresh.
+	mgr := pix.NewInterTokenManager(lc, cfg, lock.NewLocker(cache.NewMemoryBackend(16)))
+	return pix.NewLambdaPixClient(lc, cfg.PixGatewayFunctionName, mgr), nil
 }

@@ -38,6 +38,9 @@ func (f *fakePix) QueryTransfer(_ context.Context, idem string) (*inter.Transfer
 func (f *fakePix) Refund(_ context.Context, e2e string, amount int64, idem string) (*inter.TransferResult, error) {
 	return &inter.TransferResult{E2EID: e2e, Status: "DEVOLVIDO"}, nil
 }
+func (f *fakePix) GetToken(_ context.Context) (inter.TokenResult, error) {
+	return inter.TokenResult{Token: "FAKE", ExpiresIn: 3600}, nil
+}
 func (f *fakePix) Ping(_ context.Context) error { return nil }
 
 func TestHandleCreateCharge(t *testing.T) {
@@ -75,9 +78,26 @@ func TestHandleUnknownOp(t *testing.T) {
 
 func TestHandlePing(t *testing.T) {
 	h := &handler{pix: &fakePix{}}
-	resp := h.handle(context.Background(), rpc.Request{Op: rpc.OpPing})
+	// Bearer validation lives in InterClient.Ping (covered in inter_test.go);
+	// here we only confirm the handler dispatches Ping and forwards the bearer.
+	resp := h.handle(context.Background(), rpc.Request{Op: rpc.OpPing, OAuthToken: "x"})
 	if resp.Error != "" {
 		t.Fatalf("unexpected error: %s", resp.Error)
+	}
+}
+
+func TestHandleGetToken(t *testing.T) {
+	h := &handler{pix: &fakePix{}}
+	resp := h.handle(context.Background(), rpc.Request{Op: rpc.OpGetToken})
+	if resp.Error != "" {
+		t.Fatalf("unexpected error: %s", resp.Error)
+	}
+	var got rpc.GetTokenResult
+	if err := json.Unmarshal(resp.Payload, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.Token != "FAKE" || got.ExpiresIn != 3600 {
+		t.Fatalf("bad token result: %+v", got)
 	}
 }
 
