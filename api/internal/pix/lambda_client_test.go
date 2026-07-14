@@ -39,10 +39,10 @@ func newTestLambdaPixClient(f lambdaInvoker) *LambdaPixClient {
 func TestLambdaPixClientCreateCharge(t *testing.T) {
 	chargeJSON, _ := json.Marshal(rpcChargeResult{Txid: "tx1", Amount: 500, Status: ChargeActive, QRCode: "EMV"})
 	f := &fakeLambdaInvoker{
-		calls:    map[string]int{},
+		calls: map[string]int{},
 		respond: map[string]rpcResponse{
-			string(opGetToken):       {Payload: mustJSON(rpcGetTokenResult{Token: "TOK", ExpiresIn: 3600})},
-			string(opCreateCharge):   {Payload: chargeJSON},
+			string(opGetToken):     {Payload: mustJSON(rpcGetTokenResult{Token: "TOK", ExpiresIn: 3600})},
+			string(opCreateCharge): {Payload: chargeJSON},
 		},
 	}
 	c := newTestLambdaPixClient(f)
@@ -62,8 +62,8 @@ func TestLambdaPixClientDictLookupNotFound(t *testing.T) {
 	f := &fakeLambdaInvoker{
 		calls: map[string]int{},
 		respond: map[string]rpcResponse{
-			string(opGetToken):    {Payload: mustJSON(rpcGetTokenResult{Token: "TOK", ExpiresIn: 3600})},
-			string(opDictLookup):  {Error: errKeyNotFoundSentinel},
+			string(opGetToken):   {Payload: mustJSON(rpcGetTokenResult{Token: "TOK", ExpiresIn: 3600})},
+			string(opDictLookup): {Error: errKeyNotFoundSentinel},
 		},
 	}
 	c := newTestLambdaPixClient(f)

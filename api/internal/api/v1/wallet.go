@@ -162,6 +162,9 @@ func (h *handlers) getLedger(c fiber.Ctx) error {
 		return sendProblem(c, problem.GamblingNotActivated())
 	}
 	limit := intQuery(c, "limit", 50)
+	if limit > 200 {
+		limit = 200 // cap page size so a client cannot force a large scan
+	}
 	startKey := decodeCursor(c.Query("cursor"))
 	res, err := h.svc.Statement(c.Context(), target.WalletID, limit, startKey)
 	if err != nil {

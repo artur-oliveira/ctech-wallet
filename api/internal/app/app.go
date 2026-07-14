@@ -217,5 +217,9 @@ func errorHandler(c fiber.Ctx, err error) error {
 	if f, ok := errors.AsType[*fiber.Error](err); ok {
 		return problem.FromFiber(f).Send(c)
 	}
-	return problem.InternalServer(err.Error()).Send(c)
+	// Never surface a raw error string (DynamoDB/AWS/panic details) to the
+	// caller — that is an internal-info leak. Genuine, client-safe failures
+	// are returned as *problem.Problem from the handlers and never land here.
+	slog.Error("unhandled error", "err", err)
+	return problem.InternalServer("erro interno; tente novamente").Send(c)
 }

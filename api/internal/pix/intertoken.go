@@ -38,12 +38,12 @@ type InterTokenManager struct {
 	invoker lambdaInvoker
 	locker  *lock.Locker
 
-	mu        sync.Mutex
-	cond      *sync.Cond // signals waiters when a refresh completes
-	token     string
-	expiry    time.Time
-	refreshing bool   // an in-process refresh is in flight
-	lastErr   error  // error from the most recent refresh (shared with waiters)
+	mu         sync.Mutex
+	cond       *sync.Cond // signals waiters when a refresh completes
+	token      string
+	expiry     time.Time
+	refreshing bool  // an in-process refresh is in flight
+	lastErr    error // error from the most recent refresh (shared with waiters)
 }
 
 // NewInterTokenManager builds the manager. functionName is pix-gateway's

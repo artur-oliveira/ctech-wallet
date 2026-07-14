@@ -101,7 +101,7 @@ func TestInterTokenManagerConcurrentSingleFlight(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			// Token starts empty, so all goroutines want a refresh; they must coalesce
-	// to a single fetch (a cold-start stampede), not one fetch each.
+			// to a single fetch (a cold-start stampede), not one fetch each.
 			results[i], errs[i] = m.Get(ctx, false)
 		}(i)
 	}

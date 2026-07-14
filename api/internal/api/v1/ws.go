@@ -16,23 +16,43 @@ import (
 
 const wsPingInterval = 30 * time.Second
 
-var wsUpgrader = fws.FastHTTPUpgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	CheckOrigin:     func(_ *fasthttp.RequestCtx) bool { return true },
+// wsAllowedOrigin mirrors the HTTP CORS policy for the WebSocket upgrade:
+// when no origins are configured (dev) every origin is allowed; otherwise only
+// listed origins may connect. A missing Origin header (non-browser clients) is
+// always allowed. This blocks cross-site WebSocket hijacking (CSWSH) without
+// diverging from the CORS config the rest of the app uses.
+func wsAllowedOrigin(ctx *fasthttp.RequestCtx, allowed []string) bool {
+	if len(allowed) == 0 {
+		return true
+	}
+	origin := string(ctx.Request.Header.Peek("Origin"))
+	if origin == "" {
+		return true
+	}
+	for _, a := range allowed {
+		if a == origin {
+			return true
+		}
+	}
+	return false
 }
 
 // RegisterWS registers the GET /ws WebSocket upgrade endpoint. Auth is a query
 // param (?token=<jwt>) rather than a header — the browser WebSocket API cannot
 // set Authorization on the upgrade request.
-func RegisterWS(router fiber.Router, verifier *middleware.Verifier, reg ws.Registry) {
+func RegisterWS(router fiber.Router, verifier *middleware.Verifier, reg ws.Registry, allowedOrigins []string) {
+	upgrader := fws.FastHTTPUpgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		CheckOrigin:     func(ctx *fasthttp.RequestCtx) bool { return wsAllowedOrigin(ctx, allowedOrigins) },
+	}
 	router.Get("/ws", func(c fiber.Ctx) error {
 		token := c.Query("token")
 		if token == "" {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"detail": "token obrigatório"})
 		}
 
-		return wsUpgrader.Upgrade(c.RequestCtx(), func(conn *fws.Conn) {
+		return upgrader.Upgrade(c.RequestCtx(), func(conn *fws.Conn) {
 			ctx := c.Context()
 			send := func(msg any) {
 				data, _ := json.Marshal(msg)

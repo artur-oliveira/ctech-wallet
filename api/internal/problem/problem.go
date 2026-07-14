@@ -34,6 +34,7 @@ const (
 	TypeStepUpRequired      = "/problems/step-up-required"
 	TypePixKeyNotFound      = "/problems/pix-key-not-found"
 	TypeDepositOutOfRange   = "/problems/deposit-out-of-range"
+	TypeAmountAboveLimit   = "/problems/amount-above-limit"
 
 	TypeGamblingNotActivated  = "/problems/gambling-not-activated"
 	TypeGamblingTermsRequired = "/problems/gambling-terms-required"
@@ -185,6 +186,16 @@ func DepositOutOfRange(minAmt, maxAmt int64) *Problem {
 	p := New(http.StatusUnprocessableEntity, TypeDepositOutOfRange, "Deposit Out Of Range",
 		"valor de depósito fora do limite permitido para esta carteira")
 	p.MinAmount = minAmt
+	p.MaxAmount = maxAmt
+	return p
+}
+
+// AmountAboveLimit is a CLIENT error: the requested amount exceeds the
+// absolute ceiling on an inbound operation (deposit / real→game fund).
+// It carries MaxAmount so the UI can show the bound without hardcoding it.
+func AmountAboveLimit(maxAmt int64) *Problem {
+	p := New(http.StatusUnprocessableEntity, TypeAmountAboveLimit, "Amount Above Limit",
+		"valor acima do limite máximo por operação")
 	p.MaxAmount = maxAmt
 	return p
 }

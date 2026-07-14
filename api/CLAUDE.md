@@ -59,19 +59,23 @@ api/
 ## Engineering Rules
 
 ### DRY
+
 Never duplicate functions. Search `internal/` before adding any function, type, or constant. Money math, attribute
 names, scope strings, and cache-key prefixes are defined once.
 
 ### Constants — no magic strings/numbers
+
 All string keys, status codes, table-name suffixes, header names, cache-key prefixes, scopes, and ledger entry
 types MUST be named constants. The `Idempotency-Key` header and scope strings are defined once.
 
 ### Error Handling (MUST follow)
+
 - All route errors go through `sendProblem(c, err)` — never raw errors, `fiber.Map`, or `fiber.NewError`.
 - Services return `*problem.Problem` via the `problem.*` helpers (incl. wallet codes `InsufficientBalance`,
   `WalletBusy`, `WithdrawCPFMismatch`, `KYCNotVerified`, `IdempotencyConflict`, `StepUpRequired`).
 
 ### Layer Separation (strictly enforced)
+
 | Layer      | Allowed                                         | Forbidden                            |
 |------------|-------------------------------------------------|--------------------------------------|
 | Repository | DynamoDB read/write only                        | Business logic, cache, HTTP concerns |
@@ -79,10 +83,12 @@ types MUST be named constants. The `Idempotency-Key` header and scope strings ar
 | Route      | Parse request, call ONE service method, respond | Business logic, repo calls           |
 
 ### Dependency Injection
+
 Services, repositories, PIX/KYC clients, and AWS clients are injected via `go.uber.org/fx`. Never instantiate
 them inside route handlers.
 
 ### Money & ledger (CRITICAL)
+
 - All amounts are integer **centavos**. Never float.
 - Withdrawal fee is **per-wallet**: optional `fee_bps`/`fee_min`/`fee_max` on the `wallets` row override the
   defaults (2%/R$1/R$10); the result never drops below the absolute 100-centavo floor.
@@ -100,6 +106,7 @@ them inside route handlers.
   wallet IDs (`real` → `game` → `sandbox`) so the order is total and deadlock-free.
 
 ### The gambling ring-fence (CRITICAL)
+
 - `game` holds **real money**, ring-fenced for games. `sandbox` is virtual and is a **sink** — nothing converts it
   back.
 - Real money reaches a game or sandbox **only** across `real → game` (`FundGame`). Sandbox is bought from `game`,
@@ -111,11 +118,13 @@ them inside route handlers.
   off. Do not turn it on before the personal limit engine ships.
 
 ### Go Rules
+
 - No goroutines inside request handlers — Fiber handles concurrency (reconciliation runs in its own process).
 - `aws-sdk-go-v2` only. Auth is RS256-only. No `SECRET_KEY`, no HS256.
 - Binary deployed to EC2 must be named `app`.
 
 ### Secrets
+
 Never commit: Inter mTLS certs/client secret, webhook secret, JWT keys, AWS credentials, real CPFs.
 
 ---

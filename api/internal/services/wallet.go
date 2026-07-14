@@ -168,6 +168,11 @@ func (s *WalletService) InitiateDeposit(ctx context.Context, userID, kycLevel st
 	if err != nil {
 		return nil, nil, err
 	}
+	// Absolute inbound ceiling — no per-wallet deposit-range override may exceed
+	// it. Reject above-cap amounts before any charge is opened at Inter.
+	if amount > wallet.MaxInboundAmount {
+		return nil, nil, problem.AmountAboveLimit(wallet.MaxInboundAmount)
+	}
 	// Check the range before opening a charge at Inter — never create a PIX
 	// charge for an amount we are going to reject.
 	if err := wallet.ValidateDepositAmount(amount, realw); err != nil {
@@ -244,7 +249,7 @@ func (s *WalletService) ConfirmDeposit(ctx context.Context, txid string) error {
 		return err
 	}
 
-	if kyc.Level == "basic" {
+	if kyc.Level == wallet.KYCBasic {
 		if err := s.kyc.Confirm(ctx, dep.UserID, kyc.CPF); err != nil {
 			// The payer CPF already matched the declared CPF, so a mismatch here is
 			// unexpected — surface it but the credit already succeeded.
@@ -297,7 +302,7 @@ func (s *WalletService) rejectMismatch(ctx context.Context, dep *wallet.PixDepos
 // payout call fails after the debit, the withdrawal stays in processing for the
 // reconciliation job to resolve — money is never left in limbo.
 func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, amount int64, pixKey, idemKey string) (*wallet.Withdrawal, error) {
-	if kycLevel != "verified" {
+	if kycLevel != wallet.KYCVerified {
 		return nil, problem.KYCNotVerified()
 	}
 	withdrawalID := "withdraw#" + userID + "#" + idemKey
@@ -421,6 +426,11 @@ func (s *WalletService) ringTransfer(ctx context.Context, from, to *wallet.Walle
 // indefinitely (fund → return → fund). The limit check itself belongs here, right
 // before the transfer, and is added by the limit-engine plan.
 func (s *WalletService) FundGame(ctx context.Context, userID string, amount int64, idemKey string) (debit, credit *wallet.LedgerEntry, err error) {
+	// Absolute inbound ceiling — real money enters the gambling ring-fence only
+	// here, so this is the single door the cap must guard.
+	if amount > wallet.MaxInboundAmount {
+		return nil, nil, problem.AmountAboveLimit(wallet.MaxInboundAmount)
+	}
 	real, game, _, err := s.requireActivated(ctx, userID)
 	if err != nil {
 		return nil, nil, err

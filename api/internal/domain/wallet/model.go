@@ -69,6 +69,16 @@ const (
 // IdemPrefix namespaces idempotency guard items in the idempotency table.
 const IdemPrefix = "IDEM#"
 
+// MaxInboundReais is the absolute ceiling (in reais) on a single INBOUND
+// money operation: a PIX deposit or a real→game fund. It is a hard cap no
+// per-wallet override (MinDeposit/MaxDeposit, fee fields) may exceed — set
+// directly in domain/wallet so every inbound path enforces the same number.
+// Stored as centavos in MaxInboundAmount.
+const (
+	MaxInboundReais  = 1_000_000
+	MaxInboundAmount = MaxInboundReais * 100 // centavos
+)
+
 // Wallet is the authoritative balance record. Balance is integer centavos.
 //
 // FeeBps/FeeMin/FeeMax are OPTIONAL per-wallet withdrawal-fee overrides, and

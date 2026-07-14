@@ -45,7 +45,9 @@ func bindJSON[T any](c fiber.Ctx, dst *T) *problem.Problem {
 	dec := json.NewDecoder(bytes.NewReader(c.Body()))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {
-		return problem.BadRequest("corpo JSON inválido: " + err.Error())
+		// Do not echo the parse error — it can reveal internal struct
+		// field names. The caller already knows their own body is malformed.
+		return problem.BadRequest("corpo JSON inválido")
 	}
 	return validation.Struct(dst)
 }

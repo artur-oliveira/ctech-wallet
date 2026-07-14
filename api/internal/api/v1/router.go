@@ -31,7 +31,7 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 	// /v1.0/health-check is the detailed dependency report the ALB target group
 	// probes (it accepts 200 and 207).
 	RegisterHealth(v1, clients, c, pixClient, verifier, cfg)
-	RegisterWS(v1, verifier, wsRegistry)
+	RegisterWS(v1, verifier, wsRegistry, cfg.CorsAllowedOrigins)
 
 	// Caller state + terms addendum acceptance.
 	a := v1.Group("/auth", auth)
