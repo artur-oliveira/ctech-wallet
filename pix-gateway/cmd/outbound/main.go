@@ -65,7 +65,7 @@ func newInter(ctx context.Context, cfg *config.Config) (inter.PixClient, error) 
 
 // handle logs the Invoke request/response (OAuthToken and other sensitive
 // fields scrubbed) then dispatches to the matching PixClient method.
-func (h *handler) handle(ctx context.Context, req rpc.Request) rpc.Response {
+func (h *handler) handle(ctx context.Context, req rpc.Request) (rpc.Response, error) {
 	slog.InfoContext(ctx, "outbound request",
 		"op", req.Op,
 		"oauth_token", "[redacted]",
@@ -79,7 +79,7 @@ func (h *handler) handle(ctx context.Context, req rpc.Request) rpc.Response {
 		"error", resp.Error,
 		"payload", string(scrubPayload(resp.Payload)),
 	)
-	return resp
+	return resp, nil
 }
 
 // dispatch decodes the Payload into the matching *Args struct, calls the

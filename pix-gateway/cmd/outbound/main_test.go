@@ -6,6 +6,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/aws/aws-lambda-go/lambda"
+
 	"github.com/artur-oliveira/ctech-wallet/pix-gateway/internal/inter"
 	"github.com/artur-oliveira/ctech-wallet/pix-gateway/internal/rpc"
 )
@@ -46,7 +48,7 @@ func (f *fakePix) Ping(_ context.Context) error { return nil }
 func TestHandleCreateCharge(t *testing.T) {
 	h := &handler{pix: &fakePix{}}
 	payload, _ := json.Marshal(rpc.CreateChargeArgs{Txid: "tx1", Amount: 12345})
-	resp := h.handle(context.Background(), rpc.Request{Op: rpc.OpCreateCharge, Payload: payload})
+	resp, _ := h.handle(context.Background(), rpc.Request{Op: rpc.OpCreateCharge, Payload: payload})
 	if resp.Error != "" {
 		t.Fatalf("unexpected error: %s", resp.Error)
 	}
@@ -62,7 +64,7 @@ func TestHandleCreateCharge(t *testing.T) {
 func TestHandleDictLookupNotFound(t *testing.T) {
 	h := &handler{pix: &fakePix{dictErr: inter.ErrKeyNotFound}}
 	payload, _ := json.Marshal(rpc.DictLookupArgs{PixKey: "some-key"})
-	resp := h.handle(context.Background(), rpc.Request{Op: rpc.OpDictLookup, Payload: payload})
+	resp, _ := h.handle(context.Background(), rpc.Request{Op: rpc.OpDictLookup, Payload: payload})
 	if resp.Error != rpc.ErrKeyNotFoundSentinel {
 		t.Fatalf("expected sentinel %q, got %q", rpc.ErrKeyNotFoundSentinel, resp.Error)
 	}
@@ -70,7 +72,7 @@ func TestHandleDictLookupNotFound(t *testing.T) {
 
 func TestHandleUnknownOp(t *testing.T) {
 	h := &handler{pix: &fakePix{}}
-	resp := h.handle(context.Background(), rpc.Request{Op: "Bogus"})
+	resp, _ := h.handle(context.Background(), rpc.Request{Op: "Bogus"})
 	if resp.Error == "" {
 		t.Fatal("expected an error for an unknown op")
 	}
@@ -80,7 +82,7 @@ func TestHandlePing(t *testing.T) {
 	h := &handler{pix: &fakePix{}}
 	// Bearer validation lives in InterClient.Ping (covered in inter_test.go);
 	// here we only confirm the handler dispatches Ping and forwards the bearer.
-	resp := h.handle(context.Background(), rpc.Request{Op: rpc.OpPing, OAuthToken: "x"})
+	resp, _ := h.handle(context.Background(), rpc.Request{Op: rpc.OpPing, OAuthToken: "x"})
 	if resp.Error != "" {
 		t.Fatalf("unexpected error: %s", resp.Error)
 	}
@@ -88,7 +90,7 @@ func TestHandlePing(t *testing.T) {
 
 func TestHandleGetToken(t *testing.T) {
 	h := &handler{pix: &fakePix{}}
-	resp := h.handle(context.Background(), rpc.Request{Op: rpc.OpGetToken})
+	resp, _ := h.handle(context.Background(), rpc.Request{Op: rpc.OpGetToken})
 	if resp.Error != "" {
 		t.Fatalf("unexpected error: %s", resp.Error)
 	}
@@ -102,3 +104,18 @@ func TestHandleGetToken(t *testing.T) {
 }
 
 var _ = errors.New // silences unused import if a future edit removes an error path
+
+// TestHandleValidLambdaHandler guards against regressing handle's
+// (rpc.Response, error) return signature. aws-lambda-go rejects a handler that
+// returns a single non-error value, but that failure only surfaces at runtime
+// (lambda.Start → NewHandler → validateReturns), never in a direct unit call —
+// so a single-value return compiled and "passed tests" while failing in Lambda
+// with "handler returns a single value, but it does not implement error".
+func TestHandleValidLambdaHandler(t *testing.T) {
+	h := &handler{pix: &fakePix{}}
+	handler := lambda.NewHandler(h.handle)
+	payload, _ := json.Marshal(rpc.Request{Op: rpc.OpPing, OAuthToken: "x"})
+	if _, err := handler.Invoke(context.Background(), payload); err != nil {
+		t.Fatalf("handle is not a valid lambda handler: %v", err)
+	}
+}
