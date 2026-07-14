@@ -12,11 +12,15 @@ export const AWS_REGION = 'us-east-1';
 
 // Wildcard *.aoctech.app cert — owned by ctech-cdk, referenced here for CloudFront.
 export const CERT_ARN =
-  'arn:aws:acm:us-east-1:868899309401:certificate/29678869-bfc3-4688-b81b-55aa5b1d7443';
+    'arn:aws:acm:us-east-1:868899309401:certificate/29678869-bfc3-4688-b81b-55aa5b1d7443';
+
+// pix.wallet.aoctech.app cert
+export const PIX_CERT_ARN =
+    'arn:aws:acm:us-east-1:868899309401:certificate/82453778-2313-4fe8-aa78-7089366c10c4'
 
 // GitHub OIDC provider — owned by ctech-cdk (Ctech-Global stack). Imported by ARN.
 export const OIDC_PROVIDER_ARN =
-  `arn:aws:iam::${AWS_ACCOUNT}:oidc-provider/token.actions.githubusercontent.com`;
+    `arn:aws:iam::${AWS_ACCOUNT}:oidc-provider/token.actions.githubusercontent.com`;
 
 export const GITHUB_REPO_DEFAULT = 'artur-oliveira/ctech-wallet';
 
@@ -83,13 +87,13 @@ export const GHA_PIX_GATEWAY_ROLE = `${SERVICE}-gha-pix-gateway`;
 // ── SSM parameter paths ─────────────────────────────────────────────────────
 /** Shared infra owned by ctech-cdk. */
 export const SSM_SHARED = (env: Environment) => ({
-  vpcId: `/ctech/${env}/network/vpc-id`,
-  albSgId: `/ctech/${env}/network/alb-sg-id`,
-  httpsListenerArn: `/ctech/${env}/alb/https-listener-arn`,
-  // Base URL with no DB number; consumers append their own (see VALKEY_DB).
-  valkeyUrl: `/ctech/${env}/valkey/url`,
-  deploymentsBucket: `/ctech/${env}/s3/deployments-bucket`,
-  logsBucket: `/ctech/${env}/s3/logs-bucket`,
+    vpcId: `/ctech/${env}/network/vpc-id`,
+    albSgId: `/ctech/${env}/network/alb-sg-id`,
+    httpsListenerArn: `/ctech/${env}/alb/https-listener-arn`,
+    // Base URL with no DB number; consumers append their own (see VALKEY_DB).
+    valkeyUrl: `/ctech/${env}/valkey/url`,
+    deploymentsBucket: `/ctech/${env}/s3/deployments-bucket`,
+    logsBucket: `/ctech/${env}/s3/logs-bucket`,
 });
 
 /**
@@ -108,40 +112,40 @@ export const VALKEY_DB = 2;
  * here since they're still under the wallet's shared namespace.
  */
 export const SSM_WALLET = (env: Environment) => ({
-  namespace: `/${SERVICE}/${env}`,
-  walletClientId: `/${SERVICE}/${env}/wallet-client-id`,
-  walletClientSecret: `/${SERVICE}/${env}/wallet-client-secret`, // SecureString
-  interClientId: `/${SERVICE}/${env}/inter/client-id`,
-  interClientSecret: `/${SERVICE}/${env}/inter/client-secret`, // SecureString
-  interWebhookSecret: `/${SERVICE}/${env}/inter/webhook-secret`, // SecureString
-  // Read by pix-gateway's outbound Lambda at cold start, never exported to env.
-  interMtlsCert: `/${SERVICE}/${env}/inter/mtls-cert`, // SecureString
-  interMtlsKey: `/${SERVICE}/${env}/inter/mtls-key`, // SecureString
+    namespace: `/${SERVICE}/${env}`,
+    walletClientId: `/${SERVICE}/${env}/wallet-client-id`,
+    walletClientSecret: `/${SERVICE}/${env}/wallet-client-secret`, // SecureString
+    interClientId: `/${SERVICE}/${env}/inter/client-id`,
+    interClientSecret: `/${SERVICE}/${env}/inter/client-secret`, // SecureString
+    interWebhookSecret: `/${SERVICE}/${env}/inter/webhook-secret`, // SecureString
+    // Read by pix-gateway's outbound Lambda at cold start, never exported to env.
+    interMtlsCert: `/${SERVICE}/${env}/inter/mtls-cert`, // SecureString
+    interMtlsKey: `/${SERVICE}/${env}/inter/mtls-key`, // SecureString
 });
 
 /** ctech-account namespace — read-only for the wallet. */
 export const SSM_ACCOUNT = (env: Environment) => ({
-  namespace: `/ctech-account/${env}`,
-  baseUrl: `/ctech-account/${env}/base-url`,
-  jwksUrl: `/ctech-account/${env}/jwks-url`,
+    namespace: `/ctech-account/${env}`,
+    baseUrl: `/ctech-account/${env}/base-url`,
+    jwksUrl: `/ctech-account/${env}/jwks-url`,
 });
 
 /** pix-gateway-owned SSM namespace (seeded operationally; never written by CDK). */
 export const SSM_PIX_GATEWAY = (env: Environment) => ({
-  namespace: `/${SERVICE}/${env}/pix-gateway`,
-  clientId: `/${SERVICE}/${env}/pix-gateway/client-id`,
-  clientSecret: `/${SERVICE}/${env}/pix-gateway/client-secret`, // SecureString
+    namespace: `/${SERVICE}/${env}/pix-gateway`,
+    clientId: `/${SERVICE}/${env}/pix-gateway/client-id`,
+    clientSecret: `/${SERVICE}/${env}/pix-gateway/client-secret`, // SecureString
 });
 
 // ── Domain helper (identical to ctech-dfe's) ────────────────────────────────
 export const domainForEnv = (environment: Environment, prefix: string) => {
-  switch (environment) {
-    case 'prod':
-      return `${prefix}.${BASE_DOMAIN}`;
-    case 'dev':
-    case 'stage':
-      return `${prefix}-${environment}.${BASE_DOMAIN}`;
-  }
+    switch (environment) {
+        case 'prod':
+            return `${prefix}.${BASE_DOMAIN}`;
+        case 'dev':
+        case 'stage':
+            return `${prefix}-${environment}.${BASE_DOMAIN}`;
+    }
 };
 
 /**

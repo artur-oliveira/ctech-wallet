@@ -16,7 +16,7 @@ import {
     AWS_REGION,
     CERT_ARN,
     domainForEnv,
-    GITHUB_REPO_DEFAULT,
+    GITHUB_REPO_DEFAULT, PIX_CERT_ARN,
     tablePrefix,
 } from '../lib/constants';
 
@@ -82,7 +82,7 @@ const dynamodbStack = new DynamoDBStack(app, id('DynamoDB'), {
 const pixGatewayStack = new PixGatewayStack(app, id('PixGateway'), {
     env,
     environment: ENVIRONMENT,
-    certificateArn: CERT_ARN,
+    certificateArn: PIX_CERT_ARN,
     interBaseUrl: INTER_BASE_URL,
     interPixKey: INTER_PIX_KEY,
     walletApiUrl: `https://${domainForEnv(ENVIRONMENT, APP_DOMAIN_PREFIX)}`,
