@@ -77,18 +77,29 @@ func newWalletClient(ctx context.Context, cfg *config.Config) (*walletclient.Cli
 func (h *handler) handle(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	var body webhookPayload
 	if err := json.Unmarshal([]byte(req.Body), &body); err != nil {
+		slog.ErrorContext(ctx, "webhook request malformed", "body", req.Body, "err", err)
 		return events.APIGatewayV2HTTPResponse{StatusCode: 400, Body: "malformed webhook payload"}, nil
 	}
+	txids := make([]string, 0, len(body.Pix))
+	for _, p := range body.Pix {
+		if p.Txid != "" {
+			txids = append(txids, p.Txid)
+		}
+	}
+	slog.InfoContext(ctx, "webhook request", "txids", txids)
+
+	resp := events.APIGatewayV2HTTPResponse{StatusCode: 200}
 	for _, p := range body.Pix {
 		if p.Txid == "" {
 			continue
 		}
 		if err := h.confirmer.ConfirmDeposit(ctx, p.Txid); err != nil {
-			slog.Error("confirm-deposit call failed", "txid", p.Txid, "err", err)
+			slog.ErrorContext(ctx, "webhook response", "status", 500, "txid", p.Txid, "err", err)
 			// Non-200 so Inter retries the whole payload later; ConfirmDeposit is
 			// idempotent per txid so a retry never double-credits.
 			return events.APIGatewayV2HTTPResponse{StatusCode: 500, Body: "confirm-deposit failed"}, nil
 		}
 	}
-	return events.APIGatewayV2HTTPResponse{StatusCode: 200}, nil
+	slog.InfoContext(ctx, "webhook response", "status", resp.StatusCode, "txids", txids)
+	return resp, nil
 }

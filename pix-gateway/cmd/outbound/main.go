@@ -63,14 +63,31 @@ func newInter(ctx context.Context, cfg *config.Config) (inter.PixClient, error) 
 	return inter.NewInterClient(cfg, kp, store)
 }
 
-// handle dispatches on Op, decodes Payload into the matching *Args struct,
-// calls the corresponding PixClient method, and encodes the result. Every
-// error becomes Response.Error — Lambda invoke errors are reserved for
-// transport failures, not business/bank errors, so api's LambdaPixClient reads
-// a normal (non-error) Invoke response and inspects Response.Error itself.
+// handle logs the Invoke request/response (OAuthToken and other sensitive
+// fields scrubbed) then dispatches to the matching PixClient method.
 func (h *handler) handle(ctx context.Context, req rpc.Request) rpc.Response {
+	slog.InfoContext(ctx, "outbound request",
+		"op", req.Op,
+		"oauth_token", "[redacted]",
+		"payload", string(scrubPayload(req.Payload)),
+	)
 	// Seed the bearer api passed per call; inter reads it from ctx in do/doIdem.
 	ctx = inter.WithBearer(ctx, req.OAuthToken)
+	resp := h.dispatch(ctx, req)
+	slog.InfoContext(ctx, "outbound response",
+		"op", req.Op,
+		"error", resp.Error,
+		"payload", string(scrubPayload(resp.Payload)),
+	)
+	return resp
+}
+
+// dispatch decodes the Payload into the matching *Args struct, calls the
+// corresponding PixClient method, and encodes the result. Every error becomes
+// Response.Error — Lambda invoke errors are reserved for transport failures,
+// not business/bank errors, so api's LambdaPixClient reads a normal (non-error)
+// Invoke response and inspects Response.Error itself.
+func (h *handler) dispatch(ctx context.Context, req rpc.Request) rpc.Response {
 	switch req.Op {
 	case rpc.OpCreateCharge:
 		var a rpc.CreateChargeArgs
@@ -190,4 +207,29 @@ func toResp(err error) rpc.Response {
 
 func errResp(err error) rpc.Response {
 	return rpc.Response{Error: err.Error()}
+}
+
+// scrubPayload returns payload with sensitive/oversized fields redacted so
+// request/response logs never leak secrets (oauth_token is scrubbed by the
+// caller) or dump multi-KB blobs. Redacted: token (Inter bearer), qr_code_b64
+// (base64 PNG), payer_hint_cpf/cpf (PII). Request and response payloads are
+// single top-level objects, so a shallow key strip is enough.
+func scrubPayload(p json.RawMessage) json.RawMessage {
+	if len(p) == 0 {
+		return p
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(p, &m); err != nil {
+		return p
+	}
+	for _, k := range []string{"token", "qr_code_b64", "payer_hint_cpf", "cpf"} {
+		if _, ok := m[k]; ok {
+			m[k] = json.RawMessage(`"[redacted]"`)
+		}
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		return p
+	}
+	return out
 }
