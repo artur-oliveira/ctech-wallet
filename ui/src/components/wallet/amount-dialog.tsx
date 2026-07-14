@@ -1,101 +1,176 @@
 'use client'
 
-import {useState} from 'react'
+import {useMemo} from 'react'
+import {useForm, Controller} from 'react-hook-form'
+import {zodResolver} from '@hookform/resolvers/zod'
+import {z} from 'zod'
+import {useTranslation} from 'react-i18next'
 import {Button} from '@/components/ui/button'
-import {parseCentavos} from '@/lib/utils/money'
+import {formatBRL, formatCredits, MAX_AMOUNT_CENTS, MAX_AMOUNT_DIGITS} from '@/lib/utils/money'
+
+type Flow = 'deposit' | 'withdraw' | 'credits' | 'fund-game' | 'return-game'
+
+const FLOW_KEY: Record<Flow, 'deposit' | 'withdraw' | 'credits' | 'fundGame' | 'returnGame'> = {
+  deposit: 'deposit',
+  withdraw: 'withdraw',
+  credits: 'credits',
+  'fund-game': 'fundGame',
+  'return-game': 'returnGame',
+}
 
 interface AmountDialogProps {
-  title: string
-  description: string
-  submitLabel: string
-  /** Extra field for the withdrawal PIX key. */
-  withPixKey?: boolean
+  flow: Flow
+  /** Caps the amount at the available balance (withdraw, fund-game, credits, return-game). */
+  maxCents?: number
   pending?: boolean
   onSubmit: (amount: number, pixKey?: string) => void
   onClose: () => void
 }
 
 /** Shared amount entry used by deposit, withdrawal, and credit purchase. */
-export function AmountDialog({
-                               title,
-                               description,
-                               submitLabel,
-                               withPixKey,
-                               pending,
-                               onSubmit,
-                               onClose,
-                             }: AmountDialogProps) {
-  const [amount, setAmount] = useState('')
-  const [pixKey, setPixKey] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  
-  function submit(e: React.FormEvent) {
-    e.preventDefault()
-    const centavos = parseCentavos(amount)
-    if (centavos === null || centavos <= 0) {
-      setError('Informe um valor válido, como 50,00.')
-      return
-    }
-    if (withPixKey && !pixKey.trim()) {
-      setError('Informe a chave PIX de destino.')
-      return
-    }
-    setError(null)
-    onSubmit(centavos, withPixKey ? pixKey.trim() : undefined)
-  }
-  
+export function AmountDialog({flow, maxCents, pending, onSubmit, onClose}: AmountDialogProps) {
+  const {t} = useTranslation()
+  const withPixKey = flow === 'withdraw'
+  const flowKey = FLOW_KEY[flow]
+
+  // The R$ 1.000.000 ceiling applies ONLY to money entering the game ring-fence:
+  // a PIX deposit and a real → game transfer. Withdrawals and returns out of the
+  // ring-fence are capped only by the current balance (maxCents) — never by the
+  // million cap. See CLAUDE.md invariant 7.
+  const capMillion = flow === 'deposit' || flow === 'fund-game'
+  const balanceCap = maxCents ?? Number.POSITIVE_INFINITY
+  const millionCap = capMillion ? MAX_AMOUNT_CENTS : Number.POSITIVE_INFINITY
+  const effectiveMax = Math.min(balanceCap, millionCap)
+
+  const schema = useMemo(() => {
+    const overMsg =
+      balanceCap <= millionCap && maxCents != null
+        ? t('dialog.error.overBalance', {amount: formatBRL(maxCents)})
+        : t('dialog.error.maxExceeded', {max: formatBRL(MAX_AMOUNT_CENTS)})
+
+    const amount = z
+      .number({error: t('dialog.error.invalid')})
+      .int()
+      .positive(t('dialog.error.required'))
+      .max(effectiveMax, overMsg)
+
+    const pixKey = withPixKey
+      ? z.string().trim().min(1, t('dialog.error.pixKeyRequired')).max(100, t('dialog.error.pixKeyTooLong'))
+      : z.string().max(100)
+
+    return z.object({amount, pixKey})
+  }, [effectiveMax, balanceCap, millionCap, maxCents, withPixKey, t])
+
+  const {
+    control,
+    register,
+    handleSubmit,
+    formState: {errors},
+  } = useForm<{ amount: number; pixKey: string }>({
+    resolver: zodResolver(schema),
+    defaultValues: {amount: 0, pixKey: ''},
+  })
+
+  const submit = handleSubmit((data) => {
+    onSubmit(data.amount, withPixKey ? data.pixKey.trim() : undefined)
+  })
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/40 p-4">
       <form
         onSubmit={submit}
+        noValidate
         className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-modal"
       >
-        <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
-        <p className="mt-1 text-sm leading-relaxed text-gray-500">{description}</p>
-        
+        <h2 className="text-lg font-semibold text-gray-900">{t(`dialog.${flowKey}.title`)}</h2>
+        <p className="mt-1 text-sm leading-relaxed text-gray-500">{t(`dialog.${flowKey}.description`)}</p>
+
         <label className="mt-5 block text-sm font-medium text-gray-700" htmlFor="amount">
-          Valor
+          {t('dialog.amount.label')}
         </label>
         <div
-          className="mt-1.5 flex items-center gap-2 rounded-lg border border-gray-300 px-3 focus-within:border-brand-500 focus-within:ring-3 focus-within:ring-brand-500/20">
+          className={`mt-1.5 flex items-center gap-2 rounded-lg border px-3 focus-within:ring-3 ${
+            errors.amount
+              ? 'border-red-400 focus-within:border-red-500 focus-within:ring-red-500/20'
+              : 'border-gray-300 focus-within:border-brand-500 focus-within:ring-brand-500/20'
+          }`}
+        >
           <span className="text-sm text-gray-400">R$</span>
-          <input
-            id="amount"
-            autoFocus
-            inputMode="decimal"
-            placeholder="0,00"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            className="h-10 w-full border-0 bg-transparent font-mono tabular-nums outline-none"
+          <Controller
+            name="amount"
+            control={control}
+            render={({field}) => (
+              <input
+                id="amount"
+                autoFocus
+                inputMode="decimal"
+                maxLength={16}
+                placeholder={t('dialog.amount.placeholder')}
+                value={formatCredits(field.value ?? 0)}
+                onChange={(e) => {
+                  // 9 digits caps typing at R$ 1.000.000 when the million cap
+                  // applies; without it, allow more and let effectiveMax clamp.
+                  const maxDigits = capMillion ? MAX_AMOUNT_DIGITS : 12
+                  const digits = e.target.value.replace(/\D/g, '').slice(0, maxDigits)
+                  let cents = parseInt(digits || '0', 10)
+                  if (cents > effectiveMax) cents = effectiveMax
+                  field.onChange(cents)
+                }}
+                onBlur={field.onBlur}
+                aria-invalid={!!errors.amount}
+                aria-describedby={errors.amount ? 'amount-error' : undefined}
+                className="h-10 w-full border-0 bg-transparent font-mono tabular-nums outline-none"
+              />
+            )}
           />
         </div>
-        
+
+        {capMillion && (
+          <p className="mt-1.5 text-xs text-gray-500">{t('dialog.max', {max: formatBRL(MAX_AMOUNT_CENTS)})}</p>
+        )}
+        {maxCents != null && (
+          <p className="mt-1.5 text-xs text-gray-500">{t('dialog.available', {amount: formatBRL(maxCents)})}</p>
+        )}
+
+        {errors.amount && (
+          <p id="amount-error" className="mt-1.5 text-sm text-red-600">
+            {errors.amount.message}
+          </p>
+        )}
+
         {withPixKey && (
           <>
             <label className="mt-4 block text-sm font-medium text-gray-700" htmlFor="pixkey">
-              Chave PIX de destino
+              {t('dialog.pixKey.label')}
             </label>
             <input
               id="pixkey"
-              placeholder="CPF, e-mail, telefone ou chave aleatória"
-              value={pixKey}
-              onChange={(e) => setPixKey(e.target.value)}
-              className="mt-1.5 h-10 w-full rounded-lg border border-gray-300 px-3 text-sm outline-none focus:border-brand-500 focus:ring-3 focus:ring-brand-500/20"
+              maxLength={100}
+              placeholder={t('dialog.pixKey.placeholder')}
+              aria-invalid={!!errors.pixKey}
+              aria-describedby={errors.pixKey ? 'pixkey-error' : undefined}
+              className={`mt-1.5 h-10 w-full rounded-lg border px-3 text-sm outline-none focus:ring-3 ${
+                errors.pixKey
+                  ? 'border-red-400 focus:border-red-500 focus:ring-red-500/20'
+                  : 'border-gray-300 focus:border-brand-500 focus:ring-brand-500/20'
+              }`}
+              {...register('pixKey')}
             />
-            <p className="mt-1.5 text-xs text-gray-500">
-              A chave precisa estar no seu CPF. Saques para terceiros são recusados.
-            </p>
+            <p className="mt-1.5 text-xs text-gray-500">{t('dialog.pixKey.hint')}</p>
+            {errors.pixKey && (
+              <p id="pixkey-error" className="mt-1.5 text-sm text-red-600">
+                {errors.pixKey.message}
+              </p>
+            )}
           </>
         )}
-        
-        {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
-        
+
         <div className="mt-6 flex gap-2">
           <Button type="button" variant="ghost" className="flex-1" onClick={onClose} disabled={pending}>
-            Cancelar
+            {t('common.cancel')}
           </Button>
           <Button type="submit" variant="brand" className="flex-1" disabled={pending}>
-            {pending ? 'Enviando...' : submitLabel}
+            {pending ? t('common.loading') : t(`dialog.${flowKey}.submit`)}
           </Button>
         </div>
       </form>

@@ -3,6 +3,7 @@
 import {useCallback} from 'react'
 import {useQueryClient} from '@tanstack/react-query'
 import {toast} from 'sonner'
+import {useTranslation} from 'react-i18next'
 import {useWebSocket, type WSStatus} from './useWebSocket'
 import {getAccessToken} from '@/lib/api/client'
 
@@ -27,11 +28,12 @@ interface RealtimeMessage {
 /** Formats centavos as BRL without importing formatBRL, to keep this hook
  * dependency-free of the wallet component tree (avoids a circular import risk
  * between hooks/ and components/wallet/). */
-function formatCentavos(amount: number): string {
-  return (amount / 100).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})
+function formatCentavos(amount: number, locale: string): string {
+  return (amount / 100).toLocaleString(locale, {style: 'currency', currency: 'BRL'})
 }
 
 export function useWalletRealtime(): { wsStatus: WSStatus } {
+  const {t, i18n} = useTranslation()
   const qc = useQueryClient()
   const token = getAccessToken()
 
@@ -44,10 +46,13 @@ export function useWalletRealtime(): { wsStatus: WSStatus } {
     if (msg.type === 'deposit_confirmed') {
       void qc.invalidateQueries({queryKey: ['balances']})
       void qc.invalidateQueries({queryKey: ['ledger']})
-      const amount = typeof msg.amount === 'number' ? ` de ${formatCentavos(msg.amount)}` : ''
-      toast.success(`Depósito${amount} confirmado`)
+      toast.success(
+        typeof msg.amount === 'number'
+          ? t('toast.realtimeDeposit', {amount: formatCentavos(msg.amount, i18n.language || 'pt-BR')})
+          : t('toast.depositConfirmed'),
+      )
     }
-  }, [qc])
+  }, [qc, t, i18n.language])
 
   const {status: wsStatus} = useWebSocket({
     url: wsUrl,

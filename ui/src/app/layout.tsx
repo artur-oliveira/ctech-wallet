@@ -6,6 +6,7 @@ import './globals.css'
 
 import {AuthProvider} from '@/lib/context/AuthContext'
 import {QueryProvider} from '@/lib/providers/QueryProvider'
+import {I18nProvider} from '@/lib/providers/I18nProvider'
 import {Toaster} from 'sonner'
 
 const geistSans = Geist({
@@ -125,7 +126,9 @@ export default function RootLayout({
     />
     
     <QueryProvider>
-      <AuthProvider>{children}</AuthProvider>
+      <AuthProvider>
+        <I18nProvider>{children}</I18nProvider>
+      </AuthProvider>
     </QueryProvider>
     
     <Toaster

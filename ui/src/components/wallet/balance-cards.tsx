@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import {ArrowDownToLine, ArrowUpFromLine, Dice5, Gamepad2, Plus, ShieldCheck} from 'lucide-react'
+import {useTranslation} from 'react-i18next'
 import {Button} from '@/components/ui/button'
 import {formatBRL, formatCredits} from '@/lib/utils/money'
 import type {Balances} from '@/lib/types/api'
@@ -39,8 +40,9 @@ export function BalanceCards({
                                onFundGame,
                                onReturnFromGame,
                              }: BalanceCardsProps) {
+  const {t} = useTranslation()
   const {game, sandbox, activated} = balances
-  
+
   return (
     <div className="space-y-4">
       <div className={activated ? 'grid gap-4 md:grid-cols-[1.4fr_1fr]' : 'grid gap-4'}>
@@ -48,14 +50,14 @@ export function BalanceCards({
         <section className="relative overflow-hidden rounded-2xl bg-brand-600 p-6 text-white shadow-card">
           <div className="flex items-start justify-between">
             <div>
-              <p className="font-mono text-xs uppercase tracking-widest text-brand-200">Saldo real</p>
+              <p className="font-mono text-xs uppercase tracking-widest text-brand-200">{t('balance.real.label')}</p>
               <p className="mt-3 text-4xl font-bold tabular-nums tracking-tight">
                 {formatBRL(balances.real.balance)}
               </p>
-              <p className="mt-2 text-sm text-brand-100">Depósito e saque via PIX</p>
+              <p className="mt-2 text-sm text-brand-100">{t('balance.real.subtitle')}</p>
             </div>
           </div>
-          
+
           <div className="mt-6 flex flex-wrap gap-2">
             <Button
               variant="secondary"
@@ -63,7 +65,7 @@ export function BalanceCards({
               onClick={onDeposit}
             >
               <ArrowDownToLine size={16}/>
-              Depositar
+              {t('balance.deposit')}
             </Button>
             <Button
               variant="outline"
@@ -71,7 +73,7 @@ export function BalanceCards({
               onClick={onWithdraw}
             >
               <ArrowUpFromLine size={16}/>
-              Sacar
+              {t('balance.withdraw')}
             </Button>
             {activated && (
               <Button
@@ -80,61 +82,60 @@ export function BalanceCards({
                 onClick={onFundGame}
               >
                 <Dice5 size={16}/>
-                Enviar para jogos
+                {t('balance.fundGame')}
               </Button>
             )}
           </div>
         </section>
-        
+
         {/* Game — real money, ring-fenced */}
         {activated && game && (
           <section className="flex flex-col rounded-2xl border-2 border-brand-200 bg-white p-6">
             <div className="flex items-center gap-2">
               <Dice5 size={16} className="text-brand-500"/>
-              <p className="font-mono text-xs uppercase tracking-widest text-brand-500">Saldo de jogo</p>
+              <p className="font-mono text-xs uppercase tracking-widest text-brand-500">{t('balance.game.label')}</p>
             </div>
-            
+
             <p className="mt-3 text-3xl font-semibold tabular-nums tracking-tight text-gray-900">
               {formatBRL(game.balance)}
             </p>
-            
+
             <p className="mt-2 text-sm leading-relaxed text-gray-500">
-              Dinheiro real reservado para jogos. Pode voltar para o saldo real quando você quiser.
+              {t('balance.game.subtitle')}
             </p>
-            
+
             <div className="mt-auto flex flex-wrap gap-2 pt-6">
               <Button variant="outline" className="flex-1" onClick={onReturnFromGame}>
                 <ArrowUpFromLine size={16}/>
-                Devolver
+                {t('balance.return')}
               </Button>
               <Button variant="outline" className="flex-1" onClick={onBuyCredits}>
                 <Plus size={16}/>
-                Créditos
+                {t('balance.credits')}
               </Button>
             </div>
           </section>
         )}
       </div>
-      
+
       {/* Sandbox — not money */}
       {activated && sandbox && (
         <section className="flex flex-col rounded-2xl border border-dashed border-gray-300 bg-white p-6">
           <div className="flex items-center gap-2">
             <Gamepad2 size={16} className="text-gray-400"/>
-            <p className="font-mono text-xs uppercase tracking-widest text-gray-400">Créditos sandbox</p>
+            <p className="font-mono text-xs uppercase tracking-widest text-gray-400">{t('balance.sandbox.label')}</p>
           </div>
-          
+
           <p className="mt-3 text-3xl font-semibold tabular-nums tracking-tight text-gray-700">
             {formatCredits(sandbox.balance)}
           </p>
-          
+
           <p className="mt-2 text-sm leading-relaxed text-gray-500">
-            Moeda virtual para partidas, comprada com o saldo de jogo. Não tem valor em dinheiro e não pode ser
-            sacada nem convertida de volta.
+            {t('balance.sandbox.subtitle')}
           </p>
         </section>
       )}
-      
+
       {/* Not activated — one quiet link, never an upsell. */}
       {!activated && (
         <Link
@@ -142,7 +143,7 @@ export function BalanceCards({
           className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-500 transition hover:border-gray-300 hover:text-gray-700"
         >
           <ShieldCheck size={16} className="text-gray-400"/>
-          Vai usar a carteira para jogos? Ative a carteira de jogo.
+          {t('balance.activateLink')}
         </Link>
       )}
     </div>

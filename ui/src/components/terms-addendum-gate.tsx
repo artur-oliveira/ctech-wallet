@@ -3,6 +3,7 @@
 import {useState} from 'react'
 import {useMutation, useQueryClient} from '@tanstack/react-query'
 import {ShieldCheck} from 'lucide-react'
+import {useTranslation} from 'react-i18next'
 import {apiClient} from '@/lib/api/client'
 import {Button} from '@/components/ui/button'
 
@@ -15,6 +16,7 @@ import {Button} from '@/components/ui/button'
  * the current version, so bumping it re-gates everyone.
  */
 export function TermsAddendumGate() {
+  const {t} = useTranslation()
   const qc = useQueryClient()
   const [checked, setChecked] = useState(false)
   
@@ -31,17 +33,16 @@ export function TermsAddendumGate() {
         </div>
         
         <div>
-          <h1 className="text-lg font-semibold text-gray-900">Só mais um passo</h1>
+          <h1 className="text-lg font-semibold text-gray-900">{t('terms.title')}</h1>
           <p className="mt-1 text-sm leading-relaxed text-gray-600">
-            A carteira movimenta dinheiro real e créditos sandbox. Antes de continuar, confirme que você leu os
-            termos específicos da CTech Wallet.
+            {t('terms.description')}
           </p>
         </div>
-        
+
         {accept.isError && (
-          <p className="text-sm text-red-600">Não foi possível confirmar. Tente de novo.</p>
+          <p className="text-sm text-red-600">{t('terms.error')}</p>
         )}
-        
+
         <label className="flex items-start gap-2 text-sm text-gray-600">
           <input
             type="checkbox"
@@ -50,26 +51,26 @@ export function TermsAddendumGate() {
             className="mt-0.5 size-4 shrink-0 rounded border-gray-300 accent-brand-600"
           />
           <span>
-            Li e concordo com os{' '}
+            {t('terms.checkboxPrefix')}{' '}
             <a
               href="/terms-addendum"
               target="_blank"
               rel="noreferrer"
               className="text-gray-900 underline underline-offset-4"
             >
-              Termos Adicionais da CTech Wallet
+              {t('terms.termsLink')}
             </a>
             .
           </span>
         </label>
-        
+
         <Button
           variant="brand"
           className="w-full"
           disabled={!checked || accept.isPending}
           onClick={() => accept.mutate()}
         >
-          {accept.isPending ? 'Confirmando…' : 'Continuar'}
+          {accept.isPending ? t('terms.confirming') : t('terms.continue')}
         </Button>
       </div>
     </div>

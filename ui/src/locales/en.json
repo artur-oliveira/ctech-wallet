@@ -1,0 +1,177 @@
+{
+  "app": {
+    "name": "CTech Wallet"
+  },
+  "common": {
+    "cancel": "Cancel",
+    "continue": "Continue",
+    "loading": "Loading…",
+    "tryAgain": "Try again",
+    "genericError": "Something went wrong. Please try again."
+  },
+  "login": {
+    "title": "CTech Wallet",
+    "subtitle": "Your digital wallet: real balance via PIX and credits to play.",
+    "button": "Sign in with CTech account"
+  },
+  "callback": {
+    "authenticating": "Authenticating…",
+    "errorPrefix": "Authentication error: ",
+    "invalidParams": "Invalid callback parameters.",
+    "tryAgain": "Try again"
+  },
+  "dashboard": {
+    "loadingBalances": "Loading balances",
+    "loadError": "We couldn't load your balances. Refresh the page to try again.",
+    "logout": "Sign out",
+    "ledger": {
+      "tab": {
+        "real": "Real statement",
+        "game": "Game statement",
+        "sandbox": "Sandbox statement"
+      },
+      "loading": "Loading statement…",
+      "error": "We couldn't load the statement. Refresh the page to try again.",
+      "emptyReal": "No transactions yet. Make a deposit to get started.",
+      "emptyOther": "No credits yet. Buy credits with your real balance to play."
+    }
+  },
+  "balance": {
+    "real": {
+      "label": "Real balance",
+      "subtitle": "Deposit and withdraw via PIX"
+    },
+    "deposit": "Deposit",
+    "withdraw": "Withdraw",
+    "fundGame": "Send to games",
+    "game": {
+      "label": "Game balance",
+      "subtitle": "Real money set aside for games. You can move it back to your real balance whenever you want."
+    },
+    "return": "Return",
+    "credits": "Credits",
+    "sandbox": {
+      "label": "Sandbox credits",
+      "subtitle": "Virtual currency for matches, bought with your game balance. It has no monetary value and can't be withdrawn or converted back."
+    },
+    "activateLink": "Going to use the wallet for games? Activate the game wallet."
+  },
+  "dialog": {
+    "deposit": {
+      "title": "Deposit via PIX",
+      "description": "We generate a PIX code for you to pay in your bank app.",
+      "submit": "Generate code"
+    },
+    "withdraw": {
+      "title": "Withdraw to PIX",
+      "description": "The withdrawal fee is deducted from your balance along with the amount.",
+      "submit": "Withdraw"
+    },
+    "credits": {
+      "title": "Buy sandbox credits",
+      "description": "Debited from your game balance. Sandbox credits never become money again.",
+      "submit": "Buy"
+    },
+    "fundGame": {
+      "title": "Send to the game wallet",
+      "description": "It stays your money: you can return it to your real balance whenever you want. Your game limits apply here.",
+      "submit": "Send"
+    },
+    "returnGame": {
+      "title": "Return to real balance",
+      "description": "No fee and no limit — moving money out of the game wallet is always allowed.",
+      "submit": "Return"
+    },
+    "amount": {
+      "label": "Amount",
+      "placeholder": "0.00"
+    },
+    "pixKey": {
+      "label": "Destination PIX key",
+      "placeholder": "CPF, e-mail, phone, or random key",
+      "hint": "The key must be under your CPF. Withdrawals to third parties are refused."
+    },
+    "max": "Maximum {{max}}",
+    "available": "Available {{amount}}",
+    "error": {
+      "required": "Enter an amount.",
+      "invalid": "Enter a valid amount.",
+      "maxExceeded": "The maximum amount is {{max}}.",
+      "overBalance": "Above what's available ({{amount}}).",
+      "pixKeyRequired": "Enter the destination PIX key.",
+      "pixKeyTooLong": "PIX key is too long."
+    }
+  },
+  "pix": {
+    "title": "Pay {{amount}} via PIX",
+    "description": "Copy the code and pay in your bank app. The balance updates as soon as the bank confirms the payment.",
+    "copy": "Copy PIX code",
+    "copied": "Copied",
+    "validity": "The code is valid for 15 minutes. You can close this window — the payment still counts.",
+    "qrAlt": "PIX payment QR code",
+    "close": "Close",
+    "confirmedToast": "Deposit confirmed"
+  },
+  "toast": {
+    "depositConfirmed": "Deposit confirmed",
+    "realtimeDeposit": "Deposit of {{amount}} confirmed",
+    "withdrawProcessing": "Withdrawal processing. The PIX arrives shortly.",
+    "withdrawSent": "Withdrawal sent.",
+    "creditsAdded": "Credits added.",
+    "fundGameSent": "Balance sent to the game wallet.",
+    "returned": "Balance returned to real balance.",
+    "pixCopied": "PIX code copied",
+    "gamblingActivated": "Game wallet activated."
+  },
+  "terms": {
+    "title": "Just one more step",
+    "description": "The wallet moves real money and sandbox credits. Before continuing, confirm that you've read the CTech Wallet-specific terms.",
+    "error": "We couldn't confirm. Please try again.",
+    "checkboxPrefix": "I have read and agree with the",
+    "termsLink": "CTech Wallet Additional Terms",
+    "continue": "Continue",
+    "confirming": "Confirming…"
+  },
+  "gambling": {
+    "title": "Activate the game wallet",
+    "description": "We create a separate wallet for games. The money in it stays yours and returns to your real balance whenever you want — no fee and no limit.",
+    "bullet1": "It is the only door to games: you can't play directly from your real balance.",
+    "bullet2": "Your limits apply when sending to the game wallet. Returning money does not free up limit again.",
+    "bullet3": "Sandbox credits have no monetary value and never become money again.",
+    "checkboxPrefix": "I have read and agree with the",
+    "termsLink": "Responsible Gaming Terms",
+    "later": "Not now",
+    "activate": "Activate",
+    "activating": "Activating…",
+    "error": {
+      "kycNotVerified": "Verify your identity in your CTech account before activating the game wallet.",
+      "termsRequired": "Accept the responsible gaming terms to continue.",
+      "generic": "We couldn't activate. Please try again."
+    }
+  },
+  "errors": {
+    "insufficientBalance": "Insufficient balance for this operation.",
+    "walletBusy": "An operation is already in progress. Wait a few seconds.",
+    "withdrawCpfMismatch": "The PIX key belongs to a different CPF. Use a key under your name.",
+    "pixKeyNotFound": "PIX key not found. Check it and try again.",
+    "kycNotVerified": "Verify your identity in your account before continuing.",
+    "stepUpRequired": "Confirm your identity with MFA and try the withdrawal again.",
+    "idempotencyConflict": "This operation was already sent with different data. Reload the page.",
+    "gamblingNotActivated": "Activate the game wallet to use this operation.",
+    "gamblingTermsRequired": "Accept the responsible gaming terms to continue.",
+    "depositOutOfRange": "The deposit must be between {{min}} and {{max}}.",
+    "generic": "Something went wrong. Please try again."
+  },
+  "ledger": {
+    "type": {
+      "deposit": "Deposit",
+      "withdraw": "Withdrawal",
+      "fee": "Withdrawal fee",
+      "game_debit": "Bet",
+      "game_credit": "Prize",
+      "sandbox_purchase": "Credit purchase",
+      "sandbox_credit": "Credits received",
+      "reversal": "Withdrawal reversal"
+    }
+  }
+}

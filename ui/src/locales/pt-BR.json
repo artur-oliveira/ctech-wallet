@@ -1,0 +1,177 @@
+{
+  "app": {
+    "name": "CTech Wallet"
+  },
+  "common": {
+    "cancel": "Cancelar",
+    "continue": "Continuar",
+    "loading": "Carregando…",
+    "tryAgain": "Tentar novamente",
+    "genericError": "Algo deu errado. Tente de novo."
+  },
+  "login": {
+    "title": "CTech Wallet",
+    "subtitle": "Sua carteira digital: saldo real via PIX e créditos para jogar.",
+    "button": "Entrar com a conta CTech"
+  },
+  "callback": {
+    "authenticating": "Autenticando…",
+    "errorPrefix": "Erro de autenticação: ",
+    "invalidParams": "Parâmetros de callback inválidos.",
+    "tryAgain": "Tentar novamente"
+  },
+  "dashboard": {
+    "loadingBalances": "Carregando saldos",
+    "loadError": "Não foi possível carregar seus saldos. Atualize a página para tentar de novo.",
+    "logout": "Sair",
+    "ledger": {
+      "tab": {
+        "real": "Extrato real",
+        "game": "Extrato de jogo",
+        "sandbox": "Extrato sandbox"
+      },
+      "loading": "Carregando extrato…",
+      "error": "Não foi possível carregar o extrato. Atualize a página para tentar de novo.",
+      "emptyReal": "Nenhuma movimentação ainda. Faça um depósito para começar.",
+      "emptyOther": "Nenhum crédito ainda. Compre créditos com seu saldo real para jogar."
+    }
+  },
+  "balance": {
+    "real": {
+      "label": "Saldo real",
+      "subtitle": "Depósito e saque via PIX"
+    },
+    "deposit": "Depositar",
+    "withdraw": "Sacar",
+    "fundGame": "Enviar para jogos",
+    "game": {
+      "label": "Saldo de jogo",
+      "subtitle": "Dinheiro real reservado para jogos. Pode voltar para o saldo real quando você quiser."
+    },
+    "return": "Devolver",
+    "credits": "Créditos",
+    "sandbox": {
+      "label": "Créditos sandbox",
+      "subtitle": "Moeda virtual para partidas, comprada com o saldo de jogo. Não tem valor em dinheiro e não pode ser sacada nem convertida de volta."
+    },
+    "activateLink": "Vai usar a carteira para jogos? Ative a carteira de jogo."
+  },
+  "dialog": {
+    "deposit": {
+      "title": "Depositar via PIX",
+      "description": "Geramos um código PIX para você pagar no app do seu banco.",
+      "submit": "Gerar código"
+    },
+    "withdraw": {
+      "title": "Sacar para o PIX",
+      "description": "A taxa de saque é descontada do seu saldo junto com o valor.",
+      "submit": "Sacar"
+    },
+    "credits": {
+      "title": "Comprar créditos sandbox",
+      "description": "Debita do seu saldo de jogo. Créditos sandbox não voltam a virar dinheiro.",
+      "submit": "Comprar"
+    },
+    "fundGame": {
+      "title": "Enviar para a carteira de jogo",
+      "description": "Continua sendo seu dinheiro: você pode devolvê-lo ao saldo real quando quiser. Seus limites de jogo valem aqui.",
+      "submit": "Enviar"
+    },
+    "returnGame": {
+      "title": "Devolver ao saldo real",
+      "description": "Sem taxa e sem limite — devolver dinheiro para fora da carteira de jogo é sempre permitido.",
+      "submit": "Devolver"
+    },
+    "amount": {
+      "label": "Valor",
+      "placeholder": "0,00"
+    },
+    "pixKey": {
+      "label": "Chave PIX de destino",
+      "placeholder": "CPF, e-mail, telefone ou chave aleatória",
+      "hint": "A chave precisa estar no seu CPF. Saques para terceiros são recusados."
+    },
+    "max": "Máximo {{max}}",
+    "available": "Disponível {{amount}}",
+    "error": {
+      "required": "Informe um valor.",
+      "invalid": "Informe um valor válido.",
+      "maxExceeded": "O valor máximo é {{max}}.",
+      "overBalance": "Acima do disponível ({{amount}}).",
+      "pixKeyRequired": "Informe a chave PIX de destino.",
+      "pixKeyTooLong": "Chave PIX muito longa."
+    }
+  },
+  "pix": {
+    "title": "Pague {{amount}} no PIX",
+    "description": "Copie o código e pague no app do seu banco. O saldo entra assim que o banco confirmar o pagamento.",
+    "copy": "Copiar código PIX",
+    "copied": "Copiado",
+    "validity": "O código vale por 15 minutos. Pode fechar esta janela — o pagamento continua valendo.",
+    "qrAlt": "QR Code do pagamento PIX",
+    "close": "Fechar",
+    "confirmedToast": "Depósito confirmado"
+  },
+  "toast": {
+    "depositConfirmed": "Depósito confirmado",
+    "realtimeDeposit": "Depósito de {{amount}} confirmado",
+    "withdrawProcessing": "Saque em processamento. O PIX cai em instantes.",
+    "withdrawSent": "Saque enviado.",
+    "creditsAdded": "Créditos adicionados.",
+    "fundGameSent": "Saldo enviado para a carteira de jogo.",
+    "returned": "Saldo devolvido ao saldo real.",
+    "pixCopied": "Código PIX copiado",
+    "gamblingActivated": "Carteira de jogo ativada."
+  },
+  "terms": {
+    "title": "Só mais um passo",
+    "description": "A carteira movimenta dinheiro real e créditos sandbox. Antes de continuar, confirme que você leu os termos específicos da CTech Wallet.",
+    "error": "Não foi possível confirmar. Tente de novo.",
+    "checkboxPrefix": "Li e concordo com os",
+    "termsLink": "Termos Adicionais da CTech Wallet",
+    "continue": "Continuar",
+    "confirming": "Confirmando…"
+  },
+  "gambling": {
+    "title": "Ativar a carteira de jogo",
+    "description": "Criamos uma carteira separada para jogos. O dinheiro nela continua sendo seu e volta para o saldo real quando você quiser — sem taxa e sem limite.",
+    "bullet1": "É a única porta para jogos: não dá para jogar direto do saldo real.",
+    "bullet2": "Seus limites valem no envio para a carteira de jogo. Devolver dinheiro não libera limite de volta.",
+    "bullet3": "Créditos sandbox não têm valor em dinheiro e nunca voltam a virar dinheiro.",
+    "checkboxPrefix": "Li e concordo com o",
+    "termsLink": "Termo de Jogo Responsável",
+    "later": "Agora não",
+    "activate": "Ativar",
+    "activating": "Ativando…",
+    "error": {
+      "kycNotVerified": "Verifique sua identidade na sua conta CTech antes de ativar a carteira de jogo.",
+      "termsRequired": "Aceite o termo de jogo responsável para continuar.",
+      "generic": "Não foi possível ativar. Tente de novo."
+    }
+  },
+  "errors": {
+    "insufficientBalance": "Saldo insuficiente para essa operação.",
+    "walletBusy": "Já existe uma operação em andamento. Aguarde alguns segundos.",
+    "withdrawCpfMismatch": "A chave PIX pertence a outro CPF. Use uma chave no seu nome.",
+    "pixKeyNotFound": "Chave PIX não encontrada. Confira e tente de novo.",
+    "kycNotVerified": "Verifique sua identidade na sua conta antes de continuar.",
+    "stepUpRequired": "Confirme sua identidade com MFA e tente o saque de novo.",
+    "idempotencyConflict": "Essa operação já foi enviada com outros dados. Recarregue a página.",
+    "gamblingNotActivated": "Ative a carteira de jogo para usar essa operação.",
+    "gamblingTermsRequired": "Aceite o termo de jogo responsável para continuar.",
+    "depositOutOfRange": "O depósito precisa ser entre {{min}} e {{max}}.",
+    "generic": "Algo deu errado. Tente de novo."
+  },
+  "ledger": {
+    "type": {
+      "deposit": "Depósito",
+      "withdraw": "Saque",
+      "fee": "Taxa de saque",
+      "game_debit": "Aposta",
+      "game_credit": "Prêmio",
+      "sandbox_purchase": "Compra de créditos",
+      "sandbox_credit": "Créditos recebidos",
+      "reversal": "Estorno de saque"
+    }
+  }
+}

@@ -5,19 +5,20 @@ import {useRouter} from 'next/navigation'
 import {useMutation, useQueryClient} from '@tanstack/react-query'
 import {toast} from 'sonner'
 import {Dice5} from 'lucide-react'
+import {useTranslation} from 'react-i18next'
 import {apiClient, ApiError} from '@/lib/api/client'
 import {ProtectedRoute} from '@/components/protected-route'
 import {Button} from '@/components/ui/button'
 
-function activationMessage(err: unknown): string {
-  if (!(err instanceof ApiError)) return 'Não foi possível ativar. Tente de novo.'
+function activationMessage(err: unknown, t: (k: string) => string): string {
+  if (!(err instanceof ApiError)) return t('gambling.error.generic')
   switch (err.type) {
     case '/problems/kyc-not-verified':
-      return 'Verifique sua identidade na sua conta CTech antes de ativar a carteira de jogo.'
+      return t('gambling.error.kycNotVerified')
     case '/problems/gambling-terms-required':
-      return 'Aceite o termo de jogo responsável para continuar.'
+      return t('gambling.error.termsRequired')
     default:
-      return err.detail
+      return err.detail || t('gambling.error.generic')
   }
 }
 
@@ -29,18 +30,19 @@ function activationMessage(err: unknown): string {
  * rests on. Activation is recorded in an append-only audit log.
  */
 function ActivateGamblingInner() {
+  const {t} = useTranslation()
   const router = useRouter()
   const qc = useQueryClient()
   const [checked, setChecked] = useState(false)
-  
+
   const activate = useMutation({
     mutationFn: () => apiClient.activateGambling(),
     onSuccess: () => {
       void qc.invalidateQueries({queryKey: ['balances']})
-      toast.success('Carteira de jogo ativada.')
+      toast.success(t('toast.gamblingActivated'))
       router.push('/dashboard')
     },
-    onError: (err) => toast.error(activationMessage(err)),
+    onError: (err) => toast.error(activationMessage(err, t)),
   })
   
   return (
@@ -51,28 +53,18 @@ function ActivateGamblingInner() {
         </div>
         
         <div>
-          <h1 className="text-lg font-semibold text-gray-900">Ativar a carteira de jogo</h1>
+          <h1 className="text-lg font-semibold text-gray-900">{t('gambling.title')}</h1>
           <p className="mt-1 text-sm leading-relaxed text-gray-600">
-            Criamos uma carteira separada para jogos. O dinheiro nela continua sendo seu e volta para o saldo real
-            quando você quiser — sem taxa e sem limite.
+            {t('gambling.description')}
           </p>
         </div>
-        
+
         <ul className="space-y-2 rounded-xl bg-gray-50 p-4 text-sm leading-relaxed text-gray-600">
-          <li>
-            É a <strong className="font-medium text-gray-900">única</strong> porta para jogos: não dá para jogar
-            direto do saldo real.
-          </li>
-          <li>
-            Seus limites valem no envio para a carteira de jogo. Devolver dinheiro{' '}
-            <strong className="font-medium text-gray-900">não</strong> libera limite de volta.
-          </li>
-          <li>
-            Créditos sandbox não têm valor em dinheiro e{' '}
-            <strong className="font-medium text-gray-900">nunca</strong> voltam a virar dinheiro.
-          </li>
+          <li>{t('gambling.bullet1')}</li>
+          <li>{t('gambling.bullet2')}</li>
+          <li>{t('gambling.bullet3')}</li>
         </ul>
-        
+
         <label className="flex items-start gap-2 text-sm text-gray-600">
           <input
             type="checkbox"
@@ -81,22 +73,22 @@ function ActivateGamblingInner() {
             className="mt-0.5 size-4 shrink-0 rounded border-gray-300 accent-brand-600"
           />
           <span>
-            Li e concordo com o{' '}
+            {t('gambling.checkboxPrefix')}{' '}
             <a
               href="/gambling-addendum"
               target="_blank"
               rel="noreferrer"
               className="text-gray-900 underline underline-offset-4"
             >
-              Termo de Jogo Responsável
+              {t('gambling.termsLink')}
             </a>
             .
           </span>
         </label>
-        
+
         <div className="flex gap-2">
           <Button variant="outline" className="flex-1" onClick={() => router.push('/dashboard')}>
-            Agora não
+            {t('gambling.later')}
           </Button>
           <Button
             variant="brand"
@@ -104,7 +96,7 @@ function ActivateGamblingInner() {
             disabled={!checked || activate.isPending}
             onClick={() => activate.mutate()}
           >
-            {activate.isPending ? 'Ativando…' : 'Ativar'}
+            {activate.isPending ? t('gambling.activating') : t('gambling.activate')}
           </Button>
         </div>
       </div>
