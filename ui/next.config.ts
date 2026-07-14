@@ -6,7 +6,7 @@ const isProduction = process.env.NODE_ENV === 'production';
 // Where `next dev` forwards /v1.0/* to. Mirrors what CloudFront does in front of
 // the ALB in deployed environments, so the browser is same-origin in dev too and
 // CORS never applies.
-const DEV_API_ORIGIN = process.env.DEV_API_ORIGIN || 'http://localhost:8000';
+const DEV_API_ORIGIN = process.env.DEV_API_ORIGIN || 'http://localhost:8002';
 
 // rewrites() is unsupported by `output: 'export'` and only ever runs under
 // `next dev`. Keeping the two mutually exclusive is what lets the dev server
