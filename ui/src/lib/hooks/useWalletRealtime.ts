@@ -12,10 +12,10 @@ import {getAccessToken} from '@/lib/api/client'
 // like apiClient's own API_BASE_URL fallback.
 const WS_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
 
-function buildWsUrl(token: string): string {
+function buildWsUrl(): string {
   const origin = WS_BASE_URL || window.location.origin
   const base = origin.replace(/^http/, 'ws')
-  return `${base}/v1.0/ws?token=${encodeURIComponent(token)}`
+  return `${base}/v1.0/ws`
 }
 
 interface RealtimeMessage {
@@ -37,7 +37,7 @@ export function useWalletRealtime(): { wsStatus: WSStatus } {
   const qc = useQueryClient()
   const token = getAccessToken()
 
-  const wsUrl = token ? buildWsUrl(token) : null
+  const wsUrl = token ? buildWsUrl() : null
 
   const handleMessage = useCallback((data: unknown) => {
     const msg = data as RealtimeMessage
@@ -58,6 +58,7 @@ export function useWalletRealtime(): { wsStatus: WSStatus } {
     url: wsUrl,
     onMessage: handleMessage,
     enabled: !!wsUrl,
+    authToken: token ?? undefined,
   })
 
   return {wsStatus}

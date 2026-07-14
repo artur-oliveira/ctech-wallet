@@ -81,10 +81,8 @@ export class IAMStack extends cdk.Stack {
             'dynamodb:GetItem',
             'dynamodb:PutItem',
             'dynamodb:UpdateItem',
-            'dynamodb:DeleteItem',
             'dynamodb:Query',
             'dynamodb:BatchGetItem',
-            'dynamodb:BatchWriteItem',
             // Balance mutations are conditional TransactWriteItems.
             'dynamodb:ConditionCheckItem',
             // Health probe: DescribeTable on the wallets table. Resource-scoped,

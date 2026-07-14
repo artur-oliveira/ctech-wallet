@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"log/slog"
 
 	"github.com/caarlos0/env/v11"
 )
@@ -67,7 +66,10 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("config: SERVICE_AUDIENCE must be set in production so the aud claim is verified")
 	}
 	if cfg.CtechURL == "" && cfg.Env == "prod" {
-		slog.Warn("CTECH_URL is empty in production — the iss claim is not being checked")
+		// Fail closed: without an issuer check, any RS256 token the identity
+		// provider signs (for any audience) would be accepted here if its aud
+		// happens to match. Never safe in prod — mirror the ServiceAudience guard.
+		return nil, fmt.Errorf("config: CTECH_URL must be set in production so the iss claim is verified")
 	}
 	return cfg, nil
 }

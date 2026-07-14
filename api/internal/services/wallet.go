@@ -229,6 +229,15 @@ func (s *WalletService) ConfirmDeposit(ctx context.Context, txid string) error {
 		return s.rejectMismatch(ctx, dep, charge)
 	}
 
+	// Invariant 11 follow-through: the credited amount must match what we opened
+	// the charge for. Inter caps a charge at its created amount, so a divergence
+	// is anomalous — surface it as an alarm and refund rather than silently
+	// crediting an unexpected value.
+	if charge.Amount != dep.AmountExpected {
+		slog.Error("ALARM deposit amount mismatch", "txid", txid, "expected", dep.AmountExpected, "paid", charge.Amount)
+		return s.rejectMismatch(ctx, dep, charge)
+	}
+
 	release, ok, err := s.lock.Acquire(ctx, dep.WalletID)
 	if err != nil {
 		return err

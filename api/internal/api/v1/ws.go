@@ -3,6 +3,7 @@ package v1
 import (
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/artur-oliveira/ctech-wallet/api/internal/middleware"
@@ -15,6 +16,33 @@ import (
 )
 
 const wsPingInterval = 30 * time.Second
+
+const wsAuthTimeout = 5 * time.Second
+
+// readAuthToken reads the first WebSocket frame after the upgrade and extracts
+// the bearer JWT. The client sends it as {"token":"..."} (or a raw token) once;
+// a missing or unreadable frame fails closed so no connection hangs open.
+func readAuthToken(conn *fws.Conn) (string, bool) {
+	_ = conn.SetReadDeadline(time.Now().Add(wsAuthTimeout))
+	defer conn.SetReadDeadline(time.Time{})
+	_, msg, err := conn.ReadMessage()
+	if err != nil {
+		return "", false
+	}
+	return extractBearer(msg), true
+}
+
+// extractBearer returns the token from a {"token":"..."} JSON frame, falling
+// back to the raw trimmed frame body when it isn't JSON.
+func extractBearer(msg []byte) string {
+	var p struct {
+		Token string `json:"token"`
+	}
+	if json.Unmarshal(msg, &p) == nil && p.Token != "" {
+		return p.Token
+	}
+	return strings.TrimSpace(string(msg))
+}
 
 // wsAllowedOrigin mirrors the HTTP CORS policy for the WebSocket upgrade:
 // when no origins are configured (dev) every origin is allowed; otherwise only
@@ -40,6 +68,11 @@ func wsAllowedOrigin(ctx *fasthttp.RequestCtx, allowed []string) bool {
 // RegisterWS registers the GET /ws WebSocket upgrade endpoint. Auth is a query
 // param (?token=<jwt>) rather than a header — the browser WebSocket API cannot
 // set Authorization on the upgrade request.
+//
+// SECURITY (M3): the JWT is no longer taken from the ?token= query string (it
+// leaked into ALB/CloudFront access logs and browser history). The client now
+// sends it as the first post-upgrade text frame — see readAuthToken below. A
+// short read deadline fails closed if that frame never arrives.
 func RegisterWS(router fiber.Router, verifier *middleware.Verifier, reg ws.Registry, allowedOrigins []string) {
 	upgrader := fws.FastHTTPUpgrader{
 		ReadBufferSize:  1024,
@@ -47,11 +80,6 @@ func RegisterWS(router fiber.Router, verifier *middleware.Verifier, reg ws.Regis
 		CheckOrigin:     func(ctx *fasthttp.RequestCtx) bool { return wsAllowedOrigin(ctx, allowedOrigins) },
 	}
 	router.Get("/ws", func(c fiber.Ctx) error {
-		token := c.Query("token")
-		if token == "" {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"detail": "token obrigatório"})
-		}
-
 		return upgrader.Upgrade(c.RequestCtx(), func(conn *fws.Conn) {
 			ctx := c.Context()
 			send := func(msg any) {
@@ -59,9 +87,22 @@ func RegisterWS(router fiber.Router, verifier *middleware.Verifier, reg ws.Regis
 				_ = conn.WriteMessage(fws.TextMessage, data)
 			}
 
+			// M3: auth moved off the ?token= query string (it leaked into LB/CF
+			// access logs and browser history). The client sends the JWT as the
+			// first text frame immediately after the upgrade; we read exactly one
+			// frame under a short deadline, then clear it so the steady-state read
+			// loop blocks until the next ping.
+			token, ok := readAuthToken(conn)
+			if !ok {
+				send(map[string]any{"type": "error", "code": "unauthorized", "message": "Token ausente ou inválido"})
+				_ = conn.Close()
+				return
+			}
+
 			claims, err := verifier.VerifyClaims(ctx, token)
 			if err != nil || claims == nil || claims.Sub == "" {
 				send(map[string]any{"type": "error", "code": "unauthorized", "message": "Token inválido ou expirado"})
+				_ = conn.Close()
 				return
 			}
 			userID := claims.Sub

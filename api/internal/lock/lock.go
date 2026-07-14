@@ -62,10 +62,12 @@ func (l *Locker) Acquire(ctx context.Context, walletID string) (release func(), 
 	return func() { _ = l.store.delIfMatch(ctx, key, token) }, true, nil
 }
 
-// AcquireOrdered takes locks for multiple wallets in a fixed sorted order to
-// avoid deadlock (design spec §B, invariant 5: real → sandbox). It is
-// all-or-nothing: if any lock is contended, the already-held ones are released
-// and ok=false is returned.
+// AcquireOrdered takes locks for multiple wallets in a total order — the wallet
+// IDs are sorted lexicographically (see sort.Strings below) — so any caller
+// locking the same set acquires them in the identical order. That deterministic
+// total order is what prevents deadlock (design spec §B, invariant 5); it does
+// not depend on wallet type. It is all-or-nothing: if any lock is contended, the
+// already-held ones are released and ok=false is returned.
 func (l *Locker) AcquireOrdered(ctx context.Context, walletIDs ...string) (release func(), ok bool, err error) {
 	ids := append([]string(nil), walletIDs...)
 	sort.Strings(ids)
