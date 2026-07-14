@@ -101,6 +101,12 @@
     --radius-lg: var(--radius);
     --radius-xl: calc(var(--radius) * 1.4);
     --radius-2xl: calc(var(--radius) * 1.8);
+
+    /* Elevation — shadow-card / shadow-card-hover / shadow-modal.
+       Defined here (v4 @theme) because Tailwind v4 ignores tailwind.config.ts. */
+    --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.07), 0 1px 2px -1px rgb(0 0 0 / 0.07);
+    --shadow-card-hover: 0 4px 12px 0 rgb(0 0 0 / 0.10), 0 2px 4px -1px rgb(0 0 0 / 0.06);
+    --shadow-modal: 0 20px 60px -10px rgb(0 0 0 / 0.25);
 }
 
 * {
@@ -178,5 +184,15 @@ input::placeholder, textarea::placeholder {
 
     html {
         @apply font-sans;
+    }
+}
+
+/* Motion-sensitive users get instant/crossfade transitions only (WCAG 2.3.3). */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
     }
 }

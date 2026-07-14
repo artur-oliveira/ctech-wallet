@@ -46,31 +46,31 @@ function ActivateGamblingInner() {
   })
   
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-login px-4">
-      <div className="w-full max-w-md space-y-5 rounded-2xl border border-brand-100 bg-white p-6 shadow-card">
+    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+      <div className="w-full max-w-md space-y-5 rounded-2xl border border-brand-100 bg-card p-6 shadow-card">
         <div className="flex size-10 items-center justify-center rounded-lg bg-brand-600 text-white">
           <Dice5 size={20}/>
         </div>
         
         <div>
-          <h1 className="text-lg font-semibold text-gray-900">{t('gambling.title')}</h1>
-          <p className="mt-1 text-sm leading-relaxed text-gray-600">
+          <h1 className="text-lg font-semibold text-foreground">{t('gambling.title')}</h1>
+          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
             {t('gambling.description')}
           </p>
         </div>
 
-        <ul className="space-y-2 rounded-xl bg-gray-50 p-4 text-sm leading-relaxed text-gray-600">
+        <ul className="space-y-2 rounded-xl bg-muted p-4 text-sm leading-relaxed text-muted-foreground">
           <li>{t('gambling.bullet1')}</li>
           <li>{t('gambling.bullet2')}</li>
           <li>{t('gambling.bullet3')}</li>
         </ul>
 
-        <label className="flex items-start gap-2 text-sm text-gray-600">
+        <label className="flex items-start gap-2 text-sm text-muted-foreground">
           <input
             type="checkbox"
             checked={checked}
             onChange={(e) => setChecked(e.target.checked)}
-            className="mt-0.5 size-4 shrink-0 rounded border-gray-300 accent-brand-600"
+            className="mt-0.5 size-4 shrink-0 rounded border-border accent-brand-600"
           />
           <span>
             {t('gambling.checkboxPrefix')}{' '}
@@ -78,7 +78,7 @@ function ActivateGamblingInner() {
               href="/gambling-addendum"
               target="_blank"
               rel="noreferrer"
-              className="text-gray-900 underline underline-offset-4"
+              className="text-foreground underline underline-offset-4"
             >
               {t('gambling.termsLink')}
             </a>

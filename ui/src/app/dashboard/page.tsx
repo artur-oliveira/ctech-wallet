@@ -12,6 +12,7 @@ import {ProtectedRoute} from '@/components/protected-route'
 import {BalanceCards} from '@/components/wallet/balance-cards'
 import {LedgerList} from '@/components/wallet/ledger-list'
 import {AmountDialog} from '@/components/wallet/amount-dialog'
+import {ConfirmMoneyDialog} from '@/components/wallet/confirm-money-dialog'
 import {PixChargeDialog} from '@/components/wallet/pix-charge-dialog'
 import {Button} from '@/components/ui/button'
 import {useWalletRealtime} from '@/lib/hooks/useWalletRealtime'
@@ -35,6 +36,7 @@ const PROBLEM_KEY: Record<string, string> = {
   '/problems/idempotency-conflict': 'errors.idempotencyConflict',
   '/problems/gambling-not-activated': 'errors.gamblingNotActivated',
   '/problems/gambling-terms-required': 'errors.gamblingTermsRequired',
+  '/problems/amount-above-limit': 'errors.amountAboveLimit',
 }
 
 /** Turns an RFC 7807 problem from the API into copy the user can act on. */
@@ -44,6 +46,11 @@ function problemMessage(err: unknown, t: (k: string, o?: Record<string, unknown>
     const {min_amount: min, max_amount: max} = (err.raw ?? {}) as { min_amount?: number; max_amount?: number }
     if (min == null || max == null) return err.detail || t('errors.generic')
     return t('errors.depositOutOfRange', {min: formatBRL(min), max: formatBRL(max)})
+  }
+  if (err.type === '/problems/amount-above-limit') {
+    const {max_amount: max} = (err.raw ?? {}) as { max_amount?: number }
+    if (max == null) return err.detail || t('errors.generic')
+    return t('errors.amountAboveLimit', {max: formatBRL(max)})
   }
   const key = err.type ? PROBLEM_KEY[err.type] : undefined
   if (!key) return err.detail || t('errors.generic')
@@ -61,6 +68,8 @@ function DashboardInner() {
   const qc = useQueryClient()
   useWalletRealtime()
   const [flow, setFlow] = useState<Flow>(null)
+  const [confirm, setConfirm] = useState<{ flow: 'withdraw' | 'fund-game' | 'return-game'; amount: number } | null>(null)
+  const [pendingPixKey, setPendingPixKey] = useState<string>('')
   const [charge, setCharge] = useState<DepositResult | null>(null)
   const [tab, setTab] = useState<WalletType>('real')
 
@@ -84,7 +93,7 @@ function DashboardInner() {
     mutationFn: ({amount, pixKey}: { amount: number; pixKey: string }) =>
       apiClient.createWithdrawal(amount, pixKey, newIdemKey()),
     onSuccess: (w) => {
-      setFlow(null)
+      setConfirm(null)
       refresh()
       toast.success(
         w.status === 'processing'
@@ -108,7 +117,7 @@ function DashboardInner() {
   const fundGame = useMutation({
     mutationFn: (amount: number) => apiClient.fundGame(amount, newIdemKey()),
     onSuccess: () => {
-      setFlow(null)
+      setConfirm(null)
       refresh()
       toast.success(t('toast.fundGameSent'))
     },
@@ -118,7 +127,7 @@ function DashboardInner() {
   const returnFromGame = useMutation({
     mutationFn: (amount: number) => apiClient.returnFromGame(amount, newIdemKey()),
     onSuccess: () => {
-      setFlow(null)
+      setConfirm(null)
       refresh()
       toast.success(t('toast.returned'))
     },
@@ -128,8 +137,8 @@ function DashboardInner() {
   const name = profile?.first_name ?? profile?.username ?? ''
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="border-b border-gray-200 bg-white">
+    <div className="min-h-screen bg-background">
+      <header className="border-b border-border bg-card">
         <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-2.5">
             <div className="flex size-8 items-center justify-center rounded-lg bg-brand-600 text-white">
@@ -138,10 +147,10 @@ function DashboardInner() {
                      width={32}
                      height={32}/>
             </div>
-            <span className="font-semibold text-gray-900">CTech Wallet</span>
+            <span className="font-semibold text-foreground">CTech Wallet</span>
           </div>
           <div className="flex items-center gap-3">
-            {name && <span className="hidden text-sm text-gray-500 sm:inline">{name}</span>}
+            {name && <span className="hidden text-sm text-muted-foreground sm:inline">{name}</span>}
             <Button variant="ghost" size="icon-sm" onClick={logout} aria-label={t('dashboard.logout')}>
               <LogOut size={16}/>
             </Button>
@@ -151,11 +160,11 @@ function DashboardInner() {
 
       <main className="mx-auto max-w-4xl space-y-6 px-6 py-8">
         {balances.isLoading && (
-          <div className="h-44 animate-pulse rounded-2xl bg-gray-200" aria-label={t('dashboard.loadingBalances')}/>
+          <div className="h-44 animate-pulse rounded-2xl bg-muted" aria-label={t('dashboard.loadingBalances')}/>
         )}
 
         {balances.error && (
-          <p className="rounded-xl border border-gray-200 bg-white p-5 text-sm text-gray-600">
+          <p className="rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground">
             {t('dashboard.loadError')}
           </p>
         )}
@@ -171,16 +180,16 @@ function DashboardInner() {
               onReturnFromGame={() => setFlow('return-game')}
             />
 
-            <section className="overflow-hidden rounded-xl border border-gray-200 bg-white">
-              <div className="flex border-b border-gray-100">
+            <section className="overflow-hidden rounded-xl border border-border bg-card">
+              <div className="flex overflow-x-auto border-b border-border">
                 {LEDGER_TABS(balances.data.activated).map((tk) => (
                   <button
                     key={tk}
                     onClick={() => setTab(tk)}
-                    className={`px-5 py-3.5 text-xs font-semibold uppercase tracking-wider transition-colors ${
+                    className={`px-5 py-3.5 text-xs font-semibold uppercase tracking-wider transition-colors whitespace-nowrap ${
                       tab === tk
                         ? 'border-b-2 border-brand-600 text-brand-700'
-                        : 'text-gray-400 hover:text-gray-600'
+                        : 'text-muted-foreground hover:text-foreground'
                     }`}
                   >
                     {t(`dashboard.ledger.tab.${tk}`)}
@@ -206,8 +215,11 @@ function DashboardInner() {
         <AmountDialog
           flow="withdraw"
           maxCents={balances.data?.real?.balance}
-          pending={withdraw.isPending}
-          onSubmit={(amount, pixKey) => withdraw.mutate({amount, pixKey: pixKey!})}
+          pending={withdraw.isPending || confirm?.flow === 'withdraw'}
+          onProceed={(amount, pixKey) => {
+            setPendingPixKey(pixKey ?? '')
+            setConfirm({flow: 'withdraw', amount})
+          }}
           onClose={() => setFlow(null)}
         />
       )}
@@ -226,8 +238,8 @@ function DashboardInner() {
         <AmountDialog
           flow="fund-game"
           maxCents={balances.data?.real?.balance}
-          pending={fundGame.isPending}
-          onSubmit={(amount) => fundGame.mutate(amount)}
+          pending={fundGame.isPending || confirm?.flow === 'fund-game'}
+          onProceed={(amount) => setConfirm({flow: 'fund-game', amount})}
           onClose={() => setFlow(null)}
         />
       )}
@@ -236,9 +248,38 @@ function DashboardInner() {
         <AmountDialog
           flow="return-game"
           maxCents={balances.data?.game?.balance}
-          pending={returnFromGame.isPending}
-          onSubmit={(amount) => returnFromGame.mutate(amount)}
+          pending={returnFromGame.isPending || confirm?.flow === 'return-game'}
+          onProceed={(amount) => setConfirm({flow: 'return-game', amount})}
           onClose={() => setFlow(null)}
+        />
+      )}
+
+      {confirm && (
+        <ConfirmMoneyDialog
+          flow={confirm.flow}
+          amountCents={confirm.amount}
+          availableCents={
+            confirm.flow === 'return-game'
+              ? balances.data?.game?.balance ?? 0
+              : balances.data?.real?.balance ?? 0
+          }
+          pending={
+            confirm.flow === 'withdraw'
+              ? withdraw.isPending
+              : confirm.flow === 'fund-game'
+                ? fundGame.isPending
+                : returnFromGame.isPending
+          }
+          onConfirm={() => {
+            if (confirm.flow === 'withdraw') {
+              withdraw.mutate({amount: confirm.amount, pixKey: pendingPixKey})
+            } else if (confirm.flow === 'fund-game') {
+              fundGame.mutate(confirm.amount)
+            } else {
+              returnFromGame.mutate(confirm.amount)
+            }
+          }}
+          onClose={() => setConfirm(null)}
         />
       )}
 

@@ -81,8 +81,10 @@ func (c *LambdaPixClient) call(ctx context.Context, op rpcOp, args any, out any)
 	if err := json.Unmarshal(respJSON, &resp); err != nil {
 		return err
 	}
-	// Inter rejected the bearer (401). Force-refresh and retry the op once.
+	// Inter rejected the bearer (401). Drop the cached token and force-refresh
+	// a genuinely new one, then retry the op once.
 	if resp.Error == errUnauthorizedSentinel {
+		c.tokenMgr.Invalidate(ctx)
 		newToken, ferr := c.tokenMgr.Get(ctx, true)
 		if ferr != nil {
 			return errors.New(resp.Error)

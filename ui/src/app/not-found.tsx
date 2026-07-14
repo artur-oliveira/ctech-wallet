@@ -12,11 +12,11 @@ export default function NotFound() {
   
   
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+    <div className="min-h-screen bg-background flex items-center justify-center px-4">
       <div className="text-center">
-        <p className="text-7xl font-bold text-gray-200 select-none">404</p>
-        <h1 className="mt-4 text-xl font-semibold text-gray-900">{t('notFound.header')}</h1>
-        <p className="mt-2 text-sm text-gray-500">
+        <p className="text-7xl font-bold text-brand-100 select-none">404</p>
+        <h1 className="mt-4 text-xl font-semibold text-foreground">{t('notFound.header')}</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
           {t('notFound.description')}
         </p>
         <Button

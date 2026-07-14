@@ -47,11 +47,11 @@ export function BalanceCards({
     <div className="space-y-4">
       <div className={activated ? 'grid gap-4 md:grid-cols-[1.4fr_1fr]' : 'grid gap-4'}>
         {/* Real — money */}
-        <section className="relative overflow-hidden rounded-2xl bg-brand-600 p-6 text-white shadow-card">
+        <section className="relative overflow-hidden rounded-2xl bg-brand-600 p-6 text-white">
           <div className="flex items-start justify-between">
             <div>
-              <p className="font-mono text-xs uppercase tracking-widest text-brand-200">{t('balance.real.label')}</p>
-              <p className="mt-3 text-4xl font-bold tabular-nums tracking-tight">
+              <p className="font-mono text-xs uppercase tracking-widest text-brand-100">{t('balance.real.label')}</p>
+              <p className="mt-3 font-mono text-4xl font-bold tabular-nums tracking-tight">
                 {formatBRL(balances.real.balance)}
               </p>
               <p className="mt-2 text-sm text-brand-100">{t('balance.real.subtitle')}</p>
@@ -90,17 +90,20 @@ export function BalanceCards({
 
         {/* Game — real money, ring-fenced */}
         {activated && game && (
-          <section className="flex flex-col rounded-2xl border-2 border-brand-200 bg-white p-6">
-            <div className="flex items-center gap-2">
-              <Dice5 size={16} className="text-brand-500"/>
-              <p className="font-mono text-xs uppercase tracking-widest text-brand-500">{t('balance.game.label')}</p>
+          <section className="flex flex-col rounded-2xl border-2 border-brand-200 bg-card p-6">
+            <div className="flex flex-wrap items-center gap-2">
+              <Dice5 size={16} className="text-brand-600"/>
+              <p className="font-mono text-xs uppercase tracking-widest text-brand-600">{t('balance.game.label')}</p>
+              <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
+                {t('balance.game.badge')}
+              </span>
             </div>
 
-            <p className="mt-3 text-3xl font-semibold tabular-nums tracking-tight text-gray-900">
+            <p className="mt-3 font-mono text-3xl font-semibold tabular-nums tracking-tight text-foreground">
               {formatBRL(game.balance)}
             </p>
 
-            <p className="mt-2 text-sm leading-relaxed text-gray-500">
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
               {t('balance.game.subtitle')}
             </p>
 
@@ -120,17 +123,17 @@ export function BalanceCards({
 
       {/* Sandbox — not money */}
       {activated && sandbox && (
-        <section className="flex flex-col rounded-2xl border border-dashed border-gray-300 bg-white p-6">
+        <section className="flex flex-col rounded-2xl border border-dashed border-border bg-card p-6">
           <div className="flex items-center gap-2">
-            <Gamepad2 size={16} className="text-gray-400"/>
-            <p className="font-mono text-xs uppercase tracking-widest text-gray-400">{t('balance.sandbox.label')}</p>
+            <Gamepad2 size={16} className="text-muted-foreground"/>
+            <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">{t('balance.sandbox.label')}</p>
           </div>
 
-          <p className="mt-3 text-3xl font-semibold tabular-nums tracking-tight text-gray-700">
+          <p className="mt-3 font-mono text-3xl font-semibold tabular-nums tracking-tight text-foreground">
             {formatCredits(sandbox.balance)}
           </p>
 
-          <p className="mt-2 text-sm leading-relaxed text-gray-500">
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
             {t('balance.sandbox.subtitle')}
           </p>
         </section>
@@ -140,9 +143,9 @@ export function BalanceCards({
       {!activated && (
         <Link
           href="/gambling/activate"
-          className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-500 transition hover:border-gray-300 hover:text-gray-700"
+          className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground transition hover:border-brand-200 hover:text-foreground"
         >
-          <ShieldCheck size={16} className="text-gray-400"/>
+          <ShieldCheck size={16} className="text-muted-foreground"/>
           {t('balance.activateLink')}
         </Link>
       )}

@@ -46,7 +46,8 @@
     "fundGame": "Send to games",
     "game": {
       "label": "Game balance",
-      "subtitle": "Real money set aside for games. You can move it back to your real balance whenever you want."
+      "badge": "Not directly withdrawable",
+      "subtitle": "Real money set aside for games. To withdraw it, return it to your real balance first — you can do that anytime, with no fee."
     },
     "return": "Return",
     "credits": "Credits",
@@ -84,7 +85,9 @@
     },
     "amount": {
       "label": "Amount",
-      "placeholder": "0.00"
+      "placeholder": "0.00",
+      "feePreview": "Includes a {{fee}} withdrawal fee.",
+      "maxButton": "Max {max}"
     },
     "pixKey": {
       "label": "Destination PIX key",
@@ -101,6 +104,24 @@
       "pixKeyRequired": "Enter the destination PIX key.",
       "pixKeyTooLong": "PIX key is too long."
     }
+  },
+  "confirm": {
+    "withdraw": {
+      "title": "Confirm withdrawal",
+      "description": "Review the amount and fee before the money leaves your balance."
+    },
+    "fundGame": {
+      "title": "Confirm transfer to games",
+      "description": "This move counts toward your game limit. Returning money later does not free it up again."
+    },
+    "returnGame": {
+      "title": "Confirm return to real balance",
+      "description": "No fee and no limit — money leaving the game wallet is always allowed."
+    },
+    "amount": "Amount",
+    "fee": "Withdrawal fee",
+    "total": "Total debited",
+    "resulting": "Resulting balance"
   },
   "pix": {
     "title": "Pay {{amount}} via PIX",
@@ -167,7 +188,7 @@
       "deposit": "Deposit",
       "withdraw": "Withdrawal",
       "fee": "Withdrawal fee",
-      "game_debit": "Bet",
+      "game_debit": "Play",
       "game_credit": "Prize",
       "sandbox_purchase": "Credit purchase",
       "sandbox_credit": "Credits received",

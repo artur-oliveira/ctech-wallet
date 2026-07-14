@@ -115,8 +115,8 @@ func newLambdaClient(cfg *config.Config) (*lambda.Client, error) {
 // newInterTokenManager builds the token owner and registers its lifecycle:
 // prime on startup (so first traffic never blocks on a fetch) and a background
 // refresh loop for the process lifetime.
-func newInterTokenManager(lc fx.Lifecycle, client *lambda.Client, cfg *config.Config, locker *lock.Locker) *pix.InterTokenManager {
-	m := pix.NewInterTokenManager(client, cfg, locker)
+func newInterTokenManager(lc fx.Lifecycle, client *lambda.Client, cfg *config.Config, locker *lock.Locker, c cache.Backend) *pix.InterTokenManager {
+	m := pix.NewInterTokenManager(client, cfg, locker, c)
 	var cancel context.CancelFunc
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {

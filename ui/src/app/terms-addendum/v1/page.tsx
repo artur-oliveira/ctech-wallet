@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 export default function TermsAddendumPage() {
   return (
     <LegalPage title="Termos Adicionais — CTech Wallet" updatedAt={UPDATED_AT}>
-      <p className="text-xs text-gray-400">Versão {ADDENDUM_VERSION}</p>
+      <p className="text-xs text-muted-foreground">Versão {ADDENDUM_VERSION}</p>
       
       <p>
         Este aditivo complementa — e não substitui — os{' '}
@@ -76,7 +76,7 @@ export default function TermsAddendumPage() {
           Créditos sandbox podem ser comprados com saldo real ou concedidos por aplicações integradas. Eles servem
           para participar de partidas em jogos de habilidade integrados.
         </p>
-        <p className="font-medium text-gray-900">
+        <p className="font-medium text-foreground">
           Créditos sandbox não têm valor monetário, não são resgatáveis e não podem, em nenhuma hipótese, ser
           convertidos em saldo real nem sacados. A compra de créditos com saldo real é definitiva e não é
           reembolsável.

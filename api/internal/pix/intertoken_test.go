@@ -87,6 +87,35 @@ func TestInterTokenManagerForceRefetch(t *testing.T) {
 	}
 }
 
+// TestInterTokenSharedAcrossReplicas proves the token lives in the shared
+// cache, not in any one replica: one manager fetches, the other reads it
+// without calling Inter. In prod the backend is Valkey (shared); here a
+// MemoryBackend shared by both managers simulates that.
+func TestInterTokenSharedAcrossReplicas(t *testing.T) {
+	shared := cache.NewMemoryBackend(16)
+	invA := &countingInvoker{token: "A"}
+	invB := &countingInvoker{token: "B"} // must never be used
+	mA := &InterTokenManager{invoker: invA, locker: lock.NewLocker(shared), cache: shared}
+	mA.cond = sync.NewCond(&mA.mu)
+	mB := &InterTokenManager{invoker: invB, locker: lock.NewLocker(shared), cache: shared}
+	mB.cond = sync.NewCond(&mB.mu)
+	ctx := context.Background()
+
+	if tok, err := mA.Get(ctx, false); err != nil || tok != "A" {
+		t.Fatalf("A.Get: tok=%q err=%v", tok, err)
+	}
+	// B must read A's token from the shared cache, not fetch its own.
+	if tok, err := mB.Get(ctx, false); err != nil || tok != "A" {
+		t.Fatalf("B.Get: tok=%q err=%v (expected A from shared cache)", tok, err)
+	}
+	if invA.count() != 1 {
+		t.Fatalf("A should have fetched exactly once, got %d", invA.count())
+	}
+	if invB.count() != 0 {
+		t.Fatalf("B must not fetch when A's token is shared, got %d", invB.count())
+	}
+}
+
 func TestInterTokenManagerConcurrentSingleFlight(t *testing.T) {
 	inv := &countingInvoker{token: "T"}
 	m := newTestManager(inv)

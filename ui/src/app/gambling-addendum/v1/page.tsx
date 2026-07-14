@@ -16,7 +16,7 @@ export const metadata: Metadata = {
 export default function GamblingAddendumPage() {
   return (
     <LegalPage title="Termo de Jogo Responsável — CTech Wallet" updatedAt={UPDATED_AT}>
-      <p className="text-xs text-gray-400">Versão {ADDENDUM_VERSION}</p>
+      <p className="text-xs text-muted-foreground">Versão {ADDENDUM_VERSION}</p>
       
       <p>
         Este termo é <strong>específico para o uso da carteira em jogos</strong> e complementa os{' '}
@@ -50,7 +50,7 @@ export default function GamblingAddendumPage() {
           O limite conta o <strong>total enviado</strong> no período. Devolver dinheiro da carteira de jogo para o
           saldo real <strong>não</strong> libera limite de volta — caso contrário o limite não limitaria nada.
         </p>
-        <p className="font-medium text-gray-900">
+        <p className="font-medium text-foreground">
           Reduzir um limite vale imediatamente. Aumentar um limite só passa a valer depois de um prazo de espera:
           7 dias para os limites diário e semanal, 14 dias para o mensal. Nunca fazemos você esperar para se
           proteger mais.
@@ -62,7 +62,7 @@ export default function GamblingAddendumPage() {
           Créditos sandbox são comprados com o saldo da <strong>carteira de jogo</strong> e servem para participar
           de partidas em jogos de habilidade integrados.
         </p>
-        <p className="font-medium text-gray-900">
+        <p className="font-medium text-foreground">
           Créditos sandbox não têm valor em dinheiro, não podem ser sacados e não podem ser convertidos de volta em
           dinheiro — nem para a carteira de jogo, nem para o saldo real. A conversão é definitiva.
         </p>

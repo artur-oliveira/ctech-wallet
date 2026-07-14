@@ -16,7 +16,7 @@ export default function GamblingAddendumPage() {
       title="Termo de Jogo Responsável — CTech Wallet"
       updatedAt={UPDATED_AT}
     >
-      <p className="text-xs text-gray-400">
+      <p className="text-xs text-muted-foreground">
         Versão {ADDENDUM_VERSION}
       </p>
       

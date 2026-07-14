@@ -46,7 +46,8 @@
     "fundGame": "Enviar para jogos",
     "game": {
       "label": "Saldo de jogo",
-      "subtitle": "Dinheiro real reservado para jogos. Pode voltar para o saldo real quando você quiser."
+      "badge": "Não saca direto",
+      "subtitle": "Dinheiro real reservado para jogos. Para sacar, devolva ao saldo real primeiro — pode fazer isso quando quiser, sem taxa."
     },
     "return": "Devolver",
     "credits": "Créditos",
@@ -84,7 +85,9 @@
     },
     "amount": {
       "label": "Valor",
-      "placeholder": "0,00"
+      "placeholder": "0,00",
+      "feePreview": "Inclui uma taxa de saque de {{fee}}.",
+      "maxButton": "Máx {max}"
     },
     "pixKey": {
       "label": "Chave PIX de destino",
@@ -101,6 +104,24 @@
       "pixKeyRequired": "Informe a chave PIX de destino.",
       "pixKeyTooLong": "Chave PIX muito longa."
     }
+  },
+  "confirm": {
+    "withdraw": {
+      "title": "Confirmar saque",
+      "description": "Revise o valor e a taxa antes do dinheiro sair do seu saldo."
+    },
+    "fundGame": {
+      "title": "Confirmar envio para o jogo",
+      "description": "Este envio conta para o seu limite de jogo. Devolver depois não libera limite de novo."
+    },
+    "returnGame": {
+      "title": "Confirmar devolução ao saldo real",
+      "description": "Sem taxa e sem limite — dinheiro saindo da carteira de jogo é sempre permitido."
+    },
+    "amount": "Valor",
+    "fee": "Taxa de saque",
+    "total": "Total debitado",
+    "resulting": "Saldo resultante"
   },
   "pix": {
     "title": "Pague {{amount}} no PIX",
@@ -160,6 +181,7 @@
     "gamblingNotActivated": "Ative a carteira de jogo para usar essa operação.",
     "gamblingTermsRequired": "Aceite o termo de jogo responsável para continuar.",
     "depositOutOfRange": "O depósito precisa ser entre {{min}} e {{max}}.",
+    "amountAboveLimit": "O valor máximo por operação é {{max}}.",
     "generic": "Algo deu errado. Tente de novo."
   },
   "ledger": {
@@ -167,7 +189,7 @@
       "deposit": "Depósito",
       "withdraw": "Saque",
       "fee": "Taxa de saque",
-      "game_debit": "Aposta",
+      "game_debit": "Jogada",
       "game_credit": "Prêmio",
       "sandbox_purchase": "Compra de créditos",
       "sandbox_credit": "Créditos recebidos",

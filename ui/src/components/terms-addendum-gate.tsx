@@ -27,14 +27,14 @@ export function TermsAddendumGate() {
   
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-login px-4">
-      <div className="w-full max-w-md space-y-5 rounded-2xl border border-brand-100 bg-white p-6 shadow-card">
+      <div className="w-full max-w-md space-y-5 rounded-2xl border border-brand-100 bg-card p-6 shadow-card">
         <div className="flex size-10 items-center justify-center rounded-lg bg-brand-600 text-white">
           <ShieldCheck size={20}/>
         </div>
         
         <div>
-          <h1 className="text-lg font-semibold text-gray-900">{t('terms.title')}</h1>
-          <p className="mt-1 text-sm leading-relaxed text-gray-600">
+          <h1 className="text-lg font-semibold text-foreground">{t('terms.title')}</h1>
+          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
             {t('terms.description')}
           </p>
         </div>
@@ -43,12 +43,12 @@ export function TermsAddendumGate() {
           <p className="text-sm text-red-600">{t('terms.error')}</p>
         )}
 
-        <label className="flex items-start gap-2 text-sm text-gray-600">
+        <label className="flex items-start gap-2 text-sm text-muted-foreground">
           <input
             type="checkbox"
             checked={checked}
             onChange={(e) => setChecked(e.target.checked)}
-            className="mt-0.5 size-4 shrink-0 rounded border-gray-300 accent-brand-600"
+            className="mt-0.5 size-4 shrink-0 rounded border-border accent-brand-600"
           />
           <span>
             {t('terms.checkboxPrefix')}{' '}
@@ -56,7 +56,7 @@ export function TermsAddendumGate() {
               href="/terms-addendum"
               target="_blank"
               rel="noreferrer"
-              className="text-gray-900 underline underline-offset-4"
+              className="text-foreground underline underline-offset-4"
             >
               {t('terms.termsLink')}
             </a>
