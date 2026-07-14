@@ -55,6 +55,8 @@ func main() {
 		slog.Error("walletclient init failed", "err", err)
 		os.Exit(1)
 	}
+	// client (and the SSM-backed M2M secret + HTTP transport it wraps) is built
+	// once at cold start and reused for every invocation — no per-call SSM.
 	h := &handler{confirmer: client}
 	lambda.Start(h.handle)
 }

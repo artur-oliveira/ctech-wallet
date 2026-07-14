@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/artur-oliveira/ctech-wallet/pix-gateway/internal/config"
@@ -33,10 +34,16 @@ type InterClient struct {
 	// OAuth client credentials for the GetToken op. pix-gateway is the only
 	// place that talks to Inter's token endpoint; the bearer itself is passed
 	// per call by api (see bearer.go) and never fetched here except via GetToken.
-	clientID     string
+	clientID string
+	scope    string
+	tokenURL string
+
+	// clientSecret is the Inter OAuth client secret — consumed ONLY by GetToken.
+	// It is NOT loaded at cold start: if empty here, GetToken loads it lazily
+	// from secrets (once per container) and caches it. Tests set it directly.
 	clientSecret string
-	scope        string
-	tokenURL     string
+	secrets      *secrets.Store
+	secretMu     sync.Mutex
 }
 
 // Inter API paths (centralized — no scattered literals).
@@ -53,9 +60,10 @@ const (
 
 // NewInterClient builds the client. The mTLS keypair is already in memory
 // (loaded from SSM SecureString — see internal/secrets) and never touches the
-// filesystem; the OAuth client secret comes from config (env, exported by
-// start.sh from SSM).
-func NewInterClient(cfg *config.Config, kp *secrets.MTLSKeypair) (*InterClient, error) {
+// filesystem. The OAuth client secret is NOT read here: GetToken loads it
+// lazily (and caches it) on first use, so a cold start that never calls
+// GetToken never hits SSM for the secret.
+func NewInterClient(cfg *config.Config, kp *secrets.MTLSKeypair, store *secrets.Store) (*InterClient, error) {
 	cert, err := tls.X509KeyPair(kp.CertPEM, kp.KeyPEM)
 	if err != nil {
 		return nil, fmt.Errorf("inter: parse mTLS keypair: %w", err)
@@ -77,6 +85,7 @@ func NewInterClient(cfg *config.Config, kp *secrets.MTLSKeypair) (*InterClient, 
 		clientSecret: cfg.InterClientSecret,
 		scope:        tokenScope,
 		tokenURL:     strings.TrimRight(cfg.InterBaseURL, "/") + pathToken,
+		secrets:      store,
 	}
 	return c, nil
 }
@@ -85,9 +94,13 @@ func NewInterClient(cfg *config.Config, kp *secrets.MTLSKeypair) (*InterClient, 
 // credentials. It is the only place in pix-gateway that talks to Inter's token
 // endpoint. It does NOT write to SSM — api owns the value.
 func (c *InterClient) GetToken(ctx context.Context) (TokenResult, error) {
+	secret, err := c.secret(ctx)
+	if err != nil {
+		return TokenResult{}, fmt.Errorf("inter: load client secret: %w", err)
+	}
 	form := url.Values{
 		"client_id":     {c.clientID},
-		"client_secret": {c.clientSecret},
+		"client_secret": {secret},
 		"grant_type":    {"client_credentials"},
 		"scope":         {c.scope},
 	}
@@ -113,6 +126,28 @@ func (c *InterClient) GetToken(ctx context.Context) (TokenResult, error) {
 		return TokenResult{}, err
 	}
 	return TokenResult{Token: tr.AccessToken, ExpiresIn: tr.ExpiresIn}, nil
+}
+
+// secret returns the Inter OAuth client secret, loading it from SSM on first
+// use and caching it for the container's lifetime. It is only ever consumed by
+// GetToken, so this is never hit at cold start — only when a bearer is actually
+// requested. Tests set c.clientSecret directly and leave c.secrets nil, taking
+// the fast path with no SSM dependency.
+func (c *InterClient) secret(ctx context.Context) (string, error) {
+	if c.secrets == nil {
+		return c.clientSecret, nil
+	}
+	c.secretMu.Lock()
+	defer c.secretMu.Unlock()
+	if c.clientSecret != "" {
+		return c.clientSecret, nil
+	}
+	s, err := c.secrets.LoadInterClientSecret(ctx)
+	if err != nil {
+		return "", err
+	}
+	c.clientSecret = s
+	return s, nil
 }
 
 func (c *InterClient) CreateCharge(ctx context.Context, txid string, amount int64, payerHintCPF string) (*Charge, error) {

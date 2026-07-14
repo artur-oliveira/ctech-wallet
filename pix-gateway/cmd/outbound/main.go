@@ -40,13 +40,16 @@ func main() {
 		slog.Error("inter client init failed", "err", err)
 		os.Exit(1)
 	}
+	// pixClient (and the SSM store + mTLS HTTP transport it wraps) is built once
+	// at cold start and reused for every invocation — no per-call SSM/SSM-KMS.
 	h := &handler{pix: pixClient}
 	lambda.Start(h.handle)
 }
 
-// newInter builds the real Inter client, reading the mTLS keypair AND the OAuth
-// client secret from SSM directly — this Lambda has no start.sh to export env
-// vars (same reasoning as api/cmd/reconcile's newPix).
+// newInter builds the real Inter client. The mTLS keypair is read from SSM at
+// cold start (it is required to build the cached mTLS HTTP transport). The
+// Inter OAuth client secret is NOT read here — GetToken loads and caches it
+// lazily on first use, so a cold start that never calls GetToken never hits SSM.
 func newInter(ctx context.Context, cfg *config.Config) (inter.PixClient, error) {
 	awsCfg, err := awscfg.LoadDefaultConfig(ctx, awscfg.WithRegion(cfg.AWSRegion))
 	if err != nil {
@@ -57,14 +60,7 @@ func newInter(ctx context.Context, cfg *config.Config) (inter.PixClient, error) 
 	if err != nil {
 		return nil, fmt.Errorf("load mTLS keypair: %w", err)
 	}
-	if cfg.InterClientSecret == "" {
-		s, err := store.LoadInterClientSecret(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("load client secret: %w", err)
-		}
-		cfg.InterClientSecret = s
-	}
-	return inter.NewInterClient(cfg, kp)
+	return inter.NewInterClient(cfg, kp, store)
 }
 
 // handle dispatches on Op, decodes Payload into the matching *Args struct,

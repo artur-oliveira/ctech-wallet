@@ -7,6 +7,12 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	"github.com/aws/aws-sdk-go-v2/service/ssm/types"
+
+	"github.com/artur-oliveira/ctech-wallet/pix-gateway/internal/secrets"
 )
 
 func TestCentavosReaisRoundTrip(t *testing.T) {
@@ -54,6 +60,55 @@ func TestGetToken(t *testing.T) {
 	}
 	if res.Token != "AT" || res.ExpiresIn != 3600 {
 		t.Fatalf("bad token result: %+v", res)
+	}
+}
+
+// fakeSecretsSSM counts GetParameter calls and returns a fixed value.
+type fakeSecretsSSM struct {
+	calls int
+	value string
+}
+
+func (f *fakeSecretsSSM) GetParameter(_ context.Context, _ *ssm.GetParameterInput, _ ...func(*ssm.Options)) (*ssm.GetParameterOutput, error) {
+	f.calls++
+	return &ssm.GetParameterOutput{Parameter: &types.Parameter{Value: aws.String(f.value)}}, nil
+}
+
+// TestGetTokenLoadsClientSecretLazilyAndCaches proves the Inter OAuth client
+// secret is fetched from SSM only on first GetToken and cached afterwards — so
+// cold start never reads it, and repeat GetToken calls don't re-hit SSM.
+func TestGetTokenLoadsClientSecretLazilyAndCaches(t *testing.T) {
+	var gotSecret string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		gotSecret = r.FormValue("client_secret")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "AT", "expires_in": 3600})
+	}))
+	defer srv.Close()
+
+	fake := &fakeSecretsSSM{value: "ssm-secret"}
+	c := &InterClient{
+		base:     strings.TrimRight(srv.URL, "/"),
+		pixKey:   "k",
+		http:     srv.Client(),
+		clientID: "cid",
+		scope:    tokenScope,
+		tokenURL: srv.URL + pathToken,
+		secrets:  secrets.NewStore(fake, "dev"),
+	}
+
+	if _, err := c.GetToken(context.Background()); err != nil {
+		t.Fatalf("GetToken: %v", err)
+	}
+	if gotSecret != "ssm-secret" {
+		t.Fatalf("secret not forwarded from SSM: got %q", gotSecret)
+	}
+	if _, err := c.GetToken(context.Background()); err != nil {
+		t.Fatalf("GetToken 2: %v", err)
+	}
+	if fake.calls != 1 {
+		t.Fatalf("expected 1 SSM call (cached after first), got %d", fake.calls)
 	}
 }
 

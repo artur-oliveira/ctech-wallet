@@ -9,7 +9,10 @@
 bearer to **every** PIX op on the Lambda wire. `pix-gateway` is a pure transport: sets
 `Authorization: Bearer <passed token>`, never reads SSM for the token, never fetches it itself except via the
 new `GetToken` op (invoked by `api`, using pix-gateway's own client creds). mTLS cert/key stay in pix-gateway's
-own SSM (read once per container).
+own SSM (read once per container). The Inter OAuth client secret is likewise
+pix-gateway's own SSM param, but it is read **lazily** by the `GetToken` op and
+cached for the container's lifetime — not at cold start — so a container that
+never mints a token never pays the SSM `GetParameter` call.
 
 ## Key design choice
 

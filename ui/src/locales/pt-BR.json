@@ -173,5 +173,11 @@
       "sandbox_credit": "Créditos recebidos",
       "reversal": "Estorno de saque"
     }
+  },
+  "notFound": {
+    "header": "Page not found",
+    "description": "The page you are trying to access does not exists or was removed",
+    "backToAccount": "Back to to account",
+    "backToLogin": "Back to sign in"
   }
 }

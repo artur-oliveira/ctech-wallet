@@ -173,5 +173,11 @@
       "sandbox_credit": "Credits received",
       "reversal": "Withdrawal reversal"
     }
+  },
+  "notFound": {
+    "header": "Página não encontrada",
+    "description": "A página que você acessou não existe ou foi removido.",
+    "backToAccount": "Ir para o painel",
+    "backToLogin": "Voltar para o login"
   }
 }
