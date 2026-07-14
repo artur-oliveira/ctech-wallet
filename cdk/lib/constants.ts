@@ -31,6 +31,7 @@ export const BASE_DOMAIN = 'aoctech.app';
 /** ALB (api) and CloudFront (ui) host prefixes. */
 export const API_DOMAIN_PREFIX = 'wallet-api';
 export const APP_DOMAIN_PREFIX = 'wallet';
+export const ACCOUNTS_DOMAIN_PREFIX = 'accounts';
 
 /**
  * Shared HTTPS listener rule priorities on the ctech-cdk ALB.

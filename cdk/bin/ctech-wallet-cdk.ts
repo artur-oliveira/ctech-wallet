@@ -10,6 +10,7 @@ import {PixGatewayStack} from '../lib/pix-gateway-stack';
 import {OidcStack} from '../lib/oidc-stack';
 import {Environment} from '../lib/types';
 import {
+    ACCOUNTS_DOMAIN_PREFIX,
     API_DOMAIN_PREFIX,
     APP_DOMAIN_PREFIX,
     AWS_ACCOUNT,
@@ -150,5 +151,6 @@ new FrontendStack(app, id('Frontend'), {
     certificateArn: CERT_ARN,
     domainName: domainForEnv(ENVIRONMENT, APP_DOMAIN_PREFIX),
     apiDomainName: domainForEnv(ENVIRONMENT, API_DOMAIN_PREFIX),
+    authDomainName: domainForEnv(ENVIRONMENT, ACCOUNTS_DOMAIN_PREFIX),
     description: `CTech Wallet Frontend (S3 + CloudFront) - ${ENVIRONMENT}`,
 });

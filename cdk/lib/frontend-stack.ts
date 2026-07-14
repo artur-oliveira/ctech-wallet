@@ -15,14 +15,18 @@ const API_ORIGIN_READ_TIMEOUT = cdk.Duration.seconds(60);
 const API_ORIGIN_KEEPALIVE_TIMEOUT = cdk.Duration.seconds(60);
 
 interface FrontendStackProps extends cdk.StackProps {
-  environment: Environment;
-  certificateArn: string;
-  // e.g. "wallet-dev.aoctech.app" — required when using a custom cert
-  domainName?: string;
-  // Public API host on the shared ALB, e.g. "wallet-api.aoctech.app".
-  // Used as the API origin: ALL_VIEWER_EXCEPT_HOST_HEADER makes CloudFront send
-  // this as the Host header, which is what the ALB listener rule matches on.
-  apiDomainName: string;
+    environment: Environment;
+    certificateArn: string;
+    // e.g. "wallet-dev.aoctech.app" — required when using a custom cert
+    domainName?: string;
+    // Public API host on the shared ALB, e.g. "wallet-api.aoctech.app".
+    // Used as the API origin: ALL_VIEWER_EXCEPT_HOST_HEADER makes CloudFront send
+    // this as the Host header, which is what the ALB listener rule matches on.
+    apiDomainName: string;
+    // ctech-account OAuth host, e.g. "accounts.aoctech.app". Must be allowed in
+    // connect-src so the browser can fetch /v1.0/token (CSP blocks cross-origin
+    // fetches by default). Derived from BASE_DOMAIN, not hardcoded.
+    authDomainName: string;
 }
 
 /**
@@ -32,47 +36,47 @@ interface FrontendStackProps extends cdk.StackProps {
  * CDK dependency cycle.
  */
 export class FrontendStack extends cdk.Stack {
-  public readonly bucket: s3.Bucket;
-  public readonly distribution: cloudfront.Distribution;
-  public readonly routeStore: cloudfront.KeyValueStore;
-  
-  constructor(scope: Construct, id: string, props: FrontendStackProps) {
-    super(scope, id, props);
-    
-    const {environment, certificateArn, domainName, apiDomainName} = props;
-    const isProduction = environment === 'prod';
-    
-    this.bucket = new s3.Bucket(this, 'Bucket', {
-      bucketName: frontendBucketName(environment),
-      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      encryption: s3.BucketEncryption.S3_MANAGED,
-      versioned: isProduction,
-      removalPolicy: isProduction ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
-      autoDeleteObjects: !isProduction,
-    });
-    
-    const oac = new cloudfront.S3OriginAccessControl(this, 'OAC', {
-      originAccessControlName: `${environment}-${SERVICE}-oac`,
-    });
-    
-    // One key per route emitted by the static export, written by the frontend
-    // workflow right after it syncs out/ to S3 — so the route list can never
-    // drift from the objects actually in the bucket.
-    this.routeStore = new cloudfront.KeyValueStore(this, 'RouteStore', {
-      keyValueStoreName: routeStoreName(environment),
-    });
-    
-    // Rewrites clean URLs to .html files for the Next.js static export:
-    //   /deposit     → /deposit.html
-    //   /deposit/    → /deposit.html
-    //   /_next/*.js  → pass through (has an extension)
-    //
-    // Unknown routes are rewritten to /404.html here rather than through the
-    // distribution's errorResponses, because those apply to every behavior and
-    // would replace the API's RFC 7807 Problem JSON bodies on 403/404.
-    const urlRewrite = new cloudfront.Function(this, 'UrlRewrite', {
-      functionName: `${environment}-${SERVICE}-url-rewrite`,
-      code: cloudfront.FunctionCode.fromInline(`
+    public readonly bucket: s3.Bucket;
+    public readonly distribution: cloudfront.Distribution;
+    public readonly routeStore: cloudfront.KeyValueStore;
+
+    constructor(scope: Construct, id: string, props: FrontendStackProps) {
+        super(scope, id, props);
+
+        const {environment, certificateArn, domainName, apiDomainName, authDomainName} = props;
+        const isProduction = environment === 'prod';
+
+        this.bucket = new s3.Bucket(this, 'Bucket', {
+            bucketName: frontendBucketName(environment),
+            blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+            encryption: s3.BucketEncryption.S3_MANAGED,
+            versioned: isProduction,
+            removalPolicy: isProduction ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
+            autoDeleteObjects: !isProduction,
+        });
+
+        const oac = new cloudfront.S3OriginAccessControl(this, 'OAC', {
+            originAccessControlName: `${environment}-${SERVICE}-oac`,
+        });
+
+        // One key per route emitted by the static export, written by the frontend
+        // workflow right after it syncs out/ to S3 — so the route list can never
+        // drift from the objects actually in the bucket.
+        this.routeStore = new cloudfront.KeyValueStore(this, 'RouteStore', {
+            keyValueStoreName: routeStoreName(environment),
+        });
+
+        // Rewrites clean URLs to .html files for the Next.js static export:
+        //   /deposit     → /deposit.html
+        //   /deposit/    → /deposit.html
+        //   /_next/*.js  → pass through (has an extension)
+        //
+        // Unknown routes are rewritten to /404.html here rather than through the
+        // distribution's errorResponses, because those apply to every behavior and
+        // would replace the API's RFC 7807 Problem JSON bodies on 403/404.
+        const urlRewrite = new cloudfront.Function(this, 'UrlRewrite', {
+            functionName: `${environment}-${SERVICE}-url-rewrite`,
+            code: cloudfront.FunctionCode.fromInline(`
 import cf from 'cloudfront';
 
 const kvs = cf.kvs();
@@ -87,114 +91,114 @@ async function handler(event) {
   return event.request;
 }
       `),
-      runtime: cloudfront.FunctionRuntime.JS_2_0,
-      keyValueStore: this.routeStore,
-    });
-    
-    const apiOrigin = new origins.HttpOrigin(apiDomainName, {
-      protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
-      readTimeout: API_ORIGIN_READ_TIMEOUT,
-      keepaliveTimeout: API_ORIGIN_KEEPALIVE_TIMEOUT,
-    });
-    
-    // Security response headers (HSTS, X-Frame-Options, X-Content-Type-Options,
-    // Referrer-Policy, CSP) for the statically generated frontend. These MUST live
-    // at CloudFront: next.config.ts headers() only run on server-rendered
-    // responses, and the SSG assets are served straight from the edge. CSP
-    // connect-src allows the app's own origin plus any extra trusted origins
-    // (e.g. the ctech-account host for the OAuth token exchange, viacep) passed
-    // via the `securityExtraConnectSrc` CDK context — required so cross-origin
-    // fetches are not blocked in prod.
-    const extraConnectSrc = (this.node.tryGetContext('securityExtraConnectSrc') as string | undefined) ?? '';
-    const securityHeadersPolicy = new cloudfront.ResponseHeadersPolicy(this, 'SecurityHeaders', {
-      responseHeadersPolicyName: `${environment}-${SERVICE}-security-headers`,
-      securityHeadersBehavior: {
-        contentTypeOptions: {override: true},
-        frameOptions: {frameOption: cloudfront.HeadersFrameOption.DENY, override: true},
-        strictTransportSecurity: {
-          accessControlMaxAge: Duration.seconds(63072000),
-          includeSubdomains: true,
-          preload: true,
-          override: true,
-        },
-        referrerPolicy: {
-          referrerPolicy: cloudfront.HeadersReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN,
-          override: true,
-        },
-        contentSecurityPolicy: {
-          // 'unsafe-inline' for script/style is temporary compatibility debt: the
-          // Next.js static export has no nonce/hash pipeline yet. Never 'unsafe-eval'.
-          contentSecurityPolicy: [
-            "default-src 'self'",
-            "base-uri 'self'",
-            "object-src 'none'",
-            "frame-ancestors 'none'",
-            "img-src 'self' data:",
-            "style-src 'self' 'unsafe-inline'",
-            "script-src 'self' 'unsafe-inline'",
-            `connect-src 'self'${extraConnectSrc ? ' ' + extraConnectSrc : ''}`,
-          ].join('; '),
-          override: true,
-        },
-      },
-    });
-    
-    // No caching and no URL rewrite: the API behavior forwards everything the
-    // viewer sent (Authorization, query string, body) except the Host header,
-    // which CloudFront replaces with apiDomainName.
-    const apiBehavior: cloudfront.BehaviorOptions = {
-      origin: apiOrigin,
-      viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.HTTPS_ONLY,
-      cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
-      originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
-      allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
-      compress: true,
-      responseHeadersPolicy: securityHeadersPolicy,
-    };
-    
-    this.distribution = new cloudfront.Distribution(this, 'Distribution', {
-      comment: `CTech Wallet Frontend - ${environment}`,
-      defaultBehavior: {
-        origin: origins.S3BucketOrigin.withOriginAccessControl(this.bucket, {
-          originAccessControl: oac,
-        }),
-        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-        cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
-        allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
-        compress: true,
-        responseHeadersPolicy: securityHeadersPolicy,
-        functionAssociations: [{
-          function: urlRewrite,
-          eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
-        }],
-      },
-      additionalBehaviors: Object.fromEntries(
-        API_PATH_PATTERNS.map((pattern) => [pattern, apiBehavior]),
-      ),
-      httpVersion: HttpVersion.HTTP2_AND_3,
-      defaultRootObject: 'index.html',
-      certificate: domainName
-        ? acm.Certificate.fromCertificateArn(this, 'Cert', certificateArn)
-        : undefined,
-      domainNames: domainName ? [domainName] : undefined,
-      priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
-      minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
-    });
-    
-    new cdk.CfnOutput(this, 'BucketName', {value: this.bucket.bucketName, exportName: `${id}-bucket-name`});
-    // Read by .github/workflows/frontend.yml via cloudformation describe-stacks.
-    new cdk.CfnOutput(this, 'DistributionId', {
-      value: this.distribution.distributionId,
-      exportName: `${id}-dist-id`,
-    });
-    new cdk.CfnOutput(this, 'DistributionDomain', {
-      value: this.distribution.distributionDomainName,
-      exportName: `${id}-dist-domain`,
-    });
-    // Read by .github/workflows/frontend.yml to publish the route manifest.
-    new cdk.CfnOutput(this, 'RouteStoreArn', {
-      value: this.routeStore.keyValueStoreArn,
-      exportName: `${id}-route-store-arn`,
-    });
-  }
+            runtime: cloudfront.FunctionRuntime.JS_2_0,
+            keyValueStore: this.routeStore,
+        });
+
+        const apiOrigin = new origins.HttpOrigin(apiDomainName, {
+            protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
+            readTimeout: API_ORIGIN_READ_TIMEOUT,
+            keepaliveTimeout: API_ORIGIN_KEEPALIVE_TIMEOUT,
+        });
+
+        // Security response headers (HSTS, X-Frame-Options, X-Content-Type-Options,
+        // Referrer-Policy, CSP) for the statically generated frontend. These MUST live
+        // at CloudFront: next.config.ts headers() only run on server-rendered
+        // responses, and the SSG assets are served straight from the edge. CSP
+        // connect-src allows the app's own origin plus any extra trusted origins
+        // (e.g. the ctech-account host for the OAuth token exchange, viacep) passed
+        // via the `securityExtraConnectSrc` CDK context — required so cross-origin
+        // fetches are not blocked in prod.
+        const extraConnectSrc = (this.node.tryGetContext('securityExtraConnectSrc') as string | undefined) ?? '';
+        const securityHeadersPolicy = new cloudfront.ResponseHeadersPolicy(this, 'SecurityHeaders', {
+            responseHeadersPolicyName: `${environment}-${SERVICE}-security-headers`,
+            securityHeadersBehavior: {
+                contentTypeOptions: {override: true},
+                frameOptions: {frameOption: cloudfront.HeadersFrameOption.DENY, override: true},
+                strictTransportSecurity: {
+                    accessControlMaxAge: Duration.seconds(63072000),
+                    includeSubdomains: true,
+                    preload: true,
+                    override: true,
+                },
+                referrerPolicy: {
+                    referrerPolicy: cloudfront.HeadersReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN,
+                    override: true,
+                },
+                contentSecurityPolicy: {
+                    // 'unsafe-inline' for script/style is temporary compatibility debt: the
+                    // Next.js static export has no nonce/hash pipeline yet. Never 'unsafe-eval'.
+                    contentSecurityPolicy: [
+                        "default-src 'self'",
+                        "base-uri 'self'",
+                        "object-src 'none'",
+                        "frame-ancestors 'none'",
+                        "img-src 'self' data:",
+                        "style-src 'self' 'unsafe-inline'",
+                        "script-src 'self' 'unsafe-inline'",
+                        `connect-src 'self' https://${authDomainName}${extraConnectSrc ? ' ' + extraConnectSrc : ''}`,
+                    ].join('; '),
+                    override: true,
+                },
+            },
+        });
+
+        // No caching and no URL rewrite: the API behavior forwards everything the
+        // viewer sent (Authorization, query string, body) except the Host header,
+        // which CloudFront replaces with apiDomainName.
+        const apiBehavior: cloudfront.BehaviorOptions = {
+            origin: apiOrigin,
+            viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.HTTPS_ONLY,
+            cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
+            originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+            allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+            compress: true,
+            responseHeadersPolicy: securityHeadersPolicy,
+        };
+
+        this.distribution = new cloudfront.Distribution(this, 'Distribution', {
+            comment: `CTech Wallet Frontend - ${environment}`,
+            defaultBehavior: {
+                origin: origins.S3BucketOrigin.withOriginAccessControl(this.bucket, {
+                    originAccessControl: oac,
+                }),
+                viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+                cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+                allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
+                compress: true,
+                responseHeadersPolicy: securityHeadersPolicy,
+                functionAssociations: [{
+                    function: urlRewrite,
+                    eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
+                }],
+            },
+            additionalBehaviors: Object.fromEntries(
+                API_PATH_PATTERNS.map((pattern) => [pattern, apiBehavior]),
+            ),
+            httpVersion: HttpVersion.HTTP2_AND_3,
+            defaultRootObject: 'index.html',
+            certificate: domainName
+                ? acm.Certificate.fromCertificateArn(this, 'Cert', certificateArn)
+                : undefined,
+            domainNames: domainName ? [domainName] : undefined,
+            priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
+            minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
+        });
+
+        new cdk.CfnOutput(this, 'BucketName', {value: this.bucket.bucketName, exportName: `${id}-bucket-name`});
+        // Read by .github/workflows/frontend.yml via cloudformation describe-stacks.
+        new cdk.CfnOutput(this, 'DistributionId', {
+            value: this.distribution.distributionId,
+            exportName: `${id}-dist-id`,
+        });
+        new cdk.CfnOutput(this, 'DistributionDomain', {
+            value: this.distribution.distributionDomainName,
+            exportName: `${id}-dist-domain`,
+        });
+        // Read by .github/workflows/frontend.yml to publish the route manifest.
+        new cdk.CfnOutput(this, 'RouteStoreArn', {
+            value: this.routeStore.keyValueStoreArn,
+            exportName: `${id}-route-store-arn`,
+        });
+    }
 }
