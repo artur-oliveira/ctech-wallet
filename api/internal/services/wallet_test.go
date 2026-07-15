@@ -135,15 +135,9 @@ func (l *stubLocker) AcquireOrdered(_ context.Context, _ ...string) (func(), boo
 }
 
 type stubKYC struct {
-	rec        *kycclient.KYC
-	confirmErr error
-	confirmed  bool
+	rec *kycclient.KYC
 }
 
-func (k *stubKYC) Confirm(_ context.Context, _, _ string) error {
-	k.confirmed = true
-	return k.confirmErr
-}
 func (k *stubKYC) Get(_ context.Context, _ string) (*kycclient.KYC, error) { return k.rec, nil }
 
 func newSvc(repo *stubRepo, locker *stubLocker, pc pix.PixClient, kyc KYCClient) *WalletService {
@@ -168,7 +162,7 @@ func TestConfirmDepositCreditsOnCPFMatch(t *testing.T) {
 	repo.deposit = &wallet.PixDeposit{Txid: "tx1", WalletID: "w-real", UserID: "u1", AmountExpected: 5000, Status: wallet.DepositPending}
 	fake := pix.NewFake()
 	fake.StageCharge("tx1", 5000, pix.ChargeCompleted, "12345678901", "E2E-1")
-	kyc := &stubKYC{rec: &kycclient.KYC{Level: "basic", CPF: "12345678901"}}
+	kyc := &stubKYC{rec: &kycclient.KYC{Level: "verified", CPF: "12345678901"}}
 	svc := newSvc(repo, &stubLocker{}, fake, kyc)
 
 	if err := svc.ConfirmDeposit(context.Background(), "tx1"); err != nil {
@@ -179,9 +173,6 @@ func TestConfirmDepositCreditsOnCPFMatch(t *testing.T) {
 	}
 	if repo.depositStatus != wallet.DepositConfirmed {
 		t.Errorf("deposit status = %q, want confirmed", repo.depositStatus)
-	}
-	if !kyc.confirmed {
-		t.Errorf("expected KYC confirm on basic-level first deposit")
 	}
 	if len(fake.Refunds) != 0 {
 		t.Errorf("no refund expected on match")

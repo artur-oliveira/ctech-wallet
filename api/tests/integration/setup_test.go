@@ -149,7 +149,6 @@ func dropTables(ctx context.Context) error {
 
 type stubKYC struct{ rec *kycclient.KYC }
 
-func (k *stubKYC) Confirm(_ context.Context, _, _ string) error            { return nil }
 func (k *stubKYC) Get(_ context.Context, _ string) (*kycclient.KYC, error) { return k.rec, nil }
 
 type harness struct {

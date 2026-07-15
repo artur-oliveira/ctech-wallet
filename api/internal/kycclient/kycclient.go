@@ -1,7 +1,7 @@
 // Package kycclient calls ctech-account's internal KYC API using the wallet's
-// own M2M client_credentials token (scope internal:kyc). Used to promote a user
-// to verified on first deposit and to read the verified CPF for payer/withdrawal
-// matching.
+// own M2M client_credentials token (scope internal:wallet:confirm-deposit).
+// KYC promotion is manual-review-only on account's side now; this client only
+// reads the verified CPF and level for payer/withdrawal matching.
 package kycclient
 
 import (
@@ -19,15 +19,10 @@ import (
 )
 
 const (
-	pathToken        = "/v1.0/token"
-	pathKYCConfirm   = "/v1.0/internal/kyc/confirm"
-	pathKYCGet       = "/v1.0/internal/kyc/%s"
-	scopeInternalKYC = "internal:kyc"
+	pathToken                         = "/v1.0/token"
+	pathKYCGet                        = "/v1.0/internal/kyc/%s"
+	scopeInternalWalletConfirmDeposit = "internal:wallet:confirm-deposit"
 )
-
-// ErrCPFMismatch is returned when account rejects a confirm because the CPF does
-// not match the declared KYC record (HTTP 409 kyc-cpf-mismatch).
-var ErrCPFMismatch = fmt.Errorf("kyc: cpf mismatch")
 
 // KYC is the unmasked identity record account returns to internal callers.
 type KYC struct {
@@ -56,36 +51,9 @@ func New(cfg *config.Config) *Client {
 			tokenURL:     base + pathToken,
 			clientID:     cfg.WalletClientID,
 			clientSecret: cfg.WalletClientSecret,
-			scope:        scopeInternalKYC,
+			scope:        scopeInternalWalletConfirmDeposit,
 		},
 	}
-}
-
-// Confirm promotes a user to verified after matching the declared CPF.
-// Idempotent at account; a CPF mismatch returns ErrCPFMismatch.
-func (c *Client) Confirm(ctx context.Context, userID, cpf string) error {
-	body, _ := json.Marshal(map[string]string{"user_id": userID, "cpf": cpf})
-	req, err := c.authedRequest(ctx, http.MethodPost, c.base+pathKYCConfirm, strings.NewReader(string(body)), true)
-	if err != nil {
-		return err
-	}
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode == http.StatusConflict {
-		raw, _ := io.ReadAll(resp.Body)
-		if strings.Contains(string(raw), "cpf-mismatch") {
-			return ErrCPFMismatch
-		}
-		return fmt.Errorf("kyc confirm conflict: %s", string(raw))
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		raw, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("kyc confirm: status %d: %s", resp.StatusCode, string(raw))
-	}
-	return nil
 }
 
 // Get reads the user's KYC record (unmasked CPF) for payer/withdrawal matching.

@@ -54,7 +54,6 @@ type Locker interface {
 
 // KYCClient is the account KYC surface.
 type KYCClient interface {
-	Confirm(ctx context.Context, userID, cpf string) error
 	Get(ctx context.Context, userID string) (*kycclient.KYC, error)
 }
 
@@ -258,13 +257,6 @@ func (s *WalletService) ConfirmDeposit(ctx context.Context, txid string) error {
 		return err
 	}
 
-	if kyc.Level == wallet.KYCBasic {
-		if err := s.kyc.Confirm(ctx, dep.UserID, kyc.CPF); err != nil {
-			// The payer CPF already matched the declared CPF, so a mismatch here is
-			// unexpected — surface it but the credit already succeeded.
-			slog.Error("kyc confirm on first deposit failed", "user_id", dep.UserID, "err", err)
-		}
-	}
 	if err := s.repo.UpdateDepositStatus(ctx, txid, wallet.DepositConfirmed, charge.E2EID); err != nil {
 		return err
 	}
