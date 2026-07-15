@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -165,7 +166,18 @@ func (c *InterClient) CreateCharge(ctx context.Context, txid string, amount int6
 	if err := c.do(ctx, http.MethodPut, fmt.Sprintf(pathCob, txid), body, &resp); err != nil {
 		return nil, err
 	}
-	return &Charge{Txid: txid, Amount: amount, QRCode: resp.PixCopiaECola, Status: resp.Status}, nil
+	ch := &Charge{Txid: txid, Amount: amount, QRCode: resp.PixCopiaECola, Status: resp.Status}
+	// Inter returns only the EMV string, never the QR image. Generate the PNG so
+	// the frontend's <img> has something to render; a render miss is logged and
+	// left empty — the EMV text still reaches the client.
+	if ch.QRCode != "" {
+		if b64, err := qrPNG(ch.QRCode); err != nil {
+			slog.WarnContext(ctx, "inter: qr png generation failed", "err", err)
+		} else {
+			ch.QRCodeB64 = b64
+		}
+	}
+	return ch, nil
 }
 
 func (c *InterClient) QueryCharge(ctx context.Context, txid string) (*Charge, error) {
@@ -265,12 +277,28 @@ func (c *InterClient) Refund(ctx context.Context, e2eID string, amount int64, id
 	return &TransferResult{E2EID: e2eID, Status: resp.Status}, nil
 }
 
-// Ping validates that a bearer was supplied for this call. api owns the token
-// lifecycle; pix-gateway only forwards what it receives (no Inter call).
+// Ping validates that a bearer was supplied for this call AND that the partner
+// bank host is reachable. api owns the token lifecycle; pix-gateway only
+// forwards what it receives, but a reachability probe catches a dead/blocked
+// Inter endpoint (DNS, TLS, network ACL) that the bearer check alone would
+// miss.
 func (c *InterClient) Ping(ctx context.Context) error {
 	if bearerFromContext(ctx) == "" {
 		return fmt.Errorf("inter: ping requires an OAuth bearer (none supplied)")
 	}
+	u, err := url.Parse(c.base)
+	if err != nil || u.Host == "" {
+		return fmt.Errorf("inter: ping: bad base url %q: %w", c.base, err)
+	}
+	host := u.Host
+	if u.Port() == "" {
+		host = net.JoinHostPort(u.Hostname(), "443")
+	}
+	conn, err := net.DialTimeout("tcp", host, 5*time.Second)
+	if err != nil {
+		return fmt.Errorf("inter: ping: cannot reach %s: %w", host, err)
+	}
+	_ = conn.Close()
 	return nil
 }
 

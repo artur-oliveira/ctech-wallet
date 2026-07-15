@@ -2,6 +2,7 @@ package inter
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -135,6 +136,18 @@ func TestDoSetsBearer(t *testing.T) {
 	if ch.Txid != "tx1" || ch.Status != ChargeActive {
 		t.Fatalf("bad charge: %+v", ch)
 	}
+	// Inter returns only the EMV string; the gateway must render it into a PNG
+	// QR so the frontend <img> has something to show.
+	if ch.QRCodeB64 == "" {
+		t.Fatalf("expected QRCodeB64 to be populated from pixCopiaECola, got empty")
+	}
+	raw, err := base64.StdEncoding.DecodeString(ch.QRCodeB64)
+	if err != nil {
+		t.Fatalf("QRCodeB64 not valid base64: %v", err)
+	}
+	if len(raw) < 4 || string(raw[:4]) != "\x89PNG" {
+		t.Fatalf("QRCodeB64 did not decode to a PNG (magic=%x)", raw[:min(4, len(raw))])
+	}
 }
 
 // TestDoMissingBearer proves the tokenManager is gone: without a supplied
@@ -151,7 +164,10 @@ func TestDoMissingBearer(t *testing.T) {
 }
 
 func TestPingValidatesBearer(t *testing.T) {
-	c := newTestClient("http://example.invalid", &http.Client{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer srv.Close()
+
+	c := newTestClient(srv.URL, srv.Client())
 	if err := c.Ping(WithBearer(context.Background(), "X")); err != nil {
 		t.Fatalf("Ping with bearer should succeed: %v", err)
 	}
