@@ -11,7 +11,7 @@ import (
 const (
 	ScopeWalletCredit      = "internal:wallet:credit"
 	ScopeWalletDebit       = "internal:wallet:debit"
-	ScopePixConfirmDeposit = "internal:pix:confirm-deposit"
+	ScopePixConfirmDeposit = "internal:wallet:confirm-deposit"
 )
 
 // KYC levels are defined once, in the domain — services gate on them too.
