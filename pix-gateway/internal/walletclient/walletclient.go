@@ -22,7 +22,7 @@ import (
 const (
 	pathToken           = "/v1.0/token"
 	pathConfirmDeposit  = "/v1.0/internal/pix/confirm-deposit"
-	scopeConfirmDeposit = "internal:pix:confirm-deposit"
+	scopeConfirmDeposit = "internal:wallet:confirm-deposit"
 )
 
 // Client calls api's confirm-deposit endpoint.

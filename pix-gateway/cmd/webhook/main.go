@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -37,9 +38,20 @@ type handler struct {
 // wake-up signal only, never trusted for amount/status (those come from api's
 // own re-query).
 type webhookPayload struct {
-	Pix []struct {
-		Txid string `json:"txid"`
-	} `json:"pix"`
+	EndToEndId       string    `json:"endToEndId"`
+	Txid             string    `json:"txid"`
+	Valor            string    `json:"valor"`
+	Chave            string    `json:"chave"`
+	Horario          time.Time `json:"horario"`
+	InfoPagador      string    `json:"infoPagador"`
+	ComponentesValor struct {
+		Saque struct {
+			Valor                     string `json:"valor"`
+			ModalidadeAgente          string `json:"modalidadeAgente"`
+			PrestadorDoServicoDeSaque string `json:"prestadorDoServicoDeSaque"`
+		} `json:"saque"`
+	} `json:"componentesValor"`
+	Devolucoes []interface{} `json:"devolucoes"`
 }
 
 func main() {
@@ -80,26 +92,17 @@ func (h *handler) handle(ctx context.Context, req events.APIGatewayV2HTTPRequest
 		slog.ErrorContext(ctx, "webhook request malformed", "body", req.Body, "err", err)
 		return events.APIGatewayV2HTTPResponse{StatusCode: 400, Body: "malformed webhook payload"}, nil
 	}
-	txids := make([]string, 0, len(body.Pix))
-	for _, p := range body.Pix {
-		if p.Txid != "" {
-			txids = append(txids, p.Txid)
-		}
-	}
-	slog.InfoContext(ctx, "webhook request", "txids", txids)
-
+	slog.InfoContext(ctx, "webhook request", "txid", body.Txid, "body", req.Body)
 	resp := events.APIGatewayV2HTTPResponse{StatusCode: 200}
-	for _, p := range body.Pix {
-		if p.Txid == "" {
-			continue
-		}
-		if err := h.confirmer.ConfirmDeposit(ctx, p.Txid); err != nil {
-			slog.ErrorContext(ctx, "webhook response", "status", 500, "txid", p.Txid, "err", err)
-			// Non-200 so Inter retries the whole payload later; ConfirmDeposit is
-			// idempotent per txid so a retry never double-credits.
-			return events.APIGatewayV2HTTPResponse{StatusCode: 500, Body: "confirm-deposit failed"}, nil
-		}
+	if body.Txid == "" {
+		return resp, nil
 	}
-	slog.InfoContext(ctx, "webhook response", "status", resp.StatusCode, "txids", txids)
+	if err := h.confirmer.ConfirmDeposit(ctx, body.Txid); err != nil {
+		slog.ErrorContext(ctx, "webhook response", "status", 500, "txid", body.Txid, "err", err)
+		// Non-200 so Inter retries the whole payload later; ConfirmDeposit is
+		// idempotent per txid so a retry never double-credits.
+		return events.APIGatewayV2HTTPResponse{StatusCode: 500, Body: "confirm-deposit failed"}, nil
+	}
+	slog.InfoContext(ctx, "webhook response", "status", resp.StatusCode)
 	return resp, nil
 }
