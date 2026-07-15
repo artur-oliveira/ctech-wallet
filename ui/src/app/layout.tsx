@@ -10,112 +10,112 @@ import {I18nProvider} from '@/lib/providers/I18nProvider'
 import {Toaster} from 'sonner'
 
 const geistSans = Geist({
-  variable: '--font-geist-sans',
-  subsets: ['latin'],
+    variable: '--font-geist-sans',
+    subsets: ['latin'],
 })
 
 const geistMono = Geist_Mono({
-  variable: '--font-geist-mono',
-  subsets: ['latin'],
+    variable: '--font-geist-mono',
+    subsets: ['latin'],
 })
 
 export const viewport: Viewport = {
-  width: 'device-width',
-  initialScale: 1,
+    width: 'device-width',
+    initialScale: 1,
 }
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://wallet.aoctech.app'),
-  
-  title: {
-    default: 'CTech Wallet',
-    template: '%s | CTech Wallet',
-  },
-  
-  description:
-    'Carteira digital do ecossistema CTech. Centralize seu saldo para pagar assinaturas, utilizar serviços e jogar com uma única carteira.',
-  
-  keywords: [
-    'CTech Wallet',
-    'wallet',
-    'digital wallet',
-    'pix',
-    'saldo',
-    'payments',
-    'assinaturas',
-    'subscription',
-    'gaming wallet',
-    'poker',
-    'domino',
-    'credits',
-    'ecossistema CTech',
-  ],
-  
-  authors: [
-    {
-      name: 'CTech',
+    metadataBase: new URL('https://wallet.aoctech.app'),
+
+    title: {
+        default: 'CTech Wallet',
+        template: '%s | CTech Wallet',
     },
-  ],
-  
-  openGraph: {
-    title: 'CTech Wallet',
+
     description:
-      'Seu saldo para todo o ecossistema CTech.',
-    url: 'https://wallet.aoctech.app',
-    siteName: 'CTech Wallet',
-    locale: 'pt_BR',
-    type: 'website',
-    
-    images: [
-      {
-        url: '/og-image.png',
-        width: 1200,
-        height: 630,
-        alt: 'CTech Wallet',
-      },
+        'Carteira digital do ecossistema CTech. Centralize seu saldo para pagar assinaturas, utilizar serviços e jogar com uma única carteira.',
+
+    keywords: [
+        'CTech Wallet',
+        'wallet',
+        'digital wallet',
+        'pix',
+        'saldo',
+        'payments',
+        'assinaturas',
+        'subscription',
+        'gaming wallet',
+        'poker',
+        'domino',
+        'credits',
+        'ecossistema CTech',
     ],
-  },
-  
-  twitter: {
-    card: 'summary_large_image',
-    title: 'CTech Wallet',
-    description:
-      'Seu saldo para todo o ecossistema CTech.',
-    images: ['/og-image.png'],
-  },
-  
-  robots: {
-    index: false,
-    follow: false,
-  },
-  
-  manifest: '/site.webmanifest',
-  
-  icons: {
-    icon: '/favicon.ico',
-    shortcut: '/favicon.ico',
-    apple: '/apple-touch-icon.png',
-  },
+
+    authors: [
+        {
+            name: 'CTech',
+        },
+    ],
+
+    openGraph: {
+        title: 'CTech Wallet',
+        description:
+            'Seu saldo para todo o ecossistema CTech.',
+        url: 'https://wallet.aoctech.app',
+        siteName: 'CTech Wallet',
+        locale: 'pt_BR',
+        type: 'website',
+
+        images: [
+            {
+                url: '/og-image.png',
+                width: 1200,
+                height: 630,
+                alt: 'CTech Wallet',
+            },
+        ],
+    },
+
+    twitter: {
+        card: 'summary_large_image',
+        title: 'CTech Wallet',
+        description:
+            'Seu saldo para todo o ecossistema CTech.',
+        images: ['/og-image.png'],
+    },
+
+    robots: {
+        index: false,
+        follow: false,
+    },
+
+    manifest: '/site.webmanifest',
+
+    icons: {
+        icon: '/favicon.ico',
+        shortcut: '/favicon.ico',
+        apple: '/apple-touch-icon.png',
+    },
 }
 
 export default function RootLayout({
-                                     children,
+                                       children,
                                    }: Readonly<{
-  children: React.ReactNode
+    children: React.ReactNode
 }>) {
-  return (
-    <html
-      lang="pt-BR"
-      suppressHydrationWarning
-      className={`${geistSans.variable} ${geistMono.variable} h-full`}
-    >
-    <body
-      suppressHydrationWarning
-      className="min-h-screen bg-background text-foreground antialiased"
-    >
-    {/* Subtle Wallet purple background */}
-    <div
-      className="
+    return (
+        <html
+            lang="pt-BR"
+            suppressHydrationWarning
+            className={`${geistSans.variable} ${geistMono.variable} h-full`}
+        >
+        <body
+            suppressHydrationWarning
+            className="min-h-screen bg-background text-foreground antialiased"
+        >
+        {/* Subtle Wallet purple background */}
+        <div
+            className="
             fixed inset-0 -z-10 opacity-60
             bg-linear-to-b
             from-background
@@ -123,19 +123,19 @@ export default function RootLayout({
             to-violet-50
             dark:to-violet-950
           "
-    />
-    
-    <QueryProvider>
-      <AuthProvider>
-        <I18nProvider>{children}</I18nProvider>
-      </AuthProvider>
-    </QueryProvider>
-    
-    <Toaster
-      richColors
-      position="top-right"
-    />
-    </body>
-    </html>
-  )
+        />
+
+        <QueryProvider>
+            <AuthProvider>
+                <I18nProvider>{children}</I18nProvider>
+            </AuthProvider>
+        </QueryProvider>
+
+        <Toaster
+            richColors
+            position="top-right"
+        />
+        </body>
+        </html>
+    )
 }

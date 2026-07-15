@@ -8,12 +8,12 @@ import {formatBRL, formatCredits} from '@/lib/utils/money'
 import type {Balances} from '@/lib/types/api'
 
 interface BalanceCardsProps {
-  balances: Balances
-  onDeposit: () => void
-  onWithdraw: () => void
-  onBuyCredits: () => void
-  onFundGame: () => void
-  onReturnFromGame: () => void
+    balances: Balances
+    onDeposit: () => void
+    onWithdraw: () => void
+    onBuyCredits: () => void
+    onFundGame: () => void
+    onReturnFromGame: () => void
 }
 
 /**
@@ -33,122 +33,122 @@ interface BalanceCardsProps {
  * of the opt-in, so the entry point is one quiet link, never a banner or an upsell.
  */
 export function BalanceCards({
-                               balances,
-                               onDeposit,
-                               onWithdraw,
-                               onBuyCredits,
-                               onFundGame,
-                               onReturnFromGame,
+                                 balances,
+                                 onDeposit,
+                                 onWithdraw,
+                                 onBuyCredits,
+                                 onFundGame,
+                                 onReturnFromGame,
                              }: BalanceCardsProps) {
-  const {t} = useTranslation()
-  const {game, sandbox, activated} = balances
+    const {t} = useTranslation()
+    const {game, sandbox, activated} = balances
 
-  return (
-    <div className="space-y-4">
-      <div className={activated ? 'grid gap-4 md:grid-cols-[1.4fr_1fr]' : 'grid gap-4'}>
-        {/* Real — money */}
-        <section className="relative overflow-hidden rounded-2xl bg-brand-600 p-6 text-white">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="font-mono text-xs uppercase tracking-widest text-brand-100">{t('balance.real.label')}</p>
-              <p className="mt-3 font-mono text-4xl font-bold tabular-nums tracking-tight">
-                {formatBRL(balances.real.balance)}
-              </p>
-              <p className="mt-2 text-sm text-brand-100">{t('balance.real.subtitle')}</p>
-            </div>
-          </div>
+    return (
+        <div className="space-y-4">
+            <div className={activated ? 'grid gap-4 md:grid-cols-[1.4fr_1fr]' : 'grid gap-4'}>
+                {/* Real — money */}
+                <section className="relative overflow-hidden rounded-2xl bg-brand-600 p-6 text-white">
+                    <div className="flex items-start justify-between">
+                        <div>
+                            <p className="font-mono text-xs uppercase tracking-widest text-brand-100">{t('balance.real.label')}</p>
+                            <p className="mt-3 font-mono text-4xl font-bold tabular-nums tracking-tight">
+                                {formatBRL(balances.real.balance)}
+                            </p>
+                            <p className="mt-2 text-sm text-brand-100">{t('balance.real.subtitle')}</p>
+                        </div>
+                    </div>
 
-          <div className="mt-6 flex flex-wrap gap-2">
-            <Button
-              variant="secondary"
-              className="bg-white text-brand-700 hover:bg-brand-50"
-              onClick={onDeposit}
-            >
-              <ArrowDownToLine size={16}/>
-              {t('balance.deposit')}
-            </Button>
-            <Button
-              variant="outline"
-              className="border-brand-400/60 bg-transparent text-white hover:bg-brand-500"
-              onClick={onWithdraw}
-            >
-              <ArrowUpFromLine size={16}/>
-              {t('balance.withdraw')}
-            </Button>
-            {activated && (
-              <Button
-                variant="outline"
-                className="border-brand-400/60 bg-transparent text-white hover:bg-brand-500"
-                onClick={onFundGame}
-              >
-                <Dice5 size={16}/>
-                {t('balance.fundGame')}
-              </Button>
-            )}
-          </div>
-        </section>
+                    <div className="mt-6 flex flex-wrap gap-2">
+                        <Button
+                            variant="secondary"
+                            className="bg-white text-brand-700 hover:bg-brand-50"
+                            onClick={onDeposit}
+                        >
+                            <ArrowDownToLine size={16}/>
+                            {t('balance.deposit')}
+                        </Button>
+                        <Button
+                            variant="outline"
+                            className="border-brand-400/60 bg-transparent text-white hover:bg-brand-500"
+                            onClick={onWithdraw}
+                        >
+                            <ArrowUpFromLine size={16}/>
+                            {t('balance.withdraw')}
+                        </Button>
+                        {activated && (
+                            <Button
+                                variant="outline"
+                                className="border-brand-400/60 bg-transparent text-white hover:bg-brand-500"
+                                onClick={onFundGame}
+                            >
+                                <Dice5 size={16}/>
+                                {t('balance.fundGame')}
+                            </Button>
+                        )}
+                    </div>
+                </section>
 
-        {/* Game — real money, ring-fenced */}
-        {activated && game && (
-          <section className="flex flex-col rounded-2xl border-2 border-brand-200 bg-card p-6">
-            <div className="flex flex-wrap items-center gap-2">
-              <Dice5 size={16} className="text-brand-600"/>
-              <p className="font-mono text-xs uppercase tracking-widest text-brand-600">{t('balance.game.label')}</p>
-              <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
+                {/* Game — real money, ring-fenced */}
+                {activated && game && (
+                    <section className="flex flex-col rounded-2xl border-2 border-brand-200 bg-card p-6">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <Dice5 size={16} className="text-brand-600"/>
+                            <p className="font-mono text-xs uppercase tracking-widest text-brand-600">{t('balance.game.label')}</p>
+                            <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
                 {t('balance.game.badge')}
               </span>
+                        </div>
+
+                        <p className="mt-3 font-mono text-3xl font-semibold tabular-nums tracking-tight text-foreground">
+                            {formatBRL(game.balance)}
+                        </p>
+
+                        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                            {t('balance.game.subtitle')}
+                        </p>
+
+                        <div className="mt-auto flex flex-wrap gap-2 pt-6">
+                            <Button variant="outline" className="flex-1" onClick={onReturnFromGame}>
+                                <ArrowUpFromLine size={16}/>
+                                {t('balance.return')}
+                            </Button>
+                            <Button variant="outline" className="flex-1" onClick={onBuyCredits}>
+                                <Plus size={16}/>
+                                {t('balance.credits')}
+                            </Button>
+                        </div>
+                    </section>
+                )}
             </div>
 
-            <p className="mt-3 font-mono text-3xl font-semibold tabular-nums tracking-tight text-foreground">
-              {formatBRL(game.balance)}
-            </p>
+            {/* Sandbox — not money */}
+            {activated && sandbox && (
+                <section className="flex flex-col rounded-2xl border border-dashed border-border bg-card p-6">
+                    <div className="flex items-center gap-2">
+                        <Gamepad2 size={16} className="text-muted-foreground"/>
+                        <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">{t('balance.sandbox.label')}</p>
+                    </div>
 
-            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-              {t('balance.game.subtitle')}
-            </p>
+                    <p className="mt-3 font-mono text-3xl font-semibold tabular-nums tracking-tight text-foreground">
+                        {formatCredits(sandbox.balance)}
+                    </p>
 
-            <div className="mt-auto flex flex-wrap gap-2 pt-6">
-              <Button variant="outline" className="flex-1" onClick={onReturnFromGame}>
-                <ArrowUpFromLine size={16}/>
-                {t('balance.return')}
-              </Button>
-              <Button variant="outline" className="flex-1" onClick={onBuyCredits}>
-                <Plus size={16}/>
-                {t('balance.credits')}
-              </Button>
-            </div>
-          </section>
-        )}
-      </div>
+                    <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                        {t('balance.sandbox.subtitle')}
+                    </p>
+                </section>
+            )}
 
-      {/* Sandbox — not money */}
-      {activated && sandbox && (
-        <section className="flex flex-col rounded-2xl border border-dashed border-border bg-card p-6">
-          <div className="flex items-center gap-2">
-            <Gamepad2 size={16} className="text-muted-foreground"/>
-            <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">{t('balance.sandbox.label')}</p>
-          </div>
-
-          <p className="mt-3 font-mono text-3xl font-semibold tabular-nums tracking-tight text-foreground">
-            {formatCredits(sandbox.balance)}
-          </p>
-
-          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            {t('balance.sandbox.subtitle')}
-          </p>
-        </section>
-      )}
-
-      {/* Not activated — one quiet link, never an upsell. */}
-      {!activated && (
-        <Link
-          href="/gambling/activate"
-          className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground transition hover:border-brand-200 hover:text-foreground"
-        >
-          <ShieldCheck size={16} className="text-muted-foreground"/>
-          {t('balance.activateLink')}
-        </Link>
-      )}
-    </div>
-  )
+            {/* Not activated — one quiet link, never an upsell. */}
+            {!activated && (
+                <Link
+                    href="/gambling/activate"
+                    className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground transition hover:border-brand-200 hover:text-foreground"
+                >
+                    <ShieldCheck size={16} className="text-muted-foreground"/>
+                    {t('balance.activateLink')}
+                </Link>
+            )}
+        </div>
+    )
 }

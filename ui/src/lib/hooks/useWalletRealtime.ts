@@ -13,53 +13,53 @@ import {getAccessToken} from '@/lib/api/client'
 const WS_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
 
 function buildWsUrl(): string {
-  const origin = WS_BASE_URL || window.location.origin
-  const base = origin.replace(/^http/, 'ws')
-  return `${base}/v1.0/ws`
+    const origin = WS_BASE_URL || window.location.origin
+    const base = origin.replace(/^http/, 'ws')
+    return `${base}/v1.0/ws`
 }
 
 interface RealtimeMessage {
-  type: string
-  wallet_id?: string
-  txid?: string
-  amount?: number
+    type: string
+    wallet_id?: string
+    txid?: string
+    amount?: number
 }
 
 /** Formats centavos as BRL without importing formatBRL, to keep this hook
  * dependency-free of the wallet component tree (avoids a circular import risk
  * between hooks/ and components/wallet/). */
 function formatCentavos(amount: number, locale: string): string {
-  return (amount / 100).toLocaleString(locale, {style: 'currency', currency: 'BRL'})
+    return (amount / 100).toLocaleString(locale, {style: 'currency', currency: 'BRL'})
 }
 
 export function useWalletRealtime(): { wsStatus: WSStatus } {
-  const {t, i18n} = useTranslation()
-  const qc = useQueryClient()
-  const token = getAccessToken()
+    const {t, i18n} = useTranslation()
+    const qc = useQueryClient()
+    const token = getAccessToken()
 
-  const wsUrl = token ? buildWsUrl() : null
+    const wsUrl = token ? buildWsUrl() : null
 
-  const handleMessage = useCallback((data: unknown) => {
-    const msg = data as RealtimeMessage
-    if (!msg?.type || msg.type === 'ping' || msg.type === 'connected') return
+    const handleMessage = useCallback((data: unknown) => {
+        const msg = data as RealtimeMessage
+        if (!msg?.type || msg.type === 'ping' || msg.type === 'connected') return
 
-    if (msg.type === 'deposit_confirmed') {
-      void qc.invalidateQueries({queryKey: ['balances']})
-      void qc.invalidateQueries({queryKey: ['ledger']})
-      toast.success(
-        typeof msg.amount === 'number'
-          ? t('toast.realtimeDeposit', {amount: formatCentavos(msg.amount, i18n.language || 'pt-BR')})
-          : t('toast.depositConfirmed'),
-      )
-    }
-  }, [qc, t, i18n.language])
+        if (msg.type === 'deposit_confirmed') {
+            void qc.invalidateQueries({queryKey: ['balances']})
+            void qc.invalidateQueries({queryKey: ['ledger']})
+            toast.success(
+                typeof msg.amount === 'number'
+                    ? t('toast.realtimeDeposit', {amount: formatCentavos(msg.amount, i18n.language || 'pt-BR')})
+                    : t('toast.depositConfirmed'),
+            )
+        }
+    }, [qc, t, i18n.language])
 
-  const {status: wsStatus} = useWebSocket({
-    url: wsUrl,
-    onMessage: handleMessage,
-    enabled: !!wsUrl,
-    authToken: token ?? undefined,
-  })
+    const {status: wsStatus} = useWebSocket({
+        url: wsUrl,
+        onMessage: handleMessage,
+        enabled: !!wsUrl,
+        authToken: token ?? undefined,
+    })
 
-  return {wsStatus}
+    return {wsStatus}
 }

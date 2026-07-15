@@ -16,63 +16,63 @@ import {Button} from '@/components/ui/button'
  * the current version, so bumping it re-gates everyone.
  */
 export function TermsAddendumGate() {
-  const {t} = useTranslation()
-  const qc = useQueryClient()
-  const [checked, setChecked] = useState(false)
-  
-  const accept = useMutation({
-    mutationFn: () => apiClient.acceptTermsAddendum(),
-    onSuccess: () => qc.invalidateQueries({queryKey: ['me']}),
-  })
-  
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-login px-4">
-      <div className="w-full max-w-md space-y-5 rounded-2xl border border-brand-100 bg-card p-6 shadow-card">
-        <div className="flex size-10 items-center justify-center rounded-lg bg-brand-600 text-white">
-          <ShieldCheck size={20}/>
-        </div>
-        
-        <div>
-          <h1 className="text-lg font-semibold text-foreground">{t('terms.title')}</h1>
-          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-            {t('terms.description')}
-          </p>
-        </div>
+    const {t} = useTranslation()
+    const qc = useQueryClient()
+    const [checked, setChecked] = useState(false)
 
-        {accept.isError && (
-          <p className="text-sm text-red-600">{t('terms.error')}</p>
-        )}
+    const accept = useMutation({
+        mutationFn: () => apiClient.acceptTermsAddendum(),
+        onSuccess: () => qc.invalidateQueries({queryKey: ['me']}),
+    })
 
-        <label className="flex items-start gap-2 text-sm text-muted-foreground">
-          <input
-            type="checkbox"
-            checked={checked}
-            onChange={(e) => setChecked(e.target.checked)}
-            className="mt-0.5 size-4 shrink-0 rounded border-border accent-brand-600"
-          />
-          <span>
+    return (
+        <div className="flex min-h-screen items-center justify-center bg-gradient-login px-4">
+            <div className="w-full max-w-md space-y-5 rounded-2xl border border-brand-100 bg-card p-6 shadow-card">
+                <div className="flex size-10 items-center justify-center rounded-lg bg-brand-600 text-white">
+                    <ShieldCheck size={20}/>
+                </div>
+
+                <div>
+                    <h1 className="text-lg font-semibold text-foreground">{t('terms.title')}</h1>
+                    <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                        {t('terms.description')}
+                    </p>
+                </div>
+
+                {accept.isError && (
+                    <p className="text-sm text-red-600">{t('terms.error')}</p>
+                )}
+
+                <label className="flex items-start gap-2 text-sm text-muted-foreground">
+                    <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => setChecked(e.target.checked)}
+                        className="mt-0.5 size-4 shrink-0 rounded border-border accent-brand-600"
+                    />
+                    <span>
             {t('terms.checkboxPrefix')}{' '}
-            <a
-              href="/terms-addendum"
-              target="_blank"
-              rel="noreferrer"
-              className="text-foreground underline underline-offset-4"
-            >
+                        <a
+                            href="/terms-addendum"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-foreground underline underline-offset-4"
+                        >
               {t('terms.termsLink')}
             </a>
             .
           </span>
-        </label>
+                </label>
 
-        <Button
-          variant="brand"
-          className="w-full"
-          disabled={!checked || accept.isPending}
-          onClick={() => accept.mutate()}
-        >
-          {accept.isPending ? t('terms.confirming') : t('terms.continue')}
-        </Button>
-      </div>
-    </div>
-  )
+                <Button
+                    variant="brand"
+                    className="w-full"
+                    disabled={!checked || accept.isPending}
+                    onClick={() => accept.mutate()}
+                >
+                    {accept.isPending ? t('terms.confirming') : t('terms.continue')}
+                </Button>
+            </div>
+        </div>
+    )
 }

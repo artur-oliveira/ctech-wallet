@@ -15,21 +15,21 @@ const brlCache = new Map<string, Intl.NumberFormat>()
 const plainCache = new Map<string, Intl.NumberFormat>()
 
 function brl(locale: string): Intl.NumberFormat {
-  let f = brlCache.get(locale)
-  if (!f) {
-    f = new Intl.NumberFormat(locale, {style: 'currency', currency: 'BRL'})
-    brlCache.set(locale, f)
-  }
-  return f
+    let f = brlCache.get(locale)
+    if (!f) {
+        f = new Intl.NumberFormat(locale, {style: 'currency', currency: 'BRL'})
+        brlCache.set(locale, f)
+    }
+    return f
 }
 
 function plain(locale: string): Intl.NumberFormat {
-  let f = plainCache.get(locale)
-  if (!f) {
-    f = new Intl.NumberFormat(locale, {minimumFractionDigits: 2, maximumFractionDigits: 2})
-    plainCache.set(locale, f)
-  }
-  return f
+    let f = plainCache.get(locale)
+    if (!f) {
+        f = new Intl.NumberFormat(locale, {minimumFractionDigits: 2, maximumFractionDigits: 2})
+        plainCache.set(locale, f)
+    }
+    return f
 }
 
 /** Hard ceiling on any user-typed amount: R$ 1.000.000,00 = 100.000.000 centavos. */
@@ -40,17 +40,17 @@ export const MAX_AMOUNT_DIGITS = 9
 
 /** Formats integer centavos as BRL, e.g. 12345 → "R$ 123,45". */
 export function formatBRL(centavos: number, locale: string = i18n.language || 'pt-BR'): string {
-  return brl(locale).format(centavos / 100)
+    return brl(locale).format(centavos / 100)
 }
 
 /** Formats integer centavos as a bare number — used for sandbox credit. */
 export function formatCredits(centavos: number, locale: string = i18n.language || 'pt-BR'): string {
-  return plain(locale).format(centavos / 100)
+    return plain(locale).format(centavos / 100)
 }
 
 /** Signed centavos → "+R$ 10,00" / "−R$ 10,00" for ledger rows. */
 export function formatSigned(centavos: number, real: boolean, locale: string = i18n.language || 'pt-BR'): string {
-  const sign = centavos < 0 ? '−' : '+'
-  const abs = Math.abs(centavos)
-  return `${sign}${real ? formatBRL(abs, locale) : formatCredits(abs, locale)}`
+    const sign = centavos < 0 ? '−' : '+'
+    const abs = Math.abs(centavos)
+    return `${sign}${real ? formatBRL(abs, locale) : formatCredits(abs, locale)}`
 }

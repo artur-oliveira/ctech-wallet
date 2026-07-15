@@ -17,9 +17,9 @@ export const FEE_ABSOLUTE_MIN = 100 // R$ 1,00 — never below
 
 /** Withdrawal fee in centavos for `amount` centavos, using the documented defaults. */
 export function withdrawalFee(amount: number): number {
-  const feeRaw = (amount * FEE_BPS) / 10000
-  const min = Math.max(FEE_ABSOLUTE_MIN, FEE_MIN)
-  if (feeRaw < min) return min
-  if (feeRaw > FEE_MAX) return FEE_MAX
-  return Math.floor(feeRaw)
+    const feeRaw = (amount * FEE_BPS) / 10000
+    const min = Math.max(FEE_ABSOLUTE_MIN, FEE_MIN)
+    if (feeRaw < min) return min
+    if (feeRaw > FEE_MAX) return FEE_MAX
+    return Math.floor(feeRaw)
 }

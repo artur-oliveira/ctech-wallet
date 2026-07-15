@@ -158,6 +158,7 @@ export class PixGatewayStack extends cdk.Stack {
         const domainName = domainForEnv(environment, 'pix.wallet');
         const domain = new apigwv2.DomainName(this, 'WebhookDomain', {
             domainName,
+            ipAddressType: IpAddressType.DUAL_STACK,
             certificate: acm.Certificate.fromCertificateArn(this, 'WebhookDomainCert', certificateArn),
             mtls: {
                 bucket: trustStoreBucket,

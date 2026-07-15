@@ -9,36 +9,36 @@ import i18n from '@/lib/i18n'
 const STORAGE_KEY = 'i18nextLng'
 
 function LanguageSync() {
-  const {i18n: instance} = useTranslation()
-  const detectedOnce = useRef(false)
+    const {i18n: instance} = useTranslation()
+    const detectedOnce = useRef(false)
 
-  useEffect(() => {
-    if (detectedOnce.current) return
-    detectedOnce.current = true
+    useEffect(() => {
+        if (detectedOnce.current) return
+        detectedOnce.current = true
 
-    const cached = window.localStorage.getItem(STORAGE_KEY)
-    let resolved = cached
+        const cached = window.localStorage.getItem(STORAGE_KEY)
+        let resolved = cached
 
-    if (!resolved) {
-      const detector = new LanguageDetector()
-      detector.init({languageUtils: instance.services.languageUtils})
-      const detected = detector.detect()
-      resolved = Array.isArray(detected) ? detected[0] : detected ?? null
-    }
+        if (!resolved) {
+            const detector = new LanguageDetector()
+            detector.init({languageUtils: instance.services.languageUtils})
+            const detected = detector.detect()
+            resolved = Array.isArray(detected) ? detected[0] : detected ?? null
+        }
 
-    const supported = resolved?.startsWith('en') ? 'en' : resolved === 'pt-BR' ? 'pt-BR' : null
+        const supported = resolved?.startsWith('en') ? 'en' : resolved === 'pt-BR' ? 'pt-BR' : null
 
-    if (supported && supported !== instance.language) {
-      instance.changeLanguage(supported)
-    }
-  }, [instance])
+        if (supported && supported !== instance.language) {
+            instance.changeLanguage(supported)
+        }
+    }, [instance])
 
-  useEffect(() => {
-    document.documentElement.lang = instance.language
-    window.localStorage.setItem(STORAGE_KEY, instance.language)
-  }, [instance.language])
+    useEffect(() => {
+        document.documentElement.lang = instance.language
+        window.localStorage.setItem(STORAGE_KEY, instance.language)
+    }, [instance.language])
 
-  return null
+    return null
 }
 
 /**
@@ -48,30 +48,30 @@ function LanguageSync() {
  * pages (long-form pt-BR prose) render immediately.
  */
 export function I18nProvider({children}: { children: React.ReactNode }) {
-  const [mounted, setMounted] = useState(false)
-  const pathname = usePathname()
+    const [mounted, setMounted] = useState(false)
+    const pathname = usePathname()
 
-  useEffect(() => {
-    const timer = setTimeout(() => setMounted(true), 0)
-    return () => clearTimeout(timer)
-  }, [])
+    useEffect(() => {
+        const timer = setTimeout(() => setMounted(true), 0)
+        return () => clearTimeout(timer)
+    }, [])
 
-  const isStaticPage = pathname
-    ? (pathname.startsWith('/terms-addendum') || pathname.startsWith('/gambling-addendum'))
-    : false
+    const isStaticPage = pathname
+        ? (pathname.startsWith('/terms-addendum') || pathname.startsWith('/gambling-addendum'))
+        : false
 
-  return (
-    <I18nextProvider i18n={i18n}>
-      <LanguageSync/>
-      {mounted || isStaticPage ? (
-        children
-      ) : (
-        <div className="min-h-screen flex items-center justify-center bg-transparent">
-          <div className="animate-pulse flex flex-col items-center space-y-4">
-            <div className="size-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin"/>
-          </div>
-        </div>
-      )}
-    </I18nextProvider>
-  )
+    return (
+        <I18nextProvider i18n={i18n}>
+            <LanguageSync/>
+            {mounted || isStaticPage ? (
+                children
+            ) : (
+                <div className="min-h-screen flex items-center justify-center bg-transparent">
+                    <div className="animate-pulse flex flex-col items-center space-y-4">
+                        <div className="size-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin"/>
+                    </div>
+                </div>
+            )}
+        </I18nextProvider>
+    )
 }

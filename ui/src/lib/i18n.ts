@@ -6,14 +6,14 @@ import ptBR from '@/locales/pt-BR.json'
 export const DEFAULT_LOCALE = 'pt-BR'
 
 i18n.use(initReactI18next).init({
-  resources: {
-    en: {translation: en},
-    'pt-BR': {translation: ptBR},
-  },
-  lng: DEFAULT_LOCALE,
-  fallbackLng: DEFAULT_LOCALE,
-  supportedLngs: ['en', 'pt-BR'],
-  interpolation: {escapeValue: false},
+    resources: {
+        en: {translation: en},
+        'pt-BR': {translation: ptBR},
+    },
+    lng: DEFAULT_LOCALE,
+    fallbackLng: DEFAULT_LOCALE,
+    supportedLngs: ['en', 'pt-BR'],
+    interpolation: {escapeValue: false},
 })
 
 export default i18n
