@@ -1,290 +1,172 @@
 import type {Metadata} from 'next'
 import {LegalPage, LegalSection} from '@/components/legal-page'
+import i18n from '@/lib/i18n-static'
 
 export const metadata: Metadata = {
-    title: 'Termos Adicionais — CTech Wallet',
-    description:
-        'Termos adicionais aplicáveis à utilização da CTech Wallet.',
+    title: i18n.t('legal.terms.v2.metaTitle'),
+    description: i18n.t('legal.terms.v2.metaDescription'),
 }
-
-const ADDENDUM_VERSION = '2.0'
-const UPDATED_AT = '12 de julho de 2026'
 
 export default function TermsAddendumPage() {
     return (
         <LegalPage
-            title="Termos Adicionais — CTech Wallet"
-            updatedAt={UPDATED_AT}
+            title={i18n.t('legal.terms.v2.title')}
+            updatedAt={i18n.t('legal.terms.v2.updatedAt')}
         >
             <p className="text-xs text-muted-foreground">
-                Versão {ADDENDUM_VERSION}
+                {i18n.t('legal.version')} {i18n.t('legal.terms.v2.version')}
             </p>
 
             <p>
-                Este documento complementa os{' '}
+                {i18n.t('legal.terms.v2.intro1')}{' '}
                 <a
                     href="https://accounts.aoctech.app/terms"
                     target="_blank"
                     rel="noreferrer"
                     className="underline underline-offset-4"
                 >
-                    Termos de Uso
+                    {i18n.t('legal.terms.v2.termsOfUse')}
                 </a>{' '}
-                e a{' '}
+                {i18n.t('legal.terms.v2.intro2')}{' '}
                 <a
                     href="https://accounts.aoctech.app/privacy"
                     target="_blank"
                     rel="noreferrer"
                     className="underline underline-offset-4"
                 >
-                    Política de Privacidade
+                    {i18n.t('legal.terms.v2.privacy')}
                 </a>{' '}
-                da plataforma CTech.
+                {i18n.t('legal.terms.v2.intro3')}
             </p>
 
-            <LegalSection heading="1. Sobre a CTech Wallet">
-                <p>
-                    A CTech Wallet é uma funcionalidade da plataforma CTech destinada
-                    ao gerenciamento de créditos e movimentações relacionadas aos
-                    serviços disponibilizados pela CTech.
-                </p>
-
-                <p>
-                    A Wallet não constitui conta bancária, conta de pagamento,
-                    investimento financeiro, depósito bancário ou produto de
-                    investimento regulado.
-                </p>
-
-                <p>
-                    Os valores mantidos na Wallet representam créditos perante a
-                    plataforma CTech para utilização nos serviços disponibilizados.
-                </p>
-
-                <p>
-                    Os recursos mantidos na Wallet não possuem cobertura do Fundo
-                    Garantidor de Créditos (FGC).
-                </p>
+            <LegalSection heading={i18n.t('legal.terms.v2.s1.heading')}>
+                <p>{i18n.t('legal.terms.v2.s1.p1')}</p>
+                <p>{i18n.t('legal.terms.v2.s1.p2')}</p>
+                <p>{i18n.t('legal.terms.v2.s1.p3')}</p>
+                <p>{i18n.t('legal.terms.v2.s1.p4')}</p>
             </LegalSection>
 
-            <LegalSection heading="2. Elegibilidade">
-                <p>
-                    Para utilização de funcionalidades envolvendo dinheiro real é
-                    necessário:
-                </p>
-
+            <LegalSection heading={i18n.t('legal.terms.v2.s2.heading')}>
+                <p>{i18n.t('legal.terms.v2.s2.p1')}</p>
                 <ul className="list-disc pl-5 space-y-2">
-                    <li>possuir 18 (dezoito) anos ou mais;</li>
-                    <li>possuir conta CTech ativa;</li>
-                    <li>concluir o processo de verificação de identidade (KYC).</li>
+                    <li>{i18n.t('legal.terms.v2.s2.li1')}</li>
+                    <li>{i18n.t('legal.terms.v2.s2.li2')}</li>
+                    <li>{i18n.t('legal.terms.v2.s2.li3')}</li>
                 </ul>
-
-                <p>
-                    A CTech poderá solicitar documentos adicionais a qualquer momento,
-                    inclusive para atualização cadastral ou prevenção à fraude.
-                </p>
+                <p>{i18n.t('legal.terms.v2.s2.p2')}</p>
             </LegalSection>
 
-            <LegalSection heading="3. Estrutura das carteiras">
-                <p>
-                    A Wallet poderá possuir saldos segregados logicamente, incluindo:
-                </p>
-
+            <LegalSection heading={i18n.t('legal.terms.v2.s3.heading')}>
+                <p>{i18n.t('legal.terms.v2.s3.p1')}</p>
                 <ul className="list-disc pl-5 space-y-2">
                     <li>
-                        <strong>Saldo Real:</strong> destinado a serviços e
-                        movimentações financeiras.
+                        <strong>{i18n.t('legal.terms.v2.s3.li1b')}</strong>
+                        {i18n.t('legal.terms.v2.s3.li1')}
                     </li>
-
                     <li>
-                        <strong>Carteira de Jogo:</strong> destinada exclusivamente às
-                        atividades de jogos integrados.
+                        <strong>{i18n.t('legal.terms.v2.s3.li2b')}</strong>
+                        {i18n.t('legal.terms.v2.s3.li2')}
                     </li>
-
                     <li>
-                        <strong>Créditos Sandbox:</strong> moeda virtual sem valor
-                        econômico.
+                        <strong>{i18n.t('legal.terms.v2.s3.li3b')}</strong>
+                        {i18n.t('legal.terms.v2.s3.li3')}
                     </li>
                 </ul>
             </LegalSection>
 
-            <LegalSection heading="4. Depósitos">
-                <p>
-                    Os depósitos são realizados exclusivamente por meio do sistema
-                    PIX, utilizando instituições financeiras parceiras.
-                </p>
-
-                <p>
-                    O crédito somente ocorrerá após confirmação efetiva da liquidação
-                    da operação pela instituição financeira responsável.
-                </p>
-
-                <p>
-                    A CTech poderá recusar, cancelar ou estornar depósitos quando:
-                </p>
-
+            <LegalSection heading={i18n.t('legal.terms.v2.s4.heading')}>
+                <p>{i18n.t('legal.terms.v2.s4.p1')}</p>
+                <p>{i18n.t('legal.terms.v2.s4.p2')}</p>
+                <p>{i18n.t('legal.terms.v2.s4.p3')}</p>
                 <ul className="list-disc pl-5 space-y-2">
-                    <li>o CPF do pagador for divergente do CPF verificado;</li>
-                    <li>existirem indícios de fraude;</li>
-                    <li>houver determinação legal ou regulatória;</li>
-                    <li>forem identificadas movimentações incompatíveis.</li>
+                    <li>{i18n.t('legal.terms.v2.s4.li1')}</li>
+                    <li>{i18n.t('legal.terms.v2.s4.li2')}</li>
+                    <li>{i18n.t('legal.terms.v2.s4.li3')}</li>
+                    <li>{i18n.t('legal.terms.v2.s4.li4')}</li>
                 </ul>
             </LegalSection>
 
-            <LegalSection heading="5. Saques">
-                <p>
-                    Os saques poderão ser realizados exclusivamente para chaves PIX
-                    pertencentes ao mesmo CPF verificado na conta.
-                </p>
-
-                <p>
-                    As solicitações de saque são processadas de forma instantânea
-                    sempre que possível, dependendo da disponibilidade:
-                </p>
-
+            <LegalSection heading={i18n.t('legal.terms.v2.s5.heading')}>
+                <p>{i18n.t('legal.terms.v2.s5.p1')}</p>
+                <p>{i18n.t('legal.terms.v2.s5.p2')}</p>
                 <ul className="list-disc pl-5 space-y-2">
-                    <li>da instituição financeira parceira;</li>
-                    <li>do Sistema de Pagamentos Instantâneos (SPI);</li>
-                    <li>da infraestrutura do Banco Central do Brasil.</li>
+                    <li>{i18n.t('legal.terms.v2.s5.li1')}</li>
+                    <li>{i18n.t('legal.terms.v2.s5.li2')}</li>
+                    <li>{i18n.t('legal.terms.v2.s5.li3')}</li>
                 </ul>
-
-                <p>
-                    Eventuais indisponibilidades poderão ocasionar atrasos no
-                    processamento.
-                </p>
+                <p>{i18n.t('legal.terms.v2.s5.p3')}</p>
             </LegalSection>
 
-            <LegalSection heading="6. Taxas">
-                <p>
-                    A utilização de determinadas funcionalidades poderá estar sujeita
-                    à cobrança de taxas operacionais.
-                </p>
-
-                <p>
-                    Todas as taxas aplicáveis serão previamente informadas ao usuário
-                    antes da confirmação da operação.
-                </p>
+            <LegalSection heading={i18n.t('legal.terms.v2.s6.heading')}>
+                <p>{i18n.t('legal.terms.v2.s6.p1')}</p>
+                <p>{i18n.t('legal.terms.v2.s6.p2')}</p>
             </LegalSection>
 
-            <LegalSection heading="7. Prevenção à fraude e AML">
-                <p>
-                    A CTech poderá adotar medidas de prevenção à fraude, lavagem de
-                    dinheiro, financiamento ao terrorismo e utilização indevida da
-                    plataforma.
-                </p>
-
-                <p>
-                    Para tanto, poderão ser adotadas medidas como:
-                </p>
-
+            <LegalSection heading={i18n.t('legal.terms.v2.s7.heading')}>
+                <p>{i18n.t('legal.terms.v2.s7.p1')}</p>
+                <p>{i18n.t('legal.terms.v2.s7.p2')}</p>
                 <ul className="list-disc pl-5 space-y-2">
-                    <li>imposição de limites de movimentação;</li>
-                    <li>solicitação de documentação adicional;</li>
-                    <li>revalidação cadastral;</li>
-                    <li>bloqueio preventivo de operações;</li>
-                    <li>suspensão temporária da conta;</li>
-                    <li>retenção temporária de valores para análise.</li>
+                    <li>{i18n.t('legal.terms.v2.s7.li1')}</li>
+                    <li>{i18n.t('legal.terms.v2.s7.li2')}</li>
+                    <li>{i18n.t('legal.terms.v2.s7.li3')}</li>
+                    <li>{i18n.t('legal.terms.v2.s7.li4')}</li>
+                    <li>{i18n.t('legal.terms.v2.s7.li5')}</li>
+                    <li>{i18n.t('legal.terms.v2.s7.li6')}</li>
                 </ul>
-
-                <p>
-                    Caso sejam identificados indícios razoáveis de fraude ou atividade
-                    ilícita, a CTech poderá comunicar autoridades competentes e adotar
-                    as medidas cabíveis.
-                </p>
+                <p>{i18n.t('legal.terms.v2.s7.p3')}</p>
             </LegalSection>
 
-            <LegalSection heading="8. Encerramento da conta">
-                <p>
-                    O encerramento da Wallet somente poderá ocorrer após a liquidação
-                    integral dos saldos existentes.
-                </p>
-
-                <p>
-                    Enquanto houver saldo disponível ou operações pendentes, a conta
-                    poderá permanecer ativa exclusivamente para fins de regularização.
-                </p>
+            <LegalSection heading={i18n.t('legal.terms.v2.s8.heading')}>
+                <p>{i18n.t('legal.terms.v2.s8.p1')}</p>
+                <p>{i18n.t('legal.terms.v2.s8.p2')}</p>
             </LegalSection>
 
-            <LegalSection heading="9. Créditos Sandbox">
-                <p>
-                    Os créditos sandbox possuem natureza exclusivamente virtual.
-                </p>
-
-                <p className="font-medium">
-                    Créditos sandbox:
-                </p>
-
+            <LegalSection heading={i18n.t('legal.terms.v2.s9.heading')}>
+                <p>{i18n.t('legal.terms.v2.s9.p1')}</p>
+                <p className="font-medium">{i18n.t('legal.terms.v2.s9.p2')}</p>
                 <ul className="list-disc pl-5 space-y-2">
-                    <li>não representam dinheiro eletrônico;</li>
-                    <li>não possuem valor monetário;</li>
-                    <li>não geram direitos patrimoniais;</li>
-                    <li>não podem ser sacados;</li>
-                    <li>não podem ser convertidos em dinheiro;</li>
-                    <li>não são reembolsáveis.</li>
+                    <li>{i18n.t('legal.terms.v2.s9.li1')}</li>
+                    <li>{i18n.t('legal.terms.v2.s9.li2')}</li>
+                    <li>{i18n.t('legal.terms.v2.s9.li3')}</li>
+                    <li>{i18n.t('legal.terms.v2.s9.li4')}</li>
+                    <li>{i18n.t('legal.terms.v2.s9.li5')}</li>
+                    <li>{i18n.t('legal.terms.v2.s9.li6')}</li>
                 </ul>
-
-                <p>
-                    A aquisição de créditos sandbox é definitiva e irretratável.
-                </p>
+                <p>{i18n.t('legal.terms.v2.s9.p3')}</p>
             </LegalSection>
 
-            <LegalSection heading="10. Disponibilidade do serviço">
-                <p>
-                    A Wallet depende de serviços prestados por terceiros, incluindo
-                    instituições financeiras e infraestrutura PIX.
-                </p>
-
-                <p>
-                    A CTech não garante disponibilidade ininterrupta desses serviços e
-                    não se responsabiliza por falhas, indisponibilidades ou atrasos
-                    causados por terceiros.
-                </p>
+            <LegalSection heading={i18n.t('legal.terms.v2.s10.heading')}>
+                <p>{i18n.t('legal.terms.v2.s10.p1')}</p>
+                <p>{i18n.t('legal.terms.v2.s10.p2')}</p>
             </LegalSection>
 
-            <LegalSection heading="11. Limitação de responsabilidade">
-                <p>
-                    Na máxima extensão permitida pela legislação aplicável, a CTech
-                    não será responsável por:
-                </p>
-
+            <LegalSection heading={i18n.t('legal.terms.v2.s11.heading')}>
+                <p>{i18n.t('legal.terms.v2.s11.p1')}</p>
                 <ul className="list-disc pl-5 space-y-2">
-                    <li>falhas da infraestrutura PIX;</li>
-                    <li>indisponibilidade de instituições financeiras;</li>
-                    <li>danos indiretos;</li>
-                    <li>lucros cessantes;</li>
-                    <li>eventos de força maior.</li>
+                    <li>{i18n.t('legal.terms.v2.s11.li1')}</li>
+                    <li>{i18n.t('legal.terms.v2.s11.li2')}</li>
+                    <li>{i18n.t('legal.terms.v2.s11.li3')}</li>
+                    <li>{i18n.t('legal.terms.v2.s11.li4')}</li>
+                    <li>{i18n.t('legal.terms.v2.s11.li5')}</li>
                 </ul>
-
-                <p>
-                    Nada neste documento limita direitos indisponíveis previstos na
-                    legislação brasileira.
-                </p>
+                <p>{i18n.t('legal.terms.v2.s11.p2')}</p>
             </LegalSection>
 
-            <LegalSection heading="12. Alterações">
-                <p>
-                    Este documento poderá ser alterado periodicamente.
-                </p>
-
-                <p>
-                    Alterações materiais dependerão de novo aceite do usuário antes da
-                    continuidade da utilização da Wallet.
-                </p>
+            <LegalSection heading={i18n.t('legal.terms.v2.s12.heading')}>
+                <p>{i18n.t('legal.terms.v2.s12.p1')}</p>
+                <p>{i18n.t('legal.terms.v2.s12.p2')}</p>
             </LegalSection>
 
-            <LegalSection heading="13. Contato">
-                <p>
-                    A O CARVALHO TECH
-                </p>
-
+            <LegalSection heading={i18n.t('legal.terms.v2.s13.heading')}>
+                <p>{i18n.t('legal.terms.v2.s13.p1')}</p>
                 <ul className="list-disc pl-5 space-y-2">
-                    <li>CNPJ: 62.787.449/0001-07</li>
-                    <li>DPO: Artur Oliveira Carvalho</li>
-                    <li>dpo@aoctech.app</li>
-                    <li>legal@aoctech.app</li>
-                    <li>(86) 9 8803-3430</li>
+                    <li>{i18n.t('legal.terms.v2.s13.li1')}</li>
+                    <li>{i18n.t('legal.terms.v2.s13.li2')}</li>
+                    <li>{i18n.t('legal.terms.v2.s13.li3')}</li>
+                    <li>{i18n.t('legal.terms.v2.s13.li4')}</li>
+                    <li>{i18n.t('legal.terms.v2.s13.li5')}</li>
                 </ul>
             </LegalSection>
         </LegalPage>
     )
 }
-

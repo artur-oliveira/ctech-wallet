@@ -1,119 +1,92 @@
 import type {Metadata} from 'next'
 import {LegalPage, LegalSection} from '@/components/legal-page'
+import i18n from '@/lib/i18n-static'
 
 // Keep in sync with wallet.CurrentTermsAddendumVersion in the Go API
 // (api/internal/domain/wallet/user.go). The gate decision is server-side; this
 // is the version the user is reading.
-const ADDENDUM_VERSION = '1.0'
-const UPDATED_AT = '11 de julho de 2026'
-
 export const metadata: Metadata = {
-    title: 'Termos Adicionais',
-    description: 'Termos Adicionais da CTech Wallet — saldo real via PIX e créditos sandbox.',
+    title: i18n.t('legal.terms.v1.metaTitle'),
+    description: i18n.t('legal.terms.v1.metaDescription'),
 }
 
 export default function TermsAddendumPage() {
     return (
-        <LegalPage title="Termos Adicionais — CTech Wallet" updatedAt={UPDATED_AT}>
-            <p className="text-xs text-muted-foreground">Versão {ADDENDUM_VERSION}</p>
+        <LegalPage
+            title={i18n.t('legal.terms.v1.title')}
+            updatedAt={i18n.t('legal.terms.v1.updatedAt')}
+        >
+            <p className="text-xs text-muted-foreground">
+                {i18n.t('legal.version')} {i18n.t('legal.terms.v1.version')}
+            </p>
 
             <p>
-                Este aditivo complementa — e não substitui — os{' '}
+                {i18n.t('legal.terms.v1.intro1')}{' '}
                 <a
                     href="https://accounts.aoctech.app/terms"
                     className="underline underline-offset-4"
                     target="_blank"
                     rel="noreferrer"
                 >
-                    Termos de Uso
+                    {i18n.t('legal.terms.v1.termsOfUse')}
                 </a>{' '}
-                e a{' '}
+                {i18n.t('legal.terms.v1.intro2')}{' '}
                 <a
                     href="https://accounts.aoctech.app/privacy"
                     className="underline underline-offset-4"
                     target="_blank"
                     rel="noreferrer"
                 >
-                    Política de Privacidade
+                    {i18n.t('legal.terms.v1.privacy')}
                 </a>{' '}
-                da CTech. No que for específico da carteira digital, este aditivo prevalece.
+                {i18n.t('legal.terms.v1.intro3')}
             </p>
 
-            <LegalSection heading="1. O que é a CTech Wallet">
+            <LegalSection heading={i18n.t('legal.terms.v1.s1.heading')}>
                 <p>
-                    A CTech Wallet mantém dois saldos separados na sua conta: o <strong>saldo real</strong>, movimentado
-                    por
-                    PIX, e os <strong>créditos sandbox</strong>, uma moeda virtual usada em aplicações integradas.
+                    {i18n.t('legal.terms.v1.s1.p1a')}
+                    <strong>{i18n.t('legal.terms.v1.s1.p1Bold1')}</strong>
+                    {i18n.t('legal.terms.v1.s1.p1b')}
+                    <strong>{i18n.t('legal.terms.v1.s1.p1Bold2')}</strong>
+                    {i18n.t('legal.terms.v1.s1.p1c')}
                 </p>
             </LegalSection>
 
-            <LegalSection heading="2. Quem pode usar">
-                <p>
-                    Para movimentar saldo real você precisa ter 18 anos ou mais e concluir a verificação de identidade
-                    da sua
-                    conta CTech. Para sacar, a chave PIX de destino precisa pertencer ao mesmo CPF verificado na conta —
-                    saques para chaves de terceiros são recusados.
-                </p>
+            <LegalSection heading={i18n.t('legal.terms.v1.s2.heading')}>
+                <p>{i18n.t('legal.terms.v1.s2.p1')}</p>
             </LegalSection>
 
-            <LegalSection heading="3. Depósitos">
-                <p>
-                    Depósitos são recebidos por PIX. O valor entra na carteira somente após o banco parceiro confirmar o
-                    pagamento — nunca apenas com base em uma notificação. Se o CPF de quem pagou for diferente do CPF
-                    verificado na sua conta, o depósito é recusado e devolvido automaticamente a quem pagou.
-                </p>
+            <LegalSection heading={i18n.t('legal.terms.v1.s3.heading')}>
+                <p>{i18n.t('legal.terms.v1.s3.p1')}</p>
             </LegalSection>
 
-            <LegalSection heading="4. Saques e taxa">
-                <p>
-                    Cada saque tem uma taxa, descontada do seu saldo junto com o valor sacado. A taxa padrão é de 2%
-                    sobre o
-                    valor, com mínimo de R$ 1,00 e máximo de R$ 10,00 por operação, e cobre o custo da transferência
-                    PIX. A
-                    taxa aplicada à sua carteira é sempre exibida antes de você confirmar o saque.
-                </p>
-                <p>Uma carteira executa uma operação por vez: um novo saque só começa depois que o anterior é
-                    concluído.</p>
+            <LegalSection heading={i18n.t('legal.terms.v1.s4.heading')}>
+                <p>{i18n.t('legal.terms.v1.s4.p1')}</p>
+                <p>{i18n.t('legal.terms.v1.s4.p2')}</p>
             </LegalSection>
 
-            <LegalSection heading="5. Créditos sandbox">
-                <p>
-                    Créditos sandbox podem ser comprados com saldo real ou concedidos por aplicações integradas. Eles
-                    servem
-                    para participar de partidas em jogos de habilidade integrados.
-                </p>
+            <LegalSection heading={i18n.t('legal.terms.v1.s5.heading')}>
+                <p>{i18n.t('legal.terms.v1.s5.p1')}</p>
                 <p className="font-medium text-foreground">
-                    Créditos sandbox não têm valor monetário, não são resgatáveis e não podem, em nenhuma hipótese, ser
-                    convertidos em saldo real nem sacados. A compra de créditos com saldo real é definitiva e não é
-                    reembolsável.
+                    {i18n.t('legal.terms.v1.s5.p2')}
                 </p>
             </LegalSection>
 
-            <LegalSection heading="6. Limites de responsabilidade">
-                <p>
-                    A CTech Wallet não é uma instituição financeira licenciada pelo Banco Central do Brasil. Ela atua
-                    como
-                    intermediário técnico de custódia e movimentação de valores via PIX, por meio de um banco parceiro.
-                    Não
-                    garantimos a disponibilidade ininterrupta da infraestrutura PIX de terceiros e não respondemos por
-                    atrasos ou falhas causados por ela.
-                </p>
+            <LegalSection heading={i18n.t('legal.terms.v1.s6.heading')}>
+                <p>{i18n.t('legal.terms.v1.s6.p1')}</p>
             </LegalSection>
 
-            <LegalSection heading="7. Alterações">
-                <p>
-                    Este aditivo pode ser atualizado. Alterações materiais exigem um novo aceite explícito antes de você
-                    continuar usando a carteira.
-                </p>
+            <LegalSection heading={i18n.t('legal.terms.v1.s7.heading')}>
+                <p>{i18n.t('legal.terms.v1.s7.p1')}</p>
             </LegalSection>
 
-            <LegalSection heading="8. Contato">
+            <LegalSection heading={i18n.t('legal.terms.v1.s8.heading')}>
                 <p>
-                    A O CARVALHO TECH — CNPJ 62.787.449/0001-07. Encarregado de dados (DPO):{' '}
+                    {i18n.t('legal.terms.v1.s8.p1a')}
                     <a href="mailto:dpo@aoctech.app" className="underline underline-offset-4">
-                        dpo@aoctech.app
+                        {i18n.t('legal.terms.v1.s8.dpoLink')}
                     </a>
-                    .
+                    {i18n.t('legal.terms.v1.s8.p1b')}
                 </p>
             </LegalSection>
         </LegalPage>

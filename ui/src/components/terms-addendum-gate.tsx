@@ -40,7 +40,7 @@ export function TermsAddendumGate() {
                 </div>
 
                 {accept.isError && (
-                    <p className="text-sm text-red-600">{t('terms.error')}</p>
+                    <p className="text-sm text-destructive">{t('terms.error')}</p>
                 )}
 
                 <label className="flex items-start gap-2 text-sm text-muted-foreground">

@@ -45,7 +45,7 @@ function CallbackInner() {
         return (
             <div className="min-h-screen flex items-center justify-center">
                 <div className="text-center space-y-4 max-w-sm">
-                    <p className="text-red-600 text-sm">{error}</p>
+                    <p className="text-destructive text-sm">{error}</p>
                     <button
                         className="text-primary-600 underline text-sm"
                         onClick={() => router.push('/login')}

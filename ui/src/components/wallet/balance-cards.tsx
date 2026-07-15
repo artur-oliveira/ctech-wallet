@@ -69,7 +69,7 @@ export function BalanceCards({
                         </Button>
                         <Button
                             variant="outline"
-                            className="border-brand-400/60 bg-transparent text-white hover:bg-brand-500"
+                            className="border-brand-400/60 bg-transparent text-white hover:bg-brand-700"
                             onClick={onWithdraw}
                         >
                             <ArrowUpFromLine size={16}/>

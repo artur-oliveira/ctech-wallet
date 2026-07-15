@@ -6,13 +6,14 @@ import {toast} from 'sonner'
 import {LogOut} from 'lucide-react'
 import {useTranslation} from 'react-i18next'
 import {apiClient, ApiError} from '@/lib/api/client'
-import {formatBRL} from '@/lib/utils/money'
+import {formatBRL, formatCredits} from '@/lib/utils/money'
 import {useAuth} from '@/lib/hooks/useAuth'
 import {ProtectedRoute} from '@/components/protected-route'
 import {BalanceCards} from '@/components/wallet/balance-cards'
 import {LedgerList} from '@/components/wallet/ledger-list'
 import {AmountDialog} from '@/components/wallet/amount-dialog'
 import {ConfirmMoneyDialog} from '@/components/wallet/confirm-money-dialog'
+import {MoneyReceiptDialog} from '@/components/wallet/money-receipt-dialog'
 import {PixChargeDialog} from '@/components/wallet/pix-charge-dialog'
 import {Button} from '@/components/ui/button'
 import {useWalletRealtime} from '@/lib/hooks/useWalletRealtime'
@@ -74,6 +75,7 @@ function DashboardInner() {
     } | null>(null)
     const [pendingPixKey, setPendingPixKey] = useState<string>('')
     const [charge, setCharge] = useState<DepositResult | null>(null)
+    const [receipt, setReceipt] = useState<{ title: string; amountLabel: string } | null>(null)
     const [stepUp, setStepUp] = useState(false)
     const [tab, setTab] = useState<WalletType>('real')
 
@@ -98,12 +100,13 @@ function DashboardInner() {
             apiClient.createWithdrawal(amount, pixKey, newIdemKey()),
         onSuccess: (w) => {
             setConfirm(null)
+            setFlow(null)
             refresh()
-            toast.success(
-                w.status === 'processing'
-                    ? t('toast.withdrawProcessing')
-                    : t('toast.withdrawSent'),
-            )
+            if (w.status === 'processing') {
+                toast.success(t('toast.withdrawProcessing'))
+            } else {
+                setReceipt({title: t('toast.withdrawSent'), amountLabel: formatBRL(w.amount)})
+            }
         },
         onError: (err) => {
             if (err instanceof ApiError && err.type === '/problems/step-up-required') {
@@ -116,30 +119,32 @@ function DashboardInner() {
 
     const buyCredits = useMutation({
         mutationFn: (amount: number) => apiClient.purchaseSandbox(amount, newIdemKey()),
-        onSuccess: () => {
+        onSuccess: (transfer) => {
             setFlow(null)
             refresh()
-            toast.success(t('toast.creditsAdded'))
+            setReceipt({title: t('toast.creditsAdded'), amountLabel: formatCredits(transfer.credit.amount)})
         },
         onError: (err) => toast.error(problemMessage(err, t)),
     })
 
     const fundGame = useMutation({
         mutationFn: (amount: number) => apiClient.fundGame(amount, newIdemKey()),
-        onSuccess: () => {
+        onSuccess: (transfer) => {
             setConfirm(null)
+            setFlow(null)
             refresh()
-            toast.success(t('toast.fundGameSent'))
+            setReceipt({title: t('toast.fundGameSent'), amountLabel: formatBRL(transfer.credit.amount)})
         },
         onError: (err) => toast.error(problemMessage(err, t)),
     })
 
     const returnFromGame = useMutation({
         mutationFn: (amount: number) => apiClient.returnFromGame(amount, newIdemKey()),
-        onSuccess: () => {
+        onSuccess: (transfer) => {
             setConfirm(null)
+            setFlow(null)
             refresh()
-            toast.success(t('toast.returned'))
+            setReceipt({title: t('toast.returned'), amountLabel: formatBRL(transfer.credit.amount)})
         },
         onError: (err) => toast.error(problemMessage(err, t)),
     })
@@ -149,6 +154,7 @@ function DashboardInner() {
     return (
         <div className="min-h-screen bg-background">
             <header className="border-b border-border bg-card">
+                <h1 className="sr-only">CTech Wallet</h1>
                 <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-4">
                     <div className="flex items-center gap-2.5">
                         <div className="flex size-8 items-center justify-center rounded-lg bg-brand-600 text-white">
@@ -161,7 +167,7 @@ function DashboardInner() {
                     </div>
                     <div className="flex min-w-0 items-center gap-3">
                         <span
-                            className="hidden items-center gap-1.5 sm:inline-flex"
+                            className="inline-flex items-center gap-1.5"
                             role="status"
                             aria-label={
                                 wsStatus === 'connected'
@@ -180,6 +186,13 @@ function DashboardInner() {
                                             : 'bg-gray-300'
                                 }`}
                             />
+                            <span className="text-xs text-muted-foreground">
+                                {wsStatus === 'connected'
+                                    ? t('dashboard.live')
+                                    : wsStatus === 'connecting'
+                                        ? t('dashboard.connecting')
+                                        : t('dashboard.offline')}
+                            </span>
                         </span>
                         {name && <span className="hidden max-w-[10rem] truncate text-sm text-muted-foreground sm:inline">{name}</span>}
                         <Button variant="ghost" size="icon-sm" onClick={logout} aria-label={t('dashboard.logout')}>
@@ -324,6 +337,14 @@ function DashboardInner() {
                     initialRealBalance={balances.data?.real?.balance ?? 0}
                     onClose={() => setCharge(null)}
                     onConfirmed={() => setCharge(null)}
+                />
+            )}
+
+            {receipt && (
+                <MoneyReceiptDialog
+                    title={receipt.title}
+                    amountLabel={receipt.amountLabel}
+                    onClose={() => setReceipt(null)}
                 />
             )}
         </div>

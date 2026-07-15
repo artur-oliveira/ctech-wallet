@@ -51,11 +51,14 @@ export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onCl
             ? Math.max(0, maxCents - withdrawalFee(maxCents))
             : balanceCap
     const effectiveMax = Math.min(feeAwareCap, millionCap)
+    // Sandbox credits carry no currency symbol (contract + invariant #7) — every
+    // amount shown to the user in the credits flow must go through formatCredits.
+    const fmt = flow === 'credits' ? formatCredits : formatBRL
 
     const schema = useMemo(() => {
         const overMsg =
             balanceCap <= millionCap && maxCents != null
-                ? t('dialog.error.overBalance', {amount: formatBRL(maxCents)})
+                ? t('dialog.error.overBalance', {amount: fmt(maxCents)})
                 : t('dialog.error.maxExceeded', {max: formatBRL(MAX_AMOUNT_CENTS)})
 
         const amount = z
@@ -69,7 +72,7 @@ export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onCl
             : z.string().max(100)
 
         return z.object({amount, pixKey})
-    }, [effectiveMax, balanceCap, millionCap, maxCents, withPixKey, t])
+    }, [effectiveMax, balanceCap, millionCap, maxCents, withPixKey, t, fmt])
 
     const {
         control,
@@ -158,11 +161,13 @@ export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onCl
                             <div
                                 className={`mt-1.5 flex items-center gap-2 rounded-lg border px-3 focus-within:ring-3 ${
                                     errors.amount
-                                        ? 'border-red-400 focus-within:border-red-500 focus-within:ring-red-500/20'
+                                        ? 'border-destructive focus-within:border-destructive focus-within:ring-destructive/20'
                                         : 'border-border focus-within:border-brand-500 focus-within:ring-brand-500/20'
                                 }`}
                             >
-                                <span className="text-sm text-muted-foreground">R$</span>
+                                {flow !== 'credits' && (
+                                    <span className="text-sm text-muted-foreground">R$</span>
+                                )}
                                 <input
                                     id="amount"
                                     autoFocus
@@ -192,7 +197,7 @@ export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onCl
                                         onClick={() => field.onChange(effectiveMax)}
                                         className="text-xs font-semibold text-brand-600 hover:text-brand-700 hover:underline"
                                     >
-                                        {t('dialog.amount.maxButton', {max: formatBRL(effectiveMax)})}
+                                        {t('dialog.amount.maxButton', {max: fmt(effectiveMax)})}
                                     </button>
                                 </div>
                             )}
@@ -204,7 +209,7 @@ export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onCl
                     <p className="mt-1.5 text-xs text-muted-foreground">{t('dialog.max', {max: formatBRL(MAX_AMOUNT_CENTS)})}</p>
                 )}
                 {maxCents != null && (
-                    <p className="mt-1.5 text-xs text-muted-foreground">{t('dialog.available', {amount: formatBRL(maxCents)})}</p>
+                    <p className="mt-1.5 text-xs text-muted-foreground">{t('dialog.available', {amount: fmt(maxCents)})}</p>
                 )}
 
                 {withPixKey && amount > 0 && (
@@ -214,7 +219,7 @@ export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onCl
                 )}
 
                 {errors.amount && (
-                    <p id="amount-error" className="mt-1.5 text-sm text-red-600">
+                    <p id="amount-error" role="alert" className="mt-1.5 text-sm text-destructive">
                         {errors.amount.message}
                     </p>
                 )}
@@ -232,14 +237,14 @@ export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onCl
                             aria-describedby={errors.pixKey ? 'pixkey-error' : undefined}
                             className={`mt-1.5 h-10 w-full rounded-lg border px-3 text-sm outline-none focus:ring-3 ${
                                 errors.pixKey
-                                    ? 'border-red-400 focus:border-red-500 focus:ring-red-500/20'
+                                    ? 'border-destructive focus:border-destructive focus:ring-destructive/20'
                                     : 'border-border focus:border-brand-500 focus:ring-brand-500/20'
                             }`}
                             {...register('pixKey')}
                         />
                         <p className="mt-1.5 text-xs text-muted-foreground">{t('dialog.pixKey.hint')}</p>
                         {errors.pixKey && (
-                            <p id="pixkey-error" className="mt-1.5 text-sm text-red-600">
+                            <p id="pixkey-error" role="alert" className="mt-1.5 text-sm text-destructive">
                                 {errors.pixKey.message}
                             </p>
                         )}

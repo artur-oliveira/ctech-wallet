@@ -5,6 +5,7 @@ import {apiClient, registerRefreshFn} from '@/lib/api/client'
 import type {Profile} from '@/lib/types/api'
 import {STORAGE_KEY_USER} from '@/lib/constants/storage'
 import {decodeIdToken, doRefresh, endSessionRedirect, revokeToken, startOAuthFlow} from '@/lib/auth/oauth'
+import {USE_MOCK, MOCK_PROFILE} from '@/lib/mock'
 
 interface AuthContextType {
     profile: Profile | null
@@ -31,6 +32,12 @@ export function AuthProvider({children}: { children: ReactNode }) {
     }, [])
 
     const tryRefresh = useCallback(async (): Promise<string | null> => {
+        if (USE_MOCK) {
+            setProfile(MOCK_PROFILE)
+            apiClient.setToken('mock')
+            setAuthenticated(true)
+            return 'mock'
+        }
         const result = await doRefresh()
         if (!result) {
             setAuthenticated(false)
@@ -45,6 +52,11 @@ export function AuthProvider({children}: { children: ReactNode }) {
     }, [tryRefresh])
 
     const login = useCallback(() => {
+        if (USE_MOCK) {
+            setProfile(MOCK_PROFILE)
+            setAuthenticated(true)
+            return
+        }
         void startOAuthFlow(window.location.pathname)
     }, [])
 

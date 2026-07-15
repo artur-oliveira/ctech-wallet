@@ -9,6 +9,7 @@ import type {
     WalletType,
     Withdrawal,
 } from '@/lib/types/api'
+import {USE_MOCK, MockApiClient} from '@/lib/mock'
 
 // Empty means same-origin: CloudFront forwards /v1.0/* to the ALB in deployed
 // environments, and `next dev` proxies it locally (next.config.ts). Either way
@@ -169,4 +170,6 @@ class ApiClient {
     }
 }
 
-export const apiClient = new ApiClient()
+export const apiClient = USE_MOCK
+    ? (new MockApiClient() as unknown as ApiClient)
+    : new ApiClient()

@@ -7,7 +7,8 @@
     "continue": "Continuar",
     "loading": "Carregando…",
     "tryAgain": "Tentar novamente",
-    "genericError": "Algo deu errado. Tente de novo."
+    "genericError": "Algo deu errado. Tente de novo.",
+    "close": "Fechar"
   },
   "login": {
     "title": "CTech Wallet",
@@ -24,6 +25,9 @@
     "loadingBalances": "Carregando saldos",
     "loadError": "Não foi possível carregar seus saldos. Atualize a página para tentar de novo.",
     "logout": "Sair",
+    "live": "Ao vivo",
+    "connecting": "Conectando…",
+    "offline": "Offline",
     "ledger": {
       "tab": {
         "real": "Extrato real",
@@ -87,7 +91,7 @@
       "label": "Valor",
       "placeholder": "0,00",
       "feePreview": "Inclui uma taxa de saque de {{fee}}.",
-      "maxButton": "Máx {max}"
+      "maxButton": "Máx {{max}}"
     },
     "pixKey": {
       "label": "Chave PIX de destino",
@@ -126,7 +130,8 @@
     "amount": "Valor",
     "fee": "Taxa de saque",
     "total": "Total debitado",
-    "resulting": "Saldo resultante"
+    "resulting": "Saldo resultante",
+    "confirm": "Confirmar"
   },
   "pix": {
     "title": "Pague {{amount}} no PIX",
@@ -198,7 +203,11 @@
       "game_credit": "Prêmio",
       "sandbox_purchase": "Compra de créditos",
       "sandbox_credit": "Créditos recebidos",
-      "reversal": "Estorno de saque"
+      "reversal": "Estorno de saque",
+      "game_fund_debit": "Envio para o jogo",
+      "game_fund_credit": "Recebido do saldo real",
+      "game_return_debit": "Devolução ao saldo real",
+      "game_return_credit": "Recebido do jogo"
     }
   },
   "notFound": {
@@ -206,5 +215,359 @@
     "description": "A página que você acessou não existe ou foi removida.",
     "backToAccount": "Ir para o painel",
     "backToLogin": "Voltar para o login"
+  },
+  "legal": {
+    "updatedLabel": "Última atualização:",
+    "version": "Versão",
+    "terms": {
+      "v2": {
+        "metaTitle": "Termos Adicionais — CTech Wallet",
+        "metaDescription": "Termos adicionais aplicáveis à utilização da CTech Wallet.",
+        "title": "Termos Adicionais — CTech Wallet",
+        "updatedAt": "12 de julho de 2026",
+        "version": "2.0",
+        "intro1": "Este documento complementa os",
+        "termsOfUse": "Termos de Uso",
+        "intro2": "e a",
+        "privacy": "Política de Privacidade",
+        "intro3": "da plataforma CTech.",
+        "s1": {
+          "heading": "1. Sobre a CTech Wallet",
+          "p1": "A CTech Wallet é uma funcionalidade da plataforma CTech destinada ao gerenciamento de créditos e movimentações relacionadas aos serviços disponibilizados pela CTech.",
+          "p2": "A Wallet não constitui conta bancária, conta de pagamento, investimento financeiro, depósito bancário ou produto de investimento regulado.",
+          "p3": "Os valores mantidos na Wallet representam créditos perante a plataforma CTech para utilização nos serviços disponibilizados.",
+          "p4": "Os recursos mantidos na Wallet não possuem cobertura do Fundo Garantidor de Créditos (FGC)."
+        },
+        "s2": {
+          "heading": "2. Elegibilidade",
+          "p1": "Para utilização de funcionalidades envolvendo dinheiro real é necessário:",
+          "li1": "possuir 18 (dezoito) anos ou mais;",
+          "li2": "possuir conta CTech ativa;",
+          "li3": "concluir o processo de verificação de identidade (KYC).",
+          "p2": "A CTech poderá solicitar documentos adicionais a qualquer momento, inclusive para atualização cadastral ou prevenção à fraude."
+        },
+        "s3": {
+          "heading": "3. Estrutura das carteiras",
+          "p1": "A Wallet poderá possuir saldos segregados logicamente, incluindo:",
+          "li1b": "Saldo Real:",
+          "li1": " destinado a serviços e movimentações financeiras.",
+          "li2b": "Carteira de Jogo:",
+          "li2": " destinada exclusivamente às atividades de jogos integrados.",
+          "li3b": "Créditos Sandbox:",
+          "li3": " moeda virtual sem valor econômico."
+        },
+        "s4": {
+          "heading": "4. Depósitos",
+          "p1": "Os depósitos são realizados exclusivamente por meio do sistema PIX, utilizando instituições financeiras parceiras.",
+          "p2": "O crédito somente ocorrerá após confirmação efetiva da liquidação da operação pela instituição financeira responsável.",
+          "p3": "A CTech poderá recusar, cancelar ou estornar depósitos quando:",
+          "li1": "o CPF do pagador for divergente do CPF verificado;",
+          "li2": "existirem indícios de fraude;",
+          "li3": "houver determinação legal ou regulatória;",
+          "li4": "forem identificadas movimentações incompatíveis."
+        },
+        "s5": {
+          "heading": "5. Saques",
+          "p1": "Os saques poderão ser realizados exclusivamente para chaves PIX pertencentes ao mesmo CPF verificado na conta.",
+          "p2": "As solicitações de saque são processadas de forma instantânea sempre que possível, dependendo da disponibilidade:",
+          "li1": "da instituição financeira parceira;",
+          "li2": "do Sistema de Pagamentos Instantâneos (SPI);",
+          "li3": "da infraestrutura do Banco Central do Brasil.",
+          "p3": "Eventuais indisponibilidades poderão ocasionar atrasos no processamento."
+        },
+        "s6": {
+          "heading": "6. Taxas",
+          "p1": "A utilização de determinadas funcionalidades poderá estar sujeita à cobrança de taxas operacionais.",
+          "p2": "Todas as taxas aplicáveis serão previamente informadas ao usuário antes da confirmação da operação."
+        },
+        "s7": {
+          "heading": "7. Prevenção à fraude e AML",
+          "p1": "A CTech poderá adotar medidas de prevenção à fraude, lavagem de dinheiro, financiamento ao terrorismo e utilização indevida da plataforma.",
+          "p2": "Para tanto, poderão ser adotadas medidas como:",
+          "li1": "imposição de limites de movimentação;",
+          "li2": "solicitação de documentação adicional;",
+          "li3": "revalidação cadastral;",
+          "li4": "bloqueio preventivo de operações;",
+          "li5": "suspensão temporária da conta;",
+          "li6": "retenção temporária de valores para análise.",
+          "p3": "Caso sejam identificados indícios razoáveis de fraude ou atividade ilícita, a CTech poderá comunicar autoridades competentes e adotar as medidas cabíveis."
+        },
+        "s8": {
+          "heading": "8. Encerramento da conta",
+          "p1": "O encerramento da Wallet somente poderá ocorrer após a liquidação integral dos saldos existentes.",
+          "p2": "Enquanto houver saldo disponível ou operações pendentes, a conta poderá permanecer ativa exclusivamente para fins de regularização."
+        },
+        "s9": {
+          "heading": "9. Créditos Sandbox",
+          "p1": "Os créditos sandbox possuem natureza exclusivamente virtual.",
+          "p2": "Créditos sandbox:",
+          "li1": "não representam dinheiro eletrônico;",
+          "li2": "não possuem valor monetário;",
+          "li3": "não geram direitos patrimoniais;",
+          "li4": "não podem ser sacados;",
+          "li5": "não podem ser convertidos em dinheiro;",
+          "li6": "não são reembolsáveis.",
+          "p3": "A aquisição de créditos sandbox é definitiva e irretratável."
+        },
+        "s10": {
+          "heading": "10. Disponibilidade do serviço",
+          "p1": "A Wallet depende de serviços prestados por terceiros, incluindo instituições financeiras e infraestrutura PIX.",
+          "p2": "A CTech não garante disponibilidade ininterrupta desses serviços e não se responsabiliza por falhas, indisponibilidades ou atrasos causados por terceiros."
+        },
+        "s11": {
+          "heading": "11. Limitação de responsabilidade",
+          "p1": "Na máxima extensão permitida pela legislação aplicável, a CTech não será responsável por:",
+          "li1": "falhas da infraestrutura PIX;",
+          "li2": "indisponibilidade de instituições financeiras;",
+          "li3": "danos indiretos;",
+          "li4": "lucros cessantes;",
+          "li5": "eventos de força maior.",
+          "p2": "Nada neste documento limita direitos indisponíveis previstos na legislação brasileira."
+        },
+        "s12": {
+          "heading": "12. Alterações",
+          "p1": "Este documento poderá ser alterado periodicamente.",
+          "p2": "Alterações materiais dependerão de novo aceite do usuário antes da continuidade da utilização da Wallet."
+        },
+        "s13": {
+          "heading": "13. Contato",
+          "p1": "A O CARVALHO TECH",
+          "li1": "CNPJ: 62.787.449/0001-07",
+          "li2": "DPO: Artur Oliveira Carvalho",
+          "li3": "dpo@aoctech.app",
+          "li4": "legal@aoctech.app",
+          "li5": "(86) 9 8803-3430"
+        }
+      },
+      "v1": {
+        "metaTitle": "Termos Adicionais",
+        "metaDescription": "Termos Adicionais da CTech Wallet — saldo real via PIX e créditos sandbox.",
+        "title": "Termos Adicionais — CTech Wallet",
+        "updatedAt": "11 de julho de 2026",
+        "version": "1.0",
+        "intro1": "Este aditivo complementa — e não substitui — os",
+        "termsOfUse": "Termos de Uso",
+        "intro2": "e a",
+        "privacy": "Política de Privacidade",
+        "intro3": "da CTech. No que for específico da carteira digital, este aditivo prevalece.",
+        "s1": {
+          "heading": "1. O que é a CTech Wallet",
+          "p1a": "A CTech Wallet mantém dois saldos separados na sua conta: o ",
+          "p1Bold1": "saldo real",
+          "p1b": ", movimentado por PIX, e os ",
+          "p1Bold2": "créditos sandbox",
+          "p1c": ", uma moeda virtual usada em aplicações integradas."
+        },
+        "s2": {
+          "heading": "2. Quem pode usar",
+          "p1": "Para movimentar saldo real você precisa ter 18 anos ou mais e concluir a verificação de identidade da sua conta CTech. Para sacar, a chave PIX de destino precisa pertencer ao mesmo CPF verificado na conta — saques para chaves de terceiros são recusados."
+        },
+        "s3": {
+          "heading": "3. Depósitos",
+          "p1": "Depósitos são recebidos por PIX. O valor entra na carteira somente após o banco parceiro confirmar o pagamento — nunca apenas com base em uma notificação. Se o CPF de quem pagou for diferente do CPF verificado na sua conta, o depósito é recusado e devolvido automaticamente a quem pagou."
+        },
+        "s4": {
+          "heading": "4. Saques e taxa",
+          "p1": "Cada saque tem uma taxa, descontada do seu saldo junto com o valor sacado. A taxa padrão é de 2% sobre o valor, com mínimo de R$ 1,00 e máximo de R$ 10,00 por operação, e cobre o custo da transferência PIX. A taxa aplicada à sua carteira é sempre exibida antes de você confirmar o saque.",
+          "p2": "Uma carteira executa uma operação por vez: um novo saque só começa depois que o anterior é concluído."
+        },
+        "s5": {
+          "heading": "5. Créditos sandbox",
+          "p1": "Créditos sandbox podem ser comprados com saldo real ou concedidos por aplicações integradas. Eles servem para participar de partidas em jogos de habilidade integrados.",
+          "p2": "Créditos sandbox não têm valor monetário, não são resgatáveis e não podem, em nenhuma hipótese, ser convertidos em saldo real nem sacados. A compra de créditos com saldo real é definitiva e não é reembolsável."
+        },
+        "s6": {
+          "heading": "6. Limites de responsabilidade",
+          "p1": "A CTech Wallet não é uma instituição financeira licenciada pelo Banco Central do Brasil. Ela atua como intermediário técnico de custódia e movimentação de valores via PIX, por meio de um banco parceiro. Não garantimos a disponibilidade ininterrupta da infraestrutura PIX de terceiros e não respondemos por atrasos ou falhas causados por ela."
+        },
+        "s7": {
+          "heading": "7. Alterações",
+          "p1": "Este aditivo pode ser atualizado. Alterações materiais exigem um novo aceite explícito antes de você continuar usando a carteira."
+        },
+        "s8": {
+          "heading": "8. Contato",
+          "p1a": "A O CARVALHO TECH — CNPJ 62.787.449/0001-07. Encarregado de dados (DPO): ",
+          "dpoLink": "dpo@aoctech.app",
+          "p1b": "."
+        }
+      }
+    },
+    "gambling": {
+      "v2": {
+        "metaTitle": "Termo de Jogo Responsável",
+        "metaDescription": "Termos aplicáveis ao uso da carteira de jogo e participação em jogos integrados à plataforma CTech.",
+        "title": "Termo de Jogo Responsável — CTech Wallet",
+        "updatedAt": "12 de julho de 2026",
+        "version": "2.0",
+        "intro1": "Este documento complementa os",
+        "addendumLink": "Termos Adicionais da CTech Wallet",
+        "intro2": " e aplica-se exclusivamente aos usuários que optarem por ativar funcionalidades relacionadas a jogos.",
+        "s1": {
+          "heading": "1. Ativação opcional",
+          "p1": "O uso de funcionalidades relacionadas a jogos é totalmente opcional.",
+          "p2": "Usuários que utilizarem a CTech Wallet exclusivamente para assinaturas, pagamentos ou demais serviços da plataforma não precisam ativar a carteira de jogo.",
+          "p3": "A ativação exige:",
+          "li1": "idade mínima de 18 (dezoito) anos;",
+          "li2": "conta ativa na plataforma;",
+          "li3": "verificação de identidade concluída (KYC)."
+        },
+        "s2": {
+          "heading": "2. Carteira de jogo",
+          "p1": "A carteira de jogo constitui uma segregação lógica do saldo destinada exclusivamente à participação em jogos integrados à plataforma.",
+          "p2": "O dinheiro mantido na carteira de jogo continua pertencendo ao usuário e poderá ser transferido de volta ao saldo real a qualquer momento, observadas restrições legais, operacionais ou de prevenção à fraude.",
+          "p3": "Nenhum jogo poderá debitar diretamente o saldo real do usuário.",
+          "p4": "Todas as transferências para a carteira de jogo exigem ação explícita do usuário."
+        },
+        "s3": {
+          "heading": "3. Limites pessoais",
+          "p1": "O usuário poderá definir limites voluntários para movimentação de recursos destinados a jogos, incluindo:",
+          "li1": "limite diário;",
+          "li2": "limite semanal;",
+          "li3": "limite mensal.",
+          "p2": "Os limites deverão respeitar coerência lógica entre si, não sendo permitido que o limite diário exceda o semanal ou que o semanal exceda o mensal.",
+          "p3": "Reduções de limites produzem efeitos imediatos.",
+          "p4": "Aumentos de limites ficam sujeitos a período de espera (\"cooldown\"), destinado à proteção do usuário e promoção do jogo responsável.",
+          "p5": "A devolução de recursos da carteira de jogo para o saldo real não restabelece limites já consumidos."
+        },
+        "s4": {
+          "heading": "4. Autoexclusão e pausas voluntárias",
+          "p1": "O usuário poderá solicitar voluntariamente:",
+          "li1": "bloqueio temporário;",
+          "li2": "pausa preventiva;",
+          "li3": "autoexclusão por prazo determinado;",
+          "li4": "autoexclusão permanente.",
+          "p2": "Durante períodos de autoexclusão, novas participações em jogos, transferências para a carteira de jogo e reativações antecipadas poderão ser impedidas."
+        },
+        "s5": {
+          "heading": "5. Créditos Sandbox",
+          "p1": "A plataforma poderá disponibilizar créditos sandbox para utilização em modalidades recreativas ou experimentais.",
+          "p2": "Os créditos sandbox:",
+          "li1": "não possuem valor econômico;",
+          "li2": "não representam dinheiro;",
+          "li3": "não geram direito de premiação em dinheiro;",
+          "li4": "não podem ser convertidos em saldo real;",
+          "li5": "não podem ser sacados;",
+          "li6": "não são reembolsáveis."
+        },
+        "s6": {
+          "heading": "6. Condutas proibidas",
+          "p1": "É expressamente proibido:",
+          "li1": "utilizar a plataforma sendo menor de idade;",
+          "li2": "permitir utilização da conta por terceiros;",
+          "li3": "compartilhar contas;",
+          "li4": "utilizar bots, scripts ou automações;",
+          "li5": "manter múltiplas contas sem autorização;",
+          "li6": "praticar colusão entre jogadores;",
+          "li7": "manipular resultados de partidas;",
+          "li8": "explorar falhas técnicas para obtenção de vantagens;",
+          "li9": "utilizar identidades falsas."
+        },
+        "s7": {
+          "heading": "7. Medidas de segurança",
+          "p1": "A CTech poderá adotar medidas para proteção da integridade das partidas e prevenção a fraudes, incluindo:",
+          "li1": "verificações adicionais de identidade;",
+          "li2": "análises automatizadas de comportamento;",
+          "li3": "restrições preventivas;",
+          "li4": "suspensão temporária de funcionalidades;",
+          "li5": "retenção temporária de valores para análise.",
+          "p2": "Havendo indícios razoáveis de fraude, abuso ou descumprimento deste termo, a CTech poderá bloquear contas e cancelar partidas, preservado o direito de defesa do usuário."
+        },
+        "s8": {
+          "heading": "8. Encerramento da carteira de jogo",
+          "p1": "O usuário poderá desativar a carteira de jogo a qualquer momento.",
+          "p2": "Antes da desativação, eventuais saldos existentes deverão ser transferidos para o saldo real, observadas medidas de segurança e verificações antifraude."
+        },
+        "s9": {
+          "heading": "9. Jogue com responsabilidade",
+          "p1": "Jogos envolvendo recursos financeiros podem causar dependência e devem ser utilizados com responsabilidade.",
+          "p2": "Nunca utilize recursos destinados a despesas essenciais, assuma compromissos financeiros em razão de jogos ou tente recuperar perdas mediante novas apostas.",
+          "p3": "Caso a atividade deixe de ser recreativa, recomenda-se procurar auxílio especializado.",
+          "cvvText": "Centro de Valorização da Vida (CVV):",
+          "cvvBold": " 188",
+          "cvvUrl": "https://www.cvv.org.br",
+          "jaText": "Jogadores Anônimos:",
+          "jaUrl": "https://jogadoresanonimos.com.br"
+        },
+        "s10": {
+          "heading": "10. Natureza dos jogos",
+          "p1": "Os jogos disponibilizados pela plataforma poderão possuir regras próprias e termos específicos.",
+          "p2": "A participação em qualquer modalidade pressupõe aceitação das respectivas regras aplicáveis.",
+          "p3": "A CTech poderá alterar, suspender ou descontinuar modalidades de jogos a qualquer momento, observadas as obrigações legais eventualmente aplicáveis."
+        },
+        "s11": {
+          "heading": "11. Alterações",
+          "p1": "Este documento poderá ser atualizado periodicamente.",
+          "p2": "Alterações materiais dependerão de novo aceite antes da continuidade de utilização das funcionalidades relacionadas a jogos."
+        },
+        "s12": {
+          "heading": "12. Contato",
+          "p1": "A O CARVALHO TECH",
+          "li1": "CNPJ: 62.787.449/0001-07",
+          "li2": "DPO: Artur Oliveira Carvalho",
+          "li3": "dpo@aoctech.app",
+          "li4": "legal@aoctech.app",
+          "li5": "(86) 9 8803-3430"
+        }
+      },
+      "v1": {
+        "metaTitle": "Termo de Jogo Responsável",
+        "metaDescription": "Termo de Jogo Responsável da CTech Wallet — carteira de jogo, limites pessoais e créditos sandbox.",
+        "title": "Termo de Jogo Responsável — CTech Wallet",
+        "updatedAt": "12 de julho de 2026",
+        "version": "2.0",
+        "intro1a": "Este termo é ",
+        "intro1Bold": "específico para o uso da carteira em jogos",
+        "intro1b": " e complementa os ",
+        "addendumLink": "Termos Adicionais da CTech Wallet",
+        "intro1c": ". Aceitar os Termos Adicionais ",
+        "intro1Bold2": "não",
+        "intro1d": " significa aceitar este termo: são documentos separados, e você só precisa deste se quiser usar a carteira para jogos.",
+        "s1": {
+          "heading": "1. A carteira de jogo",
+          "p1a": "Ao ativar, criamos uma ",
+          "p1Bold1": "carteira de jogo",
+          "p1b": " separada do seu saldo real. O dinheiro na carteira de jogo ",
+          "p1Bold2": "continua sendo dinheiro real e seu",
+          "p1c": ": você pode devolvê-lo ao saldo real quando quiser, sem taxa e sem limite, e de lá sacar por PIX normalmente.",
+          "p2": "A carteira de jogo existe para separar o que você decidiu destinar a jogos do dinheiro que usa para assinaturas e serviços. É a ",
+          "p2Bold": "única",
+          "p2b": " porta pela qual dinheiro real chega aos jogos: não é possível jogar nem comprar créditos direto do saldo real."
+        },
+        "s2": {
+          "heading": "2. Limites pessoais",
+          "p1a": "Você define ",
+          "p1Bold": "quanto pode transferir do saldo real para a carteira de jogo",
+          "p1b": " por dia, por semana e por mês. O limite diário não pode ser maior que o semanal, e o semanal não pode ser maior que o mensal.",
+          "p2a": "O limite conta o ",
+          "p2Bold": "total enviado",
+          "p2b": " no período. Devolver dinheiro da carteira de jogo para o saldo real ",
+          "p2Bold2": "não",
+          "p2c": " libera limite de volta — caso contrário o limite não limitaria nada.",
+          "p3": "Reduzir um limite vale imediatamente. Aumentar um limite só passa a valer depois de um prazo de espera: 7 dias para os limites diário e semanal, 14 dias para o mensal. Nunca fazemos você esperar para se proteger mais."
+        },
+        "s3": {
+          "heading": "3. Créditos sandbox",
+          "p1a": "Créditos sandbox são comprados com o saldo da ",
+          "p1Bold": "carteira de jogo",
+          "p1b": " e servem para participar de partidas em jogos de habilidade integrados.",
+          "p2": "Créditos sandbox não têm valor em dinheiro, não podem ser sacados e não podem ser convertidos de volta em dinheiro — nem para a carteira de jogo, nem para o saldo real. A conversão é definitiva."
+        },
+        "s4": {
+          "heading": "4. Quem pode ativar",
+          "p1": "É necessário ter 18 anos ou mais e ter concluído a verificação de identidade da sua conta CTech. A ativação é opcional: se você usa a carteira apenas para assinaturas e serviços, não precisa dela e nada relacionado a jogos aparece na sua carteira."
+        },
+        "s5": {
+          "heading": "5. Jogue com responsabilidade",
+          "p1": "Jogos com dinheiro podem causar dependência. Aposte apenas o que você pode perder, e use os limites — eles existem para isso.",
+          "p2a": "Se o jogo deixou de ser diversão, procure ajuda. No Brasil, o CVV atende 24 horas pelo telefone ",
+          "p2Bold": "188",
+          "p2b": " e em ",
+          "cvvLink": "cvv.org.br",
+          "p2c": ". Jogadores Anônimos: ",
+          "jaLink": "jogadoresanonimos.com.br",
+          "p2d": "."
+        }
+      }
+    }
   }
 }

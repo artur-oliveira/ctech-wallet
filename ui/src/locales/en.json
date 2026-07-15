@@ -7,7 +7,8 @@
     "continue": "Continue",
     "loading": "Loading…",
     "tryAgain": "Try again",
-    "genericError": "Something went wrong. Please try again."
+    "genericError": "Something went wrong. Please try again.",
+    "close": "Close"
   },
   "login": {
     "title": "CTech Wallet",
@@ -24,6 +25,9 @@
     "loadingBalances": "Loading balances",
     "loadError": "We couldn't load your balances. Refresh the page to try again.",
     "logout": "Sign out",
+    "live": "Live",
+    "connecting": "Connecting…",
+    "offline": "Offline",
     "ledger": {
       "tab": {
         "real": "Real statement",
@@ -87,7 +91,7 @@
       "label": "Amount",
       "placeholder": "0.00",
       "feePreview": "Includes a {{fee}} withdrawal fee.",
-      "maxButton": "Max {max}"
+      "maxButton": "Max {{max}}"
     },
     "pixKey": {
       "label": "Destination PIX key",
@@ -126,7 +130,8 @@
     "amount": "Amount",
     "fee": "Withdrawal fee",
     "total": "Total debited",
-    "resulting": "Resulting balance"
+    "resulting": "Resulting balance",
+    "confirm": "Confirm"
   },
   "pix": {
     "title": "Pay {{amount}} via PIX",
@@ -198,7 +203,11 @@
       "game_credit": "Prize",
       "sandbox_purchase": "Credit purchase",
       "sandbox_credit": "Credits received",
-      "reversal": "Withdrawal reversal"
+      "reversal": "Withdrawal reversal",
+      "game_fund_debit": "Sent to game wallet",
+      "game_fund_credit": "Received from real balance",
+      "game_return_debit": "Returned to real balance",
+      "game_return_credit": "Received from game wallet"
     }
   },
   "notFound": {
@@ -206,5 +215,359 @@
     "description": "The page you are trying to access does not exist or was removed.",
     "backToAccount": "Back to dashboard",
     "backToLogin": "Back to sign in"
+  },
+  "legal": {
+    "updatedLabel": "Last updated:",
+    "version": "Version",
+    "terms": {
+      "v2": {
+        "metaTitle": "Additional Terms — CTech Wallet",
+        "metaDescription": "Additional terms applicable to the use of the CTech Wallet.",
+        "title": "Additional Terms — CTech Wallet",
+        "updatedAt": "July 12, 2026",
+        "version": "2.0",
+        "intro1": "This document complements the",
+        "termsOfUse": "Terms of Use",
+        "intro2": "and the",
+        "privacy": "Privacy Policy",
+        "intro3": "of the CTech platform.",
+        "s1": {
+          "heading": "1. About the CTech Wallet",
+          "p1": "The CTech Wallet is a feature of the CTech platform intended for managing credits and transactions related to the services provided by CTech.",
+          "p2": "The Wallet is not a bank account, payment account, financial investment, bank deposit, or regulated investment product.",
+          "p3": "The amounts held in the Wallet represent credits owed by the CTech platform for use in the services provided.",
+          "p4": "The funds held in the Wallet are not covered by the Credit Guarantee Fund (FGC)."
+        },
+        "s2": {
+          "heading": "2. Eligibility",
+          "p1": "To use features involving real money, the following is required:",
+          "li1": "being 18 (eighteen) years of age or older;",
+          "li2": "having an active CTech account;",
+          "li3": "completing the identity verification process (KYC).",
+          "p2": "CTech may request additional documents at any time, including for registry updates or fraud prevention."
+        },
+        "s3": {
+          "heading": "3. Wallet structure",
+          "p1": "The Wallet may hold logically segregated balances, including:",
+          "li1b": "Real Balance:",
+          "li1": " intended for services and financial transactions.",
+          "li2b": "Game Wallet:",
+          "li2": " intended exclusively for integrated gaming activities.",
+          "li3b": "Sandbox Credits:",
+          "li3": " virtual currency with no economic value."
+        },
+        "s4": {
+          "heading": "4. Deposits",
+          "p1": "Deposits are made exclusively through the PIX system, using partner financial institutions.",
+          "p2": "The credit is posted only after the responsible financial institution effectively confirms settlement of the transaction.",
+          "p3": "CTech may refuse, cancel, or reverse deposits when:",
+          "li1": "the payer's CPF differs from the verified CPF;",
+          "li2": "there are indications of fraud;",
+          "li3": "there is a legal or regulatory determination;",
+          "li4": "incompatible transactions are identified."
+        },
+        "s5": {
+          "heading": "5. Withdrawals",
+          "p1": "Withdrawals may be made exclusively to PIX keys belonging to the same verified CPF on the account.",
+          "p2": "Withdrawal requests are processed instantly whenever possible, depending on the availability of:",
+          "li1": "the partner financial institution;",
+          "li2": "the Instant Payments System (SPI);",
+          "li3": "the Central Bank of Brazil's infrastructure.",
+          "p3": "Any unavailability may cause processing delays."
+        },
+        "s6": {
+          "heading": "6. Fees",
+          "p1": "Use of certain features may be subject to operational fees.",
+          "p2": "All applicable fees will be disclosed to the user before the operation is confirmed."
+        },
+        "s7": {
+          "heading": "7. Fraud prevention and AML",
+          "p1": "CTech may adopt measures to prevent fraud, money laundering, terrorist financing, and misuse of the platform.",
+          "p2": "To that end, measures such as the following may be adopted:",
+          "li1": "imposition of transaction limits;",
+          "li2": "requests for additional documentation;",
+          "li3": "registry revalidation;",
+          "li4": "preventive blocking of operations;",
+          "li5": "temporary account suspension;",
+          "li6": "temporary retention of funds for analysis.",
+          "p3": "If reasonable indications of fraud or unlawful activity are identified, CTech may notify the competent authorities and adopt the appropriate measures."
+        },
+        "s8": {
+          "heading": "8. Account closure",
+          "p1": "Closure of the Wallet may occur only after the existing balances have been fully settled.",
+          "p2": "While there is available balance or pending operations, the account may remain active exclusively for regularization purposes."
+        },
+        "s9": {
+          "heading": "9. Sandbox Credits",
+          "p1": "Sandbox credits are exclusively virtual in nature.",
+          "p2": "Sandbox credits:",
+          "li1": "do not represent electronic money;",
+          "li2": "have no monetary value;",
+          "li3": "grant no property rights;",
+          "li4": "cannot be withdrawn;",
+          "li5": "cannot be converted into money;",
+          "li6": "are non-refundable.",
+          "p3": "The acquisition of sandbox credits is final and irrevocable."
+        },
+        "s10": {
+          "heading": "10. Service availability",
+          "p1": "The Wallet depends on services provided by third parties, including financial institutions and PIX infrastructure.",
+          "p2": "CTech does not guarantee uninterrupted availability of these services and is not responsible for failures, unavailability, or delays caused by third parties."
+        },
+        "s11": {
+          "heading": "11. Limitation of liability",
+          "p1": "To the maximum extent permitted by applicable law, CTech shall not be liable for:",
+          "li1": "failures of the PIX infrastructure;",
+          "li2": "unavailability of financial institutions;",
+          "li3": "indirect damages;",
+          "li4": "loss of profits;",
+          "li5": "acts of force majeure.",
+          "p2": "Nothing in this document limits the indefeasible rights provided for in Brazilian law."
+        },
+        "s12": {
+          "heading": "12. Changes",
+          "p1": "This document may be changed periodically.",
+          "p2": "Material changes will require renewed acceptance by the user before continued use of the Wallet."
+        },
+        "s13": {
+          "heading": "13. Contact",
+          "p1": "O CARVALHO TECH",
+          "li1": "CNPJ: 62.787.449/0001-07",
+          "li2": "DPO: Artur Oliveira Carvalho",
+          "li3": "dpo@aoctech.app",
+          "li4": "legal@aoctech.app",
+          "li5": "(86) 9 8803-3430"
+        }
+      },
+      "v1": {
+        "metaTitle": "Additional Terms",
+        "metaDescription": "CTech Wallet Additional Terms — real balance via PIX and sandbox credits.",
+        "title": "Additional Terms — CTech Wallet",
+        "updatedAt": "July 11, 2026",
+        "version": "1.0",
+        "intro1": "This addendum complements — and does not replace — the",
+        "termsOfUse": "Terms of Use",
+        "intro2": "and the",
+        "privacy": "Privacy Policy",
+        "intro3": "of CTech. Where specific to the digital wallet, this addendum prevails.",
+        "s1": {
+          "heading": "1. What the CTech Wallet is",
+          "p1a": "The CTech Wallet holds two separate balances in your account: the ",
+          "p1Bold1": "real balance",
+          "p1b": ", moved via PIX, and the ",
+          "p1Bold2": "sandbox credits",
+          "p1c": ", a virtual currency used in integrated applications."
+        },
+        "s2": {
+          "heading": "2. Who can use it",
+          "p1": "To move real balance you need to be 18 or older and complete the identity verification of your CTech account. To withdraw, the destination PIX key must belong to the same verified CPF on the account — withdrawals to third-party keys are refused."
+        },
+        "s3": {
+          "heading": "3. Deposits",
+          "p1": "Deposits are received via PIX. The amount enters the wallet only after the partner bank confirms the payment — never based on a notification alone. If the payer's CPF differs from the verified CPF on your account, the deposit is refused and automatically returned to the payer."
+        },
+        "s4": {
+          "heading": "4. Withdrawals and fee",
+          "p1": "Each withdrawal has a fee, deducted from your balance along with the withdrawn amount. The default fee is 2% of the amount, with a minimum of R$1.00 and a maximum of R$10.00 per operation, and covers the cost of the PIX transfer. The fee applied to your wallet is always shown before you confirm the withdrawal.",
+          "p2": "A wallet runs one operation at a time: a new withdrawal only starts after the previous one is completed."
+        },
+        "s5": {
+          "heading": "5. Sandbox credits",
+          "p1": "Sandbox credits can be bought with real balance or granted by integrated applications. They are used to take part in matches in integrated skill games.",
+          "p2": "Sandbox credits have no monetary value, are not redeemable, and can under no circumstance be converted into real balance or withdrawn. Buying credits with real balance is final and non-refundable."
+        },
+        "s6": {
+          "heading": "6. Limits of liability",
+          "p1": "The CTech Wallet is not a financial institution licensed by the Central Bank of Brazil. It acts as a technical intermediary for the custody and movement of funds via PIX, through a partner bank. We do not guarantee the uninterrupted availability of third-party PIX infrastructure and are not liable for delays or failures caused by it."
+        },
+        "s7": {
+          "heading": "7. Changes",
+          "p1": "This addendum may be updated. Material changes require renewed explicit acceptance before you continue using the wallet."
+        },
+        "s8": {
+          "heading": "8. Contact",
+          "p1a": "O CARVALHO TECH — CNPJ 62.787.449/0001-07. Data Protection Officer (DPO): ",
+          "dpoLink": "dpo@aoctech.app",
+          "p1b": "."
+        }
+      }
+    },
+    "gambling": {
+      "v2": {
+        "metaTitle": "Responsible Gaming Terms",
+        "metaDescription": "Terms applicable to the use of the game wallet and participation in games integrated with the CTech platform.",
+        "title": "Responsible Gaming Terms — CTech Wallet",
+        "updatedAt": "July 12, 2026",
+        "version": "2.0",
+        "intro1": "This document complements the",
+        "addendumLink": "CTech Wallet Additional Terms",
+        "intro2": " and applies exclusively to users who choose to activate features related to games.",
+        "s1": {
+          "heading": "1. Optional activation",
+          "p1": "Use of game-related features is entirely optional.",
+          "p2": "Users who use the CTech Wallet exclusively for subscriptions, payments, or other platform services do not need to activate the game wallet.",
+          "p3": "Activation requires:",
+          "li1": "minimum age of 18 (eighteen) years;",
+          "li2": "an active account on the platform;",
+          "li3": "completed identity verification (KYC)."
+        },
+        "s2": {
+          "heading": "2. Game wallet",
+          "p1": "The game wallet is a logical segregation of the balance intended exclusively for participation in games integrated with the platform.",
+          "p2": "The money held in the game wallet remains the user's property and may be transferred back to the real balance at any time, subject to legal, operational, or fraud-prevention restrictions.",
+          "p3": "No game may debit the user's real balance directly.",
+          "p4": "All transfers to the game wallet require explicit user action."
+        },
+        "s3": {
+          "heading": "3. Personal limits",
+          "p1": "The user may set voluntary limits for the movement of funds intended for games, including:",
+          "li1": "daily limit;",
+          "li2": "weekly limit;",
+          "li3": "monthly limit.",
+          "p2": "The limits must respect a logical consistency among themselves: the daily limit may not exceed the weekly limit, nor the weekly limit the monthly limit.",
+          "p3": "Reductions of limits take effect immediately.",
+          "p4": "Increases of limits are subject to a waiting period (\"cooldown\"), intended to protect the user and promote responsible gaming.",
+          "p5": "Returning funds from the game wallet to the real balance does not restore already consumed limits."
+        },
+        "s4": {
+          "heading": "4. Self-exclusion and voluntary pauses",
+          "p1": "The user may voluntarily request:",
+          "li1": "temporary block;",
+          "li2": "preventive pause;",
+          "li3": "fixed-term self-exclusion;",
+          "li4": "permanent self-exclusion.",
+          "p2": "During self-exclusion periods, new participation in games, transfers to the game wallet, and early reactivations may be prevented."
+        },
+        "s5": {
+          "heading": "5. Sandbox Credits",
+          "p1": "The platform may make sandbox credits available for use in recreational or experimental modalities.",
+          "p2": "Sandbox credits:",
+          "li1": "have no economic value;",
+          "li2": "do not represent money;",
+          "li3": "grant no right to cash prizes;",
+          "li4": "cannot be converted into real balance;",
+          "li5": "cannot be withdrawn;",
+          "li6": "are non-refundable."
+        },
+        "s6": {
+          "heading": "6. Prohibited conduct",
+          "p1": "The following are expressly prohibited:",
+          "li1": "using the platform while a minor;",
+          "li2": "allowing third parties to use the account;",
+          "li3": "sharing accounts;",
+          "li4": "using bots, scripts, or automation;",
+          "li5": "maintaining multiple accounts without authorization;",
+          "li6": "colluding between players;",
+          "li7": "manipulating match results;",
+          "li8": "exploiting technical flaws for advantage;",
+          "li9": "using false identities."
+        },
+        "s7": {
+          "heading": "7. Security measures",
+          "p1": "CTech may adopt measures to protect the integrity of matches and prevent fraud, including:",
+          "li1": "additional identity checks;",
+          "li2": "automated behavior analysis;",
+          "li3": "preventive restrictions;",
+          "li4": "temporary suspension of features;",
+          "li5": "temporary retention of funds for analysis.",
+          "p2": "Where there are reasonable indications of fraud, abuse, or breach of this term, CTech may block accounts and cancel matches, without prejudice to the user's right to defense."
+        },
+        "s8": {
+          "heading": "8. Closure of the game wallet",
+          "p1": "The user may deactivate the game wallet at any time.",
+          "p2": "Before deactivation, any existing balances must be transferred to the real balance, subject to security measures and anti-fraud checks."
+        },
+        "s9": {
+          "heading": "9. Play responsibly",
+          "p1": "Games involving financial resources may cause addiction and must be used responsibly.",
+          "p2": "Never use funds intended for essential expenses, take on financial commitments because of games, or try to recover losses through new bets.",
+          "p3": "If the activity ceases to be recreational, seeking specialized help is recommended.",
+          "cvvText": "Centro de Valorização da Vida (CVV):",
+          "cvvBold": " 188",
+          "cvvUrl": "https://www.cvv.org.br",
+          "jaText": "Jogadores Anônimos:",
+          "jaUrl": "https://jogadoresanonimos.com.br"
+        },
+        "s10": {
+          "heading": "10. Nature of the games",
+          "p1": "The games made available by the platform may have their own rules and specific terms.",
+          "p2": "Participation in any modality presupposes acceptance of the respective applicable rules.",
+          "p3": "CTech may change, suspend, or discontinue game modalities at any time, subject to any applicable legal obligations."
+        },
+        "s11": {
+          "heading": "11. Changes",
+          "p1": "This document may be updated periodically.",
+          "p2": "Material changes will require renewed acceptance before continued use of the game-related features."
+        },
+        "s12": {
+          "heading": "12. Contact",
+          "p1": "O CARVALHO TECH",
+          "li1": "CNPJ: 62.787.449/0001-07",
+          "li2": "DPO: Artur Oliveira Carvalho",
+          "li3": "dpo@aoctech.app",
+          "li4": "legal@aoctech.app",
+          "li5": "(86) 9 8803-3430"
+        }
+      },
+      "v1": {
+        "metaTitle": "Responsible Gaming Terms",
+        "metaDescription": "CTech Wallet Responsible Gaming Terms — game wallet, personal limits, and sandbox credits.",
+        "title": "Responsible Gaming Terms — CTech Wallet",
+        "updatedAt": "July 12, 2026",
+        "version": "2.0",
+        "intro1a": "This term is ",
+        "intro1Bold": "specific to using the wallet for games",
+        "intro1b": " and complements the ",
+        "addendumLink": "CTech Wallet Additional Terms",
+        "intro1c": ". Accepting the Additional Terms does ",
+        "intro1Bold2": "not",
+        "intro1d": " mean accepting this term: they are separate documents, and you only need this one if you want to use the wallet for games.",
+        "s1": {
+          "heading": "1. The game wallet",
+          "p1a": "When you activate, we create a ",
+          "p1Bold1": "game wallet",
+          "p1b": " separate from your real balance. The money in the game wallet ",
+          "p1Bold2": "remains real money and yours",
+          "p1c": ": you can return it to your real balance whenever you want, with no fee and no limit, and withdraw it from there via PIX normally.",
+          "p2": "The game wallet exists to separate what you chose to devote to games from the money you use for subscriptions and services. It is the ",
+          "p2Bold": "only",
+          "p2b": " door through which real money reaches the games: you cannot play or buy credits directly from the real balance."
+        },
+        "s2": {
+          "heading": "2. Personal limits",
+          "p1a": "You set ",
+          "p1Bold": "how much you can transfer from your real balance to the game wallet",
+          "p1b": " per day, per week, and per month. The daily limit may not be larger than the weekly limit, and the weekly limit may not be larger than the monthly limit.",
+          "p2a": "The limit counts the ",
+          "p2Bold": "total sent",
+          "p2b": " in the period. Returning money from the game wallet to the real balance does ",
+          "p2Bold2": "not",
+          "p2c": " free up limit again — otherwise the limit would limit nothing.",
+          "p3": "Reducing a limit takes effect immediately. Increasing a limit only takes effect after a waiting period: 7 days for the daily and weekly limits, 14 days for the monthly limit. We never make you wait to protect yourself more."
+        },
+        "s3": {
+          "heading": "3. Sandbox credits",
+          "p1a": "Sandbox credits are bought with the balance of the ",
+          "p1Bold": "game wallet",
+          "p1b": " and are used to take part in matches in integrated skill games.",
+          "p2": "Sandbox credits have no monetary value, cannot be withdrawn, and cannot be converted back into money — not to the game wallet, not to the real balance. The conversion is final."
+        },
+        "s4": {
+          "heading": "4. Who can activate",
+          "p1": "You must be 18 or older and have completed the identity verification of your CTech account. Activation is optional: if you use the wallet only for subscriptions and services, you don't need it and nothing related to games appears in your wallet."
+        },
+        "s5": {
+          "heading": "5. Play responsibly",
+          "p1": "Games with money can cause addiction. Bet only what you can afford to lose, and use the limits — that is what they are for.",
+          "p2a": "If the game has stopped being fun, seek help. In Brazil, the CVV is available 24 hours by phone ",
+          "p2Bold": "188",
+          "p2b": " and at ",
+          "cvvLink": "cvv.org.br",
+          "p2c": ". Jogadores Anônimos: ",
+          "jaLink": "jogadoresanonimos.com.br",
+          "p2d": "."
+        }
+      }
+    }
   }
 }

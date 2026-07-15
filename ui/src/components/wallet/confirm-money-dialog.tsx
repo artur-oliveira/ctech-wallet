@@ -8,6 +8,12 @@ import {withdrawalFee} from '@/lib/utils/fee'
 
 type Flow = 'withdraw' | 'fund-game' | 'return-game'
 
+const FLOW_KEY: Record<Flow, 'withdraw' | 'fundGame' | 'returnGame'> = {
+    withdraw: 'withdraw',
+    'fund-game': 'fundGame',
+    'return-game': 'returnGame',
+}
+
 interface ConfirmMoneyDialogProps {
     flow: Flow
     amountCents: number
@@ -47,8 +53,9 @@ export function ConfirmMoneyDialog({
     const totalDebit = amountCents + fee
     const resultingBalance = Math.max(0, availableCents - totalDebit)
 
-    const titleKey = `confirm.${flow}.title`
-    const descKey = `confirm.${flow}.description`
+    const flowKey = FLOW_KEY[flow]
+    const titleKey = `confirm.${flowKey}.title`
+    const descKey = `confirm.${flowKey}.description`
 
     const onKeyDown = useCallback(
         (e: React.KeyboardEvent) => {
@@ -95,7 +102,7 @@ export function ConfirmMoneyDialog({
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="confirm-money-title"
-                aria-describedby="confirm-money-desc"
+                aria-describedby={stepUp ? 'confirm-stepup-alert' : 'confirm-money-desc'}
                 onKeyDown={onKeyDown}
                 className="w-full max-w-sm rounded-2xl bg-card p-6 shadow-modal"
             >
@@ -136,12 +143,18 @@ export function ConfirmMoneyDialog({
                     </div>
                 </dl>
 
+                {stepUp && (
+                    <p
+                        id="confirm-stepup-alert"
+                        className="mb-3 rounded-xl bg-brand-50 p-4 text-sm leading-relaxed text-brand-800"
+                        role="alert"
+                    >
+                        {t('confirm.stepUp.description')}
+                    </p>
+                )}
                 <div className="mt-6 flex gap-2">
                     {stepUp ? (
                         <>
-                            <p className="mb-3 w-full rounded-xl bg-brand-50 p-4 text-sm leading-relaxed text-brand-800" role="alert">
-                                {t('confirm.stepUp.description')}
-                            </p>
                             <Button
                                 type="button"
                                 variant="ghost"
