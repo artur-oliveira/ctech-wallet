@@ -4,20 +4,33 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import {Billing} from 'aws-cdk-lib/aws-dynamodb';
 import {Construct} from 'constructs';
 import {Environment} from './types';
+import {LEGACY_TABLES} from './constants';
 
 /**
- * The six wallet tables. Names/keys/indexes mirror api/tests/integration/setup_test.go
+ * The wallet tables. Names/keys/indexes mirror api/tests/integration/setup_test.go
  * and internal/domain/wallet/model.go (GSIUser / GSIIdem / GSIStatus) exactly —
  * a mismatch here silently breaks every query at runtime.
+ *
+ * Naming: every table except `wallets` carries the `wallet_` segment
+ * (`{env}_wallet_ledger_entries`, …) so they never collide with ctech-dfe's or
+ * ctech-account's tables. The legacy pre-prefix tables are kept provisioned
+ * during the migration (see LEGACY_TABLES) but receive no IAM access.
  */
 export type TableName = (
   'wallets' |
+  'wallet_audit' |
+  // Legacy (pre-wallet_-prefix) names — kept provisioned during the migration.
   'ledger_entries' |
   'idempotency' |
   'pix_deposits' |
   'withdrawals' |
   'users' |
-  'wallet_audit'
+  // New wallet-namespaced tables the API now targets.
+  'wallet_ledger_entries' |
+  'wallet_idempotency' |
+  'wallet_pix_deposits' |
+  'wallet_withdrawals' |
+  'wallet_users'
   );
 
 // GSI names — must match internal/domain/wallet/model.go.
@@ -97,29 +110,38 @@ export class DynamoDBStack extends cdk.Stack {
     const walletsTable = table('wallets');
     gsi(walletsTable, GSI_USER, ATTR_USER_ID); // both wallets of a user
 
-    // ── ledger_entries: append-only audit trail. Never updated, never deleted ──
-    const ledgerTable = table('ledger_entries', {sortKey: true});
+    // ── wallet_ledger_entries: append-only audit trail. Never updated, never deleted
+    const ledgerTable = table('wallet_ledger_entries', {sortKey: true});
     gsi(ledgerTable, GSI_IDEM, ATTR_IDEMPOTENCY_KEY); // replay lookup
 
-    // ── idempotency: IDEM#{key} guard items, expire via TTL ───────────────────
-    table('idempotency', {ttl: true});
+    // ── wallet_idempotency: IDEM#{key} guard items, expire via TTL ─────────────
+    table('wallet_idempotency', {ttl: true});
 
-    // ── pix_deposits: in-flight charges keyed by txid, expire via TTL ─────────
-    table('pix_deposits', {ttl: true});
+    // ── wallet_pix_deposits: in-flight charges keyed by txid, expire via TTL ───
+    table('wallet_pix_deposits', {ttl: true});
 
-    // ── withdrawals: payouts; gsi_status drives the reconciliation job ────────
-    const withdrawalsTable = table('withdrawals');
+    // ── wallet_withdrawals: payouts; gsi_status drives the reconciliation job ──
+    const withdrawalsTable = table('wallet_withdrawals');
     gsi(withdrawalsTable, GSI_STATUS, ATTR_STATUS);
 
-    // ── users: per-user wallet metadata ───────────────────────────────────────
-    const usersTable = table('users');
+    // ── wallet_users: per-user wallet metadata ────────────────────────────────
+    const usersTable = table('wallet_users');
 
-    // ── wallet_audit: append-only record of actions that move NO money —────────
+    // ── wallet_audit: append-only record of actions that move NO money ─────────
     // consent, gambling activation, and every personal-limit change. The ledger
     // covers money; this covers everything else that must be provable after the
     // fact. Never updated, never deleted — same durability posture as the ledger,
-    // because it is evidence.
+    // because it is evidence. Already wallet_-prefixed, so unchanged.
     const auditTable = table('wallet_audit', {sortKey: true});
+
+    // ── Legacy tables (pre-wallet_-prefix names) ──────────────────────────────
+    // Kept provisioned because they still hold live data. The migration copies
+    // rows into the new tables out-of-band; they are removed from this stack in a
+    // later change. They get NO IAM access (filtered in iam-stack.ts /
+    // reconcile-stack.ts) and the API no longer reads them.
+    for (const name of LEGACY_TABLES) {
+      table(name as TableName);
+    }
 
     // ── Outputs ───────────────────────────────────────────────────────────────
     new cdk.CfnOutput(this, 'WalletsTableName', {

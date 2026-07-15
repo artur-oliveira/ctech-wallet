@@ -154,7 +154,7 @@ export const domainForEnv = (environment: Environment, prefix: string) => {
  * narrower action set than every other table (no UpdateItem, no DeleteItem) —
  * Financial Safety Invariant 2 enforced at the permission layer.
  */
-export const TABLE_LEDGER = 'ledger_entries';
+export const TABLE_LEDGER = 'wallet_ledger_entries';
 
 /**
  * The append-only audit table: consent, gambling activation, and every change to
@@ -170,3 +170,18 @@ export const TABLE_AUDIT = 'wallet_audit';
  * a property of the system rather than a promise made by the code.
  */
 export const APPEND_ONLY_TABLES = [TABLE_LEDGER, TABLE_AUDIT] as const;
+
+/**
+ * Pre-wallet_-prefix table names kept provisioned during the migration to the
+ * `{env}_wallet_*` naming. They still hold live data; the rows are copied into
+ * the new tables out-of-band and these are dropped from this stack in a later
+ * change. They receive NO IAM access and the API no longer reads them — they
+ * are excluded from every policy in iam-stack.ts / reconcile-stack.ts.
+ */
+export const LEGACY_TABLES = [
+  'ledger_entries',
+  'idempotency',
+  'pix_deposits',
+  'withdrawals',
+  'users',
+] as const;

@@ -175,7 +175,7 @@ func (r *WalletRepository) createWallets(ctx context.Context, userID string, wal
 	items := make([]types.TransactWriteItem, 0, len(walletTypes)*2)
 	for _, typ := range walletTypes {
 		w := wallet.Wallet{
-			WalletID: id.New(), UserID: userID, Type: typ,
+			WalletID: wallet.WalletPrefix + id.New(), UserID: userID, Type: typ,
 			Balance: 0, Version: 0, CreatedAt: now, UpdatedAt: now,
 		}
 		wav, err := Encode(w)

@@ -11,6 +11,7 @@ import {
   instanceProfileName,
   instanceRoleName,
   APPEND_ONLY_TABLES,
+  LEGACY_TABLES,
 } from './constants';
 
 interface IAMStackProps extends cdk.StackProps {
@@ -65,11 +66,14 @@ export class IAMStack extends cdk.Stack {
     //
     // No dynamodb:Scan anywhere: access is GetItem > Query only (see CLAUDE.md).
     const appendOnly: readonly string[] = APPEND_ONLY_TABLES;
+    // Legacy tables are kept provisioned but must receive NO access (the API no
+    // longer reads them and their rows migrate to the new tables out-of-band).
+    const legacy = new Set<string>(LEGACY_TABLES);
     const appendOnlyArns = [...dynamoDBTables.entries()]
-      .filter(([name]) => appendOnly.includes(name))
+      .filter(([name]) => appendOnly.includes(name) && !legacy.has(name))
       .flatMap(([, it]) => [it.tableArn, `${it.tableArn}/index/*`]);
     const mutableTableArns = [...dynamoDBTables.entries()]
-      .filter(([name]) => !appendOnly.includes(name))
+      .filter(([name]) => !appendOnly.includes(name) && !legacy.has(name))
       .flatMap(([, it]) => [it.tableArn, `${it.tableArn}/index/*`]);
 
     this.apiRole.addManagedPolicy(new iam.ManagedPolicy(this, 'DynamoPolicy', {

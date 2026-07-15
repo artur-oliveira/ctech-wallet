@@ -22,8 +22,8 @@ import {
 
 const API_DIR = path.join(__dirname, '../../api');
 
-/** Tables the reconciliation job touches. */
-const RECONCILE_TABLES = ['wallets', 'ledger_entries', 'idempotency', 'withdrawals'];
+/** Tables the reconciliation job touches (wallet_-prefixed names). */
+const RECONCILE_TABLES = ['wallets', 'wallet_ledger_entries', 'wallet_idempotency', 'wallet_withdrawals'];
 
 /** How often the job sweeps withdrawals stuck in `processing`. */
 const RECONCILE_RATE_MINUTES = 5;

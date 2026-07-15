@@ -48,14 +48,17 @@ const (
 	WithdrawRefundFail = "refund_failed"
 )
 
-// DynamoDB table names (env-prefixed at the repository layer).
+// DynamoDB table names (env-prefixed at the repository layer). Every table
+// except `wallets` carries the `wallet_` segment so the wallet's tables never
+// collide with ctech-dfe's or ctech-account's (e.g. `users`). `wallet_audit`
+// already carries the prefix and is left unchanged.
 const (
 	TableWallets     = "wallets"
-	TableLedger      = "ledger_entries"
-	TableIdempotency = "idempotency"
-	TablePixDeposits = "pix_deposits"
-	TableWithdrawals = "withdrawals"
-	TableUsers       = "users"
+	TableLedger      = "wallet_ledger_entries"
+	TableIdempotency = "wallet_idempotency"
+	TablePixDeposits = "wallet_pix_deposits"
+	TableWithdrawals = "wallet_withdrawals"
+	TableUsers       = "wallet_users"
 	TableAudit       = "wallet_audit"
 )
 
@@ -68,6 +71,11 @@ const (
 
 // IdemPrefix namespaces idempotency guard items in the idempotency table.
 const IdemPrefix = "IDEM#"
+
+// WalletPrefix namespaces a wallet's partition key (pk) in the wallets and
+// ledger tables, so wallet records never collide with the (user_id, type)
+// marker rows (USER#...) that share the wallets table. Mirrors the USER# marker.
+const WalletPrefix = "WALLET#"
 
 // MaxInboundReais is the absolute ceiling (in reais) on a single INBOUND
 // money operation: a PIX deposit or a real→game fund. It is a hard cap no
