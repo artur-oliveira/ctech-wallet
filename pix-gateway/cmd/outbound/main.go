@@ -222,7 +222,7 @@ func scrubPayload(p json.RawMessage) json.RawMessage {
 	if err := json.Unmarshal(p, &m); err != nil {
 		return p
 	}
-	for _, k := range []string{"token", "qr_code_b64", "payer_hint_cpf", "cpf"} {
+	for _, k := range []string{"token", "payer_hint_cpf", "cpf"} {
 		if _, ok := m[k]; ok {
 			m[k] = json.RawMessage(`"[redacted]"`)
 		}

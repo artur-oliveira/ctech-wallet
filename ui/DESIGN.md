@@ -86,7 +86,7 @@ A cool slate casing (never warm cream) carries the interface; one violet is the 
 
 ### Primary
 - **Signal Violet** (#7c3aed): the primary action, current selection, and live/active state. Used on ≤10% of any screen — its rarity is the point. On the filled real-money card it is the surface itself (white text on violet).
-- **Signal Violet Soft** (#c4b5fd): secondary violet text on violet surfaces (e.g. the real card's eyebrow label), chosen for contrast against the filled card, not decoration.
+- **Signal Violet Soft** (#ede9fe): secondary violet text on violet surfaces (e.g. the real card's eyebrow label and subtitle), chosen for its higher contrast against the filled card — not decoration.
 - **Signal Violet Deep** (#6d28d9): the active/pressed and hover-deepen state of the primary action.
 
 ### Neutral
@@ -144,7 +144,7 @@ Flat by default. A surface earns a shadow only when it lifts (card hover) or ove
 - **Style:** white fill, 1px Line border, 10px radius, 40px height, text-sm ink text, readable muted placeholder (#94a3b8 meets 4.5:1).
 - **Focus:** `focus-within` / `focus` shifts the border to Signal Violet and raises a 3px violet ring at 20% (`ring-brand-500/20`).
 - **Error:** border turns red-400, ring red-500/20, and a red-600 message sits below the field. aria-invalid is set; the message is `aria-describedby`-linked.
-- **Money input:** the amount field prefixes a muted "R$" and renders the typed value in Geist Mono `tabular-nums`; a max-length guard caps entry at the R$ 1.000.000 ceiling on deposits and game funding.
+- **Money input:** the amount field prefixes a muted "R$" and renders the typed value in Geist Mono `tabular-nums`; a max-length guard caps entry at the R$ 1.000.000 ceiling on deposits and game funding. When a balance ceiling applies, a right-aligned "Máx {max}" link below the field fills it in one tap (it is a sibling below the input wrapper, never inside the flex row).
 
 ### Cards / Containers
 - **Corner Style:** 16px radius (`rounded-2xl`) on the balance cards; 12px (`rounded-xl`) on the ledger panel and dialogs.
