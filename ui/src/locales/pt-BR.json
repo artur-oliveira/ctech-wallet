@@ -197,9 +197,9 @@
     }
   },
   "notFound": {
-    "header": "Page not found",
-    "description": "The page you are trying to access does not exists or was removed",
-    "backToAccount": "Back to to account",
-    "backToLogin": "Back to sign in"
+    "header": "Página não encontrada",
+    "description": "A página que você acessou não existe ou foi removida.",
+    "backToAccount": "Ir para o painel",
+    "backToLogin": "Voltar para o login"
   }
 }

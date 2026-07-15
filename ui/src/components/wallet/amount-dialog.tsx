@@ -142,19 +142,19 @@ export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onCl
         <label className="mt-5 block text-sm font-medium text-foreground" htmlFor="amount">
           {t('dialog.amount.label')}
         </label>
-        <div
-          className={`mt-1.5 flex items-center gap-2 rounded-lg border px-3 focus-within:ring-3 ${
-            errors.amount
-              ? 'border-red-400 focus-within:border-red-500 focus-within:ring-red-500/20'
-              : 'border-border focus-within:border-brand-500 focus-within:ring-brand-500/20'
-          }`}
-        >
-          <span className="text-sm text-muted-foreground">R$</span>
-          <Controller
-            name="amount"
-            control={control}
-            render={({field}) => (
-              <>
+        <Controller
+          name="amount"
+          control={control}
+          render={({field}) => (
+            <>
+              <div
+                className={`mt-1.5 flex items-center gap-2 rounded-lg border px-3 focus-within:ring-3 ${
+                  errors.amount
+                    ? 'border-red-400 focus-within:border-red-500 focus-within:ring-red-500/20'
+                    : 'border-border focus-within:border-brand-500 focus-within:ring-brand-500/20'
+                }`}
+              >
+                <span className="text-sm text-muted-foreground">R$</span>
                 <input
                   id="amount"
                   autoFocus
@@ -176,21 +176,21 @@ export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onCl
                   aria-describedby={errors.amount ? 'amount-error' : undefined}
                   className="h-10 w-full border-0 bg-transparent font-mono tabular-nums outline-none"
                 />
-                {maxCents != null && (
-                  <div className="mt-1.5 flex justify-end">
-                    <button
-                      type="button"
-                      onClick={() => field.onChange(effectiveMax)}
-                      className="text-xs font-semibold text-brand-600 hover:text-brand-700 hover:underline"
-                    >
-                      {t('dialog.amount.maxButton', {max: formatBRL(effectiveMax)})}
-                    </button>
-                  </div>
-                )}
-              </>
-            )}
-          />
-        </div>
+              </div>
+              {maxCents != null && (
+                <div className="mt-1.5 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => field.onChange(effectiveMax)}
+                    className="text-xs font-semibold text-brand-600 hover:text-brand-700 hover:underline"
+                  >
+                    {t('dialog.amount.maxButton', {max: formatBRL(effectiveMax)})}
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        />
 
         {capMillion && (
           <p className="mt-1.5 text-xs text-muted-foreground">{t('dialog.max', {max: formatBRL(MAX_AMOUNT_CENTS)})}</p>

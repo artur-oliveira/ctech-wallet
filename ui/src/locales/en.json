@@ -181,6 +181,7 @@
     "gamblingNotActivated": "Activate the game wallet to use this operation.",
     "gamblingTermsRequired": "Accept the responsible gaming terms to continue.",
     "depositOutOfRange": "The deposit must be between {{min}} and {{max}}.",
+    "amountAboveLimit": "The maximum amount per operation is {{max}}.",
     "generic": "Something went wrong. Please try again."
   },
   "ledger": {
@@ -196,9 +197,9 @@
     }
   },
   "notFound": {
-    "header": "Página não encontrada",
-    "description": "A página que você acessou não existe ou foi removido.",
-    "backToAccount": "Ir para o painel",
-    "backToLogin": "Voltar para o login"
+    "header": "Page not found",
+    "description": "The page you are trying to access does not exist or was removed.",
+    "backToAccount": "Back to dashboard",
+    "backToLogin": "Back to sign in"
   }
 }
