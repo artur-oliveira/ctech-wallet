@@ -55,7 +55,7 @@ jobs:
           go-version-file: api/go.mod
           cache-dependency-path: api/go.sum
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: npm
@@ -133,7 +133,7 @@ jobs:
           go-version-file: api/go.mod
           cache-dependency-path: api/go.sum
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: npm
