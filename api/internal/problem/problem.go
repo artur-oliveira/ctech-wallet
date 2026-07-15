@@ -34,7 +34,7 @@ const (
 	TypeStepUpRequired      = "/problems/step-up-required"
 	TypePixKeyNotFound      = "/problems/pix-key-not-found"
 	TypeDepositOutOfRange   = "/problems/deposit-out-of-range"
-	TypeAmountAboveLimit   = "/problems/amount-above-limit"
+	TypeAmountAboveLimit    = "/problems/amount-above-limit"
 
 	TypeGamblingNotActivated  = "/problems/gambling-not-activated"
 	TypeGamblingTermsRequired = "/problems/gambling-terms-required"
