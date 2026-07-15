@@ -118,6 +118,11 @@
       "title": "Confirmar devolução ao saldo real",
       "description": "Sem taxa e sem limite — dinheiro saindo da carteira de jogo é sempre permitido."
     },
+    "stepUp": {
+      "title": "Verificação de identidade necessária",
+      "description": "Por sua segurança, saques exigem uma verificação MFA recente. Verifique sua identidade para continuar.",
+      "reverify": "Verificar identidade"
+    },
     "amount": "Valor",
     "fee": "Taxa de saque",
     "total": "Total debitado",

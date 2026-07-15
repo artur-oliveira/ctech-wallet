@@ -14,6 +14,10 @@ interface ConfirmMoneyDialogProps {
     /** Available balance of the wallet being debited (real for withdraw/fund-game, game for return-game). */
     availableCents: number
     pending?: boolean
+    /** When true, the API rejected the commit with step-up-required: show an in-flow re-verify step. */
+    stepUp?: boolean
+    /** Re-verifies identity (MFA) via the OAuth re-auth flow, then the user retries. */
+    onReverify?: () => void
     onConfirm: () => void
     onClose: () => void
 }
@@ -28,11 +32,14 @@ export function ConfirmMoneyDialog({
                                        amountCents,
                                        availableCents,
                                        pending,
+                                       stepUp,
+                                       onReverify,
                                        onConfirm,
                                        onClose,
                                    }: ConfirmMoneyDialogProps) {
     const {t} = useTranslation()
     const confirmRef = useRef<HTMLButtonElement>(null)
+    const reverifyRef = useRef<HTMLButtonElement>(null)
     const panelRef = useRef<HTMLDivElement>(null)
 
     const isWithdraw = flow === 'withdraw'
@@ -71,9 +78,10 @@ export function ConfirmMoneyDialog({
 
     useEffect(() => {
         const previouslyFocused = document.activeElement as HTMLElement | null
-        confirmRef.current?.focus()
+        if (stepUp) reverifyRef.current?.focus()
+        else confirmRef.current?.focus()
         return () => previouslyFocused?.focus?.()
-    }, [])
+    }, [stepUp])
 
     return (
         <div
@@ -92,7 +100,7 @@ export function ConfirmMoneyDialog({
                 className="w-full max-w-sm rounded-2xl bg-card p-6 shadow-modal"
             >
                 <h2 id="confirm-money-title" className="text-lg font-semibold text-foreground">
-                    {t(titleKey)}
+                    {t(stepUp ? 'confirm.stepUp.title' : titleKey)}
                 </h2>
                 <p id="confirm-money-desc" className="mt-1 text-sm leading-relaxed text-muted-foreground">
                     {t(descKey)}
@@ -129,25 +137,53 @@ export function ConfirmMoneyDialog({
                 </dl>
 
                 <div className="mt-6 flex gap-2">
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        className="flex-1"
-                        onClick={onClose}
-                        disabled={pending}
-                    >
-                        {t('common.cancel')}
-                    </Button>
-                    <Button
-                        ref={confirmRef}
-                        type="button"
-                        variant="brand"
-                        className="flex-1"
-                        onClick={onConfirm}
-                        disabled={pending}
-                    >
-                        {pending ? t('common.loading') : t('confirm.confirm')}
-                    </Button>
+                    {stepUp ? (
+                        <>
+                            <p className="mb-3 w-full rounded-xl bg-brand-50 p-4 text-sm leading-relaxed text-brand-800" role="alert">
+                                {t('confirm.stepUp.description')}
+                            </p>
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                className="flex-1"
+                                onClick={onClose}
+                                disabled={pending}
+                            >
+                                {t('common.cancel')}
+                            </Button>
+                            <Button
+                                ref={reverifyRef}
+                                type="button"
+                                variant="brand"
+                                className="flex-1"
+                                onClick={onReverify}
+                            >
+                                {t('confirm.stepUp.reverify')}
+                            </Button>
+                        </>
+                    ) : (
+                        <>
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                className="flex-1"
+                                onClick={onClose}
+                                disabled={pending}
+                            >
+                                {t('common.cancel')}
+                            </Button>
+                            <Button
+                                ref={confirmRef}
+                                type="button"
+                                variant="brand"
+                                className="flex-1"
+                                onClick={onConfirm}
+                                disabled={pending}
+                            >
+                                {pending ? t('common.loading') : t('confirm.confirm')}
+                            </Button>
+                        </>
+                    )}
                 </div>
             </div>
         </div>

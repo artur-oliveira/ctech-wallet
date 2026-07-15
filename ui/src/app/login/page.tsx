@@ -18,7 +18,7 @@ export default function LoginPage() {
 
     return (
         <div className="flex min-h-screen items-center justify-center bg-background p-6">
-            <div className="w-full max-w-sm rounded-2xl border border-brand-100 bg-card p-8 text-center shadow-card">
+            <div className="w-full max-w-sm rounded-2xl border border-brand-100 bg-card p-8 text-center">
                 <div className="mx-auto flex size-12 items-center justify-center rounded-xl bg-brand-600 text-white">
                     <WalletIcon size={22}/>
                 </div>

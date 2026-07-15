@@ -118,6 +118,11 @@
       "title": "Confirm return to real balance",
       "description": "No fee and no limit — money leaving the game wallet is always allowed."
     },
+    "stepUp": {
+      "title": "Identity check required",
+      "description": "For your security, withdrawals require a recent MFA check. Re-verify your identity to continue.",
+      "reverify": "Re-verify identity"
+    },
     "amount": "Amount",
     "fee": "Withdrawal fee",
     "total": "Total debited",

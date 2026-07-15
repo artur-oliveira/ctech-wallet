@@ -113,18 +113,6 @@ export default function RootLayout({
             suppressHydrationWarning
             className="min-h-screen bg-background text-foreground antialiased"
         >
-        {/* Subtle Wallet purple background */}
-        <div
-            className="
-            fixed inset-0 -z-10 opacity-60
-            bg-linear-to-b
-            from-background
-            via-background
-            to-violet-50
-            dark:to-violet-950
-          "
-        />
-
         <QueryProvider>
             <AuthProvider>
                 <I18nProvider>{children}</I18nProvider>

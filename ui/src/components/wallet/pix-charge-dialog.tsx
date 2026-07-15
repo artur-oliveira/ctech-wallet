@@ -1,6 +1,6 @@
 'use client'
 
-import {useCallback, useEffect, useRef, useState} from 'react'
+import React, {useCallback, useEffect, useRef, useState} from 'react'
 import {useQuery} from '@tanstack/react-query'
 import {Check, Copy} from 'lucide-react'
 import {useTranslation} from 'react-i18next'
@@ -84,10 +84,14 @@ export function PixChargeDialog(
     }, [balances.data, initialRealBalance, deposit.amount, onConfirmed, t])
 
     async function copy() {
-        await navigator.clipboard.writeText(deposit.pix_copia_e_cola)
-        setCopied(true)
-        toast.success(t('toast.pixCopied'))
-        setTimeout(() => setCopied(false), 2000)
+        try {
+            await navigator.clipboard?.writeText(deposit.pix_copia_e_cola)
+            setCopied(true)
+            toast.success(t('toast.pixCopied'))
+            setTimeout(() => setCopied(false), 2000)
+        } catch {
+            toast.error(t('common.genericError'))
+        }
     }
 
     return (

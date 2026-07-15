@@ -50,11 +50,11 @@ export function BalanceCards({
                 <section className="relative overflow-hidden rounded-2xl bg-brand-600 p-6 text-white">
                     <div className="flex items-start justify-between">
                         <div>
-                            <p className="font-mono text-xs uppercase tracking-widest text-brand-100">{t('balance.real.label')}</p>
+                            <p className="font-mono text-xs uppercase tracking-widest text-brand-50">{t('balance.real.label')}</p>
                             <p className="mt-3 font-mono text-4xl font-bold tabular-nums tracking-tight">
                                 {formatBRL(balances.real.balance)}
                             </p>
-                            <p className="mt-2 text-sm text-brand-100">{t('balance.real.subtitle')}</p>
+                            <p className="mt-2 text-sm text-brand-50">{t('balance.real.subtitle')}</p>
                         </div>
                     </div>
 
@@ -78,7 +78,7 @@ export function BalanceCards({
                         {activated && (
                             <Button
                                 variant="outline"
-                                className="border-brand-400/60 bg-transparent text-white hover:bg-brand-500"
+                                className="border-brand-400/60 bg-transparent text-white hover:bg-brand-700"
                                 onClick={onFundGame}
                             >
                                 <Dice5 size={16}/>
@@ -143,7 +143,7 @@ export function BalanceCards({
             {!activated && (
                 <Link
                     href="/gambling/activate"
-                    className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground transition hover:border-brand-200 hover:text-foreground"
+                    className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground transition-colors hover:border-brand-200 hover:text-foreground"
                 >
                     <ShieldCheck size={16} className="text-muted-foreground"/>
                     {t('balance.activateLink')}

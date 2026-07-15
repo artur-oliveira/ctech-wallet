@@ -26,8 +26,8 @@ export function TermsAddendumGate() {
     })
 
     return (
-        <div className="flex min-h-screen items-center justify-center bg-gradient-login px-4">
-            <div className="w-full max-w-md space-y-5 rounded-2xl border border-brand-100 bg-card p-6 shadow-card">
+        <div className="flex min-h-screen items-center justify-center bg-background px-4">
+            <div className="w-full max-w-md space-y-5 rounded-2xl border border-brand-100 bg-card p-6">
                 <div className="flex size-10 items-center justify-center rounded-lg bg-brand-600 text-white">
                     <ShieldCheck size={20}/>
                 </div>

@@ -15,7 +15,7 @@ export default function Home() {
     }, [loading, authenticated, router])
 
     return (
-        <div className="flex min-h-screen items-center justify-center bg-gradient-login">
+        <div className="flex min-h-screen items-center justify-center bg-background">
             <div className="size-10 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600"/>
         </div>
     )

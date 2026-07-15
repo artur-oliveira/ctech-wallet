@@ -43,7 +43,14 @@ export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onCl
     const capMillion = flow === 'deposit' || flow === 'fund-game'
     const balanceCap = maxCents ?? Number.POSITIVE_INFINITY
     const millionCap = capMillion ? MAX_AMOUNT_CENTS : Number.POSITIVE_INFINITY
-    const effectiveMax = Math.min(balanceCap, millionCap)
+    // A withdrawal also pays the fee, so the largest amount that can leave the
+    // wallet without tripping insufficient-balance is balance − fee. Credits,
+    // returns, and real↔game transfers carry no fee, so their cap is raw balance.
+    const feeAwareCap =
+        flow === 'withdraw' && maxCents != null
+            ? Math.max(0, maxCents - withdrawalFee(maxCents))
+            : balanceCap
+    const effectiveMax = Math.min(feeAwareCap, millionCap)
 
     const schema = useMemo(() => {
         const overMsg =

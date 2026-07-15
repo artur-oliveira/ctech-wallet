@@ -64,9 +64,9 @@ function newIdemKey(): string {
 
 function DashboardInner() {
     const {t} = useTranslation()
-    const {profile, logout} = useAuth()
+    const {profile, logout, login} = useAuth()
     const qc = useQueryClient()
-    useWalletRealtime()
+    const {wsStatus} = useWalletRealtime()
     const [flow, setFlow] = useState<Flow>(null)
     const [confirm, setConfirm] = useState<{
         flow: 'withdraw' | 'fund-game' | 'return-game';
@@ -74,6 +74,7 @@ function DashboardInner() {
     } | null>(null)
     const [pendingPixKey, setPendingPixKey] = useState<string>('')
     const [charge, setCharge] = useState<DepositResult | null>(null)
+    const [stepUp, setStepUp] = useState(false)
     const [tab, setTab] = useState<WalletType>('real')
 
     const balances = useQuery({queryKey: ['balances'], queryFn: () => apiClient.getBalances()})
@@ -104,7 +105,13 @@ function DashboardInner() {
                     : t('toast.withdrawSent'),
             )
         },
-        onError: (err) => toast.error(problemMessage(err, t)),
+        onError: (err) => {
+            if (err instanceof ApiError && err.type === '/problems/step-up-required') {
+                setStepUp(true)
+                return
+            }
+            toast.error(problemMessage(err, t))
+        },
     })
 
     const buyCredits = useMutation({
@@ -152,8 +159,29 @@ function DashboardInner() {
                         </div>
                         <span className="font-semibold text-foreground">CTech Wallet</span>
                     </div>
-                    <div className="flex items-center gap-3">
-                        {name && <span className="hidden text-sm text-muted-foreground sm:inline">{name}</span>}
+                    <div className="flex min-w-0 items-center gap-3">
+                        <span
+                            className="hidden items-center gap-1.5 sm:inline-flex"
+                            role="status"
+                            aria-label={
+                                wsStatus === 'connected'
+                                    ? t('dashboard.live')
+                                    : wsStatus === 'connecting'
+                                        ? t('dashboard.connecting')
+                                        : t('dashboard.offline')
+                            }
+                        >
+                            <span
+                                className={`size-1.5 rounded-full ${
+                                    wsStatus === 'connected'
+                                        ? 'bg-brand-600'
+                                        : wsStatus === 'connecting'
+                                            ? 'bg-brand-300'
+                                            : 'bg-gray-300'
+                                }`}
+                            />
+                        </span>
+                        {name && <span className="hidden max-w-[10rem] truncate text-sm text-muted-foreground sm:inline">{name}</span>}
                         <Button variant="ghost" size="icon-sm" onClick={logout} aria-label={t('dashboard.logout')}>
                             <LogOut size={16}/>
                         </Button>
@@ -221,6 +249,7 @@ function DashboardInner() {
                     maxCents={balances.data?.real?.balance}
                     pending={withdraw.isPending || confirm?.flow === 'withdraw'}
                     onProceed={(amount, pixKey) => {
+                        setStepUp(false)
                         setPendingPixKey(pixKey ?? '')
                         setConfirm({flow: 'withdraw', amount})
                     }}
@@ -261,6 +290,8 @@ function DashboardInner() {
             {confirm && (
                 <ConfirmMoneyDialog
                     flow={confirm.flow}
+                    stepUp={stepUp}
+                    onReverify={login}
                     amountCents={confirm.amount}
                     availableCents={
                         confirm.flow === 'return-game'
@@ -283,7 +314,7 @@ function DashboardInner() {
                             returnFromGame.mutate(confirm.amount)
                         }
                     }}
-                    onClose={() => setConfirm(null)}
+                    onClose={() => { setStepUp(false); setConfirm(null) }}
                 />
             )}
 
