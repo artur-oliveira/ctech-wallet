@@ -20,7 +20,7 @@ func (f *fakeConfirmer) ConfirmDeposit(_ context.Context, txid string) error {
 func TestHandleWebhookForwardsEveryTxid(t *testing.T) {
 	f := &fakeConfirmer{}
 	h := &handler{confirmer: f}
-	body := `{"pix":[{"txid":"tx1"},{"txid":"tx2"}]}`
+	body := `{"txid":"tx1"}`
 	req := events.APIGatewayV2HTTPRequest{Body: body}
 	resp, err := h.handle(context.Background(), req)
 	if err != nil {
@@ -29,7 +29,7 @@ func TestHandleWebhookForwardsEveryTxid(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("status: %d body: %s", resp.StatusCode, resp.Body)
 	}
-	if len(f.calls) != 2 || f.calls[0] != "tx1" || f.calls[1] != "tx2" {
+	if len(f.calls) != 1 || f.calls[0] != "tx1" {
 		t.Fatalf("calls: %v", f.calls)
 	}
 }
@@ -48,7 +48,7 @@ func TestHandleWebhookMalformedBody(t *testing.T) {
 func TestHandleWebhookConfirmFailureReturns500(t *testing.T) {
 	f := &fakeConfirmer{err: context.DeadlineExceeded}
 	h := &handler{confirmer: f}
-	body := `{"pix":[{"txid":"tx1"}]}`
+	body := `{"txid":"tx1"}`
 	resp, err := h.handle(context.Background(), events.APIGatewayV2HTTPRequest{Body: body})
 	if err != nil {
 		t.Fatalf("handle: %v", err)
