@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/artur-oliveira/ctech-wallet/api/internal/problem"
 	"github.com/artur-oliveira/ctech-wallet/api/internal/repositories"
@@ -45,8 +46,13 @@ func bindJSON[T any](c fiber.Ctx, dst *T) *problem.Problem {
 	dec := json.NewDecoder(bytes.NewReader(c.Body()))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {
-		// Do not echo the parse error — it can reveal internal struct
-		// field names. The caller already knows their own body is malformed.
+		// The client-facing message stays generic — it must not echo the parse
+		// error, which can reveal internal struct field names. But swallowing it
+		// entirely left every bad-request rejection unauditable (e.g. an M2M
+		// caller sending a field this deployed version doesn't know yet), so log
+		// the real cause server-side only. Never log the raw body: request
+		// payloads carry payer CPF and other PII that must not land in logs.
+		slog.WarnContext(c.Context(), "bind json failed", "path", c.Path(), "err", err)
 		return problem.BadRequest("corpo JSON inválido")
 	}
 	return validation.Struct(dst)
