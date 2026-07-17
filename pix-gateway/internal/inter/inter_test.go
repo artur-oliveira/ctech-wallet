@@ -150,6 +150,85 @@ func TestDoSetsBearer(t *testing.T) {
 	}
 }
 
+// TestQueryChargeParsesDevolucoes covers Inter's real cob-query response shape
+// for a payment that was later returned to the payer — the devolução is
+// nested under pix[].devolucoes[], never a top-level field.
+func TestQueryChargeParsesDevolucoes(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"txid": "01KXPR34BKVF7E5SWP1TE2R0K7",
+			"status": "CONCLUIDA",
+			"valor": {"original": "1.00"},
+			"pix": [{
+				"endToEndId": "E10573521202607170037OukqTjpOvAA",
+				"valor": "1.00",
+				"devolucoes": [{
+					"id": "refund",
+					"rtrId": "D00416968202607170059Yy0QJaJ31i1",
+					"valor": "1.00",
+					"status": "DEVOLVIDO",
+					"motivo": ""
+				}]
+			}]
+		}`))
+	}))
+	defer srv.Close()
+
+	c := newTestClient(srv.URL, srv.Client())
+	ctx := WithBearer(context.Background(), "BEARER123")
+	ch, err := c.QueryCharge(ctx, "01KXPR34BKVF7E5SWP1TE2R0K7")
+	if err != nil {
+		t.Fatalf("QueryCharge: %v", err)
+	}
+	if len(ch.Refunds) != 1 {
+		t.Fatalf("expected 1 refund, got %+v", ch.Refunds)
+	}
+	r := ch.Refunds[0]
+	if r.RtrID != "D00416968202607170059Yy0QJaJ31i1" || r.Amount != 100 || r.Status != RefundCompleted {
+		t.Fatalf("bad refund: %+v", r)
+	}
+}
+
+// TestQueryChargeParsesMultiplePayments covers the same QR code being scanned
+// and paid by two different people — Inter reports both under pix[], each
+// with its own endToEndId/valor/pagador.
+func TestQueryChargeParsesMultiplePayments(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"txid": "tx1",
+			"status": "CONCLUIDA",
+			"valor": {"original": "50.00"},
+			"pix": [
+				{"endToEndId": "E1", "valor": "50.00", "pagador": {"cpf": "11111111111"}},
+				{"endToEndId": "E2", "valor": "50.00", "pagador": {"cpf": "22222222222"}}
+			]
+		}`))
+	}))
+	defer srv.Close()
+
+	c := newTestClient(srv.URL, srv.Client())
+	ctx := WithBearer(context.Background(), "BEARER123")
+	ch, err := c.QueryCharge(ctx, "tx1")
+	if err != nil {
+		t.Fatalf("QueryCharge: %v", err)
+	}
+	if len(ch.Payments) != 2 {
+		t.Fatalf("expected 2 payments, got %+v", ch.Payments)
+	}
+	if ch.Payments[0].E2EID != "E1" || ch.Payments[1].E2EID != "E2" {
+		t.Fatalf("bad payment order: %+v", ch.Payments)
+	}
+	if ch.Payments[1].Amount != 5000 || ch.Payments[1].PayerCPF != "22222222222" {
+		t.Fatalf("bad excess payment: %+v", ch.Payments[1])
+	}
+	// Legacy top-level fields still mirror the FIRST payment.
+	if ch.E2EID != "E1" || ch.PayerCPF != "11111111111" {
+		t.Fatalf("top-level fields should mirror payments[0]: e2e=%q cpf=%q", ch.E2EID, ch.PayerCPF)
+	}
+}
+
 // TestDoMissingBearer proves the tokenManager is gone: without a supplied
 // bearer, do refuses instead of fetching one.
 func TestDoMissingBearer(t *testing.T) {

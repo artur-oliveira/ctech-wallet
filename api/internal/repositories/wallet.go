@@ -406,6 +406,16 @@ func (r *WalletRepository) UpdateDepositStatus(ctx context.Context, txid, status
 	return err
 }
 
+// UpdateDepositPayer persists the payer CPF/name reported by the webhook — the
+// charge re-query no longer returns them, so this is their only source.
+func (r *WalletRepository) UpdateDepositPayer(ctx context.Context, txid, payerCPF, payerName string) error {
+	_, err := r.deposits.UpdateItem(ctx, txid, nil, map[string]any{
+		"payer_cpf":  payerCPF,
+		"payer_name": payerName,
+	})
+	return err
+}
+
 // --- withdrawal persistence ---
 
 func (r *WalletRepository) PutWithdrawal(ctx context.Context, w *wallet.Withdrawal) error {

@@ -58,21 +58,6 @@ func TestLambdaPixClientCreateCharge(t *testing.T) {
 	}
 }
 
-func TestLambdaPixClientDictLookupNotFound(t *testing.T) {
-	f := &fakeLambdaInvoker{
-		calls: map[string]int{},
-		respond: map[string]rpcResponse{
-			string(opGetToken):   {Payload: mustJSON(rpcGetTokenResult{Token: "TOK", ExpiresIn: 3600})},
-			string(opDictLookup): {Error: errKeyNotFoundSentinel},
-		},
-	}
-	c := newTestLambdaPixClient(f)
-	_, err := c.DictLookup(context.Background(), "some-key")
-	if err != ErrKeyNotFound {
-		t.Fatalf("expected ErrKeyNotFound, got %v", err)
-	}
-}
-
 func TestLambdaPixClientGenericError(t *testing.T) {
 	f := &fakeLambdaInvoker{
 		calls: map[string]int{},

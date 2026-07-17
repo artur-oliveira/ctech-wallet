@@ -52,11 +52,14 @@ func New(cfg *config.Config, clientSecret string) *Client {
 }
 
 // ConfirmDeposit calls api's confirm-deposit endpoint for txid. api re-derives
-// everything from its own re-query of Inter — this call carries only the
-// txid, never an amount or status (Financial Safety Invariant 11: the webhook
-// is a wake-up signal, never the source of truth, and neither is this call).
-func (c *Client) ConfirmDeposit(ctx context.Context, txid string) error {
-	body, err := json.Marshal(map[string]string{"txid": txid})
+// amount/status/devolução from its own re-query of Inter — this call never
+// carries those (Financial Safety Invariant 11: the webhook is a wake-up
+// signal, never the source of truth, and neither is this call). payerCPF/
+// payerName are the one exception: Inter's charge re-query no longer returns
+// the payer, so the webhook body (this call's only source) forwards them for
+// api to persist and use in its CPF-match check, never for crediting.
+func (c *Client) ConfirmDeposit(ctx context.Context, txid, payerCPF, payerName string) error {
+	body, err := json.Marshal(map[string]string{"txid": txid, "payer_cpf": payerCPF, "payer_name": payerName})
 	if err != nil {
 		return err
 	}

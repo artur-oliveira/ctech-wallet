@@ -67,16 +67,6 @@ func (f *FakePixClient) QueryCharge(_ context.Context, txid string) (*Charge, er
 	return c, nil
 }
 
-func (f *FakePixClient) DictLookup(_ context.Context, pixKey string) (*DictAccount, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	d, ok := f.Dict[pixKey]
-	if !ok {
-		return nil, ErrKeyNotFound
-	}
-	return d, nil
-}
-
 func (f *FakePixClient) Transfer(_ context.Context, pixKey string, amount int64, idemKey string) (*TransferResult, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -123,7 +113,30 @@ func (f *FakePixClient) StageTransferStatus(idemKey, status string) {
 func (f *FakePixClient) StageCharge(txid string, amount int64, status, payerCPF, e2eID string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.Charges[txid] = &Charge{Txid: txid, Amount: amount, Status: status, PayerCPF: payerCPF, E2EID: e2eID}
+	f.Charges[txid] = &Charge{
+		Txid: txid, Amount: amount, Status: status, PayerCPF: payerCPF, E2EID: e2eID,
+		Payments: []Payment{{E2EID: e2eID, Amount: amount, PayerCPF: payerCPF}},
+	}
+}
+
+// StageChargeRefund appends a devolução to an already-staged charge — for
+// deposit-refund-reversal tests.
+func (f *FakePixClient) StageChargeRefund(txid, rtrID string, amount int64, status string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if c, ok := f.Charges[txid]; ok {
+		c.Refunds = append(c.Refunds, Refund{RtrID: rtrID, Amount: amount, Status: status})
+	}
+}
+
+// StageChargePayment appends an extra PIX payment to an already-staged charge —
+// for excess-payment-refund tests (the same QR code paid by two people).
+func (f *FakePixClient) StageChargePayment(txid, e2eID string, amount int64, payerCPF string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if c, ok := f.Charges[txid]; ok {
+		c.Payments = append(c.Payments, Payment{E2EID: e2eID, Amount: amount, PayerCPF: payerCPF})
+	}
 }
 
 // StageDict registers a DICT owner for a key — for withdrawal tests.

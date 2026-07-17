@@ -37,7 +37,7 @@ func TestConfirmDepositSendsBearerAndTxid(t *testing.T) {
 		WalletAPIURL:           walletSrv.URL,
 	}
 	c := New(cfg, cfg.PixGatewayClientSecret)
-	if err := c.ConfirmDeposit(context.Background(), "tx1"); err != nil {
+	if err := c.ConfirmDeposit(context.Background(), "tx1", "***137303**", "Artur Oliveira Carvalho"); err != nil {
 		t.Fatalf("ConfirmDeposit: %v", err)
 	}
 	if gotAuth != "Bearer tok-abc" {
@@ -65,7 +65,7 @@ func TestConfirmDepositErrorStatus(t *testing.T) {
 		WalletAPIURL:       walletSrv.URL,
 	}
 	c := New(cfg, "secret")
-	if err := c.ConfirmDeposit(context.Background(), "tx1"); err == nil {
+	if err := c.ConfirmDeposit(context.Background(), "tx1", "", ""); err == nil {
 		t.Fatal("expected an error on 500")
 	}
 }

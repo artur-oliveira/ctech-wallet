@@ -14,7 +14,7 @@ func (h *handlers) confirmDeposit(c fiber.Ctx) error {
 	if p := bindJSON(c, &body); p != nil {
 		return sendProblem(c, p)
 	}
-	if err := h.svc.ConfirmDeposit(c.Context(), body.Txid); err != nil {
+	if err := h.svc.ConfirmDeposit(c.Context(), body.Txid, body.PayerCPF, body.PayerName); err != nil {
 		return sendProblem(c, err)
 	}
 	return c.SendStatus(fiber.StatusOK)

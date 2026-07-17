@@ -53,7 +53,6 @@ const (
 	pathToken      = "/oauth/v2/token"
 	pathCob        = "/pix/v2/cob/%s"              // PUT create / GET query, by txid
 	pathBankingPix = "/banking/v2/pix"             // POST payout
-	pathDict       = "/banking/v2/pix/dict/%s"     // GET key owner lookup
 	pathDevolucao  = "/pix/v2/pix/%s/devolucao/%s" // PUT refund by e2eid + devolucao id
 
 	tokenScope      = "cob.read cob.write pix.read pix.write banking pix.pagamento"
@@ -188,41 +187,42 @@ func (c *InterClient) QueryCharge(ctx context.Context, txid string) (*Charge, er
 		} `json:"valor"`
 		Pix []struct {
 			EndToEndID string `json:"endToEndId"`
+			Valor      string `json:"valor"`
 			Pagador    struct {
 				CPF string `json:"cpf"`
 			} `json:"pagador"`
+			Devolucoes []struct {
+				RtrID  string `json:"rtrId"`
+				Valor  string `json:"valor"`
+				Status string `json:"status"`
+			} `json:"devolucoes"`
 		} `json:"pix"`
 	}
 	if err := c.do(ctx, http.MethodGet, fmt.Sprintf(pathCob, txid), nil, &resp); err != nil {
 		return nil, err
 	}
-	ch := &Charge{Txid: txid, Status: resp.Status, Amount: reaisToCentavos(resp.Valor.Original)}
-	if len(resp.Pix) > 0 {
-		ch.PayerCPF = onlyDigits(resp.Pix[0].Pagador.CPF)
-		ch.E2EID = resp.Pix[0].EndToEndID
+	ch := &Charge{
+		Txid:   txid,
+		Status: resp.Status,
+		Amount: reaisToCentavos(resp.Valor.Original),
+	}
+	for _, p := range resp.Pix {
+		payment := Payment{
+			E2EID: p.EndToEndID, Amount: reaisToCentavos(p.Valor), PayerCPF: onlyDigits(p.Pagador.CPF),
+		}
+		for _, d := range p.Devolucoes {
+			payment.Refunds = append(payment.Refunds, Refund{
+				RtrID: d.RtrID, Amount: reaisToCentavos(d.Valor), Status: d.Status,
+			})
+		}
+		ch.Payments = append(ch.Payments, payment)
+	}
+	if len(ch.Payments) > 0 {
+		ch.PayerCPF = ch.Payments[0].PayerCPF
+		ch.E2EID = ch.Payments[0].E2EID
+		ch.Refunds = ch.Payments[0].Refunds
 	}
 	return ch, nil
-}
-
-func (c *InterClient) DictLookup(ctx context.Context, pixKey string) (*DictAccount, error) {
-	var resp struct {
-		Chave   string `json:"chave"`
-		Titular struct {
-			CPFCNPJ string `json:"cpfCnpj"`
-			Nome    string `json:"nome"`
-		} `json:"titular"`
-	}
-	if err := c.do(ctx, http.MethodGet, fmt.Sprintf(pathDict, url.PathEscape(pixKey)), nil, &resp); err != nil {
-		// An unregistered/mistyped key is a client error, not a bank outage.
-		if isStatus(err, http.StatusNotFound) {
-			return nil, ErrKeyNotFound
-		}
-		return nil, err
-	}
-	if resp.Titular.CPFCNPJ == "" {
-		return nil, ErrKeyNotFound
-	}
-	return &DictAccount{Key: pixKey, CPF: onlyDigits(resp.Titular.CPFCNPJ), Name: resp.Titular.Nome}, nil
 }
 
 func (c *InterClient) Transfer(ctx context.Context, pixKey string, amount int64, idemKey string) (*TransferResult, error) {

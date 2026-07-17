@@ -36,12 +36,18 @@ type SandboxOpRequest struct {
 	Reason         string `json:"reason"`
 }
 
-// ConfirmDepositRequest is pix-gateway's webhook-Lambda call after it has
-// already re-queried the charge at Inter. Only the txid crosses this
-// boundary — api re-derives amount/status/payer CPF itself via
-// WalletService.ConfirmDeposit, which re-queries Inter again through
-// LambdaPixClient. Neither this call nor the original webhook payload is ever
-// trusted for money movement (Financial Safety Invariant 11).
+// ConfirmDepositRequest is pix-gateway's webhook-Lambda call. api re-derives
+// amount/status/devolução itself via WalletService.ConfirmDeposit, which
+// re-queries Inter again through LambdaPixClient — neither this call nor the
+// original webhook payload is ever trusted for money movement (Financial
+// Safety Invariant 11). PayerCPF/PayerName are the exception: Inter's charge
+// re-query no longer returns the payer, so the webhook body is their only
+// source — they cross here to be persisted on the deposit and used for the
+// CPF-match anti-fraud check only, never for crediting. PayerCPF may be
+// partially masked by Inter (e.g. "***137303**") and is absent on a
+// devolução-only webhook call for an already-confirmed deposit.
 type ConfirmDepositRequest struct {
-	Txid string `json:"txid" validate:"required"`
+	Txid      string `json:"txid" validate:"required"`
+	PayerCPF  string `json:"payer_cpf"`
+	PayerName string `json:"payer_name"`
 }

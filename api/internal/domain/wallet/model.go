@@ -22,7 +22,8 @@ const (
 	EntryGameCredit      = "game_credit"
 	EntrySandboxPurchase = "sandbox_purchase"
 	EntrySandboxCredit   = "sandbox_credit"
-	EntryReversal        = "reversal" // credit-back of a failed withdrawal
+	EntryReversal        = "reversal"        // credit-back of a failed withdrawal
+	EntryDepositRefund   = "deposit_refund"  // debit reversing a deposit later returned to the payer (devolução)
 
 	// Ring-fence transfers between `real` and `game`. Funding is metered by the
 	// personal limit engine; returning is always free and never limited.
@@ -34,10 +35,12 @@ const (
 
 // PIX deposit statuses.
 const (
-	DepositPending     = "pending"
-	DepositConfirmed   = "confirmed"
-	DepositRejectedCPF = "rejected_cpf_mismatch"
-	DepositExpired     = "expired"
+	DepositPending      = "pending"
+	DepositConfirmed    = "confirmed"
+	DepositRejectedCPF  = "rejected_cpf_mismatch"
+	DepositExpired      = "expired"
+	DepositRefunded     = "refunded"      // Inter returned the payment to the payer (devolução)
+	DepositRefundFailed = "refund_failed" // devolução seen, but the wallet debit-back failed — needs manual reconciliation
 )
 
 // Withdrawal statuses.
@@ -132,8 +135,14 @@ type PixDeposit struct {
 	AmountExpected int64  `dynamodbav:"amount_expected" json:"amount_expected"`
 	Status         string `dynamodbav:"status" json:"status"`
 	E2EID          string `dynamodbav:"e2e_id" json:"e2e_id,omitempty"`
-	CreatedAt      string `dynamodbav:"created_at" json:"created_at"`
-	TTL            int64  `dynamodbav:"ttl" json:"-"` // Dynamo TTL epoch, 15 min
+	// PayerCPF/PayerName come only from the webhook body (Inter's charge re-query
+	// no longer returns the payer) — persisted on first sight so the CPF-match
+	// check, and any later manual reconciliation, has it even under a retry that
+	// omits them. PayerCPF may be partially masked by Inter (e.g. "***137303**").
+	PayerCPF  string `dynamodbav:"payer_cpf,omitempty" json:"payer_cpf,omitempty"`
+	PayerName string `dynamodbav:"payer_name,omitempty" json:"payer_name,omitempty"`
+	CreatedAt string `dynamodbav:"created_at" json:"created_at"`
+	TTL       int64  `dynamodbav:"ttl" json:"-"` // Dynamo TTL epoch, 15 min
 }
 
 // Withdrawal tracks a PIX payout; the processing state is resolved by the

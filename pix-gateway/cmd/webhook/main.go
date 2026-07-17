@@ -27,7 +27,7 @@ import (
 // confirmer is the subset of *walletclient.Client the handler depends on —
 // small enough to fake in tests.
 type confirmer interface {
-	ConfirmDeposit(ctx context.Context, txid string) error
+	ConfirmDeposit(ctx context.Context, txid, payerCPF, payerName string) error
 }
 
 type handler struct {
@@ -37,13 +37,21 @@ type handler struct {
 // webhookPayload is the minimal shape read from Inter's PIX webhook — a
 // wake-up signal only, never trusted for amount/status (those come from api's
 // own re-query).
-type webhookPayload struct {
-	EndToEndId       string    `json:"endToEndId"`
-	Txid             string    `json:"txid"`
-	Valor            string    `json:"valor"`
-	Chave            string    `json:"chave"`
-	Horario          time.Time `json:"horario"`
-	InfoPagador      string    `json:"infoPagador"`
+type pixWebhookPayload struct {
+	Pix []pixWebhookPayloadDetail
+}
+
+type pixWebhookPayloadDetail struct {
+	EndToEndId  string    `json:"endToEndId"`
+	Txid        string    `json:"txid"`
+	Valor       string    `json:"valor"`
+	Chave       string    `json:"chave"`
+	Horario     time.Time `json:"horario"`
+	InfoPagador string    `json:"infoPagador"`
+	Pagador     struct {
+		Nome    string `json:"nome"`
+		CpfCnpj string `json:"cpfCnpj"`
+	} `json:"pagador"`
 	ComponentesValor struct {
 		Saque struct {
 			Valor                     string `json:"valor"`
@@ -87,22 +95,40 @@ func newWalletClient(ctx context.Context, cfg *config.Config) (*walletclient.Cli
 }
 
 func (h *handler) handle(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	var body webhookPayload
+	var body pixWebhookPayload
 	if err := json.Unmarshal([]byte(req.Body), &body); err != nil {
 		slog.ErrorContext(ctx, "webhook request malformed", "body", req.Body, "err", err)
 		return events.APIGatewayV2HTTPResponse{StatusCode: 400, Body: "malformed webhook payload"}, nil
 	}
-	slog.InfoContext(ctx, "webhook request", "txid", body.Txid, "body", req.Body)
+	details := body.Pix
+	if len(details) == 0 {
+		// Inter may send a single detail object directly, without the "pix"
+		// list wrapper — fall back to parsing it as one.
+		var single pixWebhookPayloadDetail
+		if err := json.Unmarshal([]byte(req.Body), &single); err == nil && single.Txid != "" {
+			details = []pixWebhookPayloadDetail{single}
+		}
+	}
+	txids := make([]string, 0, len(details))
+	for _, p := range details {
+		if p.Txid != "" {
+			txids = append(txids, p.Txid)
+		}
+	}
+	slog.InfoContext(ctx, "webhook request", "txids", txids, "body", req.Body)
+
 	resp := events.APIGatewayV2HTTPResponse{StatusCode: 200}
-	if body.Txid == "" {
-		return resp, nil
+	for _, p := range details {
+		if p.Txid == "" {
+			continue
+		}
+		if err := h.confirmer.ConfirmDeposit(ctx, p.Txid, p.Pagador.CpfCnpj, p.Pagador.Nome); err != nil {
+			slog.ErrorContext(ctx, "webhook response", "status", 500, "txid", p.Txid, "err", err)
+			// Non-200 so Inter retries the whole payload later; ConfirmDeposit is
+			// idempotent per txid so a retry never double-credits.
+			return events.APIGatewayV2HTTPResponse{StatusCode: 500, Body: "confirm-deposit failed"}, nil
+		}
 	}
-	if err := h.confirmer.ConfirmDeposit(ctx, body.Txid); err != nil {
-		slog.ErrorContext(ctx, "webhook response", "status", 500, "txid", body.Txid, "err", err)
-		// Non-200 so Inter retries the whole payload later; ConfirmDeposit is
-		// idempotent per txid so a retry never double-credits.
-		return events.APIGatewayV2HTTPResponse{StatusCode: 500, Body: "confirm-deposit failed"}, nil
-	}
-	slog.InfoContext(ctx, "webhook response", "status", resp.StatusCode)
+	slog.InfoContext(ctx, "webhook response", "status", resp.StatusCode, "txids", txids)
 	return resp, nil
 }

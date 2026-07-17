@@ -12,15 +12,12 @@ type rpcOp string
 const (
 	opCreateCharge  rpcOp = "CreateCharge"
 	opQueryCharge   rpcOp = "QueryCharge"
-	opDictLookup    rpcOp = "DictLookup"
 	opTransfer      rpcOp = "Transfer"
 	opQueryTransfer rpcOp = "QueryTransfer"
 	opRefund        rpcOp = "Refund"
 	opPing          rpcOp = "Ping"
 	opGetToken      rpcOp = "GetToken"
 )
-
-const errKeyNotFoundSentinel = "key_not_found"
 
 // errUnauthorizedSentinel means Inter rejected the passed bearer (HTTP 401).
 // LambdaPixClient force-refreshes the token and retries the op once.
@@ -58,23 +55,30 @@ type rpcQueryChargeArgs struct {
 }
 
 type rpcChargeResult struct {
-	Txid      string `json:"txid"`
-	Amount    int64  `json:"amount"`
-	QRCode    string `json:"qr_code"`
-	QRCodeB64 string `json:"qr_code_b64"`
-	Status    string `json:"status"`
-	PayerCPF  string `json:"payer_cpf"`
-	E2EID     string `json:"e2e_id"`
+	Txid      string            `json:"txid"`
+	Amount    int64             `json:"amount"`
+	QRCode    string            `json:"qr_code"`
+	QRCodeB64 string            `json:"qr_code_b64"`
+	Status    string            `json:"status"`
+	PayerCPF  string            `json:"payer_cpf"`
+	E2EID     string            `json:"e2e_id"`
+	Refunds   []rpcRefundResult  `json:"refunds,omitempty"`
+	Payments  []rpcPaymentResult `json:"payments,omitempty"`
 }
 
-type rpcDictLookupArgs struct {
-	PixKey string `json:"pix_key"`
+// rpcRefundResult mirrors rpc.RefundResult field-for-field.
+type rpcRefundResult struct {
+	RtrID  string `json:"rtr_id"`
+	Amount int64  `json:"amount"`
+	Status string `json:"status"`
 }
 
-type rpcDictResult struct {
-	Key  string `json:"key"`
-	CPF  string `json:"cpf"`
-	Name string `json:"name"`
+// rpcPaymentResult mirrors rpc.PaymentResult field-for-field.
+type rpcPaymentResult struct {
+	E2EID    string            `json:"e2e_id"`
+	Amount   int64             `json:"amount"`
+	PayerCPF string            `json:"payer_cpf"`
+	Refunds  []rpcRefundResult `json:"refunds,omitempty"`
 }
 
 type rpcTransferArgs struct {

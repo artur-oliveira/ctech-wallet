@@ -19,9 +19,9 @@ import (
 )
 
 const (
-	pathToken                         = "/v1.0/token"
-	pathKYCGet                        = "/v1.0/internal/kyc/%s"
-	scopeInternalWalletConfirmDeposit = "internal:wallet:confirm-deposit"
+	pathToken  = "/v1.0/token"
+	pathKYCGet = "/v1.0/internal/kyc/%s"
+	scopeKYC   = "internal:account:kyc"
 )
 
 // KYC is the unmasked identity record account returns to internal callers.
@@ -51,7 +51,7 @@ func New(cfg *config.Config) *Client {
 			tokenURL:     base + pathToken,
 			clientID:     cfg.WalletClientID,
 			clientSecret: cfg.WalletClientSecret,
-			scope:        scopeInternalWalletConfirmDeposit,
+			scope:        scopeKYC,
 		},
 	}
 }

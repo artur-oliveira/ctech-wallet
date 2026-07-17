@@ -1,5 +1,5 @@
 // Command outbound is the Lambda pix-gateway invokes for every outbound Inter
-// PIX call api needs (CreateCharge, QueryCharge, DictLookup, Transfer,
+// PIX call api needs (CreateCharge, QueryCharge, Transfer,
 // QueryTransfer, Refund, Ping). api's LambdaPixClient calls it synchronously
 // (RequestResponse) — one op per invocation, mirroring the PixClient interface
 // api already depends on.
@@ -8,7 +8,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -111,17 +110,6 @@ func (h *handler) dispatch(ctx context.Context, req rpc.Request) rpc.Response {
 		}
 		return okResp(chargeResult(c))
 
-	case rpc.OpDictLookup:
-		var a rpc.DictLookupArgs
-		if err := json.Unmarshal(req.Payload, &a); err != nil {
-			return toResp(err)
-		}
-		d, err := h.pix.DictLookup(ctx, a.PixKey)
-		if err != nil {
-			return toResp(err)
-		}
-		return okResp(rpc.DictResult{Key: d.Key, CPF: d.CPF, Name: d.Name})
-
 	case rpc.OpTransfer:
 		var a rpc.TransferArgs
 		if err := json.Unmarshal(req.Payload, &a); err != nil {
@@ -174,10 +162,22 @@ func (h *handler) dispatch(ctx context.Context, req rpc.Request) rpc.Response {
 }
 
 func chargeResult(c *inter.Charge) rpc.ChargeResult {
+	payments := make([]rpc.PaymentResult, len(c.Payments))
+	for i, p := range c.Payments {
+		payments[i] = rpc.PaymentResult{E2EID: p.E2EID, Amount: p.Amount, PayerCPF: p.PayerCPF, Refunds: refundResults(p.Refunds)}
+	}
 	return rpc.ChargeResult{
 		Txid: c.Txid, Amount: c.Amount, QRCode: c.QRCode, QRCodeB64: c.QRCodeB64,
-		Status: c.Status, PayerCPF: c.PayerCPF, E2EID: c.E2EID,
+		Status: c.Status, PayerCPF: c.PayerCPF, E2EID: c.E2EID, Refunds: refundResults(c.Refunds), Payments: payments,
 	}
+}
+
+func refundResults(refunds []inter.Refund) []rpc.RefundResult {
+	out := make([]rpc.RefundResult, len(refunds))
+	for i, r := range refunds {
+		out[i] = rpc.RefundResult{RtrID: r.RtrID, Amount: r.Amount, Status: r.Status}
+	}
+	return out
 }
 
 func transferResult(r *inter.TransferResult) rpc.TransferResult {
@@ -196,9 +196,6 @@ func okResp(v any) rpc.Response {
 // a missing DICT owner, and an Inter 401 (bad/expired bearer). Everything else
 // is an opaque bank/transport failure string.
 func toResp(err error) rpc.Response {
-	if errors.Is(err, inter.ErrKeyNotFound) {
-		return rpc.Response{Error: rpc.ErrKeyNotFoundSentinel}
-	}
 	if inter.IsUnauthorized(err) {
 		return rpc.Response{Error: rpc.ErrUnauthorizedSentinel}
 	}

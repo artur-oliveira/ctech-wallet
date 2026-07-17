@@ -8,7 +8,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -40,6 +39,7 @@ type Repo interface {
 	PutDeposit(ctx context.Context, d *wallet.PixDeposit) error
 	GetDeposit(ctx context.Context, txid string) (*wallet.PixDeposit, error)
 	UpdateDepositStatus(ctx context.Context, txid, status, e2eID string) error
+	UpdateDepositPayer(ctx context.Context, txid, payerCPF, payerName string) error
 	PutWithdrawal(ctx context.Context, w *wallet.Withdrawal) error
 	GetWithdrawal(ctx context.Context, withdrawalID string) (*wallet.Withdrawal, error)
 	UpdateWithdrawal(ctx context.Context, withdrawalID string, updates map[string]any) error
@@ -199,24 +199,62 @@ func (s *WalletService) InitiateDeposit(ctx context.Context, userID, kycLevel st
 }
 
 // ConfirmDeposit is invoked (indirectly) by the Inter webhook. It NEVER trusts
-// the webhook payload: it re-queries the charge by txid and credits only when
-// the charge is paid AND the payer CPF matches the user's KYC CPF. A mismatch is
-// refunded automatically.
-func (s *WalletService) ConfirmDeposit(ctx context.Context, txid string) error {
+// the webhook payload for money movement: it re-queries the charge by txid and
+// credits only when the charge is paid AND the payer CPF matches the user's KYC
+// CPF. A mismatch is refunded automatically. Inter's charge re-query does NOT
+// return the payer CPF/name (only the webhook does), so payerCPF/payerName are
+// passed in from the webhook call and persisted on the deposit on first sight —
+// payerCPF may be partially masked by Inter (e.g. "***137303**"), so the match
+// below compares only the digits Inter actually reveals.
+//
+// A devolução (PIX refund) reported on re-query is handled too: if it lands
+// before this deposit is confirmed, the deposit never credits; if it lands
+// after, the credit is reversed (Invariant 12 — no money left in limbo).
+func (s *WalletService) ConfirmDeposit(ctx context.Context, txid, payerCPF, payerName string) error {
 	dep, err := s.repo.GetDeposit(ctx, txid)
 	if err != nil {
 		return err
 	}
-	if dep == nil || dep.Status != wallet.DepositPending {
-		return nil // unknown or already resolved — idempotent no-op
+	if dep == nil {
+		return nil // unknown — idempotent no-op
+	}
+
+	if payerCPF != "" && payerCPF != dep.PayerCPF {
+		if err := s.repo.UpdateDepositPayer(ctx, txid, payerCPF, payerName); err != nil {
+			return err
+		}
+		dep.PayerCPF, dep.PayerName = payerCPF, payerName
 	}
 
 	charge, err := s.pix.QueryCharge(ctx, txid)
 	if err != nil {
 		return err
 	}
+
+	// A QR code can be scanned and paid by two different people at once — Inter
+	// reports every payment received against the same txid. Only the first is
+	// ever credited; everything else is refunded straight back to its payer,
+	// regardless of this deposit's own status.
+	if err := s.refundExcessPayments(ctx, dep, charge); err != nil {
+		return err
+	}
+
+	if dep.Status == wallet.DepositConfirmed {
+		// Already credited — a devolução here means the money left the PJ
+		// account after the fact, so the credit must be reversed.
+		return s.processDepositRefund(ctx, dep, charge)
+	}
+	if dep.Status != wallet.DepositPending {
+		return nil // already resolved (rejected/refunded) — idempotent no-op
+	}
+
 	if charge.Status != pix.ChargeCompleted {
 		return nil // not paid yet — safe to be re-woken later
+	}
+
+	if refunded(charge) {
+		// Already returned to the payer before we got to confirm it — never credit.
+		return s.repo.UpdateDepositStatus(ctx, txid, wallet.DepositRefunded, charge.E2EID)
 	}
 
 	kyc, err := s.kyc.Get(ctx, dep.UserID)
@@ -224,7 +262,7 @@ func (s *WalletService) ConfirmDeposit(ctx context.Context, txid string) error {
 		return err
 	}
 
-	if charge.PayerCPF == "" || charge.PayerCPF != kyc.CPF {
+	if dep.PayerCPF == "" || !maskedCPFMatches(dep.PayerCPF, kyc.CPF) {
 		return s.rejectMismatch(ctx, dep, charge)
 	}
 
@@ -262,6 +300,114 @@ func (s *WalletService) ConfirmDeposit(ctx context.Context, txid string) error {
 	}
 	s.broadcastDepositConfirmed(ctx, dep.UserID, dep.WalletID, txid, charge.Amount)
 	return nil
+}
+
+// refunded reports whether the charge carries any completed devolução, per
+// Inter's own re-query — never the webhook body (Invariant 11).
+func refunded(charge *pix.Charge) bool {
+	for _, r := range charge.Refunds {
+		if r.Status == pix.RefundCompleted {
+			return true
+		}
+	}
+	return false
+}
+
+// maskedCPFMatches compares a possibly-masked CPF from Inter's webhook (e.g.
+// "***137303**") against the full KYC CPF: every non-'*' digit must match at
+// its position. A length mismatch or an all-masked value never matches — fail
+// closed, matching the anti-fraud intent of the CPF gate.
+func maskedCPFMatches(masked, full string) bool {
+	if masked == "" || len(masked) != len(full) {
+		return false
+	}
+	sawDigit := false
+	for i := 0; i < len(masked); i++ {
+		if masked[i] == '*' {
+			continue
+		}
+		if masked[i] != full[i] {
+			return false
+		}
+		sawDigit = true
+	}
+	return sawDigit
+}
+
+// refundExcessPayments returns straight to its payer every PIX received
+// against this charge beyond the first — e.g. two people scanning and paying
+// the same QR code at once. Only Payments[0] is ever credited (Amount stays
+// the charge's nominal value, never the sum of payments), so this never
+// touches the deposit's own status or the wallet balance; it only calls out to
+// Inter. A refund failure is never silent (Invariant 12).
+func (s *WalletService) refundExcessPayments(ctx context.Context, dep *wallet.PixDeposit, charge *pix.Charge) error {
+	if len(charge.Payments) < 2 {
+		return nil
+	}
+	for _, p := range charge.Payments[1:] {
+		if refundedPayment(p) {
+			continue // already returned
+		}
+		if _, err := s.pix.Refund(ctx, p.E2EID, p.Amount, "excess#"+p.E2EID); err != nil {
+			slog.Error("ALARM excess PIX payment refund failed", "txid", dep.Txid, "e2e_id", p.E2EID, "amount", p.Amount, "err", err)
+			return problem.InternalServer("estorno de pagamento excedente falhou; reconciliação manual necessária")
+		}
+	}
+	return nil
+}
+
+func refundedPayment(p pix.Payment) bool {
+	for _, r := range p.Refunds {
+		if r.Status == pix.RefundCompleted {
+			return true
+		}
+	}
+	return false
+}
+
+// processDepositRefund reverses an already-credited deposit's ledger entry for
+// every completed devolução Inter reports — the money left the PJ account, so
+// the credit must be taken back rather than left standing.
+func (s *WalletService) processDepositRefund(ctx context.Context, dep *wallet.PixDeposit, charge *pix.Charge) error {
+	for _, r := range charge.Refunds {
+		if r.Status != pix.RefundCompleted {
+			continue
+		}
+		if err := s.reverseDeposit(ctx, dep, r); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// reverseDeposit debits the refunded amount back out of the wallet, keyed by
+// the devolução's own rtrId so a retried webhook never double-debits. A debit
+// failure (balance already spent) never fails silently: it flags the deposit
+// for manual reconciliation and raises an alarm (Invariant 12).
+func (s *WalletService) reverseDeposit(ctx context.Context, dep *wallet.PixDeposit, r pix.Refund) error {
+	release, ok, err := s.lock.Acquire(ctx, dep.WalletID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return problem.WalletBusy()
+	}
+	defer release()
+
+	idemKey := "deposit-refund#" + r.RtrID
+	if _, _, err := s.repo.Debit(ctx, repositories.Mutation{
+		WalletID:       dep.WalletID,
+		Amount:         r.Amount,
+		EntryType:      wallet.EntryDepositRefund,
+		Ref:            dep.Txid,
+		IdempotencyKey: idemKey,
+		ReqHash:        reqHash(idemKey, r.Amount),
+	}); err != nil {
+		slog.Error("ALARM deposit refund debit failed", "txid", dep.Txid, "rtr_id", r.RtrID, "amount", r.Amount, "err", err)
+		_ = s.repo.UpdateDepositStatus(ctx, dep.Txid, wallet.DepositRefundFailed, dep.E2EID)
+		return problem.InternalServer("estorno de depósito falhou; reconciliação manual necessária")
+	}
+	return s.repo.UpdateDepositStatus(ctx, dep.Txid, wallet.DepositRefunded, dep.E2EID)
 }
 
 // broadcastDepositConfirmed pushes a real-time event to the user's connected
@@ -328,24 +474,6 @@ func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, a
 		return nil, problem.WalletBusy()
 	}
 	defer release()
-
-	kyc, err := s.kyc.Get(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	dict, err := s.pix.DictLookup(ctx, pixKey)
-	if err != nil {
-		// An unknown key is the user's typo, not our outage — 422, and never leak
-		// the bank's response body back to the caller.
-		if errors.Is(err, pix.ErrKeyNotFound) {
-			return nil, problem.PixKeyNotFound()
-		}
-		slog.Error("DICT lookup failed", "err", err)
-		return nil, problem.InternalServer("não foi possível consultar a chave PIX")
-	}
-	if dict.CPF == "" || dict.CPF != kyc.CPF {
-		return nil, problem.WithdrawCPFMismatch()
-	}
 
 	fee := wallet.WithdrawalFee(amount, realw)
 	rh := reqHash(pixKey, amount)

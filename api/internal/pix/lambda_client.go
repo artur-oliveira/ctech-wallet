@@ -105,9 +105,6 @@ func (c *LambdaPixClient) call(ctx context.Context, op rpcOp, args any, out any)
 		}
 	}
 	if resp.Error != "" {
-		if resp.Error == errKeyNotFoundSentinel {
-			return ErrKeyNotFound
-		}
 		return errors.New(resp.Error)
 	}
 	if out != nil && len(resp.Payload) > 0 {
@@ -130,14 +127,6 @@ func (c *LambdaPixClient) QueryCharge(ctx context.Context, txid string) (*Charge
 		return nil, err
 	}
 	return chargeFromRPC(res), nil
-}
-
-func (c *LambdaPixClient) DictLookup(ctx context.Context, pixKey string) (*DictAccount, error) {
-	var res rpcDictResult
-	if err := c.call(ctx, opDictLookup, rpcDictLookupArgs{PixKey: pixKey}, &res); err != nil {
-		return nil, err
-	}
-	return &DictAccount{Key: res.Key, CPF: res.CPF, Name: res.Name}, nil
 }
 
 func (c *LambdaPixClient) Transfer(ctx context.Context, pixKey string, amount int64, idemKey string) (*TransferResult, error) {
@@ -169,10 +158,22 @@ func (c *LambdaPixClient) Ping(ctx context.Context) error {
 }
 
 func chargeFromRPC(r rpcChargeResult) *Charge {
+	payments := make([]Payment, len(r.Payments))
+	for i, p := range r.Payments {
+		payments[i] = Payment{E2EID: p.E2EID, Amount: p.Amount, PayerCPF: p.PayerCPF, Refunds: refundsFromRPC(p.Refunds)}
+	}
 	return &Charge{
 		Txid: r.Txid, Amount: r.Amount, QRCode: r.QRCode, QRCodeB64: r.QRCodeB64,
-		Status: r.Status, PayerCPF: r.PayerCPF, E2EID: r.E2EID,
+		Status: r.Status, PayerCPF: r.PayerCPF, E2EID: r.E2EID, Refunds: refundsFromRPC(r.Refunds), Payments: payments,
 	}
+}
+
+func refundsFromRPC(refunds []rpcRefundResult) []Refund {
+	out := make([]Refund, len(refunds))
+	for i, r := range refunds {
+		out[i] = Refund{RtrID: r.RtrID, Amount: r.Amount, Status: r.Status}
+	}
+	return out
 }
 
 func transferFromRPC(r rpcTransferResult) *TransferResult {

@@ -14,7 +14,6 @@ type Op string
 const (
 	OpCreateCharge  Op = "CreateCharge"
 	OpQueryCharge   Op = "QueryCharge"
-	OpDictLookup    Op = "DictLookup"
 	OpTransfer      Op = "Transfer"
 	OpQueryTransfer Op = "QueryTransfer"
 	OpRefund        Op = "Refund"
@@ -68,13 +67,30 @@ type QueryChargeArgs struct {
 
 // ChargeResult mirrors inter.Charge field-for-field.
 type ChargeResult struct {
-	Txid      string `json:"txid"`
-	Amount    int64  `json:"amount"`
-	QRCode    string `json:"qr_code"`
-	QRCodeB64 string `json:"qr_code_b64"`
-	Status    string `json:"status"`
-	PayerCPF  string `json:"payer_cpf"`
-	E2EID     string `json:"e2e_id"`
+	Txid      string         `json:"txid"`
+	Amount    int64          `json:"amount"`
+	QRCode    string         `json:"qr_code"`
+	QRCodeB64 string         `json:"qr_code_b64"`
+	Status    string         `json:"status"`
+	PayerCPF  string         `json:"payer_cpf"`
+	E2EID     string         `json:"e2e_id"`
+	Refunds   []RefundResult  `json:"refunds,omitempty"`
+	Payments  []PaymentResult `json:"payments,omitempty"`
+}
+
+// RefundResult mirrors inter.Refund field-for-field.
+type RefundResult struct {
+	RtrID  string `json:"rtr_id"`
+	Amount int64  `json:"amount"`
+	Status string `json:"status"`
+}
+
+// PaymentResult mirrors inter.Payment field-for-field.
+type PaymentResult struct {
+	E2EID    string         `json:"e2e_id"`
+	Amount   int64          `json:"amount"`
+	PayerCPF string         `json:"payer_cpf"`
+	Refunds  []RefundResult `json:"refunds,omitempty"`
 }
 
 type DictLookupArgs struct {

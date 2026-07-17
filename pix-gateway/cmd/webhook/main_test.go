@@ -7,13 +7,17 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 )
 
+type confirmCall struct {
+	txid, payerCPF, payerName string
+}
+
 type fakeConfirmer struct {
-	calls []string
+	calls []confirmCall
 	err   error
 }
 
-func (f *fakeConfirmer) ConfirmDeposit(_ context.Context, txid string) error {
-	f.calls = append(f.calls, txid)
+func (f *fakeConfirmer) ConfirmDeposit(_ context.Context, txid, payerCPF, payerName string) error {
+	f.calls = append(f.calls, confirmCall{txid, payerCPF, payerName})
 	return f.err
 }
 
@@ -29,8 +33,46 @@ func TestHandleWebhookForwardsEveryTxid(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("status: %d body: %s", resp.StatusCode, resp.Body)
 	}
-	if len(f.calls) != 1 || f.calls[0] != "tx1" {
+	if len(f.calls) != 1 || f.calls[0].txid != "tx1" {
 		t.Fatalf("calls: %v", f.calls)
+	}
+}
+
+// Regression: Inter's charge re-query no longer returns the payer, so the
+// webhook body's pagador.cpfCnpj/nome (possibly masked) must reach
+// ConfirmDeposit — it is their only source.
+func TestHandleWebhookForwardsPayerCPFAndName(t *testing.T) {
+	f := &fakeConfirmer{}
+	h := &handler{confirmer: f}
+	body := `{"pix":[{"txid":"tx1","pagador":{"nome":"Artur Oliveira Carvalho","cpfCnpj":"***137303**"}}]}`
+	resp, err := h.handle(context.Background(), events.APIGatewayV2HTTPRequest{Body: body})
+	if err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+	if resp.StatusCode != 200 {
+		t.Fatalf("status: %d body: %s", resp.StatusCode, resp.Body)
+	}
+	if len(f.calls) != 1 || f.calls[0].payerCPF != "***137303**" || f.calls[0].payerName != "Artur Oliveira Carvalho" {
+		t.Fatalf("calls: %+v", f.calls)
+	}
+}
+
+// A devolução-only webhook call for an already-confirmed deposit carries no
+// pagador block — ConfirmDeposit must still be reached with the txid, just
+// with empty payer fields.
+func TestHandleWebhookRefundPayloadForwardsTxidWithoutPayer(t *testing.T) {
+	f := &fakeConfirmer{}
+	h := &handler{confirmer: f}
+	body := `{"pix":[{"txid":"tx1","devolucoes":[{"id":"refund","rtrId":"D004","valor":"1.00","status":"DEVOLVIDO"}]}]}`
+	resp, err := h.handle(context.Background(), events.APIGatewayV2HTTPRequest{Body: body})
+	if err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+	if resp.StatusCode != 200 {
+		t.Fatalf("status: %d body: %s", resp.StatusCode, resp.Body)
+	}
+	if len(f.calls) != 1 || f.calls[0].txid != "tx1" || f.calls[0].payerCPF != "" {
+		t.Fatalf("calls: %+v", f.calls)
 	}
 }
 
