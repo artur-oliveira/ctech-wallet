@@ -55,7 +55,7 @@ const (
 	pathBankingPix = "/banking/v2/pix"             // POST payout
 	pathDevolucao  = "/pix/v2/pix/%s/devolucao/%s" // PUT refund by e2eid + devolucao id
 
-	tokenScope      = "cob.read cob.write pix.read pix.write banking pix.pagamento"
+	tokenScope      = "cob.read cob.write pix.read pix.write pagamento-pix.read pagamento-pix.write"
 	chargeExpirySec = 300 // 5 min, mirrors the pix_deposits TTL
 )
 
