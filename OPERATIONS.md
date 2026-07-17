@@ -9,7 +9,7 @@ The wallet defines two internal scopes its callers (poker/dominó, future billin
 use. They must exist in the global cross-service scope catalog.
 
 1. Add them to `ctech-account/internal/scopes/catalog.go` in the `internal` family
-   (`Internal: true`), alongside `internal:kyc`:
+   (`Internal: true`), alongside `internal:account:kyc`:
     - `internal:wallet:credit` — "grant sandbox currency"
     - `internal:wallet:debit` — "spend sandbox currency"
 2. Run the account seeder:
@@ -22,12 +22,12 @@ use. They must exist in the global cross-service scope catalog.
 
 ## 2. Seed the wallet's own M2M client
 
-So the wallet can call account's `internal:kyc` (confirm on first deposit, read CPF).
+So the wallet can call account's `internal:account:kyc` (confirm on first deposit, read CPF).
 Direct DynamoDB put into `{env}_account_oauth_clients` (`pk=CLIENT_<id>`), exactly:
 
 - confidential (has a client secret)
 - `first_party: true`
-- `allowed_scopes: ["internal:kyc"]`
+- `allowed_scopes: ["internal:account:kyc"]`
 
 Set the wallet's `WALLET_CLIENT_ID` / `WALLET_CLIENT_SECRET` env to match.
 

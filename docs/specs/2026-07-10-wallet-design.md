@@ -27,7 +27,7 @@ Serviço de carteira digital com dois saldos por usuário — **real** (PIX via 
 | Lock por wallet               | Valkey `SETNX wallet:{id}` com TTL curto (10s) + retry/backoff. Falha segura se processo morrer.                                                                                 |
 | Integração PIX                | API Inter **Cobrança Imediata** (paga, taxa baixa repassada no saque) + webhook. Webhook nunca credita direto — sempre reconfirma via consulta do txid antes de gravar.          |
 | CPF divergente no 1º depósito | Rejeita e estorna automaticamente (PIX devolução) — não credita.                                                                                                                 |
-| Saque                         | Gate `kyc_level == verified` + step-up MFA + DICT lookup (CPF da chave destino == CPF do KYC). Taxa por-wallet (default 2%, mín. R$1, máx. R$10; piso absoluto R$1; admin-only). |
+| Saque                         | Gate `kyc_level == verified` + step-up MFA. Sem chave PIX informada pelo cliente — o PIX é sempre enviado ao CPF do KYC. Taxa por-wallet (default 2%, mín. R$1, máx. R$10; piso absoluto R$1; admin-only). |
 | Endereço no KYC               | Fora de escopo aqui — KYC atual (CPF+nome+nascimento) já libera depósito/saque; endereço fica para depois.                                                                       |
 | Compra de sandbox com real    | Débito da wallet real (1 transação atômica cross-wallet), não é fluxo PIX novo.                                                                                                  |
 | Escopos M2M                   | `internal:wallet:credit` / `internal:wallet:debit` (sandbox only, poker/dominó) — granularidade separada de depósito/saque real, que só a própria wallet executa.                |
@@ -52,7 +52,7 @@ ledger_entries  PK wallet_id, SK ts#entry_id (ULID)
 
 pix_deposits    PK txid
                 wallet_id, amount_expected, status ("pending"|"confirmed"|"rejected_cpf_mismatch"|"expired")
-                expires_at (TTL Dynamo, 15min)
+                expires_at (TTL Dynamo, 5min; devolvido na resposta de POST /wallet/deposits como "expires_at")
 ```
 
 GSI `user_id` em `wallets` → lista as 2 wallets do usuário. GSI `idempotency_key` em `ledger_entries` → rejeita
@@ -91,23 +91,32 @@ replay (webhook duplicado, retry de cliente).
     - **CPF pagador != CPF do KYC**: não credita. `pix_deposits.status = rejected_cpf_mismatch`. Dispara PIX devolução
       (API Inter, referenciando o e2eId do pagamento) — estorno automático ao pagador. Evento de auditoria
       `wallet.deposit_rejected_cpf_mismatch`.
-4. Expiração (`pix_deposits` TTL): cobrança não paga em 15min é descartada; sem estado pendente eterno.
+4. Expiração (`pix_deposits` TTL): cobrança não paga em 5min é descartada; sem estado pendente eterno. A resposta de
+   `POST /wallet/deposits` inclui `expires_at` (epoch da expiração) para o frontend mostrar contagem regressiva.
 
 ## D. Fluxo de saque (real)
 
-1. `POST /wallet/withdrawals` (Bearer usuário + `RequireRecentMFA`, `Idempotency-Key`). Gate: `kyc_level == verified`.
+1. `POST /wallet/withdrawals` (Bearer usuário + `RequireRecentMFA`, `Idempotency-Key`, body só `{amount}`). Gate:
+   `kyc_level == verified`. **Sem `pix_key` no request** — o cliente nunca escolhe o destino; o PIX sai sempre para
+   o CPF do registro de KYC do usuário (`kycclient.Get`).
 2. `Valkey SETNX wallet:{id}` — lock exclusivo; falha → 409 `wallet-busy` (já existe operação em andamento).
-3. DICT lookup na chave PIX destino (API Inter) → CPF do titular. Diverge do CPF do KYC → 403 `withdraw-cpf-mismatch`,
-   libera lock, nada debitado.
-4. Calcula taxa **por-wallet**: usa `fee_bps`/`fee_min`/`fee_max` do registro da wallet quando presentes (default
+3. Calcula taxa **por-wallet**: usa `fee_bps`/`fee_min`/`fee_max` do registro da wallet quando presentes (default
    2% / R$1 / R$10), `clamp(amount*bps/10000, min, max)`, nunca abaixo do piso absoluto de 100 centavos (R$1).
    Campos de taxa são admin-only (editados direto no DynamoDB, sem rota de API). `TransactWriteItems`: debita
    `amount + fee` (condição `balance >= amount + fee`) + 2 `ledger_entries` (`withdraw`, `fee`), mesma
    `idempotency_key` base.
-5. Chama transferência PIX na API Inter. Sucesso → `completed`. Falha na chamada (rede/Inter fora) → estado
-   `processing` no ledger; job de reconciliação confere status na API Inter e conclui ou estorna o débito interno
-   (nunca deixa em limbo sem job de resolução).
-6. Libera lock (sucesso, falha ou timeout do TTL).
+4. Chama transferência PIX (`Transfer`) com o CPF do KYC como chave. Três desfechos:
+    - **Sucesso** → `completed`. Notifica o usuário via WebSocket (`withdraw_completed`).
+    - **Chave não registrada no banco** (Inter retorna 404 → `pix.ErrKeyNotFound`, sentinela
+      `rpc.ErrKeyNotFoundSentinel` na borda pix-gateway↔api): nada a repetir — estorna **na hora** (mesmo helper
+      `reverse()` usado pela reconciliação, idempotency key `reverse#<withdrawal_id>`), responde 422
+      `pix-key-not-found`, e notifica o usuário via WebSocket (`withdraw_reversed` ou `withdraw_refund_failed` se o
+      próprio estorno falhar — nesse caso também dispara o alarme operacional de sempre).
+    - **Qualquer outro erro** (rede, Inter fora do ar): estado `processing`; o job de reconciliação confere o status
+      na API Inter (chamada síncrona no `Transfer`, mas o desfecho pode ficar incerto em caso de falha de
+      transporte) e conclui ou estorna o débito interno (nunca deixa em limbo sem job de resolução) — também
+      notifica via WebSocket ao resolver.
+5. Libera lock (sucesso, falha ou timeout do TTL).
 
 ## E. Sandbox
 
@@ -154,14 +163,16 @@ Agregação: qualquer `fail` → `503`; senão qualquer `warn` → `207`; senão
 rodando na instância.
 
 Erros RFC 7807 (mesmo padrão do account, `apierror` próprio no novo repo): `insufficient-balance` (409),
-`wallet-busy` (409), `withdraw-cpf-mismatch` (403), `kyc-not-verified` (403), `idempotency-conflict` (409, mesma key
-com payload diferente).
+`wallet-busy` (409), `pix-key-not-found` (422, CPF do KYC sem chave PIX registrada no banco — estorna e responde),
+`kyc-not-verified` (403), `idempotency-conflict` (409, mesma key com payload diferente). `withdraw-cpf-mismatch`
+(403) é código legado de quando o cliente informava a própria chave PIX — não é mais alcançável (não há mais chave
+vinda do cliente para divergir), mantido só por compatibilidade de schema.
 
 ## G. Escopos
 
 Novo family `internal` (já existe no catálogo do account): `internal:wallet:credit`, `internal:wallet:debit`. Seed
 via `cmd/seedscopes` do account (catálogo é global, cross-service). Client M2M de cada app (poker, dominó) recebe só
-o subset necessário via `AllowedScopes`. Client M2M da própria wallet (chamando `internal:kyc`) já previsto no plano
+o subset necessário via `AllowedScopes`. Client M2M da própria wallet (chamando `internal:account:kyc`) já previsto no plano
 do KYC.
 
 ## H. Testes
@@ -169,16 +180,16 @@ do KYC.
 - **Unit**: cálculo de taxa (fronteiras min/max), lock ordenado cross-wallet, saldo nunca negativo, idempotência
   (replay retorna mesmo resultado, não duplica ledger).
 - **Integração**: depósito completo (webhook mock → consulta mock → crédito), CPF divergente → rejeita + estorno
-  chamado, saque completo (DICT match → débito+taxa → transferência), saque com chave de CPF diferente → 403, saque
-  concorrente na mesma wallet → segundo 409 `wallet-busy`, compra sandbox debita real e credita sandbox atomicamente,
-  crédito/débito sandbox via client sem scope → 403.
-- Mock `PixClient` (interface: `CreateCharge`, `QueryCharge`, `DictLookup`, `Transfer`, `Refund`) — fake em testes,
-  real (mTLS) em produção.
+  chamado, saque completo (débito+taxa → transferência para o CPF do KYC), saque com chave não registrada no banco →
+  422 `pix-key-not-found` + estorno imediato, saque concorrente na mesma wallet → segundo 409 `wallet-busy`, compra
+  sandbox debita real e credita sandbox atomicamente, crédito/débito sandbox via client sem scope → 403.
+- Mock `PixClient` (interface: `CreateCharge`, `QueryCharge`, `Transfer`, `Refund`) — fake em testes, real
+  (mTLS, via pix-gateway) em produção.
 
 ## I. Cross-project
 
 - **ctech-account**: nenhuma mudança de código — só operacional (seed do client M2M da wallet com scope
-  `internal:kyc`; seed dos scopes `internal:wallet:*` no catálogo global via `cmd/seedscopes`).
+  `internal:account:kyc`; seed dos scopes `internal:wallet:*` no catálogo global via `cmd/seedscopes`).
 - **ctech-dfe**: futuro consumidor (billing/assinaturas debitando via `internal:wallet:debit` — fora de escopo aqui).
 - **poker/dominó (futuro)**: consomem `internal:wallet:sandbox/*`; 18+ e KYC já garantidos pelo claim `kyc_level` do
   account, wallet não reverifica.

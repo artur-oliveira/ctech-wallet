@@ -33,8 +33,8 @@
 - Access-token claims used: `sub` (user_id), `scope` (space-joined), `azp` (client_id), `kyc_level` (`""|basic|verified`, present only when kyc scope granted), `last_mfa_at` (unix seconds; omitted if 0), `sid` (session id; **empty for M2M `client_credentials` tokens**).
 - Internal-scope gate: reject any token with non-empty `sid` (users can never hit `/internal/*`), then require the scope.
 - KYC confirm: `POST {CTECH_URL}/v1.0/internal/kyc/confirm` body `{"user_id","cpf"}` → `200 {"confirmed":true}`; mismatch `409 kyc-cpf-mismatch`; not submitted `409 kyc-not-submitted`; idempotent when already verified.
-- KYC read (payer/withdrawal CPF matching): `GET {CTECH_URL}/v1.0/internal/kyc/:user_id` → `{level,cpf,legal_name,birth_date}` (unmasked). Both KYC calls require the wallet's own M2M token with scope `internal:kyc`.
-- Token endpoint (wallet→account M2M): `POST {CTECH_URL}/v1.0/token` `grant_type=client_credentials&client_id&client_secret&scope=internal:kyc`. Wallet client must be seeded confidential + `first_party:true` + `allowed_scopes:["internal:kyc"]`.
+- KYC read (payer/withdrawal CPF matching): `GET {CTECH_URL}/v1.0/internal/kyc/:user_id` → `{level,cpf,legal_name,birth_date}` (unmasked). Both KYC calls require the wallet's own M2M token with scope `internal:account:kyc`.
+- Token endpoint (wallet→account M2M): `POST {CTECH_URL}/v1.0/token` `grant_type=client_credentials&client_id&client_secret&scope=internal:account:kyc`. Wallet client must be seeded confidential + `first_party:true` + `allowed_scopes:["internal:account:kyc"]`.
 - Scopes the wallet DEFINES for its own callers (poker/dominó/billing): `internal:wallet:credit`, `internal:wallet:debit`. Seeded into account's global catalog via `cmd/seedscopes` (operational, Task 8.3).
 
 ---
@@ -143,7 +143,7 @@ type Config struct {
 	CtechJWKSURL    string `env:"CTECH_JWKS_URL"`
 	ServiceAudience string `env:"SERVICE_AUDIENCE" envDefault:"https://wallet-api.aoctech.app"`
 
-	// Wallet's own M2M client (to call account internal:kyc)
+	// Wallet's own M2M client (to call account internal:account:kyc)
 	WalletClientID     string `env:"WALLET_CLIENT_ID"`
 	WalletClientSecret string `env:"WALLET_CLIENT_SECRET"`
 
@@ -863,9 +863,9 @@ type PixClient interface {
 - Test: `api/internal/kycclient/kycclient_test.go` (httptest)
 
 **Interfaces:**
-- Produces: `Client`, `New(cfg) *Client`; `Confirm(ctx, userID, cpf string) error`, `Get(ctx, userID string) (*KYC, error)` where `KYC{Level,CPF,LegalName,BirthDate string}`. Manages the wallet→account M2M client_credentials token (scope `internal:kyc`), cached until expiry.
+- Produces: `Client`, `New(cfg) *Client`; `Confirm(ctx, userID, cpf string) error`, `Get(ctx, userID string) (*KYC, error)` where `KYC{Level,CPF,LegalName,BirthDate string}`. Manages the wallet→account M2M client_credentials token (scope `internal:account:kyc`), cached until expiry.
 
-- [ ] **Step 1: Implement token fetch** (POST `{CtechURL}/v1.0/token`, `grant_type=client_credentials`, `WalletClientID/Secret`, `scope=internal:kyc`), then `Confirm` (POST `/v1.0/internal/kyc/confirm`) and `Get` (GET `/v1.0/internal/kyc/:user_id`). Map 409 confirm mismatch to a returned error the service can translate.
+- [ ] **Step 1: Implement token fetch** (POST `{CtechURL}/v1.0/token`, `grant_type=client_credentials`, `WalletClientID/Secret`, `scope=internal:account:kyc`), then `Confirm` (POST `/v1.0/internal/kyc/confirm`) and `Get` (GET `/v1.0/internal/kyc/:user_id`). Map 409 confirm mismatch to a returned error the service can translate.
 
 - [ ] **Step 2: httptest test + commit** — `feat: add account KYC internal client`
 
@@ -1042,7 +1042,7 @@ type SandboxOpRequest struct{ UserID string `json:"user_id" validate:"required"`
 
 - [ ] **Step 1: Document** (this is operational, run against ctech-account, not code in this repo):
   1. Seed the wallet's `internal:wallet:credit` / `internal:wallet:debit` scopes into the global catalog: add them to `ctech-account/internal/scopes/catalog.go` and run `cmd/seedscopes`.
-  2. Seed the wallet's own M2M client (confidential, `first_party:true`, `allowed_scopes:["internal:kyc"]`) via direct DynamoDB put into `{env}_account_oauth_clients`.
+  2. Seed the wallet's own M2M client (confidential, `first_party:true`, `allowed_scopes:["internal:account:kyc"]`) via direct DynamoDB put into `{env}_account_oauth_clients`.
   3. Seed each consumer app's (poker/dominó/billing) M2M client with only the sandbox scope subset it needs via `AllowedScopes`.
 - [ ] **Step 2: Commit** — `docs: add wallet operational seeding guide`
 

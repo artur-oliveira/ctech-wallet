@@ -167,7 +167,7 @@ passwords, real customer data, or real CPFs.
   `GET {CTECH_URL}/v1.0/internal/kyc/:user_id`.
 - **Scopes:** `internal:wallet:credit` / `internal:wallet:debit` (sandbox only) seeded into the global catalog
   via `ctech-account`'s `cmd/seedscopes`. The wallet's own M2M client is seeded confidential + `first_party:true`
-  with `allowed_scopes:["internal:kyc"]`.
+  with `allowed_scopes:["internal:account:kyc"]`.
 - **Step-up:** withdrawals mirror account's `RequireRecentMFA(5m)` — stateless, reads `last_mfa_at` from the JWT;
   no call to account needed.
 

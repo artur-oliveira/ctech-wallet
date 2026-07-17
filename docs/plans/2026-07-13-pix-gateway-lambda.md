@@ -2431,7 +2431,7 @@ Update the comment above it (currently explains the mTLS SecureString decryption
 ```ts
     // ── SSM ───────────────────────────────────────────────────────────────────
     // api's role is scoped to exactly the two parameters it still reads —
-    // wallet-client-id/secret (for the internal:kyc M2M call to ctech-account) —
+    // wallet-client-id/secret (for the internal:account:kyc M2M call to ctech-account) —
     // plus ctech-account's own namespace and the shared /ctech/{env}/* values.
     // The Inter mTLS keypair, OAuth client secret, and webhook secret moved to
     // pix-gateway's own IAM role (see pix-gateway-stack.ts) — api no longer
@@ -2989,7 +2989,7 @@ Change the comment above the block and the block itself (`:424-453`) from:
       `if [ -n "$VALKEY_BASE" ]; then VALKEY_URL="\${VALKEY_BASE%/}/${VALKEY_DB}"; else VALKEY_URL=""; fi`,
       `CTECH_URL=$(aws ssm get-parameter --name "${account.baseUrl}" --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
       `CTECH_JWKS_URL=$(aws ssm get-parameter --name "${account.jwksUrl}" --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
-      // Wallet's own M2M client — used to call ctech-account internal:kyc.
+      // Wallet's own M2M client — used to call ctech-account internal:account:kyc.
       `WALLET_CLIENT_ID=$(aws ssm get-parameter --name "${wallet.walletClientId}" --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
       `WALLET_CLIENT_SECRET=$(aws ssm get-parameter --name "${wallet.walletClientSecret}" --with-decryption --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
       // Inter partner bank (short secrets only — see the mTLS note above).
@@ -3019,7 +3019,7 @@ to:
       `if [ -n "$VALKEY_BASE" ]; then VALKEY_URL="\${VALKEY_BASE%/}/${VALKEY_DB}"; else VALKEY_URL=""; fi`,
       `CTECH_URL=$(aws ssm get-parameter --name "${account.baseUrl}" --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
       `CTECH_JWKS_URL=$(aws ssm get-parameter --name "${account.jwksUrl}" --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
-      // Wallet's own M2M client — used to call ctech-account internal:kyc.
+      // Wallet's own M2M client — used to call ctech-account internal:account:kyc.
       `WALLET_CLIENT_ID=$(aws ssm get-parameter --name "${wallet.walletClientId}" --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
       `WALLET_CLIENT_SECRET=$(aws ssm get-parameter --name "${wallet.walletClientSecret}" --with-decryption --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
       `export VALKEY_URL CTECH_URL CTECH_JWKS_URL`,

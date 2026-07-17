@@ -168,11 +168,17 @@ passwords, real customer data, or real CPFs.
   `GET {CTECH_URL}/v1.0/internal/kyc/:user_id`.
 - **Scopes:** `internal:wallet:credit` / `internal:wallet:debit` (sandbox only) seeded into the global catalog
   via `ctech-account`'s `cmd/seedscopes`. The wallet's own M2M client is seeded confidential + `first_party:true`
-  with `allowed_scopes:["internal:kyc"]`.
+  with `allowed_scopes:["internal:account:kyc"]`.
 - **Step-up:** withdrawals mirror account's `RequireRecentMFA(5m)` — stateless, reads `last_mfa_at` from the JWT;
-  no call to account needed.
+  no call to account needed. Re-verifying a stale MFA proof redirects to `{CTECH_URL}/v1.0/authorize` with
+  `max_age=0` (OIDC-standard) — this forces `ctech-account` to require a fresh interactive login even with a valid
+  SSO session, refreshing `last_mfa_at`. A plain re-login (no `max_age`) would silently reuse the SSO session and
+  never re-prove MFA. The frontend calls this via `@aoctech/auth-client`'s `startOAuthFlow(returnTo, {maxAge: 0})`
+  (wrapped as `startStepUpFlow` in `ui/src/lib/auth/oauth.ts`).
 
-`ctech-account` requires no code changes — only operational seeding.
+`ctech-account` DOES require code changes for this: `internal/handler/authorize.go` honors `max_age`, and
+`ui/src/hooks/use-redirect-if-authenticated.ts` must not bypass the login form when the `continue` target itself
+requests `max_age=0`. Beyond that, only operational seeding is needed.
 
 ---
 
