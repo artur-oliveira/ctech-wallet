@@ -1,6 +1,6 @@
 'use client'
 
-import {useState} from 'react'
+import {useCallback, useState} from 'react'
 import {useMutation, useQuery, useQueryClient} from '@tanstack/react-query'
 import {toast} from 'sonner'
 import {LogOut} from 'lucide-react'
@@ -65,16 +65,17 @@ function newIdemKey(): string {
 
 function DashboardInner() {
     const {t} = useTranslation()
-    const {profile, logout, login} = useAuth()
+    const {profile, logout, reverify} = useAuth()
     const qc = useQueryClient()
-    const {wsStatus} = useWalletRealtime()
     const [flow, setFlow] = useState<Flow>(null)
     const [confirm, setConfirm] = useState<{
         flow: 'withdraw' | 'fund-game' | 'return-game';
         amount: number
     } | null>(null)
-    const [pendingPixKey, setPendingPixKey] = useState<string>('')
     const [charge, setCharge] = useState<DepositResult | null>(null)
+    const {wsStatus} = useWalletRealtime(
+        useCallback((txid: string) => setCharge((c) => (c && c.txid === txid ? null : c)), []),
+    )
     const [receipt, setReceipt] = useState<{ title: string; amountLabel: string } | null>(null)
     const [stepUp, setStepUp] = useState(false)
     const [tab, setTab] = useState<WalletType>('real')
@@ -96,8 +97,7 @@ function DashboardInner() {
     })
 
     const withdraw = useMutation({
-        mutationFn: ({amount, pixKey}: { amount: number; pixKey: string }) =>
-            apiClient.createWithdrawal(amount, pixKey, newIdemKey()),
+        mutationFn: (amount: number) => apiClient.createWithdrawal(amount, newIdemKey()),
         onSuccess: (w) => {
             setConfirm(null)
             setFlow(null)
@@ -261,9 +261,8 @@ function DashboardInner() {
                     flow="withdraw"
                     maxCents={balances.data?.real?.balance}
                     pending={withdraw.isPending || confirm?.flow === 'withdraw'}
-                    onProceed={(amount, pixKey) => {
+                    onProceed={(amount) => {
                         setStepUp(false)
-                        setPendingPixKey(pixKey ?? '')
                         setConfirm({flow: 'withdraw', amount})
                     }}
                     onClose={() => setFlow(null)}
@@ -304,7 +303,7 @@ function DashboardInner() {
                 <ConfirmMoneyDialog
                     flow={confirm.flow}
                     stepUp={stepUp}
-                    onReverify={login}
+                    onReverify={reverify}
                     amountCents={confirm.amount}
                     availableCents={
                         confirm.flow === 'return-game'
@@ -320,7 +319,7 @@ function DashboardInner() {
                     }
                     onConfirm={() => {
                         if (confirm.flow === 'withdraw') {
-                            withdraw.mutate({amount: confirm.amount, pixKey: pendingPixKey})
+                            withdraw.mutate(confirm.amount)
                         } else if (confirm.flow === 'fund-game') {
                             fundGame.mutate(confirm.amount)
                         } else {

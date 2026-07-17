@@ -70,7 +70,8 @@
     "withdraw": {
       "title": "Sacar para o PIX",
       "description": "A taxa de saque é descontada do seu saldo junto com o valor.",
-      "submit": "Sacar"
+      "submit": "Sacar",
+      "pixDestination": "O PIX será enviado para o CPF cadastrado na sua conta. Você precisa já ter uma chave PIX registrada para ele no seu banco."
     },
     "credits": {
       "title": "Comprar créditos sandbox",
@@ -93,20 +94,13 @@
       "feePreview": "Inclui uma taxa de saque de {{fee}}.",
       "maxButton": "Máx {{max}}"
     },
-    "pixKey": {
-      "label": "Chave PIX de destino",
-      "placeholder": "CPF, e-mail, telefone ou chave aleatória",
-      "hint": "A chave precisa estar no seu CPF. Saques para terceiros são recusados."
-    },
     "max": "Máximo {{max}}",
     "available": "Disponível {{amount}}",
     "error": {
       "required": "Informe um valor.",
       "invalid": "Informe um valor válido.",
       "maxExceeded": "O valor máximo é {{max}}.",
-      "overBalance": "Acima do disponível ({{amount}}).",
-      "pixKeyRequired": "Informe a chave PIX de destino.",
-      "pixKeyTooLong": "Chave PIX muito longa."
+      "overBalance": "Acima do disponível ({{amount}})."
     }
   },
   "confirm": {
@@ -138,7 +132,8 @@
     "description": "Copie o código e pague no app do seu banco. O saldo entra assim que o banco confirmar o pagamento.",
     "copy": "Copiar código PIX",
     "copied": "Copiado",
-    "validity": "O código vale por 15 minutos. Pode fechar esta janela — o pagamento continua valendo.",
+    "expiresIn": "Expira em {{time}}",
+    "expired": "Este código PIX expirou. Feche esta janela e inicie um novo depósito.",
     "qrAlt": "QR Code do pagamento PIX",
     "close": "Fechar",
     "confirmedToast": "Depósito confirmado"
@@ -148,6 +143,8 @@
     "realtimeDeposit": "Depósito de {{amount}} confirmado",
     "withdrawProcessing": "Saque em processamento. O PIX cai em instantes.",
     "withdrawSent": "Saque enviado.",
+    "withdrawReversed": "Não foi possível concluir o saque — o valor foi estornado para o seu saldo.",
+    "withdrawRefundFailed": "O saque falhou e o estorno está pendente. Nossa equipe já foi avisada.",
     "creditsAdded": "Créditos adicionados.",
     "fundGameSent": "Saldo enviado para a carteira de jogo.",
     "returned": "Saldo devolvido ao saldo real.",

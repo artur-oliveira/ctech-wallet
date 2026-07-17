@@ -22,6 +22,7 @@ interface RealtimeMessage {
     type: string
     wallet_id?: string
     txid?: string
+    withdrawal_id?: string
     amount?: number
 }
 
@@ -32,7 +33,14 @@ function formatCentavos(amount: number, locale: string): string {
     return (amount / 100).toLocaleString(locale, {style: 'currency', currency: 'BRL'})
 }
 
-export function useWalletRealtime(): { wsStatus: WSStatus } {
+/** Withdrawal outcome events → toast key (mirrors api's broadcastWithdrawal). */
+const WITHDRAW_TOAST_KEY: Record<string, string> = {
+    withdraw_completed: 'toast.withdrawSent',
+    withdraw_reversed: 'toast.withdrawReversed',
+    withdraw_refund_failed: 'toast.withdrawRefundFailed',
+}
+
+export function useWalletRealtime(onDepositConfirmed?: (txid: string) => void): { wsStatus: WSStatus } {
     const {t, i18n} = useTranslation()
     const qc = useQueryClient()
     const token = getAccessToken()
@@ -51,8 +59,21 @@ export function useWalletRealtime(): { wsStatus: WSStatus } {
                     ? t('toast.realtimeDeposit', {amount: formatCentavos(msg.amount, i18n.language || 'pt-BR')})
                     : t('toast.depositConfirmed'),
             )
+            if (msg.txid) onDepositConfirmed?.(msg.txid)
+            return
         }
-    }, [qc, t, i18n.language])
+
+        const toastKey = WITHDRAW_TOAST_KEY[msg.type]
+        if (toastKey) {
+            void qc.invalidateQueries({queryKey: ['balances']})
+            void qc.invalidateQueries({queryKey: ['ledger']})
+            if (msg.type === 'withdraw_completed') {
+                toast.success(t(toastKey))
+            } else {
+                toast.error(t(toastKey))
+            }
+        }
+    }, [qc, t, i18n.language, onDepositConfirmed])
 
     const {status: wsStatus} = useWebSocket({
         url: wsUrl,

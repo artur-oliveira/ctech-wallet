@@ -70,7 +70,8 @@
     "withdraw": {
       "title": "Withdraw to PIX",
       "description": "The withdrawal fee is deducted from your balance along with the amount.",
-      "submit": "Withdraw"
+      "submit": "Withdraw",
+      "pixDestination": "The PIX will be sent to the CPF registered on your account. You must already have a PIX key registered for it at your bank."
     },
     "credits": {
       "title": "Buy sandbox credits",
@@ -93,20 +94,13 @@
       "feePreview": "Includes a {{fee}} withdrawal fee.",
       "maxButton": "Max {{max}}"
     },
-    "pixKey": {
-      "label": "Destination PIX key",
-      "placeholder": "CPF, e-mail, phone, or random key",
-      "hint": "The key must be under your CPF. Withdrawals to third parties are refused."
-    },
     "max": "Maximum {{max}}",
     "available": "Available {{amount}}",
     "error": {
       "required": "Enter an amount.",
       "invalid": "Enter a valid amount.",
       "maxExceeded": "The maximum amount is {{max}}.",
-      "overBalance": "Above what's available ({{amount}}).",
-      "pixKeyRequired": "Enter the destination PIX key.",
-      "pixKeyTooLong": "PIX key is too long."
+      "overBalance": "Above what's available ({{amount}})."
     }
   },
   "confirm": {
@@ -138,7 +132,8 @@
     "description": "Copy the code and pay in your bank app. The balance updates as soon as the bank confirms the payment.",
     "copy": "Copy PIX code",
     "copied": "Copied",
-    "validity": "The code is valid for 15 minutes. You can close this window — the payment still counts.",
+    "expiresIn": "Expires in {{time}}",
+    "expired": "This PIX code has expired. Close this window and start a new deposit.",
     "qrAlt": "PIX payment QR code",
     "close": "Close",
     "confirmedToast": "Deposit confirmed"
@@ -148,6 +143,8 @@
     "realtimeDeposit": "Deposit of {{amount}} confirmed",
     "withdrawProcessing": "Withdrawal processing. The PIX arrives shortly.",
     "withdrawSent": "Withdrawal sent.",
+    "withdrawReversed": "Withdrawal could not be completed — the amount was refunded to your balance.",
+    "withdrawRefundFailed": "Withdrawal failed and the refund is pending. Our team has been notified.",
     "creditsAdded": "Credits added.",
     "fundGameSent": "Balance sent to the game wallet.",
     "returned": "Balance returned to real balance.",

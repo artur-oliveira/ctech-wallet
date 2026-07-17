@@ -128,12 +128,9 @@ class ApiClient {
         return (await this.http.post<DepositResult>('/v1.0/wallet/deposits', {amount})).data
     }
 
-    async createWithdrawal(amount: number, pixKey: string, idempotencyKey: string): Promise<Withdrawal> {
+    async createWithdrawal(amount: number, idempotencyKey: string): Promise<Withdrawal> {
         return (
-            await this.http.post<Withdrawal>('/v1.0/wallet/withdrawals', {
-                amount,
-                pix_key: pixKey
-            }, idemConfig(idempotencyKey))
+            await this.http.post<Withdrawal>('/v1.0/wallet/withdrawals', {amount}, idemConfig(idempotencyKey))
         ).data
     }
 

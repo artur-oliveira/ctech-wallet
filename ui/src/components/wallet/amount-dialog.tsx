@@ -24,16 +24,15 @@ interface AmountDialogProps {
     /** Caps the amount at the available balance (withdraw, fund-game, credits, return-game). */
     maxCents?: number
     pending?: boolean
-    onSubmit?: (amount: number, pixKey?: string) => void
-    /** When set, replaces the mutation: the amount (and PIX key) are handed to a confirm step instead of committing. */
-    onProceed?: (amount: number, pixKey?: string) => void
+    onSubmit?: (amount: number) => void
+    /** When set, replaces the mutation: the amount is handed to a confirm step instead of committing. */
+    onProceed?: (amount: number) => void
     onClose: () => void
 }
 
 /** Shared amount entry used by deposit, withdrawal, and credit purchase. */
 export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onClose}: AmountDialogProps) {
     const {t} = useTranslation()
-    const withPixKey = flow === 'withdraw'
     const flowKey = FLOW_KEY[flow]
 
     // The R$ 1.000.000 ceiling applies ONLY to money entering the game ring-fence:
@@ -67,21 +66,16 @@ export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onCl
             .positive(t('dialog.error.required'))
             .max(effectiveMax, overMsg)
 
-        const pixKey = withPixKey
-            ? z.string().trim().min(1, t('dialog.error.pixKeyRequired')).max(100, t('dialog.error.pixKeyTooLong'))
-            : z.string().max(100)
-
-        return z.object({amount, pixKey})
-    }, [effectiveMax, balanceCap, millionCap, maxCents, withPixKey, t, fmt])
+        return z.object({amount})
+    }, [effectiveMax, balanceCap, millionCap, maxCents, t, fmt])
 
     const {
         control,
-        register,
         handleSubmit,
         formState: {errors},
-    } = useForm<{ amount: number; pixKey: string }>({
+    } = useForm<{ amount: number }>({
         resolver: zodResolver(schema),
-        defaultValues: {amount: 0, pixKey: ''},
+        defaultValues: {amount: 0},
     })
 
     const amount = useWatch({control, name: 'amount'}) ?? 0
@@ -121,11 +115,10 @@ export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onCl
     }, [])
 
     const submit = handleSubmit((data) => {
-        const pixKey = withPixKey ? data.pixKey.trim() : undefined
         if (onProceed) {
-            onProceed(data.amount, pixKey)
+            onProceed(data.amount)
         } else if (onSubmit) {
-            onSubmit(data.amount, pixKey)
+            onSubmit(data.amount)
         }
     })
 
@@ -212,7 +205,7 @@ export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onCl
                     <p className="mt-1.5 text-xs text-muted-foreground">{t('dialog.available', {amount: fmt(maxCents)})}</p>
                 )}
 
-                {withPixKey && amount > 0 && (
+                {flow === 'withdraw' && amount > 0 && (
                     <p className="mt-1.5 text-xs text-muted-foreground">
                         {t('dialog.amount.feePreview', {fee: formatBRL(withdrawalFee(amount))})}
                     </p>
@@ -224,31 +217,10 @@ export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onCl
                     </p>
                 )}
 
-                {withPixKey && (
-                    <>
-                        <label className="mt-4 block text-sm font-medium text-foreground" htmlFor="pixkey">
-                            {t('dialog.pixKey.label')}
-                        </label>
-                        <input
-                            id="pixkey"
-                            maxLength={100}
-                            placeholder={t('dialog.pixKey.placeholder')}
-                            aria-invalid={!!errors.pixKey}
-                            aria-describedby={errors.pixKey ? 'pixkey-error' : undefined}
-                            className={`mt-1.5 h-10 w-full rounded-lg border px-3 text-sm outline-none focus:ring-3 ${
-                                errors.pixKey
-                                    ? 'border-destructive focus:border-destructive focus:ring-destructive/20'
-                                    : 'border-border focus:border-brand-500 focus:ring-brand-500/20'
-                            }`}
-                            {...register('pixKey')}
-                        />
-                        <p className="mt-1.5 text-xs text-muted-foreground">{t('dialog.pixKey.hint')}</p>
-                        {errors.pixKey && (
-                            <p id="pixkey-error" role="alert" className="mt-1.5 text-sm text-destructive">
-                                {errors.pixKey.message}
-                            </p>
-                        )}
-                    </>
+                {flow === 'withdraw' && (
+                    <p className="mt-4 rounded-lg bg-muted p-3 text-xs leading-relaxed text-muted-foreground">
+                        {t('dialog.withdraw.pixDestination')}
+                    </p>
                 )}
 
                 <div className="mt-6 flex gap-2">

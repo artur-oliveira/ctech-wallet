@@ -25,6 +25,16 @@ export async function startOAuthFlow(returnTo = '/'): Promise<void> {
   await client.startOAuthFlow(returnTo)
 }
 
+/**
+ * Step-up variant of startOAuthFlow: forces ctech-account to require a fresh
+ * interactive login (max_age=0) instead of silently re-authenticating from
+ * the existing SSO session — a valid session cookie alone never re-proves
+ * MFA, which is exactly what a withdrawal's step-up check needs.
+ */
+export async function startStepUpFlow(returnTo = '/'): Promise<void> {
+  await client.startOAuthFlow(returnTo, {maxAge: 0})
+}
+
 export async function exchangeCode(
   code: string,
   state: string,

@@ -42,6 +42,7 @@ export interface DepositResult {
     status: string
     pix_copia_e_cola: string
     qr_code_base64?: string
+    expires_at: number // unix seconds — when the charge stops being payable
 }
 
 export interface Withdrawal {

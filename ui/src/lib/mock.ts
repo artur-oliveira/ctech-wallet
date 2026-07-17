@@ -87,10 +87,12 @@ export class MockApiClient {
             pix_copia_e_cola:
                 '00020126580014BR.GOV.BCB.PIX0136mock@aoctech.app5204000053039865405' +
                 '000.005802BR5913Mock User6009SAO PAULO62070503***6304MOCK',
+            expires_at: Date.now() / 1000 + 300,
         }
     }
 
-    async createWithdrawal(amount: number, pixKey: string): Promise<Withdrawal> {
+    async createWithdrawal(amount: number, _idempotencyKey: string): Promise<Withdrawal> {
+        void _idempotencyKey
         addEntry(state.real, 'withdraw', -amount)
         return {
             withdrawal_id: `wd_${Date.now()}`,
@@ -98,7 +100,7 @@ export class MockApiClient {
             user_id: 'mock_user',
             amount,
             fee: 0,
-            pix_key: pixKey,
+            pix_key: '12345678901', // mock user's registered CPF — no client-supplied key anymore
             status: 'completed',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
