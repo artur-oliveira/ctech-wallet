@@ -242,6 +242,49 @@ func TestDoMissingBearer(t *testing.T) {
 	}
 }
 
+// TestTransferKeyNotFound proves a 404 from Inter's payout endpoint (unknown
+// destination PIX key) is classified as ErrKeyNotFound, not a generic error —
+// this is what lets api refund the withdrawal immediately instead of leaving
+// it stuck in processing for reconciliation.
+func TestTransferKeyNotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"title":"chave não encontrada"}`))
+	}))
+	defer srv.Close()
+
+	c := newTestClient(srv.URL, srv.Client())
+	ctx := WithBearer(context.Background(), "BEARER123")
+	_, err := c.Transfer(ctx, "unknown-key", 1000, "idem1")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !IsKeyNotFound(err) {
+		t.Fatalf("expected IsKeyNotFound(err) to be true, got err=%v", err)
+	}
+}
+
+// TestTransferOtherErrorNotClassifiedAsKeyNotFound proves a non-404 failure
+// (e.g. a transient 500) is NOT classified as ErrKeyNotFound — only an exact
+// 404 means "key not registered"; anything else must stay an opaque
+// bank/transport failure so reconciliation still retries it.
+func TestTransferOtherErrorNotClassifiedAsKeyNotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	c := newTestClient(srv.URL, srv.Client())
+	ctx := WithBearer(context.Background(), "BEARER123")
+	_, err := c.Transfer(ctx, "some-key", 1000, "idem2")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if IsKeyNotFound(err) {
+		t.Fatalf("500 must not be classified as key-not-found: %v", err)
+	}
+}
+
 func TestPingValidatesBearer(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	defer srv.Close()

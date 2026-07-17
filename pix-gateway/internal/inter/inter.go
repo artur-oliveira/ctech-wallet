@@ -56,7 +56,7 @@ const (
 	pathDevolucao  = "/pix/v2/pix/%s/devolucao/%s" // PUT refund by e2eid + devolucao id
 
 	tokenScope      = "cob.read cob.write pix.read pix.write banking pix.pagamento"
-	chargeExpirySec = 900 // 15 min, mirrors the pix_deposits TTL
+	chargeExpirySec = 300 // 5 min, mirrors the pix_deposits TTL
 )
 
 // NewInterClient builds the client. The mTLS keypair is already in memory
@@ -237,6 +237,9 @@ func (c *InterClient) Transfer(ctx context.Context, pixKey string, amount int64,
 		Status            string `json:"status"`
 	}
 	if err := c.doIdem(ctx, http.MethodPost, pathBankingPix, body, &resp, idemKey); err != nil {
+		if isStatus(err, http.StatusNotFound) {
+			return nil, fmt.Errorf("inter: pix key not registered: %w", ErrKeyNotFound)
+		}
 		return nil, err
 	}
 	e2e := resp.EndToEndID

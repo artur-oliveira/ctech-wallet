@@ -29,3 +29,13 @@ func IsUnauthorized(err error) bool {
 	var se *statusError
 	return errors.As(err, &se) && se.Code == 401
 }
+
+// ErrKeyNotFound means the destination PIX key on a Transfer call is not
+// registered at the bank (Inter HTTP 404) — the one PixClient error callers
+// must distinguish from a generic bank/transport failure (see rpc.ErrKeyNotFoundSentinel).
+var ErrKeyNotFound = errors.New("inter: pix key not registered")
+
+// IsKeyNotFound reports whether err wraps ErrKeyNotFound.
+func IsKeyNotFound(err error) bool {
+	return errors.Is(err, ErrKeyNotFound)
+}

@@ -16,7 +16,8 @@ import (
 // it defines its own (different module, and this one only needs to exercise
 // the handler's marshal/unmarshal, not real business behavior).
 type fakePix struct {
-	dictErr error
+	dictErr     error
+	transferErr error
 }
 
 func (f *fakePix) CreateCharge(_ context.Context, txid string, amount int64, _ string) (*inter.Charge, error) {
@@ -32,6 +33,9 @@ func (f *fakePix) DictLookup(_ context.Context, key string) (*inter.DictAccount,
 	return &inter.DictAccount{Key: key, CPF: "222", Name: "Fulano"}, nil
 }
 func (f *fakePix) Transfer(_ context.Context, key string, amount int64, idem string) (*inter.TransferResult, error) {
+	if f.transferErr != nil {
+		return nil, f.transferErr
+	}
 	return &inter.TransferResult{E2EID: "E2E-" + idem, Status: inter.TransferDone}, nil
 }
 func (f *fakePix) QueryTransfer(_ context.Context, idem string) (*inter.TransferResult, error) {
@@ -58,6 +62,20 @@ func TestHandleCreateCharge(t *testing.T) {
 	}
 	if got.Txid != "tx1" || got.Amount != 12345 || got.Status != inter.ChargeActive {
 		t.Fatalf("bad result: %+v", got)
+	}
+}
+
+// TestHandleTransferKeyNotFound proves the outbound Lambda surfaces
+// rpc.ErrKeyNotFoundSentinel (not a raw error string) when Transfer fails
+// because the destination PIX key is unregistered — api relies on this exact
+// sentinel to refund the withdrawal immediately instead of leaving it
+// processing for reconciliation.
+func TestHandleTransferKeyNotFound(t *testing.T) {
+	h := &handler{pix: &fakePix{transferErr: inter.ErrKeyNotFound}}
+	payload, _ := json.Marshal(rpc.TransferArgs{PixKey: "unknown", Amount: 1000, IdemKey: "idem1"})
+	resp, _ := h.handle(context.Background(), rpc.Request{Op: rpc.OpTransfer, Payload: payload})
+	if resp.Error != rpc.ErrKeyNotFoundSentinel {
+		t.Fatalf("expected error %q, got %q", rpc.ErrKeyNotFoundSentinel, resp.Error)
 	}
 }
 

@@ -192,12 +192,16 @@ func okResp(v any) rpc.Response {
 	return rpc.Response{Payload: b}
 }
 
-// toResp maps inter errors to the wire sentinels api knows how to handle:
-// a missing DICT owner, and an Inter 401 (bad/expired bearer). Everything else
-// is an opaque bank/transport failure string.
+// toResp maps inter errors to the wire sentinels api knows how to handle: an
+// unregistered destination PIX key (Transfer 404), and an Inter 401
+// (bad/expired bearer). Everything else is an opaque bank/transport failure
+// string.
 func toResp(err error) rpc.Response {
 	if inter.IsUnauthorized(err) {
 		return rpc.Response{Error: rpc.ErrUnauthorizedSentinel}
+	}
+	if inter.IsKeyNotFound(err) {
+		return rpc.Response{Error: rpc.ErrKeyNotFoundSentinel}
 	}
 	return errResp(err)
 }
