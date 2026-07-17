@@ -6,9 +6,11 @@ type DepositRequest struct {
 	Amount int64 `json:"amount" validate:"required,gt=0"`
 }
 
+// WithdrawRequest carries only the amount — the PIX destination is always the
+// CPF on the caller's KYC record, never a client-supplied key (see
+// WalletService.Withdraw).
 type WithdrawRequest struct {
-	Amount int64  `json:"amount" validate:"required,gt=0"`
-	PixKey string `json:"pix_key" validate:"required"`
+	Amount int64 `json:"amount" validate:"required,gt=0"`
 }
 
 type SandboxPurchaseRequest struct {

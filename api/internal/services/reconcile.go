@@ -36,6 +36,7 @@ func (s *WalletService) ReconcileWithdrawals(ctx context.Context) (resolved, rev
 				slog.Error("reconcile: mark completed failed", "withdrawal_id", w.WithdrawalID, "err", err)
 				continue
 			}
+			s.broadcastWithdrawal(ctx, w.UserID, "withdraw_completed", w.WithdrawalID, w.Amount)
 			resolved++
 		case pix.TransferNotFound:
 			if s.reverse(ctx, w) {
@@ -50,6 +51,10 @@ func (s *WalletService) ReconcileWithdrawals(ctx context.Context) (resolved, rev
 	return resolved, reversed, alarmed, nil
 }
 
+// reverse credits the debited amount+fee back to the wallet, whether called
+// synchronously (Withdraw: the PIX key turned out to be unregistered) or
+// asynchronously (ReconcileWithdrawals: the payout never went through) — same
+// idempotent reversal either way, so both notify the user identically.
 func (s *WalletService) reverse(ctx context.Context, w wallet.Withdrawal) bool {
 	total := w.Amount + w.Fee
 	_, _, err := s.repo.Credit(ctx, repositories.Mutation{
@@ -61,12 +66,14 @@ func (s *WalletService) reverse(ctx context.Context, w wallet.Withdrawal) bool {
 		ReqHash:        reqHash("reverse:"+w.WithdrawalID, total),
 	})
 	if err != nil {
-		slog.Error("ALARM reconcile reversal credit-back failed", "withdrawal_id", w.WithdrawalID, "amount", total, "err", err)
+		slog.Error("ALARM withdrawal reversal credit-back failed", "withdrawal_id", w.WithdrawalID, "amount", total, "err", err)
 		_ = s.repo.UpdateWithdrawal(ctx, w.WithdrawalID, map[string]any{"status": wallet.WithdrawRefundFail})
+		s.broadcastWithdrawal(ctx, w.UserID, "withdraw_refund_failed", w.WithdrawalID, w.Amount)
 		return false
 	}
 	if err := s.repo.UpdateWithdrawal(ctx, w.WithdrawalID, map[string]any{"status": wallet.WithdrawReversed}); err != nil {
 		slog.Error("reconcile: mark reversed failed", "withdrawal_id", w.WithdrawalID, "err", err)
 	}
+	s.broadcastWithdrawal(ctx, w.UserID, "withdraw_reversed", w.WithdrawalID, w.Amount)
 	return true
 }

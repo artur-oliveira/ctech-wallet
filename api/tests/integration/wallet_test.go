@@ -305,14 +305,16 @@ func TestWithdrawHappyPath(t *testing.T) {
 	h := newHarness(verified())
 	user := "u-" + id.New()
 	real := fund(t, h, user, 20000)
-	h.pix.StageDict("me@pix", cpf, "Me")
 
-	w, err := h.svc.Withdraw(ctx, user, "verified", 5000, "me@pix", "idem-"+id.New())
+	w, err := h.svc.Withdraw(ctx, user, "verified", 5000, "idem-"+id.New())
 	if err != nil {
 		t.Fatalf("Withdraw: %v", err)
 	}
 	if w.Status != wallet.WithdrawCompleted {
 		t.Fatalf("status = %q, want completed", w.Status)
+	}
+	if w.PixKey != cpf {
+		t.Fatalf("PixKey = %q, want the KYC CPF %q", w.PixKey, cpf)
 	}
 	fee := wallet.WithdrawalFee(5000, nil)
 	want := int64(20000) - 5000 - fee
@@ -321,17 +323,35 @@ func TestWithdrawHappyPath(t *testing.T) {
 	}
 }
 
+// TestWithdrawKeyNotFoundRefundsImmediately proves an unregistered PIX key
+// (the CPF has no key at the bank) refunds the full amount+fee back to the
+// wallet immediately, end-to-end against DynamoDB-local — it never leaves the
+// withdrawal stuck in processing for the reconciliation job.
+func TestWithdrawKeyNotFoundRefundsImmediately(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(verified())
+	user := "u-" + id.New()
+	real := fund(t, h, user, 20000)
+	h.pix.TransferErr = pix.ErrKeyNotFound
+
+	_, err := h.svc.Withdraw(ctx, user, "verified", 5000, "idem-"+id.New())
+	wantProblem(t, err, problem.TypePixKeyNotFound)
+
+	if got := balance(t, h, real.WalletID); got != 20000 {
+		t.Fatalf("balance = %d, want 20000 (fully refunded)", got)
+	}
+}
+
 func TestWithdrawUsesPerWalletFeeOverride(t *testing.T) {
 	ctx := context.Background()
 	h := newHarness(verified())
 	user := "u-" + id.New()
 	real := fund(t, h, user, 200000)
-	h.pix.StageDict("me@pix", cpf, "Me")
 
 	// Admin sets a 1% fee with a higher cap directly on the wallet item (no API path).
 	setWalletFee(t, real.WalletID, 100, 100, 5000)
 
-	w, err := h.svc.Withdraw(ctx, user, "verified", 100000, "me@pix", "idem-"+id.New())
+	w, err := h.svc.Withdraw(ctx, user, "verified", 100000, "idem-"+id.New())
 	if err != nil {
 		t.Fatalf("Withdraw: %v", err)
 	}
@@ -345,9 +365,8 @@ func TestWithdrawInsufficientBalance(t *testing.T) {
 	h := newHarness(verified())
 	user := "u-" + id.New()
 	fund(t, h, user, 100) // less than amount+fee
-	h.pix.StageDict("me@pix", cpf, "Me")
 
-	_, err := h.svc.Withdraw(ctx, user, "verified", 5000, "me@pix", "idem-"+id.New())
+	_, err := h.svc.Withdraw(ctx, user, "verified", 5000, "idem-"+id.New())
 	wantProblem(t, err, problem.TypeInsufficientBalance)
 }
 
@@ -356,7 +375,6 @@ func TestWithdrawWalletBusy(t *testing.T) {
 	h := newHarness(verified())
 	user := "u-" + id.New()
 	real := fund(t, h, user, 20000)
-	h.pix.StageDict("me@pix", cpf, "Me")
 
 	// Hold the wallet lock via the SAME locker the service uses → forces busy.
 	release, ok, err := h.locker.Acquire(ctx, real.WalletID)
@@ -365,7 +383,7 @@ func TestWithdrawWalletBusy(t *testing.T) {
 	}
 	defer release()
 
-	_, err = h.svc.Withdraw(ctx, user, "verified", 5000, "me@pix", "idem-"+id.New())
+	_, err = h.svc.Withdraw(ctx, user, "verified", 5000, "idem-"+id.New())
 	wantProblem(t, err, problem.TypeWalletBusy)
 }
 

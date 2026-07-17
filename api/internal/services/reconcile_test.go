@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -92,5 +93,82 @@ func TestReconcileAlarmsOnFailedReversal(t *testing.T) {
 	}
 	if repo.withdrawals["wd3"].Status != wallet.WithdrawRefundFail {
 		t.Errorf("status = %q, want refund_failed", repo.withdrawals["wd3"].Status)
+	}
+}
+
+// TestReconcileBroadcastsOnComplete and the two tests below prove the async
+// reconciliation path notifies the user over WebSocket exactly like the
+// synchronous Withdraw path does — the user must never be left wondering
+// what happened just because the outcome was resolved out-of-band.
+func TestReconcileBroadcastsOnComplete(t *testing.T) {
+	repo := &reconRepo{stubRepo: newStubRepo(), processing: []wallet.Withdrawal{
+		{WithdrawalID: "wd1", WalletID: "w-real", UserID: "u1", Amount: 5000, Fee: 100, Status: wallet.WithdrawProcessing},
+	}}
+	fake := pix.NewFake()
+	fake.StageTransferStatus("wd1", pix.TransferDone)
+	repo.withdrawals["wd1"] = &repo.processing[0]
+
+	svc := newReconSvc(repo, fake)
+	fb := &fakeBroadcaster{}
+	svc.SetBroadcaster(fb)
+
+	if _, _, _, err := svc.ReconcileWithdrawals(context.Background()); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if fb.calls != 1 || fb.userID != "u1" {
+		t.Fatalf("expected 1 broadcast to u1, got calls=%d userID=%q", fb.calls, fb.userID)
+	}
+	var msg map[string]any
+	if err := json.Unmarshal(fb.payload, &msg); err != nil {
+		t.Fatalf("unmarshal broadcast payload: %v", err)
+	}
+	if msg["type"] != "withdraw_completed" {
+		t.Fatalf("bad payload: %+v", msg)
+	}
+}
+
+func TestReconcileBroadcastsOnReversal(t *testing.T) {
+	repo := &reconRepo{stubRepo: newStubRepo(), processing: []wallet.Withdrawal{
+		{WithdrawalID: "wd2", WalletID: "w-real", UserID: "u1", Amount: 5000, Fee: 100, Status: wallet.WithdrawProcessing},
+	}}
+	repo.withdrawals["wd2"] = &repo.processing[0]
+	fake := pix.NewFake() // no staged status → NAO_ENCONTRADO
+
+	svc := newReconSvc(repo, fake)
+	fb := &fakeBroadcaster{}
+	svc.SetBroadcaster(fb)
+
+	if _, _, _, err := svc.ReconcileWithdrawals(context.Background()); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	var msg map[string]any
+	if err := json.Unmarshal(fb.payload, &msg); err != nil {
+		t.Fatalf("unmarshal broadcast payload: %v", err)
+	}
+	if msg["type"] != "withdraw_reversed" {
+		t.Fatalf("bad payload: %+v", msg)
+	}
+}
+
+func TestReconcileBroadcastsOnAlarmedReversal(t *testing.T) {
+	repo := &reconRepo{stubRepo: newStubRepo(), creditErr: errors.New("dynamo down"), processing: []wallet.Withdrawal{
+		{WithdrawalID: "wd3", WalletID: "w-real", UserID: "u1", Amount: 5000, Fee: 100, Status: wallet.WithdrawProcessing},
+	}}
+	repo.withdrawals["wd3"] = &repo.processing[0]
+	fake := pix.NewFake()
+
+	svc := newReconSvc(repo, fake)
+	fb := &fakeBroadcaster{}
+	svc.SetBroadcaster(fb)
+
+	if _, _, _, err := svc.ReconcileWithdrawals(context.Background()); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	var msg map[string]any
+	if err := json.Unmarshal(fb.payload, &msg); err != nil {
+		t.Fatalf("unmarshal broadcast payload: %v", err)
+	}
+	if msg["type"] != "withdraw_refund_failed" {
+		t.Fatalf("bad payload: %+v", msg)
 	}
 }

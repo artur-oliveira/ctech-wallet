@@ -55,6 +55,58 @@ func TestConfirmDepositBroadcastsOnCredit(t *testing.T) {
 	}
 }
 
+// TestWithdrawBroadcastsOnComplete proves the synchronous Withdraw path
+// notifies the user over WebSocket the same way ConfirmDeposit does.
+func TestWithdrawBroadcastsOnComplete(t *testing.T) {
+	repo := newStubRepo()
+	fake := pix.NewFake()
+	kyc := &stubKYC{rec: &kycclient.KYC{Level: "verified", CPF: "12345678901"}}
+	svc := newSvc(repo, &stubLocker{}, fake, kyc)
+	fb := &fakeBroadcaster{}
+	svc.SetBroadcaster(fb)
+
+	if _, err := svc.Withdraw(context.Background(), "u1", "verified", 5000, "idem-broadcast"); err != nil {
+		t.Fatalf("Withdraw: %v", err)
+	}
+	if fb.calls != 1 || fb.userID != "u1" {
+		t.Fatalf("expected 1 broadcast to u1, got calls=%d userID=%q", fb.calls, fb.userID)
+	}
+	var msg map[string]any
+	if err := json.Unmarshal(fb.payload, &msg); err != nil {
+		t.Fatalf("unmarshal broadcast payload: %v", err)
+	}
+	if msg["type"] != "withdraw_completed" {
+		t.Fatalf("bad payload: %+v", msg)
+	}
+}
+
+// TestWithdrawBroadcastsOnKeyNotFound proves the immediate-refund path (an
+// unregistered PIX key) also notifies the user over WebSocket — it reuses
+// reverse(), the same helper the async reconciliation path uses.
+func TestWithdrawBroadcastsOnKeyNotFound(t *testing.T) {
+	repo := newStubRepo()
+	fake := pix.NewFake()
+	fake.TransferErr = pix.ErrKeyNotFound
+	kyc := &stubKYC{rec: &kycclient.KYC{Level: "verified", CPF: "12345678901"}}
+	svc := newSvc(repo, &stubLocker{}, fake, kyc)
+	fb := &fakeBroadcaster{}
+	svc.SetBroadcaster(fb)
+
+	if _, err := svc.Withdraw(context.Background(), "u1", "verified", 5000, "idem-broadcast2"); err == nil {
+		t.Fatal("expected pix-key-not-found error")
+	}
+	if fb.calls != 1 || fb.userID != "u1" {
+		t.Fatalf("expected 1 broadcast to u1, got calls=%d userID=%q", fb.calls, fb.userID)
+	}
+	var msg map[string]any
+	if err := json.Unmarshal(fb.payload, &msg); err != nil {
+		t.Fatalf("unmarshal broadcast payload: %v", err)
+	}
+	if msg["type"] != "withdraw_reversed" {
+		t.Fatalf("bad payload: %+v", msg)
+	}
+}
+
 // TestConfirmDepositNilBroadcasterIsNoOp confirms a service with no
 // SetBroadcaster call (the state of every other existing ConfirmDeposit test
 // in this file, and of cmd/reconcile's service) still credits successfully —

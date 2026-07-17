@@ -5,6 +5,7 @@ package pix
 
 import (
 	"context"
+	"errors"
 )
 
 // Inter immediate-charge (cob) statuses relevant to deposits.
@@ -72,6 +73,12 @@ type TransferResult struct {
 	E2EID  string
 	Status string
 }
+
+// ErrKeyNotFound means Transfer's destination PIX key is not registered at the
+// bank — the caller must distinguish this from a generic bank/transport
+// failure so the withdrawal is refunded immediately instead of left
+// processing for reconciliation. Check with errors.Is.
+var ErrKeyNotFound = errors.New("pix: destination key not registered")
 
 // PixClient is the partner-bank contract. The real implementation talks to
 // Inter over mTLS; the fake is used in tests.

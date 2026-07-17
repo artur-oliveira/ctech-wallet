@@ -104,6 +104,9 @@ func (c *LambdaPixClient) call(ctx context.Context, op rpcOp, args any, out any)
 			return err
 		}
 	}
+	if resp.Error == errKeyNotFoundSentinel {
+		return ErrKeyNotFound
+	}
 	if resp.Error != "" {
 		return errors.New(resp.Error)
 	}

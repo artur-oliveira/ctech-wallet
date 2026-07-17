@@ -24,6 +24,7 @@ import (
 	"github.com/artur-oliveira/ctech-wallet/api/internal/pix"
 	"github.com/artur-oliveira/ctech-wallet/api/internal/repositories"
 	"github.com/artur-oliveira/ctech-wallet/api/internal/services"
+	"github.com/artur-oliveira/ctech-wallet/api/internal/ws"
 )
 
 // Result is what the Lambda returns (and what the CLI logs).
@@ -84,12 +85,31 @@ func run(ctx context.Context) (*Result, error) {
 	users := repositories.NewUserRepository(clients.DynamoDB, cfg)
 	audit := repositories.NewAuditRepository(clients.DynamoDB, cfg)
 	svc := services.NewWalletService(repo, users, audit, lock.NewLocker(cache.NewMemoryBackend(16)), pixClient, kycclient.New(cfg))
+	svc.SetBroadcaster(newBroadcaster(cfg))
 
 	resolved, reversed, alarmed, err := svc.ReconcileWithdrawals(ctx)
 	if err != nil {
 		return nil, err
 	}
 	return &Result{Resolved: resolved, Reversed: reversed, Alarmed: alarmed}, nil
+}
+
+// newBroadcaster builds a publish-only WebSocket broadcaster so reconciliation
+// outcomes (withdraw_completed/withdraw_reversed/withdraw_refund_failed) still
+// reach the user even though this one-shot process never holds a WebSocket
+// connection itself — Redis Pub/Sub fans the message out to whichever API
+// instance does. Without Redis configured there is no cross-process delivery
+// mechanism, so it returns nil — a safe no-op per SetBroadcaster's contract.
+func newBroadcaster(cfg *config.Config) services.Broadcaster {
+	if cfg.RedisURL == "" {
+		return nil
+	}
+	rb, err := cache.NewRedisBackend(cfg.RedisURL)
+	if err != nil {
+		slog.Warn("reconcile: redis connection failed, withdrawal broadcasts disabled", "err", err)
+		return nil
+	}
+	return ws.NewRedisRegistry(rb.Client())
 }
 
 // newPix builds api's PixClient the same way cmd/server does — by invoking

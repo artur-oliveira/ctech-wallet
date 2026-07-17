@@ -45,6 +45,7 @@ func (h *handlers) createDeposit(c fiber.Ctx) error {
 		"status":           dep.Status,
 		"pix_copia_e_cola": charge.QRCode,
 		"qr_code_base64":   charge.QRCodeB64,
+		"expires_at":       dep.TTL,
 	})
 }
 
@@ -59,7 +60,7 @@ func (h *handlers) createWithdrawal(c fiber.Ctx) error {
 		return sendProblem(c, p)
 	}
 	cl := middleware.GetClaims(c)
-	w, err := h.svc.Withdraw(c.Context(), cl.Sub, cl.KYCLevel, body.Amount, body.PixKey, idemKey)
+	w, err := h.svc.Withdraw(c.Context(), cl.Sub, cl.KYCLevel, body.Amount, idemKey)
 	if err != nil {
 		return sendProblem(c, err)
 	}

@@ -363,59 +363,70 @@ func TestConfirmDepositRefundReversalFailureFlagsRefundFailed(t *testing.T) {
 	}
 }
 
-func TestWithdrawCPFMismatch(t *testing.T) {
-	// TODO
-	//repo := newStubRepo()
-	//fake := pix.NewFake()
-	//fake.StageDict("key@x", "99999999999", "Someone Else")
-	//kyc := &stubKYC{rec: &kycclient.KYC{Level: "verified", CPF: "12345678901"}}
-	//svc := newSvc(repo, &stubLocker{}, fake, kyc)
-	//
-	//_, err := svc.Withdraw(context.Background(), "u1", "verified", 5000, "key@x", "idem-1")
-	//isProblem(t, err, problem.TypeWithdrawCPFMismatch)
-	//if repo.debitFeeCalled {
-	//	t.Error("no debit expected on CPF mismatch")
-	//}
+// TestWithdrawUsesKYCCPFNotClientKey proves the destination PIX key sent to
+// the bank is always the CPF from the caller's KYC record — the client has no
+// way to influence it (there is no pixKey parameter anymore).
+func TestWithdrawUsesKYCCPFNotClientKey(t *testing.T) {
+	repo := newStubRepo()
+	fake := pix.NewFake()
+	kyc := &stubKYC{rec: &kycclient.KYC{Level: "verified", CPF: "12345678901"}}
+	svc := newSvc(repo, &stubLocker{}, fake, kyc)
+
+	w, err := svc.Withdraw(context.Background(), "u1", "verified", 5000, "idem-1")
+	if err != nil {
+		t.Fatalf("Withdraw: %v", err)
+	}
+	if len(fake.Transfers) != 1 || fake.Transfers[0].PixKey != "12345678901" {
+		t.Fatalf("expected Transfer to the KYC CPF, got %+v", fake.Transfers)
+	}
+	if w.PixKey != "12345678901" {
+		t.Errorf("withdrawal.PixKey = %q, want the KYC CPF", w.PixKey)
+	}
 }
 
-// Regression: an unregistered/mistyped PIX key is a CLIENT error. It used to be
-// reported as a 500 with the bank's raw error leaked into the detail.
-func TestWithdrawUnknownPixKeyIs422NotServerError(t *testing.T) {
-	// TODO
-	//repo := newStubRepo()
-	//fake := pix.NewFake() // no DICT entry staged → key not found
-	//kyc := &stubKYC{rec: &kycclient.KYC{Level: "verified", CPF: "12345678901"}}
-	//svc := newSvc(repo, &stubLocker{}, fake, kyc)
-	//
-	//_, err := svc.Withdraw(context.Background(), "u1", "verified", 5000, "typo@pix", "idem-1")
-	//isProblem(t, err, problem.TypePixKeyNotFound)
-	//
-	//p, _ := err.(*problem.Problem)
-	//if p.Status != 422 {
-	//	t.Errorf("status = %d, want 422", p.Status)
-	//}
-	//if strings.Contains(p.Detail, "dict") || strings.Contains(p.Detail, "not found") {
-	//	t.Errorf("detail leaks internals: %q", p.Detail)
-	//}
-	//if repo.debitFeeCalled {
-	//	t.Error("no debit expected when the PIX key is unknown")
-	//}
+// Regression: an unregistered PIX key (the CPF has no key at the bank) is a
+// CLIENT error refunded immediately — it must never be reported as a 500, and
+// it must never leave the withdrawal stuck in processing for reconciliation.
+func TestWithdrawKeyNotFoundRefundsImmediately(t *testing.T) {
+	repo := newStubRepo()
+	fake := pix.NewFake()
+	fake.TransferErr = pix.ErrKeyNotFound
+	kyc := &stubKYC{rec: &kycclient.KYC{Level: "verified", CPF: "12345678901"}}
+	svc := newSvc(repo, &stubLocker{}, fake, kyc)
+
+	_, err := svc.Withdraw(context.Background(), "u1", "verified", 5000, "idem-1")
+	isProblem(t, err, problem.TypePixKeyNotFound)
+
+	p, _ := err.(*problem.Problem)
+	if p.Status != 422 {
+		t.Errorf("status = %d, want 422", p.Status)
+	}
+	if !repo.debitFeeCalled {
+		t.Error("the debit still happens up front — it is the reversal that follows")
+	}
+	total := int64(5000) + wallet.WithdrawalFee(5000, nil)
+	if len(repo.creditCalls) != 1 || repo.creditCalls[0].Amount != total || repo.creditCalls[0].EntryType != wallet.EntryReversal {
+		t.Fatalf("expected one reversal credit of %d, got %+v", total, repo.creditCalls)
+	}
+	w := repo.withdrawals["withdraw#u1#idem-1"]
+	if w == nil || w.Status != wallet.WithdrawReversed {
+		t.Fatalf("expected withdrawal reversed, got %+v", w)
+	}
 }
 
 func TestWithdrawBusy(t *testing.T) {
 	svc := newSvc(newStubRepo(), &stubLocker{busy: true}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{CPF: "1"}})
-	_, err := svc.Withdraw(context.Background(), "u1", "verified", 5000, "key@x", "idem-1")
+	_, err := svc.Withdraw(context.Background(), "u1", "verified", 5000, "idem-1")
 	isProblem(t, err, problem.TypeWalletBusy)
 }
 
 func TestWithdrawHappyPath(t *testing.T) {
 	repo := newStubRepo()
 	fake := pix.NewFake()
-	fake.StageDict("key@x", "12345678901", "Me")
 	kyc := &stubKYC{rec: &kycclient.KYC{Level: "verified", CPF: "12345678901"}}
 	svc := newSvc(repo, &stubLocker{}, fake, kyc)
 
-	w, err := svc.Withdraw(context.Background(), "u1", "verified", 5000, "key@x", "idem-1")
+	w, err := svc.Withdraw(context.Background(), "u1", "verified", 5000, "idem-1")
 	if err != nil {
 		t.Fatalf("Withdraw: %v", err)
 	}
@@ -436,12 +447,11 @@ func TestWithdrawHappyPath(t *testing.T) {
 func TestWithdrawTransferFailureLeavesProcessing(t *testing.T) {
 	repo := newStubRepo()
 	fake := pix.NewFake()
-	fake.StageDict("key@x", "12345678901", "Me")
 	fake.TransferErr = errors.New("inter down")
 	kyc := &stubKYC{rec: &kycclient.KYC{Level: "verified", CPF: "12345678901"}}
 	svc := newSvc(repo, &stubLocker{}, fake, kyc)
 
-	w, err := svc.Withdraw(context.Background(), "u1", "verified", 5000, "key@x", "idem-1")
+	w, err := svc.Withdraw(context.Background(), "u1", "verified", 5000, "idem-1")
 	if err != nil {
 		t.Fatalf("Withdraw should not error on transfer failure: %v", err)
 	}
@@ -455,7 +465,7 @@ func TestWithdrawIdempotentReplay(t *testing.T) {
 	repo.withdrawals["withdraw#u1#idem-1"] = &wallet.Withdrawal{WithdrawalID: "withdraw#u1#idem-1", Status: wallet.WithdrawCompleted, Amount: 5000}
 	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{CPF: "1"}})
 
-	w, err := svc.Withdraw(context.Background(), "u1", "verified", 5000, "key@x", "idem-1")
+	w, err := svc.Withdraw(context.Background(), "u1", "verified", 5000, "idem-1")
 	if err != nil {
 		t.Fatalf("Withdraw replay: %v", err)
 	}

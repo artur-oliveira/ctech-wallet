@@ -142,7 +142,7 @@ type PixDeposit struct {
 	PayerCPF  string `dynamodbav:"payer_cpf,omitempty" json:"payer_cpf,omitempty"`
 	PayerName string `dynamodbav:"payer_name,omitempty" json:"payer_name,omitempty"`
 	CreatedAt string `dynamodbav:"created_at" json:"created_at"`
-	TTL       int64  `dynamodbav:"ttl" json:"-"` // Dynamo TTL epoch, 15 min
+	TTL       int64  `dynamodbav:"ttl" json:"-"` // Dynamo TTL epoch, 5 min
 }
 
 // Withdrawal tracks a PIX payout; the processing state is resolved by the

@@ -23,6 +23,12 @@ const (
 // LambdaPixClient force-refreshes the token and retries the op once.
 const errUnauthorizedSentinel = "unauthorized"
 
+// errKeyNotFoundSentinel means the destination PIX key on a Transfer call is
+// not registered at the bank — mirrors pix-gateway's rpc.ErrKeyNotFoundSentinel.
+// LambdaPixClient maps it to the exported ErrKeyNotFound so callers can
+// distinguish it from a generic bank/transport failure via errors.Is.
+const errKeyNotFoundSentinel = "key_not_found"
+
 // rpcRequest is the Lambda Invoke payload. OAuthToken is injected by
 // LambdaPixClient from the InterTokenManager on every call and must never be
 // logged.

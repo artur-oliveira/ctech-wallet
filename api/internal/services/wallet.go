@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -22,7 +23,7 @@ import (
 	"github.com/artur-oliveira/ctech-wallet/api/internal/repositories"
 )
 
-const depositTTLMinutes = 15
+const depositTTLMinutes = 5
 
 // Repo is the persistence surface the service depends on (dependency inversion
 // so the service is unit-testable without DynamoDB).
@@ -431,6 +432,26 @@ func (s *WalletService) broadcastDepositConfirmed(ctx context.Context, userID, w
 	s.broadcaster.Broadcast(ctx, userID, payload)
 }
 
+// broadcastWithdrawal pushes a real-time withdrawal-outcome event to the
+// user's connected WebSocket(s), if any — same best-effort contract as
+// broadcastDepositConfirmed. Shared by the synchronous Withdraw path and the
+// async reconciliation job (reconcile.go), so both notify the same way.
+func (s *WalletService) broadcastWithdrawal(ctx context.Context, userID, eventType, withdrawalID string, amount int64) {
+	if s.broadcaster == nil {
+		return
+	}
+	payload, err := json.Marshal(map[string]any{
+		"type":          eventType,
+		"withdrawal_id": withdrawalID,
+		"amount":        amount,
+	})
+	if err != nil {
+		slog.Error("broadcast "+eventType+": marshal failed", "user_id", userID, "err", err)
+		return
+	}
+	s.broadcaster.Broadcast(ctx, userID, payload)
+}
+
 func (s *WalletService) rejectMismatch(ctx context.Context, dep *wallet.PixDeposit, charge *pix.Charge) error {
 	if err := s.repo.UpdateDepositStatus(ctx, dep.Txid, wallet.DepositRejectedCPF, charge.E2EID); err != nil {
 		return err
@@ -444,11 +465,14 @@ func (s *WalletService) rejectMismatch(ctx context.Context, dep *wallet.PixDepos
 	return nil
 }
 
-// Withdraw debits amount+fee atomically then sends the PIX payout. Gates:
-// verified KYC (also enforced at the handler) + DICT owner CPF == KYC CPF. If the
-// payout call fails after the debit, the withdrawal stays in processing for the
+// Withdraw debits amount+fee atomically then sends the PIX payout to the CPF
+// on the caller's KYC record — the client never supplies a destination key
+// (Invariant: PIX always goes to the registered owner, never an arbitrary
+// key). Gates: verified KYC (also enforced at the handler). If the CPF has no
+// PIX key registered at the bank, the debit is reversed immediately. Any
+// other payout failure leaves the withdrawal in processing for the
 // reconciliation job to resolve — money is never left in limbo.
-func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, amount int64, pixKey, idemKey string) (*wallet.Withdrawal, error) {
+func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, amount int64, idemKey string) (*wallet.Withdrawal, error) {
 	if kycLevel != wallet.KYCVerified {
 		return nil, problem.KYCNotVerified()
 	}
@@ -460,6 +484,12 @@ func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, a
 	} else if existing != nil {
 		return existing, nil
 	}
+
+	kyc, err := s.kyc.Get(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	pixKey := kyc.CPF
 
 	realw, err := s.repo.EnsureRealWallet(ctx, userID)
 	if err != nil {
@@ -499,6 +529,12 @@ func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, a
 
 	res, err := s.pix.Transfer(ctx, pixKey, amount, withdrawalID)
 	if err != nil {
+		if errors.Is(err, pix.ErrKeyNotFound) {
+			// Nothing to retry — the registered CPF has no PIX key at the bank.
+			// Refund now instead of leaving it processing for reconciliation.
+			s.reverse(ctx, *w)
+			return nil, problem.PixKeyNotFound()
+		}
 		// Debit already happened; leave processing for reconciliation to resolve.
 		slog.Warn("withdrawal transfer failed, left in processing", "withdrawal_id", withdrawalID, "err", err)
 		return w, nil
@@ -508,6 +544,7 @@ func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, a
 	if err := s.repo.UpdateWithdrawal(ctx, withdrawalID, map[string]any{"status": wallet.WithdrawCompleted, "e2e_id": res.E2EID}); err != nil {
 		return nil, err
 	}
+	s.broadcastWithdrawal(ctx, userID, "withdraw_completed", withdrawalID, amount)
 	return w, nil
 }
 
