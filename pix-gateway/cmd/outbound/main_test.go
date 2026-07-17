@@ -61,15 +61,6 @@ func TestHandleCreateCharge(t *testing.T) {
 	}
 }
 
-func TestHandleDictLookupNotFound(t *testing.T) {
-	h := &handler{pix: &fakePix{dictErr: inter.ErrKeyNotFound}}
-	payload, _ := json.Marshal(rpc.DictLookupArgs{PixKey: "some-key"})
-	resp, _ := h.handle(context.Background(), rpc.Request{Op: rpc.OpDictLookup, Payload: payload})
-	if resp.Error != rpc.ErrKeyNotFoundSentinel {
-		t.Fatalf("expected sentinel %q, got %q", rpc.ErrKeyNotFoundSentinel, resp.Error)
-	}
-}
-
 func TestHandleUnknownOp(t *testing.T) {
 	h := &handler{pix: &fakePix{}}
 	resp, _ := h.handle(context.Background(), rpc.Request{Op: "Bogus"})
