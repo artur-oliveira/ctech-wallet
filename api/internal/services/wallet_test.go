@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
@@ -131,6 +132,9 @@ func (s *stubRepo) UpdateWithdrawal(_ context.Context, id string, updates map[st
 	return nil
 }
 func (s *stubRepo) ListProcessingWithdrawals(_ context.Context, _ int) ([]wallet.Withdrawal, error) {
+	return nil, nil
+}
+func (s *stubRepo) ListPendingDepositsOlderThan(_ context.Context, _ time.Time, _ int) ([]wallet.PixDeposit, error) {
 	return nil, nil
 }
 

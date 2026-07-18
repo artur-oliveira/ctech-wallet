@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -516,5 +517,84 @@ func TestRealDebitNeverTouchesSandboxWallet(t *testing.T) {
 	}
 	if got := balance(t, h, real.WalletID); got != 5000 {
 		t.Fatalf("real balance = %d, want 5000", got)
+	}
+}
+
+// TestListPendingDepositsOlderThanFindsAgedPending proves F6's sweep query:
+// an aged pending deposit is returned, a fresh one is not.
+func TestListPendingDepositsOlderThanFindsAgedPending(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(verified())
+	old := &wallet.PixDeposit{
+		Txid: "old-" + id.New(), WalletID: "w1", UserID: "u1",
+		AmountExpected: 1000, Status: wallet.DepositPending,
+		CreatedAt: time.Now().Add(-4 * time.Minute).UTC().Format(time.RFC3339Nano),
+		TTL:       time.Now().Add(1 * time.Minute).Unix(),
+	}
+	fresh := &wallet.PixDeposit{
+		Txid: "fresh-" + id.New(), WalletID: "w1", UserID: "u1",
+		AmountExpected: 1000, Status: wallet.DepositPending,
+		CreatedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		TTL:       time.Now().Add(5 * time.Minute).Unix(),
+	}
+	if err := h.repo.PutDeposit(ctx, old); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.repo.PutDeposit(ctx, fresh); err != nil {
+		t.Fatal(err)
+	}
+
+	found, err := h.repo.ListPendingDepositsOlderThan(ctx, time.Now().Add(-3*time.Minute), 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sawOld, sawFresh bool
+	for _, d := range found {
+		if d.Txid == old.Txid {
+			sawOld = true
+		}
+		if d.Txid == fresh.Txid {
+			sawFresh = true
+		}
+	}
+	if !sawOld {
+		t.Fatal("expected the aged pending deposit in the sweep list")
+	}
+	if sawFresh {
+		t.Fatal("fresh pending deposit should not be swept yet")
+	}
+}
+
+// TestSweepPendingDepositsCreditsOnceInterConfirms proves the sweep credits an
+// aged pending deposit whose webhook never arrived, by reusing ConfirmDeposit.
+func TestSweepPendingDepositsCreditsOnceInterConfirms(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(verified())
+	user := "u-" + id.New()
+	real, err := h.repo.EnsureRealWallet(ctx, user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	txid := "sweep-" + id.New()
+	dep := &wallet.PixDeposit{
+		Txid: txid, WalletID: real.WalletID, UserID: user,
+		AmountExpected: 5000, Status: wallet.DepositPending, PayerCPF: cpf,
+		CreatedAt: time.Now().Add(-4 * time.Minute).UTC().Format(time.RFC3339Nano),
+		TTL:       time.Now().Add(1 * time.Minute).Unix(),
+	}
+	if err := h.repo.PutDeposit(ctx, dep); err != nil {
+		t.Fatal(err)
+	}
+	h.pix.StageCharge(txid, 5000, pix.ChargeCompleted, cpf, "E2E-sweep")
+
+	swept, err := h.svc.SweepPendingDeposits(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if swept != 1 {
+		t.Fatalf("swept = %d, want 1", swept)
+	}
+	if got := balance(t, h, real.WalletID); got != 5000 {
+		t.Fatalf("balance = %d, want 5000 (deposit should have been credited)", got)
 	}
 }

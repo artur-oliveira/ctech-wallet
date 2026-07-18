@@ -71,7 +71,7 @@ const (
 const (
 	GSIUser   = "gsi_user"   // wallets.user_id → both wallets of a user
 	GSIIdem   = "gsi_idem"   // ledger_entries.idempotency_key → replay lookup
-	GSIStatus = "gsi_status" // withdrawals.status → reconciliation scan
+	GSIStatus = "gsi_status" // withdrawals.status → reconciliation scan; deposits.status → pending sweep
 )
 
 // IdemPrefix namespaces idempotency guard items in the idempotency table.

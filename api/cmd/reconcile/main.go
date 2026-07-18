@@ -29,9 +29,10 @@ import (
 
 // Result is what the Lambda returns (and what the CLI logs).
 type Result struct {
-	Resolved int `json:"resolved"`
-	Reversed int `json:"reversed"`
-	Alarmed  int `json:"alarmed"`
+	Resolved      int `json:"resolved"`
+	Reversed      int `json:"reversed"`
+	Alarmed       int `json:"alarmed"`
+	SweptDeposits int `json:"swept_deposits"`
 }
 
 func main() {
@@ -48,7 +49,7 @@ func main() {
 		slog.Error("reconcile failed", "err", err)
 		os.Exit(1)
 	}
-	slog.Info("reconcile complete", "resolved", res.Resolved, "reversed", res.Reversed, "alarmed", res.Alarmed)
+	slog.Info("reconcile complete", "resolved", res.Resolved, "reversed", res.Reversed, "alarmed", res.Alarmed, "swept_deposits", res.SweptDeposits)
 	if res.Alarmed > 0 {
 		os.Exit(3) // non-zero so the scheduler/alarm notices unresolved refunds
 	}
@@ -91,7 +92,11 @@ func run(ctx context.Context) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Result{Resolved: resolved, Reversed: reversed, Alarmed: alarmed}, nil
+	swept, err := svc.SweepPendingDeposits(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &Result{Resolved: resolved, Reversed: reversed, Alarmed: alarmed, SweptDeposits: swept}, nil
 }
 
 // newBroadcaster builds a publish-only WebSocket broadcaster so reconciliation
