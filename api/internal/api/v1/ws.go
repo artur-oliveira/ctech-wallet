@@ -131,14 +131,29 @@ func RegisterWS(router fiber.Router, verifier *middleware.Verifier, reg ws.Regis
 			}()
 
 			for {
-				if _, _, e := conn.ReadMessage(); e != nil {
+				_, msg, e := conn.ReadMessage()
+				if e != nil {
 					break
+				}
+				if isClientPing(msg) {
+					send(map[string]any{"type": "pong"})
 				}
 			}
 			close(done)
 			slog.Info("ws disconnected", "conn", connID, "user", userID)
 		})
 	})
+}
+
+// isClientPing reports whether msg is the client's app-level heartbeat frame.
+// The client can't send a native WS ping (WHATWG gives browsers no API for
+// that), so it uses a JSON heartbeat instead — this server has to reply
+// explicitly or every client connection times out waiting for a pong.
+func isClientPing(msg []byte) bool {
+	var p struct {
+		Type string `json:"type"`
+	}
+	return json.Unmarshal(msg, &p) == nil && p.Type == "ping"
 }
 
 // wsConnAdapter adapts fasthttp/websocket.Conn to ws.Conn.

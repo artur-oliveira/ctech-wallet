@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/google/uuid"
 
 	"gopkg.aoctech.app/wallet/api/internal/domain/id"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
@@ -24,6 +25,17 @@ import (
 )
 
 const depositTTLMinutes = 5
+
+// interWithdrawalNamespace namespaces the deterministic UUID sent to Inter as
+// x-id-idempotente for PIX payouts (Inter rejects any other format). Derived
+// via UUID v5 from withdrawalID, so it's stable across the initial Transfer
+// call and every later reconciliation QueryTransfer for the same withdrawal.
+// DO NOT EVER CHANGE
+var interWithdrawalNamespace = uuid.MustParse("6f9c3b8e-6b0a-4b7e-9c1a-2f6f6e6f0a1a")
+
+func interIdemKey(withdrawalID string) string {
+	return uuid.NewSHA1(interWithdrawalNamespace, []byte(withdrawalID)).String()
+}
 
 // Repo is the persistence surface the service depends on (dependency inversion
 // so the service is unit-testable without DynamoDB).
@@ -540,7 +552,7 @@ func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, a
 		return nil, err
 	}
 
-	res, err := s.pix.Transfer(ctx, pixKey, amount, withdrawalID)
+	res, err := s.pix.Transfer(ctx, pixKey, amount, interIdemKey(withdrawalID))
 	if err != nil {
 		if errors.Is(err, pix.ErrKeyNotFound) {
 			// Nothing to retry — the registered CPF has no PIX key at the bank.
@@ -610,11 +622,11 @@ func (s *WalletService) FundGame(ctx context.Context, userID string, amount int6
 	if amount > wallet.MaxInboundAmount {
 		return nil, nil, problem.AmountAboveLimit(wallet.MaxInboundAmount)
 	}
-	real, game, _, err := s.requireActivated(ctx, userID)
+	rl, game, _, err := s.requireActivated(ctx, userID)
 	if err != nil {
 		return nil, nil, err
 	}
-	return s.ringTransfer(ctx, real, game, amount,
+	return s.ringTransfer(ctx, rl, game, amount,
 		wallet.EntryGameFundDebit, wallet.EntryGameFundCredit, "game_fund", idemKey)
 }
 
@@ -625,11 +637,11 @@ func (s *WalletService) FundGame(ctx context.Context, userID string, amount int6
 // encourage. This is not a PIX payout — to reach a bank account the user then
 // withdraws from `real` as usual.
 func (s *WalletService) ReturnFromGame(ctx context.Context, userID string, amount int64, idemKey string) (debit, credit *wallet.LedgerEntry, err error) {
-	real, game, _, err := s.requireActivated(ctx, userID)
+	rl, game, _, err := s.requireActivated(ctx, userID)
 	if err != nil {
 		return nil, nil, err
 	}
-	return s.ringTransfer(ctx, game, real, amount,
+	return s.ringTransfer(ctx, game, rl, amount,
 		wallet.EntryGameReturnDebit, wallet.EntryGameReturnCredit, "game_return", idemKey)
 }
 

@@ -29,7 +29,7 @@ func (s *WalletService) ReconcileWithdrawals(ctx context.Context) (resolved, rev
 	}
 	for i := range ws {
 		w := ws[i]
-		res, qErr := s.pix.QueryTransfer(ctx, w.WithdrawalID)
+		res, qErr := s.pix.QueryTransfer(ctx, interIdemKey(w.WithdrawalID))
 		if qErr != nil {
 			slog.Warn("reconcile: query transfer failed, will retry", "withdrawal_id", w.WithdrawalID, "err", qErr)
 			continue

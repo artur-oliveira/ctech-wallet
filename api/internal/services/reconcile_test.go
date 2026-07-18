@@ -40,7 +40,7 @@ func TestReconcileCompletesDonePayout(t *testing.T) {
 		{WithdrawalID: "wd1", WalletID: "w-real", Amount: 5000, Fee: 100, Status: wallet.WithdrawProcessing},
 	}}
 	fake := pix.NewFake()
-	fake.StageTransferStatus("wd1", pix.TransferDone)
+	fake.StageTransferStatus(interIdemKey("wd1"), pix.TransferDone)
 	repo.withdrawals["wd1"] = &repo.processing[0]
 
 	resolved, reversed, alarmed, err := newReconSvc(repo, fake).ReconcileWithdrawals(context.Background())
@@ -105,7 +105,7 @@ func TestReconcileBroadcastsOnComplete(t *testing.T) {
 		{WithdrawalID: "wd1", WalletID: "w-real", UserID: "u1", Amount: 5000, Fee: 100, Status: wallet.WithdrawProcessing},
 	}}
 	fake := pix.NewFake()
-	fake.StageTransferStatus("wd1", pix.TransferDone)
+	fake.StageTransferStatus(interIdemKey("wd1"), pix.TransferDone)
 	repo.withdrawals["wd1"] = &repo.processing[0]
 
 	svc := newReconSvc(repo, fake)
