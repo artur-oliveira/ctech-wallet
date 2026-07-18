@@ -11,11 +11,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
-	"sync"
 	"time"
 
+	"gopkg.aoctech.app/api-commons/oauth2client"
 	"gopkg.aoctech.app/wallet/pix-gateway/internal/config"
 )
 
@@ -29,7 +28,7 @@ const (
 type Client struct {
 	base   string
 	http   *http.Client
-	tokens *tokenManager
+	tokens *oauth2client.TokenManager
 }
 
 // New builds the client. clientSecret is passed explicitly (loaded from SSM at
@@ -38,16 +37,11 @@ type Client struct {
 // resolves the Inter client secret.
 func New(cfg *config.Config, clientSecret string) *Client {
 	httpClient := &http.Client{Timeout: 10 * time.Second}
+	tokenURL := strings.TrimRight(cfg.CtechURL, "/") + pathToken
 	return &Client{
-		base: strings.TrimRight(cfg.WalletAPIURL, "/"),
-		http: httpClient,
-		tokens: &tokenManager{
-			client:       httpClient,
-			tokenURL:     strings.TrimRight(cfg.CtechURL, "/") + pathToken,
-			clientID:     cfg.PixGatewayClientID,
-			clientSecret: clientSecret,
-			scope:        scopeConfirmDeposit,
-		},
+		base:   strings.TrimRight(cfg.WalletAPIURL, "/"),
+		http:   httpClient,
+		tokens: oauth2client.New(httpClient, tokenURL, cfg.PixGatewayClientID, clientSecret, scopeConfirmDeposit),
 	}
 }
 
@@ -63,7 +57,7 @@ func (c *Client) ConfirmDeposit(ctx context.Context, txid, payerCPF, payerName s
 	if err != nil {
 		return err
 	}
-	token, err := c.tokens.get(ctx)
+	token, err := c.tokens.Get(ctx)
 	if err != nil {
 		return fmt.Errorf("walletclient: get token: %w", err)
 	}
@@ -83,57 +77,4 @@ func (c *Client) ConfirmDeposit(ctx context.Context, txid, payerCPF, payerName s
 		return fmt.Errorf("walletclient: confirm-deposit status %d: %s", resp.StatusCode, string(raw))
 	}
 	return nil
-}
-
-// tokenManager fetches and caches pix-gateway's M2M client_credentials token.
-// Identical shape to api/internal/kycclient's tokenManager — cannot be shared
-// (separate module) so it is duplicated deliberately.
-type tokenManager struct {
-	client       *http.Client
-	tokenURL     string
-	clientID     string
-	clientSecret string
-	scope        string
-
-	mu     sync.Mutex
-	token  string
-	expiry time.Time
-}
-
-func (t *tokenManager) get(ctx context.Context) (string, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.token != "" && time.Now().Before(t.expiry) {
-		return t.token, nil
-	}
-	form := url.Values{
-		"grant_type":    {"client_credentials"},
-		"client_id":     {t.clientID},
-		"client_secret": {t.clientSecret},
-		"scope":         {t.scope},
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.tokenURL, strings.NewReader(form.Encode()))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := t.client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("account token: status %d: %s", resp.StatusCode, string(raw))
-	}
-	var tr struct {
-		AccessToken string `json:"access_token"`
-		ExpiresIn   int    `json:"expires_in"`
-	}
-	if err := json.Unmarshal(raw, &tr); err != nil {
-		return "", err
-	}
-	t.token = tr.AccessToken
-	t.expiry = time.Now().Add(time.Duration(tr.ExpiresIn-30) * time.Second)
-	return t.token, nil
 }

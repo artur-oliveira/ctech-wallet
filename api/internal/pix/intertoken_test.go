@@ -8,6 +8,7 @@ import (
 
 	"gopkg.aoctech.app/api-commons/cache"
 	"gopkg.aoctech.app/wallet/api/internal/lock"
+	rpccontract "gopkg.aoctech.app/wallet/rpc-contract"
 )
 
 // countingInvoker returns a fixed token for GetToken and counts calls.
@@ -18,17 +19,17 @@ type countingInvoker struct {
 }
 
 func (c *countingInvoker) invoke(_ context.Context, payload []byte) ([]byte, error) {
-	var req rpcRequest
+	var req rpccontract.Request
 	if err := json.Unmarshal(payload, &req); err != nil {
 		return nil, err
 	}
-	if req.Op != opGetToken {
-		return json.Marshal(rpcResponse{Error: "unexpected op"})
+	if req.Op != rpccontract.OpGetToken {
+		return json.Marshal(rpccontract.Response{Error: "unexpected op"})
 	}
 	c.mu.Lock()
 	c.calls++
 	c.mu.Unlock()
-	return json.Marshal(rpcResponse{Payload: mustJSON(rpcGetTokenResult{Token: c.token, ExpiresIn: 3600})})
+	return json.Marshal(rpccontract.Response{Payload: mustJSON(rpccontract.GetTokenResult{Token: c.token, ExpiresIn: 3600})})
 }
 
 func (c *countingInvoker) count() int {

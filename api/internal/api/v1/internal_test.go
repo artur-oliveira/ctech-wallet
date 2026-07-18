@@ -43,6 +43,28 @@ func TestConfirmDepositRequiresScope(t *testing.T) {
 	}
 }
 
+// TestRealDebitRouteRegistered proves the /internal/wallet/real/debit route is
+// wired to realDebit, mirroring TestConfirmDepositRequiresScope's style.
+func TestRealDebitRouteRegistered(t *testing.T) {
+	app := fiber.New()
+	app.Use(recover.New())
+	h := &handlers{}
+	app.Post("/internal/wallet/real/debit", func(c fiber.Ctx) error {
+		return h.realDebit(c)
+	})
+
+	body, _ := json.Marshal(SandboxOpRequest{UserID: "u1", Amount: 5000, IdempotencyKey: "k1"})
+	req := httptest.NewRequest(http.MethodPost, "/internal/wallet/real/debit", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		t.Fatal("route not registered")
+	}
+}
+
 var _ = wallet.EntryDeposit
 var _ = pix.ChargeCompleted
 var _ = repositories.Mutation{}

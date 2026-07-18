@@ -97,10 +97,11 @@ func createTables(ctx context.Context) error {
 			BillingMode:          dtypes.BillingModePayPerRequest,
 		},
 		{
-			TableName:            aws.String(table(wallet.TablePixDeposits)),
-			AttributeDefinitions: []dtypes.AttributeDefinition{s("pk")},
-			KeySchema:            []dtypes.KeySchemaElement{hashKey("pk")},
-			BillingMode:          dtypes.BillingModePayPerRequest,
+			TableName:              aws.String(table(wallet.TablePixDeposits)),
+			AttributeDefinitions:   []dtypes.AttributeDefinition{s("pk"), s("status")},
+			KeySchema:              []dtypes.KeySchemaElement{hashKey("pk")},
+			GlobalSecondaryIndexes: []dtypes.GlobalSecondaryIndex{gsi(wallet.GSIStatus, "status")},
+			BillingMode:            dtypes.BillingModePayPerRequest,
 		},
 		{
 			TableName:              aws.String(table(wallet.TableWithdrawals)),

@@ -6,7 +6,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -143,7 +145,7 @@ func TestDepositConfirmCreditsOnCPFMatch(t *testing.T) {
 	}
 	h.pix.StageCharge(dep.Txid, 5000, pix.ChargeCompleted, cpf, "E2E-1")
 
-	if err := h.svc.ConfirmDeposit(ctx, dep.Txid); err != nil {
+	if err := h.svc.ConfirmDeposit(ctx, dep.Txid, cpf, "Fake Payer"); err != nil {
 		t.Fatalf("ConfirmDeposit: %v", err)
 	}
 	if got := balance(t, h, dep.WalletID); got != 5000 {
@@ -151,7 +153,7 @@ func TestDepositConfirmCreditsOnCPFMatch(t *testing.T) {
 	}
 
 	// Idempotent: re-confirming does not double-credit.
-	_ = h.svc.ConfirmDeposit(ctx, dep.Txid)
+	_ = h.svc.ConfirmDeposit(ctx, dep.Txid, cpf, "Fake Payer")
 	if got := balance(t, h, dep.WalletID); got != 5000 {
 		t.Fatalf("balance after re-confirm = %d, want 5000", got)
 	}
@@ -289,7 +291,7 @@ func TestDepositRejectsAndRefundsOnCPFMismatch(t *testing.T) {
 	}
 	h.pix.StageCharge(dep.Txid, 5000, pix.ChargeCompleted, "99999999999", "E2E-9")
 
-	if err := h.svc.ConfirmDeposit(ctx, dep.Txid); err != nil {
+	if err := h.svc.ConfirmDeposit(ctx, dep.Txid, "99999999999", "Fake Payer"); err != nil {
 		t.Fatalf("ConfirmDeposit: %v", err)
 	}
 	if got := balance(t, h, dep.WalletID); got != 0 {
@@ -458,4 +460,244 @@ func TestIdempotencyConflictOnDifferentPayload(t *testing.T) {
 	// Same key, different amount → conflict.
 	_, err := h.svc.CreditSandbox(ctx, user, 2000, idem, "bonus")
 	wantProblem(t, err, problem.TypeIdempotencyConflict)
+}
+
+// TestWithdrawConcurrentSameIdempotencyKeyExactlyOneTransfer proves F2's fix:
+// N concurrent Withdraw calls with the SAME idempotency key must debit and
+// PIX-transfer exactly once, never twice (the previous unconditional
+// PutWithdrawal + a replay check taken before the lock let two racing calls
+// both win).
+func TestWithdrawConcurrentSameIdempotencyKeyExactlyOneTransfer(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(verified())
+	user := "u-" + id.New()
+	real := fund(t, h, user, 100000)
+
+	const n = 10
+	var wg sync.WaitGroup
+	errs := make([]error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, errs[i] = h.svc.Withdraw(ctx, user, "verified", 5000, "idem-race")
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("goroutine %d: unexpected error: %v", i, err)
+		}
+	}
+	if got := len(h.pix.Transfers); got != 1 {
+		t.Fatalf("expected exactly 1 PIX transfer call, got %d", got)
+	}
+	fee := wallet.WithdrawalFee(5000, nil)
+	want := int64(100000) - 5000 - fee
+	if got := balance(t, h, real.WalletID); got != want {
+		t.Fatalf("balance = %d, want %d (double-debit if lower)", got, want)
+	}
+}
+
+// TestRealDebitNeverTouchesSandboxWallet proves F3's new DebitReal only ever
+// touches `real` — no cross-wallet side effect on sandbox/game.
+func TestRealDebitNeverTouchesSandboxWallet(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(verified())
+	user := "u-" + id.New()
+	real := fund(t, h, user, 10000)
+
+	entry, err := h.svc.DebitReal(ctx, user, 5000, "charge-1", "subscription")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.WalletID != real.WalletID {
+		t.Fatalf("debited %q, want the real wallet %q", entry.WalletID, real.WalletID)
+	}
+	if got := balance(t, h, real.WalletID); got != 5000 {
+		t.Fatalf("real balance = %d, want 5000", got)
+	}
+}
+
+// TestListPendingDepositsOlderThanFindsAgedPending proves F6's sweep query:
+// an aged pending deposit is returned, a fresh one is not.
+func TestListPendingDepositsOlderThanFindsAgedPending(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(verified())
+	old := &wallet.PixDeposit{
+		Txid: "old-" + id.New(), WalletID: "w1", UserID: "u1",
+		AmountExpected: 1000, Status: wallet.DepositPending,
+		CreatedAt: time.Now().Add(-4 * time.Minute).UTC().Format(time.RFC3339Nano),
+		TTL:       time.Now().Add(1 * time.Minute).Unix(),
+	}
+	fresh := &wallet.PixDeposit{
+		Txid: "fresh-" + id.New(), WalletID: "w1", UserID: "u1",
+		AmountExpected: 1000, Status: wallet.DepositPending,
+		CreatedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		TTL:       time.Now().Add(5 * time.Minute).Unix(),
+	}
+	if err := h.repo.PutDeposit(ctx, old); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.repo.PutDeposit(ctx, fresh); err != nil {
+		t.Fatal(err)
+	}
+
+	found, err := h.repo.ListPendingDepositsOlderThan(ctx, time.Now().Add(-3*time.Minute), 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sawOld, sawFresh bool
+	for _, d := range found {
+		if d.Txid == old.Txid {
+			sawOld = true
+		}
+		if d.Txid == fresh.Txid {
+			sawFresh = true
+		}
+	}
+	if !sawOld {
+		t.Fatal("expected the aged pending deposit in the sweep list")
+	}
+	if sawFresh {
+		t.Fatal("fresh pending deposit should not be swept yet")
+	}
+}
+
+// TestSweepPendingDepositsCreditsOnceInterConfirms proves the sweep credits an
+// aged pending deposit whose webhook never arrived, by reusing ConfirmDeposit.
+func TestSweepPendingDepositsCreditsOnceInterConfirms(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(verified())
+	user := "u-" + id.New()
+	real, err := h.repo.EnsureRealWallet(ctx, user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	txid := "sweep-" + id.New()
+	dep := &wallet.PixDeposit{
+		Txid: txid, WalletID: real.WalletID, UserID: user,
+		AmountExpected: 5000, Status: wallet.DepositPending, PayerCPF: cpf,
+		CreatedAt: time.Now().Add(-4 * time.Minute).UTC().Format(time.RFC3339Nano),
+		TTL:       time.Now().Add(1 * time.Minute).Unix(),
+	}
+	if err := h.repo.PutDeposit(ctx, dep); err != nil {
+		t.Fatal(err)
+	}
+	h.pix.StageCharge(txid, 5000, pix.ChargeCompleted, cpf, "E2E-sweep")
+
+	swept, err := h.svc.SweepPendingDeposits(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if swept != 1 {
+		t.Fatalf("swept = %d, want 1", swept)
+	}
+	if got := balance(t, h, real.WalletID); got != 5000 {
+		t.Fatalf("balance = %d, want 5000 (deposit should have been credited)", got)
+	}
+}
+
+// TestConcurrentCreditSameIdempotencyKeyAppliesOnce closes the remaining part
+// of the audit's testing gap: N concurrent Credit calls with the SAME
+// idempotency key must apply exactly once.
+func TestConcurrentCreditSameIdempotencyKeyAppliesOnce(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(verified())
+	user := "u-" + id.New()
+	real, err := h.repo.EnsureRealWallet(ctx, user)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const n = 10
+	var wg sync.WaitGroup
+	errs := make([]error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, _, errs[i] = h.repo.Credit(ctx, repositories.Mutation{
+				WalletID: real.WalletID, Amount: 1000, EntryType: wallet.EntryDeposit,
+				Ref: "concurrent-credit", IdempotencyKey: "credit-race#" + user, ReqHash: "same-hash",
+			})
+		}(i)
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("goroutine %d: %v", i, err)
+		}
+	}
+	if got := balance(t, h, real.WalletID); got != 1000 {
+		t.Fatalf("balance = %d, want 1000 (double-credit if higher)", got)
+	}
+}
+
+// TestConcurrentFundGameSameIdempotencyKeyAppliesOnce proves the real→game
+// ring-fence transfer applies exactly once under concurrent identical calls.
+func TestConcurrentFundGameSameIdempotencyKeyAppliesOnce(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(verified())
+	user := fundedAndActivated(t, h, 50000)
+	real, err := h.repo.EnsureRealWallet(ctx, user)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const n = 10
+	var wg sync.WaitGroup
+	errs := make([]error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, _, errs[i] = h.svc.FundGame(ctx, user, 5000, "fund-race")
+		}(i)
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("goroutine %d: %v", i, err)
+		}
+	}
+	if got := balance(t, h, real.WalletID); got != 45000 {
+		t.Fatalf("real balance = %d, want 45000 (double-fund if lower)", got)
+	}
+}
+
+// TestConcurrentPurchaseSandboxSameIdempotencyKeyAppliesOnce proves the
+// game→sandbox conversion applies exactly once under concurrent identical calls.
+func TestConcurrentPurchaseSandboxSameIdempotencyKeyAppliesOnce(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(verified())
+	user := "u-" + id.New()
+	game, _ := activate(t, h, user)
+	if _, _, err := h.repo.Credit(ctx, repositories.Mutation{
+		WalletID: game.WalletID, Amount: 20000, EntryType: wallet.EntryGameFundCredit,
+		Ref: "seed", IdempotencyKey: "seed-game#" + user, ReqHash: "seed",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	const n = 10
+	var wg sync.WaitGroup
+	errs := make([]error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, _, errs[i] = h.svc.PurchaseSandbox(ctx, user, 5000, "purchase-race")
+		}(i)
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("goroutine %d: %v", i, err)
+		}
+	}
+	if got := balance(t, h, game.WalletID); got != 15000 {
+		t.Fatalf("game balance = %d, want 15000 (double-purchase if lower)", got)
+	}
 }

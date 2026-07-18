@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/pix"
@@ -10,6 +11,11 @@ import (
 )
 
 const reconcileBatch = 100
+
+// sweepAgeThreshold: a pending PixDeposit gets one re-query once it's within
+// this margin of its depositTTLMinutes TTL, so a missed webhook still has a
+// fallback path to eventual consistency before the row is lost (F6).
+const sweepAgeThreshold = 3 * time.Minute
 
 // ReconcileWithdrawals resolves withdrawals stuck in the processing state: it
 // asks the bank whether each payout actually went through. Completed payouts are
@@ -76,4 +82,26 @@ func (s *WalletService) reverse(ctx context.Context, w wallet.Withdrawal) bool {
 	}
 	s.broadcastWithdrawal(ctx, w.UserID, "withdraw_reversed", w.WithdrawalID, w.Amount)
 	return true
+}
+
+// SweepPendingDeposits re-queries Inter once for every pending deposit
+// approaching its TTL, reusing ConfirmDeposit's own idempotent credit logic —
+// a webhook that never arrives (network issue, cold-start timeout, mTLS
+// handshake failure) is the only case this changes: it used to silently
+// expire, uncredited and unaccounted for.
+func (s *WalletService) SweepPendingDeposits(ctx context.Context) (swept int, err error) {
+	cutoff := time.Now().Add(-sweepAgeThreshold)
+	deps, err := s.repo.ListPendingDepositsOlderThan(ctx, cutoff, reconcileBatch)
+	if err != nil {
+		return 0, err
+	}
+	for i := range deps {
+		d := deps[i]
+		if err := s.ConfirmDeposit(ctx, d.Txid, "", ""); err != nil {
+			slog.Warn("sweep: confirm-deposit failed, will retry next run", "txid", d.Txid, "err", err)
+			continue
+		}
+		swept++
+	}
+	return swept, nil
 }

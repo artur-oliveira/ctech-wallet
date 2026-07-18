@@ -18,7 +18,7 @@ import (
 
 	"gopkg.aoctech.app/wallet/pix-gateway/internal/config"
 	"gopkg.aoctech.app/wallet/pix-gateway/internal/inter"
-	"gopkg.aoctech.app/wallet/pix-gateway/internal/rpc"
+	rpc "gopkg.aoctech.app/wallet/rpc-contract"
 	"gopkg.aoctech.app/wallet/pix-gateway/internal/secrets"
 )
 

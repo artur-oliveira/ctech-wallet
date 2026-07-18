@@ -1,9 +1,7 @@
-// Package rpc defines the wire contract between api's LambdaPixClient and
-// pix-gateway's outbound Lambda. Both sides mirror these types independently
-// (separate Go modules — internal/ packages cannot be imported across module
-// boundaries), so a field added here must be added in
-// api/internal/pix/rpc_types.go too.
-package rpc
+// Package rpccontract defines the wire contract between api's LambdaPixClient
+// and pix-gateway's outbound Lambda. Both modules import this package instead
+// of hand-mirroring it (see docs/specs/2026-07-18-audit-remediation.md).
+package rpccontract
 
 import "encoding/json"
 
@@ -67,13 +65,13 @@ type QueryChargeArgs struct {
 
 // ChargeResult mirrors inter.Charge field-for-field.
 type ChargeResult struct {
-	Txid      string         `json:"txid"`
-	Amount    int64          `json:"amount"`
-	QRCode    string         `json:"qr_code"`
-	QRCodeB64 string         `json:"qr_code_b64"`
-	Status    string         `json:"status"`
-	PayerCPF  string         `json:"payer_cpf"`
-	E2EID     string         `json:"e2e_id"`
+	Txid      string          `json:"txid"`
+	Amount    int64           `json:"amount"`
+	QRCode    string          `json:"qr_code"`
+	QRCodeB64 string          `json:"qr_code_b64"`
+	Status    string          `json:"status"`
+	PayerCPF  string          `json:"payer_cpf"`
+	E2EID     string          `json:"e2e_id"`
 	Refunds   []RefundResult  `json:"refunds,omitempty"`
 	Payments  []PaymentResult `json:"payments,omitempty"`
 }

@@ -114,12 +114,17 @@ export class PixGatewayStack extends cdk.Stack {
                 iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
             ],
         });
-        // Its own M2M client secret only — no Inter credentials (see Task 7's
-        // design note: ConfirmDeposit re-queries Inter through the outbound
-        // function via api's LambdaPixClient, not directly from this function).
+        // Its own M2M client secret, plus the Inter webhook hmac secret this
+        // function checks on every callback — no Inter mTLS credentials (see
+        // Task 7's design note: ConfirmDeposit re-queries Inter through the
+        // outbound function via api's LambdaPixClient, not directly from this
+        // function).
         webhookRole.addToPolicy(new iam.PolicyStatement({
             actions: ['ssm:GetParameter'],
-            resources: [`arn:aws:ssm:*:*:parameter${pixGatewaySsm.clientSecret}`],
+            resources: [
+                `arn:aws:ssm:*:*:parameter${pixGatewaySsm.clientSecret}`,
+                `arn:aws:ssm:*:*:parameter${walletSsm.interWebhookSecret}`,
+            ],
         }));
 
         const webhookFn = new lambda.Function(this, 'WebhookFunction', {

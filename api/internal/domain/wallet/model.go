@@ -22,8 +22,8 @@ const (
 	EntryGameCredit      = "game_credit"
 	EntrySandboxPurchase = "sandbox_purchase"
 	EntrySandboxCredit   = "sandbox_credit"
-	EntryReversal        = "reversal"        // credit-back of a failed withdrawal
-	EntryDepositRefund   = "deposit_refund"  // debit reversing a deposit later returned to the payer (devolução)
+	EntryReversal        = "reversal"       // credit-back of a failed withdrawal
+	EntryDepositRefund   = "deposit_refund" // debit reversing a deposit later returned to the payer (devolução)
 
 	// Ring-fence transfers between `real` and `game`. Funding is metered by the
 	// personal limit engine; returning is always free and never limited.
@@ -31,6 +31,8 @@ const (
 	EntryGameFundCredit   = "game_fund_credit"   // credit game
 	EntryGameReturnDebit  = "game_return_debit"  // debit game
 	EntryGameReturnCredit = "game_return_credit" // credit real
+
+	EntryBillingDebit = "billing_debit" // real debited by an authorized M2M client (ctech-billing)
 )
 
 // PIX deposit statuses.
@@ -69,7 +71,7 @@ const (
 const (
 	GSIUser   = "gsi_user"   // wallets.user_id → both wallets of a user
 	GSIIdem   = "gsi_idem"   // ledger_entries.idempotency_key → replay lookup
-	GSIStatus = "gsi_status" // withdrawals.status → reconciliation scan
+	GSIStatus = "gsi_status" // withdrawals.status → reconciliation scan; deposits.status → pending sweep
 )
 
 // IdemPrefix namespaces idempotency guard items in the idempotency table.

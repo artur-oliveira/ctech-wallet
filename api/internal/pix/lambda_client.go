@@ -13,6 +13,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	lambdatypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
+	rpccontract "gopkg.aoctech.app/wallet/rpc-contract"
 )
 
 // lambdaInvoker is the subset of *lambda.Client LambdaPixClient depends on —
@@ -60,7 +61,7 @@ func NewLambdaPixClient(client *lambda.Client, functionName string, tokenMgr *In
 	}
 }
 
-func (c *LambdaPixClient) call(ctx context.Context, op rpcOp, args any, out any) error {
+func (c *LambdaPixClient) call(ctx context.Context, op rpccontract.Op, args any, out any) error {
 	argsJSON, err := json.Marshal(args)
 	if err != nil {
 		return err
@@ -69,7 +70,7 @@ func (c *LambdaPixClient) call(ctx context.Context, op rpcOp, args any, out any)
 	if err != nil {
 		return err
 	}
-	reqJSON, err := json.Marshal(rpcRequest{Op: op, OAuthToken: token, Payload: argsJSON})
+	reqJSON, err := json.Marshal(rpccontract.Request{Op: op, OAuthToken: token, Payload: argsJSON})
 	if err != nil {
 		return err
 	}
@@ -77,19 +78,19 @@ func (c *LambdaPixClient) call(ctx context.Context, op rpcOp, args any, out any)
 	if err != nil {
 		return err
 	}
-	var resp rpcResponse
+	var resp rpccontract.Response
 	if err := json.Unmarshal(respJSON, &resp); err != nil {
 		return err
 	}
 	// Inter rejected the bearer (401). Drop the cached token and force-refresh
 	// a genuinely new one, then retry the op once.
-	if resp.Error == errUnauthorizedSentinel {
+	if resp.Error == rpccontract.ErrUnauthorizedSentinel {
 		c.tokenMgr.Invalidate(ctx)
 		newToken, ferr := c.tokenMgr.Get(ctx, true)
 		if ferr != nil {
 			return errors.New(resp.Error)
 		}
-		reqJSON, err = json.Marshal(rpcRequest{Op: op, OAuthToken: newToken, Payload: argsJSON})
+		reqJSON, err = json.Marshal(rpccontract.Request{Op: op, OAuthToken: newToken, Payload: argsJSON})
 		if err != nil {
 			return err
 		}
@@ -99,12 +100,12 @@ func (c *LambdaPixClient) call(ctx context.Context, op rpcOp, args any, out any)
 		}
 		// Reset: json.Unmarshal leaves fields absent from the JSON intact, so the
 		// prior attempt's Error would otherwise leak into the retried response.
-		resp = rpcResponse{}
+		resp = rpccontract.Response{}
 		if err := json.Unmarshal(respJSON, &resp); err != nil {
 			return err
 		}
 	}
-	if resp.Error == errKeyNotFoundSentinel {
+	if resp.Error == rpccontract.ErrKeyNotFoundSentinel {
 		return ErrKeyNotFound
 	}
 	if resp.Error != "" {
@@ -117,50 +118,50 @@ func (c *LambdaPixClient) call(ctx context.Context, op rpcOp, args any, out any)
 }
 
 func (c *LambdaPixClient) CreateCharge(ctx context.Context, txid string, amount int64, payerHintCPF string) (*Charge, error) {
-	var res rpcChargeResult
-	if err := c.call(ctx, opCreateCharge, rpcCreateChargeArgs{Txid: txid, Amount: amount, PayerHintCPF: payerHintCPF}, &res); err != nil {
+	var res rpccontract.ChargeResult
+	if err := c.call(ctx, rpccontract.OpCreateCharge, rpccontract.CreateChargeArgs{Txid: txid, Amount: amount, PayerHintCPF: payerHintCPF}, &res); err != nil {
 		return nil, err
 	}
 	return chargeFromRPC(res), nil
 }
 
 func (c *LambdaPixClient) QueryCharge(ctx context.Context, txid string) (*Charge, error) {
-	var res rpcChargeResult
-	if err := c.call(ctx, opQueryCharge, rpcQueryChargeArgs{Txid: txid}, &res); err != nil {
+	var res rpccontract.ChargeResult
+	if err := c.call(ctx, rpccontract.OpQueryCharge, rpccontract.QueryChargeArgs{Txid: txid}, &res); err != nil {
 		return nil, err
 	}
 	return chargeFromRPC(res), nil
 }
 
 func (c *LambdaPixClient) Transfer(ctx context.Context, pixKey string, amount int64, idemKey string) (*TransferResult, error) {
-	var res rpcTransferResult
-	if err := c.call(ctx, opTransfer, rpcTransferArgs{PixKey: pixKey, Amount: amount, IdemKey: idemKey}, &res); err != nil {
+	var res rpccontract.TransferResult
+	if err := c.call(ctx, rpccontract.OpTransfer, rpccontract.TransferArgs{PixKey: pixKey, Amount: amount, IdemKey: idemKey}, &res); err != nil {
 		return nil, err
 	}
 	return transferFromRPC(res), nil
 }
 
 func (c *LambdaPixClient) QueryTransfer(ctx context.Context, idemKey string) (*TransferResult, error) {
-	var res rpcTransferResult
-	if err := c.call(ctx, opQueryTransfer, rpcQueryTransferArgs{IdemKey: idemKey}, &res); err != nil {
+	var res rpccontract.TransferResult
+	if err := c.call(ctx, rpccontract.OpQueryTransfer, rpccontract.QueryTransferArgs{IdemKey: idemKey}, &res); err != nil {
 		return nil, err
 	}
 	return transferFromRPC(res), nil
 }
 
 func (c *LambdaPixClient) Refund(ctx context.Context, e2eID string, amount int64, idemKey string) (*TransferResult, error) {
-	var res rpcTransferResult
-	if err := c.call(ctx, opRefund, rpcRefundArgs{E2EID: e2eID, Amount: amount, IdemKey: idemKey}, &res); err != nil {
+	var res rpccontract.TransferResult
+	if err := c.call(ctx, rpccontract.OpRefund, rpccontract.RefundArgs{E2EID: e2eID, Amount: amount, IdemKey: idemKey}, &res); err != nil {
 		return nil, err
 	}
 	return transferFromRPC(res), nil
 }
 
 func (c *LambdaPixClient) Ping(ctx context.Context) error {
-	return c.call(ctx, opPing, struct{}{}, nil)
+	return c.call(ctx, rpccontract.OpPing, struct{}{}, nil)
 }
 
-func chargeFromRPC(r rpcChargeResult) *Charge {
+func chargeFromRPC(r rpccontract.ChargeResult) *Charge {
 	payments := make([]Payment, len(r.Payments))
 	for i, p := range r.Payments {
 		payments[i] = Payment{E2EID: p.E2EID, Amount: p.Amount, PayerCPF: p.PayerCPF, Refunds: refundsFromRPC(p.Refunds)}
@@ -171,7 +172,7 @@ func chargeFromRPC(r rpcChargeResult) *Charge {
 	}
 }
 
-func refundsFromRPC(refunds []rpcRefundResult) []Refund {
+func refundsFromRPC(refunds []rpccontract.RefundResult) []Refund {
 	out := make([]Refund, len(refunds))
 	for i, r := range refunds {
 		out[i] = Refund{RtrID: r.RtrID, Amount: r.Amount, Status: r.Status}
@@ -179,7 +180,7 @@ func refundsFromRPC(refunds []rpcRefundResult) []Refund {
 	return out
 }
 
-func transferFromRPC(r rpcTransferResult) *TransferResult {
+func transferFromRPC(r rpccontract.TransferResult) *TransferResult {
 	return &TransferResult{E2EID: r.E2EID, Status: r.Status}
 }
 

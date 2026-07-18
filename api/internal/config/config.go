@@ -71,5 +71,13 @@ func Load() (*Config, error) {
 		// happens to match. Never safe in prod — mirror the ServiceAudience guard.
 		return nil, fmt.Errorf("config: CTECH_URL must be set in production so the iss claim is verified")
 	}
+	if cfg.RedisURL == "" && cfg.Env == "prod" {
+		// Fail closed: an empty VALKEY_URL in prod means per-wallet locking
+		// silently degrades to an in-memory store that is NOT shared across
+		// the ASG's other instances — Invariant #4 ("one operation per wallet
+		// at a time") stops holding fleet-wide with no signal. Never boot into
+		// that state; mirror the SERVICE_AUDIENCE/CTECH_URL guards above.
+		return nil, fmt.Errorf("config: VALKEY_URL must be set in production so wallet locking is fleet-shared")
+	}
 	return cfg, nil
 }

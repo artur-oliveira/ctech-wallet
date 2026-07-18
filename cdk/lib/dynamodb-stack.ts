@@ -110,7 +110,10 @@ export class DynamoDBStack extends cdk.Stack {
         table('wallet_idempotency', {ttl: true});
 
         // ── wallet_pix_deposits: in-flight charges keyed by txid, expire via TTL ───
-        table('wallet_pix_deposits', {ttl: true});
+        // gsi_status backs the pre-TTL sweep (F6): find pending deposits close to
+        // expiry and re-query Inter once before the row is lost.
+        const depositsTable = table('wallet_pix_deposits', {ttl: true});
+        gsi(depositsTable, GSI_STATUS, ATTR_STATUS);
 
         // ── wallet_withdrawals: payouts; gsi_status drives the reconciliation job ──
         const withdrawalsTable = table('wallet_withdrawals');

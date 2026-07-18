@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
@@ -131,6 +132,9 @@ func (s *stubRepo) UpdateWithdrawal(_ context.Context, id string, updates map[st
 	return nil
 }
 func (s *stubRepo) ListProcessingWithdrawals(_ context.Context, _ int) ([]wallet.Withdrawal, error) {
+	return nil, nil
+}
+func (s *stubRepo) ListPendingDepositsOlderThan(_ context.Context, _ time.Time, _ int) ([]wallet.PixDeposit, error) {
 	return nil, nil
 }
 
@@ -537,4 +541,36 @@ func TestReturnFromGameMovesGameIntoReal(t *testing.T) {
 		t.Errorf("entry types = %q/%q, want %q/%q", d.Type, c.Type,
 			wallet.EntryGameReturnDebit, wallet.EntryGameReturnCredit)
 	}
+}
+
+func TestDebitRealHappyPath(t *testing.T) {
+	repo := newStubRepo()
+	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{CPF: "1"}})
+	entry, err := svc.DebitReal(context.Background(), "u1", 5000, "charge-1", "subscription")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if entry.WalletID != "w-real" {
+		t.Fatalf("debited wallet = %q, want w-real", entry.WalletID)
+	}
+	if entry.Amount != -5000 {
+		t.Fatalf("entry amount = %d, want -5000", entry.Amount)
+	}
+	if entry.Type != wallet.EntryBillingDebit {
+		t.Fatalf("entry type = %q, want %q", entry.Type, wallet.EntryBillingDebit)
+	}
+}
+
+func TestDebitRealInsufficientBalance(t *testing.T) {
+	repo := newStubRepo()
+	repo.debitErr = problem.InsufficientBalance()
+	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{CPF: "1"}})
+	_, err := svc.DebitReal(context.Background(), "u1", 5000, "charge-1", "subscription")
+	isProblem(t, err, problem.TypeInsufficientBalance)
+}
+
+func TestDebitRealWalletBusy(t *testing.T) {
+	svc := newSvc(newStubRepo(), &stubLocker{busy: true}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{CPF: "1"}})
+	_, err := svc.DebitReal(context.Background(), "u1", 5000, "charge-1", "subscription")
+	isProblem(t, err, problem.TypeWalletBusy)
 }

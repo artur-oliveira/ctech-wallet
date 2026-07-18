@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -416,14 +417,52 @@ func (r *WalletRepository) UpdateDepositPayer(ctx context.Context, txid, payerCP
 	return err
 }
 
+// ListPendingDepositsOlderThan returns pending deposits created before cutoff —
+// the sweep's work queue (F6): a pending deposit that never got a webhook has
+// no fallback path to eventual consistency before its TTL deletes the row, so
+// the sweep re-queries Inter once before that happens.
+func (r *WalletRepository) ListPendingDepositsOlderThan(ctx context.Context, cutoff time.Time, limit int) ([]wallet.PixDeposit, error) {
+	res, err := r.deposits.QueryGSI(ctx, wallet.GSIStatus, "status", wallet.DepositPending, limit, nil)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]wallet.PixDeposit, 0, len(res.Items))
+	for _, it := range res.Items {
+		d, err := Decode[wallet.PixDeposit](it)
+		if err != nil {
+			return nil, err
+		}
+		createdAt, err := time.Parse(time.RFC3339Nano, d.CreatedAt)
+		if err != nil {
+			continue // malformed timestamp — skip rather than fail the whole sweep
+		}
+		if createdAt.Before(cutoff) {
+			out = append(out, *d)
+		}
+	}
+	return out, nil
+}
+
 // --- withdrawal persistence ---
+
+// ErrWithdrawalExists means PutWithdrawal lost a race — another call already
+// created this withdrawal record. The caller must re-fetch and return the
+// winner's record instead of retrying the write or the PIX transfer.
+var ErrWithdrawalExists = errors.New("repositories: withdrawal already exists")
 
 func (r *WalletRepository) PutWithdrawal(ctx context.Context, w *wallet.Withdrawal) error {
 	av, err := Encode(w)
 	if err != nil {
 		return err
 	}
-	return r.withdrawal.PutItem(ctx, av)
+	item := r.withdrawal.BuildPutTxItemIfAbsent(av)
+	if err := r.withdrawal.TransactWrite(ctx, []types.TransactWriteItem{item}); err != nil {
+		if IsConditionFailed(err) {
+			return ErrWithdrawalExists
+		}
+		return err
+	}
+	return nil
 }
 
 func (r *WalletRepository) GetWithdrawal(ctx context.Context, withdrawalID string) (*wallet.Withdrawal, error) {
