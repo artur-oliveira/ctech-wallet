@@ -31,6 +31,8 @@ const (
 	EntryGameFundCredit   = "game_fund_credit"   // credit game
 	EntryGameReturnDebit  = "game_return_debit"  // debit game
 	EntryGameReturnCredit = "game_return_credit" // credit real
+
+	EntryBillingDebit = "billing_debit" // real debited by an authorized M2M client (ctech-billing)
 )
 
 // PIX deposit statuses.

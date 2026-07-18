@@ -45,3 +45,17 @@ func (h *handlers) sandboxDebit(c fiber.Ctx) error {
 	}
 	return c.Status(fiber.StatusCreated).JSON(entry)
 }
+
+// realDebit debits the real wallet (M2M, scope internal:wallet:debit, e.g.
+// ctech-billing charging a subscription). No PIX leg.
+func (h *handlers) realDebit(c fiber.Ctx) error {
+	var body SandboxOpRequest
+	if p := bindJSON(c, &body); p != nil {
+		return sendProblem(c, p)
+	}
+	entry, err := h.svc.DebitReal(c.Context(), body.UserID, body.Amount, body.IdempotencyKey, body.Reason)
+	if err != nil {
+		return sendProblem(c, err)
+	}
+	return c.Status(fiber.StatusCreated).JSON(entry)
+}

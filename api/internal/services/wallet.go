@@ -689,6 +689,34 @@ func (s *WalletService) sandboxOp(ctx context.Context, userID string, amount int
 	return entry, err
 }
 
+// DebitReal debits the real wallet for an authorized M2M client (e.g.
+// ctech-billing charging a subscription). No PIX leg — this only moves money
+// within the ledger, same shape as DebitSandbox but against `real`.
+func (s *WalletService) DebitReal(ctx context.Context, userID string, amount int64, idemKey, reason string) (*wallet.LedgerEntry, error) {
+	realw, err := s.repo.EnsureRealWallet(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	release, ok, err := s.lock.Acquire(ctx, realw.WalletID)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, problem.WalletBusy()
+	}
+	defer release()
+
+	entry, _, err := s.repo.Debit(ctx, repositories.Mutation{
+		WalletID:       realw.WalletID,
+		Amount:         amount,
+		EntryType:      wallet.EntryBillingDebit,
+		Ref:            reason,
+		IdempotencyKey: wallet.EntryBillingDebit + "#" + idemKey,
+		ReqHash:        reqHash(reason, amount),
+	})
+	return entry, err
+}
+
 // reqHash is the canonical fingerprint guarding "same idempotency key, different
 // payload" — the repository compares it and returns idempotency-conflict on drift.
 func reqHash(ref string, amount int64) string {

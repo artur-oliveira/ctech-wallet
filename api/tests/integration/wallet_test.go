@@ -498,3 +498,23 @@ func TestWithdrawConcurrentSameIdempotencyKeyExactlyOneTransfer(t *testing.T) {
 		t.Fatalf("balance = %d, want %d (double-debit if lower)", got, want)
 	}
 }
+
+// TestRealDebitNeverTouchesSandboxWallet proves F3's new DebitReal only ever
+// touches `real` — no cross-wallet side effect on sandbox/game.
+func TestRealDebitNeverTouchesSandboxWallet(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(verified())
+	user := "u-" + id.New()
+	real := fund(t, h, user, 10000)
+
+	entry, err := h.svc.DebitReal(ctx, user, 5000, "charge-1", "subscription")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.WalletID != real.WalletID {
+		t.Fatalf("debited %q, want the real wallet %q", entry.WalletID, real.WalletID)
+	}
+	if got := balance(t, h, real.WalletID); got != 5000 {
+		t.Fatalf("real balance = %d, want 5000", got)
+	}
+}
