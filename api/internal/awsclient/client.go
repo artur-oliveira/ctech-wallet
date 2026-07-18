@@ -5,11 +5,10 @@ package awsclient
 import (
 	"context"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	awscfg "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 
+	"gopkg.aoctech.app/api-commons/awsconfig"
 	"gopkg.aoctech.app/wallet/api/internal/config"
 )
 
@@ -23,17 +22,12 @@ type Clients struct {
 // New builds the AWS client bundle. A non-empty DynamoDBEndpoint overrides the
 // resolved endpoint for local development (DynamoDB-local).
 func New(ctx context.Context, cfg *config.Config) (*Clients, error) {
-	awsCfg, err := awscfg.LoadDefaultConfig(ctx, awscfg.WithRegion(cfg.AWSRegion))
+	awsCfg, err := awsconfig.Load(ctx, cfg.AWSRegion)
 	if err != nil {
 		return nil, err
 	}
-	opts := func(o *dynamodb.Options) {
-		if cfg.DynamoDBEndpoint != "" {
-			o.BaseEndpoint = aws.String(cfg.DynamoDBEndpoint)
-		}
-	}
 	return &Clients{
-		DynamoDB: dynamodb.NewFromConfig(awsCfg, opts),
+		DynamoDB: awsconfig.NewDynamoDBClient(awsCfg, cfg.DynamoDBEndpoint),
 		SSM:      ssm.NewFromConfig(awsCfg),
 	}, nil
 }

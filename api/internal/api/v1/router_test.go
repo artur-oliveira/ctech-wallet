@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"gopkg.aoctech.app/wallet/api/internal/cache"
+	"gopkg.aoctech.app/api-commons/cache"
 	"gopkg.aoctech.app/wallet/api/internal/config"
 
 	"github.com/gofiber/fiber/v3"

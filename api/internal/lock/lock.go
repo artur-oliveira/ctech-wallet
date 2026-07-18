@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/redis/go-redis/v9"
-	"gopkg.aoctech.app/wallet/api/internal/cache"
+	"github.com/valkey-io/valkey-go"
+	"gopkg.aoctech.app/api-commons/cache"
 )
 
 // LockTTL bounds how long a lock is held before it auto-releases, so a crashed
@@ -104,25 +104,32 @@ func newToken() (string, error) {
 // --- redis-backed store ---
 
 type redisStore struct {
-	client *redis.Client
+	client valkey.Client
 }
 
 func (s *redisStore) setNX(ctx context.Context, key, token string, ttl time.Duration) (bool, error) {
-	return s.client.SetNX(ctx, key, token, ttl).Result()
+	_, err := s.client.Do(ctx, s.client.B().Set().Key(key).Value(token).Nx().Ex(ttl).Build()).ToString()
+	if valkey.IsValkeyNil(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
-// casDel deletes the key only if its value still matches token, so a lock whose
-// TTL already expired (and was re-acquired by someone else) is never released by
-// the previous owner.
-var casDel = redis.NewScript(`
+// casDelScript deletes the key only if its value still matches token, so a lock
+// whose TTL already expired (and was re-acquired by someone else) is never
+// released by the previous owner.
+const casDelScript = `
 if redis.call("get", KEYS[1]) == ARGV[1] then
 	return redis.call("del", KEYS[1])
 end
 return 0
-`)
+`
 
 func (s *redisStore) delIfMatch(ctx context.Context, key, token string) error {
-	return casDel.Run(ctx, s.client, []string{key}, token).Err()
+	return s.client.Do(ctx, s.client.B().Eval().Script(casDelScript).Numkeys(1).Key(key).Arg(token).Build()).Error()
 }
 
 // --- in-memory store (single replica / tests) ---

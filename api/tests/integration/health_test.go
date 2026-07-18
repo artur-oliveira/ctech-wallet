@@ -9,9 +9,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"gopkg.aoctech.app/api-commons/cache"
 	apiv1 "gopkg.aoctech.app/wallet/api/internal/api/v1"
 	"gopkg.aoctech.app/wallet/api/internal/awsclient"
-	"gopkg.aoctech.app/wallet/api/internal/cache"
 	"gopkg.aoctech.app/wallet/api/internal/config"
 	"gopkg.aoctech.app/wallet/api/internal/pix"
 

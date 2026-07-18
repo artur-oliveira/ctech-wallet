@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"gopkg.aoctech.app/wallet/api/internal/cache"
+	"gopkg.aoctech.app/api-commons/cache"
 )
 
 const testKID = "test-key-1"

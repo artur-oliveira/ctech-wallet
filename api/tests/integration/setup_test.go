@@ -18,7 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	dtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
-	"gopkg.aoctech.app/wallet/api/internal/cache"
+	"gopkg.aoctech.app/api-commons/cache"
 	"gopkg.aoctech.app/wallet/api/internal/config"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"

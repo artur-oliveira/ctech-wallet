@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/gofiber/fiber/v3"
+	commonproblem "gopkg.aoctech.app/api-commons/problem"
 )
 
 const ContentType = "application/problem+json"
@@ -42,11 +43,7 @@ const (
 
 // FieldError is a single field-level validation failure. It mirrors the shape
 // the frontend Zod layer produces so the UI can map each error back to its input.
-type FieldError struct {
-	Field   string `json:"field"`
-	Message string `json:"message"`
-	Tag     string `json:"tag,omitempty"`
-}
+type FieldError = commonproblem.FieldError
 
 // Problem is the RFC 7807 response body. Errors carries field-level validation
 // failures (only for validation problems). MaxAgeSeconds carries the step-up
@@ -54,17 +51,13 @@ type FieldError struct {
 // MinAmount/MaxAmount carry the accepted range on deposit-out-of-range problems
 // so the UI can state the bounds without hardcoding them.
 type Problem struct {
-	Type          string       `json:"type"`
-	Title         string       `json:"title"`
-	Status        int          `json:"status"`
-	Detail        string       `json:"detail,omitempty"`
-	Errors        []FieldError `json:"errors,omitempty"`
-	MaxAgeSeconds int          `json:"max_age_seconds,omitempty"`
-	MinAmount     int64        `json:"min_amount,omitempty"`
-	MaxAmount     int64        `json:"max_amount,omitempty"`
+	commonproblem.Problem
 }
 
 // Error implements the error interface so problems can be returned as errors.
+// This overrides the shared Problem.Error(), which returns "Title: Detail" —
+// wallet's existing semantics (Detail alone, falling back to Title) must not
+// silently change.
 func (p *Problem) Error() string {
 	if p.Detail != "" {
 		return p.Detail
@@ -82,24 +75,26 @@ func (p *Problem) Send(c fiber.Ctx) error {
 	return c.Send(b)
 }
 
+func wrap(p *commonproblem.Problem) *Problem { return &Problem{Problem: *p} }
+
 func New(status int, typ, title, detail string) *Problem {
-	return &Problem{Type: typ, Title: title, Status: status, Detail: detail}
+	return wrap(commonproblem.New(status, typ, title, detail))
 }
 
 func BadRequest(detail string) *Problem {
-	return New(http.StatusBadRequest, TypeBadRequest, "Bad Request", detail)
+	return wrap(commonproblem.BadRequest(detail))
 }
 
 func Unauthorized(detail string) *Problem {
-	return New(http.StatusUnauthorized, TypeUnauthorized, "Unauthorized", detail)
+	return wrap(commonproblem.Unauthorized(detail))
 }
 
 func Forbidden(detail string) *Problem {
-	return New(http.StatusForbidden, TypeForbidden, "Forbidden", detail)
+	return wrap(commonproblem.Forbidden(detail))
 }
 
 func NotFound(detail string) *Problem {
-	return New(http.StatusNotFound, TypeNotFound, "Not Found", detail)
+	return wrap(commonproblem.NotFound(detail))
 }
 
 // Validation returns a 422 problem carrying field-level validation failures.
@@ -111,19 +106,19 @@ func Validation(errs []FieldError) *Problem {
 }
 
 func Conflict(detail string) *Problem {
-	return New(http.StatusConflict, TypeConflict, "Conflict", detail)
+	return wrap(commonproblem.Conflict(detail))
 }
 
 func UnprocessableEntity(detail string) *Problem {
-	return New(http.StatusUnprocessableEntity, TypeUnprocessableEntity, "Unprocessable Entity", detail)
+	return wrap(commonproblem.UnprocessableEntity(detail))
 }
 
 func TooManyRequests(detail string) *Problem {
-	return New(http.StatusTooManyRequests, TypeTooManyRequests, "Too Many Requests", detail)
+	return wrap(commonproblem.TooManyRequests(detail))
 }
 
 func InternalServer(detail string) *Problem {
-	return New(http.StatusInternalServerError, TypeInternalServer, "Internal Server Error", detail)
+	return wrap(commonproblem.InternalServer(detail))
 }
 
 func FromFiber(err *fiber.Error) *Problem {

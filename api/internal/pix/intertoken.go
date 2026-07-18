@@ -18,7 +18,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
-	"gopkg.aoctech.app/wallet/api/internal/cache"
+	"gopkg.aoctech.app/api-commons/cache"
 	"gopkg.aoctech.app/wallet/api/internal/config"
 	"gopkg.aoctech.app/wallet/api/internal/lock"
 )

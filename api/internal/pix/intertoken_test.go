@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"gopkg.aoctech.app/wallet/api/internal/cache"
+	"gopkg.aoctech.app/api-commons/cache"
 	"gopkg.aoctech.app/wallet/api/internal/lock"
 )
 

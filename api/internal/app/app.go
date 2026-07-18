@@ -8,9 +8,10 @@ import (
 	"log/slog"
 	"time"
 
+	"gopkg.aoctech.app/api-commons/cache"
+	"gopkg.aoctech.app/api-commons/ws"
 	apiv1 "gopkg.aoctech.app/wallet/api/internal/api/v1"
 	"gopkg.aoctech.app/wallet/api/internal/awsclient"
-	"gopkg.aoctech.app/wallet/api/internal/cache"
 	"gopkg.aoctech.app/wallet/api/internal/config"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
 	"gopkg.aoctech.app/wallet/api/internal/lock"
@@ -18,7 +19,6 @@ import (
 	"gopkg.aoctech.app/wallet/api/internal/problem"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
 	"gopkg.aoctech.app/wallet/api/internal/services"
-	"gopkg.aoctech.app/wallet/api/internal/ws"
 
 	awscfg "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -74,7 +74,7 @@ func newCacheBackend(lc fx.Lifecycle, cfg *config.Config) cache.Backend {
 	}
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error { return rb.Ping(ctx) },
-		OnStop:  func(context.Context) error { return rb.Client().Close() },
+		OnStop:  func(context.Context) error { rb.Client().Close(); return nil },
 	})
 	slog.Info("cache: Redis backend active", "url", cfg.RedisURL)
 	return rb
