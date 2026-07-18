@@ -78,6 +78,10 @@ aws ssm put-parameter --type SecureString --overwrite \
 
 Also register the webhook secret with Inter's webhook configuration, and set
 `INTER_PIX_KEY` (the receiving key for charges) in the API stack's static env.
+Register the webhook URL with Inter as `https://pix.wallet.aoctech.app/webhook?hmac=<the
+same value stored in /ctech-wallet/{env}/inter/webhook-secret>` — Inter echoes this query
+string back on every callback and `pix-gateway`'s webhook Lambda now rejects any request
+where it doesn't match.
 
 > Before enabling real money, confirm each Inter endpoint's request/response shape
 > against Inter's current API reference and sandbox (see `api/internal/pix/inter.go`).

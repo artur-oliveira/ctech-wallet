@@ -8,6 +8,7 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"log/slog"
 	"os"
@@ -30,7 +31,8 @@ type confirmer interface {
 }
 
 type handler struct {
-	confirmer confirmer
+	confirmer     confirmer
+	webhookSecret string
 }
 
 // webhookPayload is the minimal shape read from Inter's PIX webhook — a
@@ -74,10 +76,25 @@ func main() {
 		slog.Error("walletclient init failed", "err", err)
 		os.Exit(1)
 	}
-	// client (and the SSM-backed M2M secret + HTTP transport it wraps) is built
-	// once at cold start and reused for every invocation — no per-call SSM.
-	h := &handler{confirmer: client}
+	secret, err := loadWebhookSecret(context.Background(), cfg)
+	if err != nil {
+		slog.Error("webhook secret load failed", "err", err)
+		os.Exit(1)
+	}
+	// client and secret (and the SSM-backed M2M secret + HTTP transport client
+	// wraps) are built once at cold start and reused for every invocation — no
+	// per-call SSM.
+	h := &handler{confirmer: client, webhookSecret: secret}
 	lambda.Start(h.handle)
+}
+
+func loadWebhookSecret(ctx context.Context, cfg *config.Config) (string, error) {
+	awsCfg, err := awscfg.LoadDefaultConfig(ctx, awscfg.WithRegion(cfg.AWSRegion))
+	if err != nil {
+		return "", err
+	}
+	store := secrets.NewStore(ssm.NewFromConfig(awsCfg), cfg.Env)
+	return store.LoadInterWebhookSecret(ctx)
 }
 
 func newWalletClient(ctx context.Context, cfg *config.Config) (*walletclient.Client, error) {
@@ -94,6 +111,10 @@ func newWalletClient(ctx context.Context, cfg *config.Config) (*walletclient.Cli
 }
 
 func (h *handler) handle(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	if subtle.ConstantTimeCompare([]byte(req.QueryStringParameters["hmac"]), []byte(h.webhookSecret)) != 1 {
+		slog.WarnContext(ctx, "webhook rejected: hmac mismatch")
+		return events.APIGatewayV2HTTPResponse{StatusCode: 401, Body: "unauthorized"}, nil
+	}
 	var body pixWebhookPayload
 	if err := json.Unmarshal([]byte(req.Body), &body); err != nil {
 		slog.ErrorContext(ctx, "webhook request malformed", "body", req.Body, "err", err)

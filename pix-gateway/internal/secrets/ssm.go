@@ -16,8 +16,9 @@ import (
 const (
 	interCertParamFmt        = "/ctech-wallet/%s/inter/mtls-cert"
 	interKeyParamFmt         = "/ctech-wallet/%s/inter/mtls-key"
-	interSecretParamFmt      = "/ctech-wallet/%s/inter/client-secret"
-	pixGatewaySecretParamFmt = "/ctech-wallet/%s/pix-gateway/client-secret"
+	interSecretParamFmt        = "/ctech-wallet/%s/inter/client-secret"
+	pixGatewaySecretParamFmt   = "/ctech-wallet/%s/pix-gateway/client-secret"
+	interWebhookSecretParamFmt = "/ctech-wallet/%s/inter/webhook-secret"
 )
 
 // SSMAPI is the subset of *ssm.Client this package needs (mockable in tests).
@@ -65,6 +66,13 @@ func (s *Store) LoadInterClientSecret(ctx context.Context) (string, error) {
 // confirm-deposit endpoint.
 func (s *Store) LoadPixGatewayClientSecret(ctx context.Context) (string, error) {
 	return s.get(ctx, fmt.Sprintf(pixGatewaySecretParamFmt, s.env))
+}
+
+// LoadInterWebhookSecret fetches the static hmac value registered with
+// Inter's webhook configuration — Inter echoes it back as a query parameter
+// (?hmac=<secret>) on every callback; this is not a body signature.
+func (s *Store) LoadInterWebhookSecret(ctx context.Context) (string, error) {
+	return s.get(ctx, fmt.Sprintf(interWebhookSecretParamFmt, s.env))
 }
 
 func (s *Store) get(ctx context.Context, name string) (string, error) {

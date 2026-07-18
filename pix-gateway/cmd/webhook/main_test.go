@@ -87,6 +87,43 @@ func TestHandleWebhookMalformedBody(t *testing.T) {
 	}
 }
 
+func TestHandleRejectsWrongHMAC(t *testing.T) {
+	h := &handler{confirmer: &fakeConfirmer{}, webhookSecret: "correct-secret"}
+	req := events.APIGatewayV2HTTPRequest{
+		Body:                  `{"txid":"tx1"}`,
+		QueryStringParameters: map[string]string{"hmac": "wrong-secret"},
+	}
+	resp, err := h.handle(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected transport error: %v", err)
+	}
+	if resp.StatusCode != 401 {
+		t.Fatalf("status = %d, want 401", resp.StatusCode)
+	}
+	if len(h.confirmer.(*fakeConfirmer).calls) != 0 {
+		t.Fatal("ConfirmDeposit must not be called on a bad hmac")
+	}
+}
+
+func TestHandleAcceptsCorrectHMAC(t *testing.T) {
+	fc := &fakeConfirmer{}
+	h := &handler{confirmer: fc, webhookSecret: "correct-secret"}
+	req := events.APIGatewayV2HTTPRequest{
+		Body:                  `{"txid":"tx1"}`,
+		QueryStringParameters: map[string]string{"hmac": "correct-secret"},
+	}
+	resp, err := h.handle(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if len(fc.calls) != 1 {
+		t.Fatalf("ConfirmDeposit calls = %d, want 1", len(fc.calls))
+	}
+}
+
 func TestHandleWebhookConfirmFailureReturns500(t *testing.T) {
 	f := &fakeConfirmer{err: context.DeadlineExceeded}
 	h := &handler{confirmer: f}
