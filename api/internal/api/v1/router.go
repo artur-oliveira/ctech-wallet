@@ -73,5 +73,5 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 	sb.Post("/credit", middleware.RequireScope(middleware.ScopeWalletCredit), h.sandboxCredit)
 	sb.Post("/debit", middleware.RequireScope(middleware.ScopeWalletDebit), h.sandboxDebit)
 	rw := internal.Group("/wallet/real")
-	rw.Post("/debit", middleware.RequireScope(middleware.ScopeWalletDebit), h.realDebit)
+	rw.Post("/debit", middleware.RequireScope(middleware.ScopeWalletRealDebit), h.realDebit)
 }

@@ -70,9 +70,12 @@ it is.
     personal-limit change append to `wallet_audit` — append-only, never updated, never deleted, enforced in IAM
     with an explicit DENY on `UpdateItem`/`DeleteItem`. Never fabricate consent: a legacy user holding a sandbox
     wallet from the old two-wallet model is **not** activated.
-11. **The PIX webhook is never the source of truth.** A deposit credits only after re-querying the charge by
-    `txid` at the Inter API (confirming amount, status, payer CPF). The webhook is a "wake up and re-check"
-    signal, nothing more.
+11. **The PIX webhook is never the source of truth for money movement.** A deposit credits only after
+    re-querying the charge by `txid` at the Inter API (confirming amount and status). The webhook is a "wake
+    up and re-check" signal for those, authenticated by a static `hmac` query parameter Inter echoes back on
+    every callback. Payer CPF is the one field Inter's re-query does not return — it is sourced from the
+    webhook body itself (persisted on first sight) and used only for the CPF-match anti-fraud check, never to
+    authorize crediting.
 12. **No money left in limbo.** A withdrawal whose PIX transfer call fails after the internal debit enters a
     `processing` state that a reconciliation job MUST resolve (complete or reverse). Failed refunds raise an
     operational alarm for manual reconciliation — never a silent path.
@@ -166,9 +169,10 @@ passwords, real customer data, or real CPFs.
 - **KYC promotion:** on the first confirmed deposit call `POST {CTECH_URL}/v1.0/internal/kyc/confirm`
   `{user_id, cpf}` (idempotent; mismatch → 409). CPF for payer/withdrawal matching:
   `GET {CTECH_URL}/v1.0/internal/kyc/:user_id`.
-- **Scopes:** `internal:wallet:credit` / `internal:wallet:debit` (sandbox only) seeded into the global catalog
-  via `ctech-account`'s `cmd/seedscopes`. The wallet's own M2M client is seeded confidential + `first_party:true`
-  with `allowed_scopes:["internal:account:kyc"]`.
+- **Scopes:** `internal:wallet:credit` / `internal:wallet:debit` (sandbox only) and `internal:wallet:real:debit`
+  (real wallet — deliberately a separate scope, never granted to a client that only needs sandbox credit/debit,
+  e.g. poker/dominó) seeded into the global catalog via `ctech-account`'s `cmd/seedscopes`. The wallet's own
+  M2M client is seeded confidential + `first_party:true` with `allowed_scopes:["internal:account:kyc"]`.
 - **Step-up:** withdrawals mirror account's `RequireRecentMFA(5m)` — stateless, reads `last_mfa_at` from the JWT;
   no call to account needed. Re-verifying a stale MFA proof redirects to `{CTECH_URL}/v1.0/authorize` with
   `max_age=0` (OIDC-standard) — this forces `ctech-account` to require a fresh interactive login even with a valid

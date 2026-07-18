@@ -9,8 +9,9 @@ import (
 // Scopes the wallet defines for its own internal callers (poker/dominó/billing,
 // and pix-gateway's webhook Lambda).
 const (
-	ScopeWalletCredit      = "internal:wallet:credit"
-	ScopeWalletDebit       = "internal:wallet:debit"
+	ScopeWalletCredit      = "internal:wallet:credit"      // sandbox only
+	ScopeWalletDebit       = "internal:wallet:debit"       // sandbox only
+	ScopeWalletRealDebit   = "internal:wallet:real:debit"  // real wallet — deliberately separate from sandbox debit
 	ScopePixConfirmDeposit = "internal:wallet:confirm-deposit"
 )
 
