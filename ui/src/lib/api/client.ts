@@ -30,6 +30,17 @@ export function getAccessToken(): string | null {
     return _accessToken
 }
 
+const tokenListeners = new Set<(token: string) => void>()
+
+export function subscribeAccessToken(cb: (token: string) => void): () => void {
+    tokenListeners.add(cb)
+    return () => tokenListeners.delete(cb)
+}
+
+function notifyTokenListeners(token: string): void {
+    tokenListeners.forEach((cb) => cb(token))
+}
+
 interface ProblemBody {
     detail?: string
     title?: string
@@ -77,6 +88,7 @@ function createAxiosInstance(): AxiosInstance {
                 const newToken = await _refreshFn()
                 if (newToken) {
                     _accessToken = newToken
+                    notifyTokenListeners(newToken)
                     original.headers = {...original.headers, Authorization: `Bearer ${newToken}`}
                     return instance(original)
                 }
@@ -110,6 +122,7 @@ class ApiClient {
 
     setToken(token: string | null): void {
         _accessToken = token
+        if (token) notifyTokenListeners(token)
     }
 
     async me(): Promise<MeResponse> {

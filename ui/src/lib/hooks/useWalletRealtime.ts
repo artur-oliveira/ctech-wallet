@@ -4,8 +4,8 @@ import {useCallback} from 'react'
 import {useQueryClient} from '@tanstack/react-query'
 import {toast} from 'sonner'
 import {useTranslation} from 'react-i18next'
-import {useWebSocket, type WSStatus} from './useWebSocket'
-import {getAccessToken} from '@/lib/api/client'
+import {useWebSocket, type WSStatus} from '@aoctech/ws-client'
+import {getAccessToken, subscribeAccessToken} from '@/lib/api/client'
 
 // NEXT_PUBLIC_API_URL already carries the environment's API origin (set in
 // frontend.yml) — converted http(s) → ws(s). Empty means same-origin, exactly
@@ -80,6 +80,7 @@ export function useWalletRealtime(onDepositConfirmed?: (txid: string) => void): 
         onMessage: handleMessage,
         enabled: !!wsUrl,
         authToken: token ?? undefined,
+        subscribeToken: subscribeAccessToken,
     })
 
     return {wsStatus}
