@@ -956,7 +956,7 @@ type PixClient interface {
 type DepositRequest  struct{ Amount int64 `json:"amount" validate:"required,gt=0"` }
 type WithdrawRequest  struct{ Amount int64 `json:"amount" validate:"required,gt=0"`; PixKey string `json:"pix_key" validate:"required"` }
 type SandboxPurchaseRequest struct{ Amount int64 `json:"amount" validate:"required,gt=0"` }
-type SandboxOpRequest struct{ UserID string `json:"user_id" validate:"required"`; Amount int64 `json:"amount" validate:"required,gt=0"`; IdempotencyKey string `json:"idempotency_key" validate:"required"`; Reason string `json:"reason"` }
+type MovementOpRequest struct{ UserID string `json:"user_id" validate:"required"`; Amount int64 `json:"amount" validate:"required,gt=0"`; IdempotencyKey string `json:"idempotency_key" validate:"required"`; Reason string `json:"reason"` }
 ```
 
 - [ ] **Step 3: Write `router.go`** with `Register` building the verifier, the user route group (auth middleware), and the internal route group; wire handlers from Tasks 6.2/6.3. Constant `HeaderIdempotencyKey = "Idempotency-Key"`.

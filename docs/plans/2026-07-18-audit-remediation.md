@@ -300,7 +300,7 @@ discarded — a concurrent identical Withdraw can no longer double-transfer."
   currently enforced only on the sandbox route — this adds a second consumer of the same scope,
   same as `sandbox/credit` and `sandbox/debit` already share `ScopeWalletCredit`/`ScopeWalletDebit`
   respectively).
-- Body: `{user_id, amount, idempotency_key, reason}` — identical shape to `SandboxOpRequest`;
+- Body: `{user_id, amount, idempotency_key, reason}` — identical shape to `MovementOpRequest`;
   reuse it rather than declaring a new type (DRY — the fields are identical).
 - Insufficient balance: standard `409 insufficient-balance` from the underlying conditional debit,
   no partial debit, no new problem type.
@@ -434,7 +434,7 @@ In `api/internal/api/v1/internal.go`, after `sandboxDebit`:
 // realDebit debits the real wallet (M2M, scope internal:wallet:debit,
 // e.g. ctech-billing charging a subscription). No PIX leg.
 func (h *handlers) realDebit(c fiber.Ctx) error {
-var body SandboxOpRequest
+var body MovementOpRequest
 if p := bindJSON(c, &body); p != nil {
 return sendProblem(c, p)
 }
@@ -446,7 +446,7 @@ return c.Status(fiber.StatusCreated).JSON(entry)
 }
 ```
 
-Reuses `SandboxOpRequest` from `dto.go` — do not declare a new DTO for an identical shape.
+Reuses `MovementOpRequest` from `dto.go` — do not declare a new DTO for an identical shape.
 
 - [ ] **Step 8: Write the wiring test**
 
@@ -461,7 +461,7 @@ app.Post("/internal/wallet/real/debit", func (c fiber.Ctx) error {
 return h.realDebit(c)
 })
 
-body, _ := json.Marshal(SandboxOpRequest{UserID: "u1", Amount: 5000, IdempotencyKey: "k1"})
+body, _ := json.Marshal(MovementOpRequest{UserID: "u1", Amount: 5000, IdempotencyKey: "k1"})
 req := httptest.NewRequest(http.MethodPost, "/internal/wallet/real/debit", bytes.NewReader(body))
 req.Header.Set("Content-Type", "application/json")
 resp, err := app.Test(req)

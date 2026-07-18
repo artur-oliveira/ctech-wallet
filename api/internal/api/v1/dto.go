@@ -29,9 +29,9 @@ type ActivateGamblingRequest struct {
 	AcceptAddendum bool `json:"accept_addendum" validate:"required"`
 }
 
-// SandboxOpRequest is the M2M body for internal sandbox credit/debit. The
+// MovementOpRequest is the M2M body for internal credit/debit. The
 // idempotency key travels in the body (e.g. wallet_id#round_id), not a header.
-type SandboxOpRequest struct {
+type MovementOpRequest struct {
 	UserID         string `json:"user_id" validate:"required"`
 	Amount         int64  `json:"amount" validate:"required,gt=0"`
 	IdempotencyKey string `json:"idempotency_key" validate:"required"`

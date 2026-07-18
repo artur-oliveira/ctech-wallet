@@ -22,7 +22,7 @@ func (h *handlers) confirmDeposit(c fiber.Ctx) error {
 
 // sandboxCredit grants sandbox currency (M2M, scope internal:wallet:credit).
 func (h *handlers) sandboxCredit(c fiber.Ctx) error {
-	var body SandboxOpRequest
+	var body MovementOpRequest
 	if p := bindJSON(c, &body); p != nil {
 		return sendProblem(c, p)
 	}
@@ -35,7 +35,7 @@ func (h *handlers) sandboxCredit(c fiber.Ctx) error {
 
 // sandboxDebit spends sandbox currency (M2M, scope internal:wallet:debit).
 func (h *handlers) sandboxDebit(c fiber.Ctx) error {
-	var body SandboxOpRequest
+	var body MovementOpRequest
 	if p := bindJSON(c, &body); p != nil {
 		return sendProblem(c, p)
 	}
@@ -50,7 +50,7 @@ func (h *handlers) sandboxDebit(c fiber.Ctx) error {
 // deliberately separate from sandbox's internal:wallet:debit, e.g. ctech-billing
 // charging a subscription). No PIX leg.
 func (h *handlers) realDebit(c fiber.Ctx) error {
-	var body SandboxOpRequest
+	var body MovementOpRequest
 	if p := bindJSON(c, &body); p != nil {
 		return sendProblem(c, p)
 	}

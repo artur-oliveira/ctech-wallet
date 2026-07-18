@@ -53,7 +53,7 @@ func TestRealDebitRouteRegistered(t *testing.T) {
 		return h.realDebit(c)
 	})
 
-	body, _ := json.Marshal(SandboxOpRequest{UserID: "u1", Amount: 5000, IdempotencyKey: "k1"})
+	body, _ := json.Marshal(MovementOpRequest{UserID: "u1", Amount: 5000, IdempotencyKey: "k1"})
 	req := httptest.NewRequest(http.MethodPost, "/internal/wallet/real/debit", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := app.Test(req)
