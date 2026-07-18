@@ -22,8 +22,8 @@ const (
 	EntryGameCredit      = "game_credit"
 	EntrySandboxPurchase = "sandbox_purchase"
 	EntrySandboxCredit   = "sandbox_credit"
-	EntryReversal        = "reversal"        // credit-back of a failed withdrawal
-	EntryDepositRefund   = "deposit_refund"  // debit reversing a deposit later returned to the payer (devolução)
+	EntryReversal        = "reversal"       // credit-back of a failed withdrawal
+	EntryDepositRefund   = "deposit_refund" // debit reversing a deposit later returned to the payer (devolução)
 
 	// Ring-fence transfers between `real` and `game`. Funding is metered by the
 	// personal limit engine; returning is always free and never limited.

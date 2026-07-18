@@ -12,9 +12,9 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
+	"gopkg.aoctech.app/api-commons/oauth2client"
 	"gopkg.aoctech.app/wallet/api/internal/config"
 )
 
@@ -36,7 +36,7 @@ type KYC struct {
 type Client struct {
 	base   string
 	http   *http.Client
-	tokens *tokenManager
+	tokens *oauth2client.TokenManager
 }
 
 // New builds the KYC client. base is the account URL (CTECH_URL).
@@ -44,15 +44,9 @@ func New(cfg *config.Config) *Client {
 	httpClient := &http.Client{Timeout: 10 * time.Second}
 	base := strings.TrimRight(cfg.CtechURL, "/")
 	return &Client{
-		base: base,
-		http: httpClient,
-		tokens: &tokenManager{
-			client:       httpClient,
-			tokenURL:     base + pathToken,
-			clientID:     cfg.WalletClientID,
-			clientSecret: cfg.WalletClientSecret,
-			scope:        scopeKYC,
-		},
+		base:   base,
+		http:   httpClient,
+		tokens: oauth2client.New(httpClient, base+pathToken, cfg.WalletClientID, cfg.WalletClientSecret, scopeKYC),
 	}
 }
 
@@ -79,7 +73,7 @@ func (c *Client) Get(ctx context.Context, userID string) (*KYC, error) {
 }
 
 func (c *Client) authedRequest(ctx context.Context, method, urlStr string, body io.Reader, jsonBody bool) (*http.Request, error) {
-	token, err := c.tokens.get(ctx)
+	token, err := c.tokens.Get(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -92,55 +86,4 @@ func (c *Client) authedRequest(ctx context.Context, method, urlStr string, body 
 		req.Header.Set("Content-Type", "application/json")
 	}
 	return req, nil
-}
-
-// tokenManager fetches and caches the wallet's M2M client_credentials token.
-type tokenManager struct {
-	client       *http.Client
-	tokenURL     string
-	clientID     string
-	clientSecret string
-	scope        string
-
-	mu     sync.Mutex
-	token  string
-	expiry time.Time
-}
-
-func (t *tokenManager) get(ctx context.Context) (string, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.token != "" && time.Now().Before(t.expiry) {
-		return t.token, nil
-	}
-	form := url.Values{
-		"grant_type":    {"client_credentials"},
-		"client_id":     {t.clientID},
-		"client_secret": {t.clientSecret},
-		"scope":         {t.scope},
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.tokenURL, strings.NewReader(form.Encode()))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := t.client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("account token: status %d: %s", resp.StatusCode, string(raw))
-	}
-	var tr struct {
-		AccessToken string `json:"access_token"`
-		ExpiresIn   int    `json:"expires_in"`
-	}
-	if err := json.Unmarshal(raw, &tr); err != nil {
-		return "", err
-	}
-	t.token = tr.AccessToken
-	t.expiry = time.Now().Add(time.Duration(tr.ExpiresIn-30) * time.Second)
-	return t.token, nil
 }
