@@ -76,8 +76,8 @@ export class DynamoDBStack extends cdk.Stack {
                 sortKey: opts.sortKey ? {name: ATTR_SK, type: dynamodb.AttributeType.STRING} : undefined,
                 timeToLiveAttribute: opts.ttl ? ATTR_TTL : undefined,
                 billing: Billing.onDemand({
-                    maxReadRequestUnits: 5,
-                    maxWriteRequestUnits: 5,
+                    maxReadRequestUnits: 1000,
+                    maxWriteRequestUnits: 1000,
                 }),
                 removalPolicy,
                 pointInTimeRecoverySpecification,
@@ -93,8 +93,8 @@ export class DynamoDBStack extends cdk.Stack {
                 partitionKey: {name: hashKey, type: dynamodb.AttributeType.STRING},
                 projectionType: dynamodb.ProjectionType.ALL,
                 warmThroughput: undefined,
-                maxReadRequestUnits: 10,
-                maxWriteRequestUnits: 10,
+                maxReadRequestUnits: 1000,
+                maxWriteRequestUnits: 1000,
             });
         };
 
