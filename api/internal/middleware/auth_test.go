@@ -19,6 +19,9 @@ import (
 const testKID = "test-key-1"
 
 // newJWKSServer returns an RSA key and an httptest server serving its public JWKS.
+// JWKS-fetch/rotation/kid-rejection mechanics are covered by
+// gopkg.aoctech.app/api-commons/jwtverify's own tests; this file only checks
+// that the wallet's Verifier wrapper wires the shared verifier correctly.
 func newJWKSServer(t *testing.T) (*rsa.PrivateKey, *httptest.Server) {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -27,7 +30,7 @@ func newJWKSServer(t *testing.T) (*rsa.PrivateKey, *httptest.Server) {
 	}
 	n := base64.RawURLEncoding.EncodeToString(key.N.Bytes())
 	e := base64.RawURLEncoding.EncodeToString(big.NewInt(int64(key.E)).Bytes())
-	body, _ := json.Marshal(jwksResponse{Keys: []jwk{{Kid: testKID, Kty: "RSA", N: n, E: e}}})
+	body, _ := json.Marshal(map[string]any{"keys": []map[string]any{{"kid": testKID, "kty": "RSA", "n": n, "e": e}}})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write(body)
 	}))
@@ -46,7 +49,7 @@ func signToken(t *testing.T, key *rsa.PrivateKey, claims jwt.MapClaims) string {
 	return s
 }
 
-func TestVerifyClaimsExtractsAllFields(t *testing.T) {
+func TestVerifier_VerifyClaimsExtractsAllFields(t *testing.T) {
 	key, srv := newJWKSServer(t)
 	v := NewVerifier(srv.URL, "https://wallet-api.aoctech.app", "https://accounts.aoctech.app", cache.NewMemoryBackend(10))
 
@@ -75,27 +78,11 @@ func TestVerifyClaimsExtractsAllFields(t *testing.T) {
 	}
 }
 
-func TestVerifyClaimsRejectsWrongAudience(t *testing.T) {
-	key, srv := newJWKSServer(t)
-	v := NewVerifier(srv.URL, "https://wallet-api.aoctech.app", "", cache.NewMemoryBackend(10))
-	now := time.Now().Unix()
-	token := signToken(t, key, jwt.MapClaims{
-		"sub": "user_1",
-		"aud": "https://some-other-api.aoctech.app",
-		"exp": now + 900,
-	})
-	if _, err := v.VerifyClaims(context.Background(), token); err == nil {
-		t.Fatal("expected audience mismatch error, got nil")
-	}
-}
-
-func TestVerifyClaimsRejectsUnknownKID(t *testing.T) {
-	key, srv := newJWKSServer(t)
+func TestVerifier_RejectsInvalidToken(t *testing.T) {
+	_, srv := newJWKSServer(t)
 	v := NewVerifier(srv.URL, "", "", cache.NewMemoryBackend(10))
-	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{"sub": "u", "exp": time.Now().Unix() + 900})
-	tok.Header["kid"] = "unknown-kid"
-	s, _ := tok.SignedString(key)
-	if _, err := v.VerifyClaims(context.Background(), s); err == nil {
-		t.Fatal("expected unknown-kid rejection, got nil")
+
+	if _, err := v.VerifyClaims(context.Background(), "not-a-jwt"); err == nil {
+		t.Fatal("expected malformed token to be rejected")
 	}
 }

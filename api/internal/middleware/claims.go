@@ -1,12 +1,12 @@
 package middleware
 
 import (
-	"strings"
-
 	"github.com/gofiber/fiber/v3"
+
+	"gopkg.aoctech.app/api-commons/jwtverify"
 )
 
-// Fiber locals keys and claim constants.
+// Fiber locals keys.
 const (
 	ClaimsKey = "claims"
 	UserIDKey = "user_id"
@@ -14,24 +14,9 @@ const (
 
 // Claims holds the ctech-account access-token fields the wallet consumes.
 // An empty SID marks an M2M client_credentials token (see ctech-account).
-type Claims struct {
-	Sub       string // user_id (or client_id for M2M)
-	Scope     string // space-joined scope string
-	SID       string // session id; empty for M2M tokens
-	AZP       string // OAuth client_id
-	KYCLevel  string // "" | "basic" | "verified"
-	LastMFAAt int64  // unix seconds of the last MFA proof; 0 if absent
-}
-
-// HasScope reports whether the space-separated scope string contains want.
-func (cl *Claims) HasScope(want string) bool {
-	for _, s := range strings.Fields(cl.Scope) {
-		if s == want {
-			return true
-		}
-	}
-	return false
-}
+// Parsing lives in gopkg.aoctech.app/api-commons/jwtverify; this is a local
+// alias so call sites don't need to import that package directly.
+type Claims = jwtverify.Claims
 
 // GetClaims returns the authenticated caller's claims from Fiber locals.
 func GetClaims(c fiber.Ctx) *Claims {
