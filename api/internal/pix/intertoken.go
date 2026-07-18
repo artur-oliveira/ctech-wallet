@@ -21,6 +21,7 @@ import (
 	"gopkg.aoctech.app/api-commons/cache"
 	"gopkg.aoctech.app/wallet/api/internal/config"
 	"gopkg.aoctech.app/wallet/api/internal/lock"
+	rpccontract "gopkg.aoctech.app/wallet/rpc-contract"
 )
 
 // tokenCacheKey is the Valkey key holding the shared Inter bearer. All replicas
@@ -231,7 +232,7 @@ func (m *InterTokenManager) refresh(ctx context.Context, force bool) (string, er
 // fetch invokes pix-gateway's GetToken op and computes the local expiry from
 // Inter's expires_in (clock-skew floor so a skewed value can't persist).
 func (m *InterTokenManager) fetch(ctx context.Context) (string, time.Time, error) {
-	reqJSON, err := json.Marshal(rpcRequest{Op: opGetToken})
+	reqJSON, err := json.Marshal(rpccontract.Request{Op: rpccontract.OpGetToken})
 	if err != nil {
 		return "", time.Time{}, err
 	}
@@ -239,14 +240,14 @@ func (m *InterTokenManager) fetch(ctx context.Context) (string, time.Time, error
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	var resp rpcResponse
+	var resp rpccontract.Response
 	if err := json.Unmarshal(respJSON, &resp); err != nil {
 		return "", time.Time{}, err
 	}
 	if resp.Error != "" {
 		return "", time.Time{}, fmt.Errorf("inter token: %s", resp.Error)
 	}
-	var res rpcGetTokenResult
+	var res rpccontract.GetTokenResult
 	if err := json.Unmarshal(resp.Payload, &res); err != nil {
 		return "", time.Time{}, err
 	}

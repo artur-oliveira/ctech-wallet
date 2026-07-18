@@ -22,7 +22,10 @@ require (
 	github.com/valyala/fasthttp v1.72.0
 	go.uber.org/fx v1.24.0
 	gopkg.aoctech.app/api-commons v1.0.2
+	gopkg.aoctech.app/wallet/rpc-contract v0.0.0
 )
+
+replace gopkg.aoctech.app/wallet/rpc-contract => ../rpc-contract
 
 require (
 	github.com/andybalholm/brotli v1.2.2 // indirect
