@@ -21,7 +21,7 @@ require (
 	github.com/valkey-io/valkey-go v1.0.76
 	github.com/valyala/fasthttp v1.72.0
 	go.uber.org/fx v1.24.0
-	gopkg.aoctech.app/api-commons v0.1.1
+	gopkg.aoctech.app/api-commons v1.0.0
 )
 
 require (
@@ -44,11 +44,11 @@ require (
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/gofiber/schema v1.8.2 // indirect
-	github.com/gofiber/utils/v2 v2.1.2 // indirect
+	github.com/gofiber/utils/v2 v2.2.0 // indirect
 	github.com/klauspost/compress v1.19.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/mattn/go-colorable v0.1.15 // indirect
-	github.com/mattn/go-isatty v0.0.22 // indirect
+	github.com/mattn/go-isatty v0.0.23 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/savsgio/gotils v0.0.0-20250924091648-bce9a52d7761 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect
