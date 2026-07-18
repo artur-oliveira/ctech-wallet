@@ -57,7 +57,7 @@ export function I18nProvider({children}: { children: React.ReactNode }) {
     }, [])
 
     const isStaticPage = pathname
-        ? (pathname.startsWith('/terms-addendum') || pathname.startsWith('/gambling-addendum'))
+        ? (pathname === '/' || pathname.startsWith('/terms-addendum') || pathname.startsWith('/gambling-addendum'))
         : false
 
     return (
