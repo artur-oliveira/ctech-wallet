@@ -1,4 +1,5 @@
 import * as cdk from 'aws-cdk-lib';
+import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as logs from 'aws-cdk-lib/aws-logs';
@@ -476,6 +477,26 @@ export class ApiStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'NginxLogGroupName', {
       value: service.nginxLogGroup.logGroupName,
       exportName: `${id}-nginx-log-group`,
+    });
+
+    // slog ALARM lines (refund/reversal failures, deposit amount mismatches,
+    // excess-payment refund failures) previously paged nobody — this fires a
+    // CloudWatch alarm the moment one is emitted.
+    const alarmMetricFilter = service.appLogGroup.addMetricFilter('AlarmLogFilter', {
+      filterPattern: logs.FilterPattern.literal('"ALARM"'),
+      metricNamespace: `CtechWallet/${environment}`,
+      metricName: 'AlarmLogLines',
+      metricValue: '1',
+      defaultValue: 0,
+    });
+    new cloudwatch.Alarm(this, 'AlarmLogAlarm', {
+      alarmName: `${environment}-${SERVICE}-alarm-log-lines`,
+      alarmDescription: 'A wallet ALARM log line was emitted (refund/reversal failure, deposit amount mismatch, or statement drift) — needs manual reconciliation.',
+      metric: alarmMetricFilter.metric({statistic: 'Sum', period: cdk.Duration.minutes(5)}),
+      threshold: 1,
+      evaluationPeriods: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
   }
 }
