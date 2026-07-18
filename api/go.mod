@@ -1,4 +1,4 @@
-module github.com/artur-oliveira/ctech-wallet/api
+module gopkg.aoctech.app/api
 
 go 1.26
 

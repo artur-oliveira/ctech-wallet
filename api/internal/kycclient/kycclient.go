@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/artur-oliveira/ctech-wallet/api/internal/config"
+	"gopkg.aoctech.app/api/internal/config"
 )
 
 const (

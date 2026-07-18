@@ -1,9 +1,9 @@
 package middleware
 
 import (
-	"github.com/artur-oliveira/ctech-wallet/api/internal/domain/wallet"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/problem"
 	"github.com/gofiber/fiber/v3"
+	"gopkg.aoctech.app/api/internal/domain/wallet"
+	"gopkg.aoctech.app/api/internal/problem"
 )
 
 // Scopes the wallet defines for its own internal callers (poker/dominó/billing,

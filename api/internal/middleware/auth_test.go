@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/artur-oliveira/ctech-wallet/api/internal/cache"
 	"github.com/golang-jwt/jwt/v5"
+	"gopkg.aoctech.app/api/internal/cache"
 )
 
 const testKID = "test-key-1"

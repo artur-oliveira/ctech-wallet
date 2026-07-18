@@ -8,10 +8,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
-	"github.com/artur-oliveira/ctech-wallet/api/internal/config"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/domain/id"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/domain/wallet"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/problem"
+	"gopkg.aoctech.app/api/internal/config"
+	"gopkg.aoctech.app/api/internal/domain/id"
+	"gopkg.aoctech.app/api/internal/domain/wallet"
+	"gopkg.aoctech.app/api/internal/problem"
 )
 
 // idemTTLDays is how long idempotency guard rows live before Dynamo TTL reaps them.

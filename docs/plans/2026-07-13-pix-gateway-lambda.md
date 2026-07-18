@@ -146,7 +146,7 @@ mkdir -p /home/artur/Documents/Projects/Ctech/ctech-wallet/pix-gateway/internal/
 mkdir -p /home/artur/Documents/Projects/Ctech/ctech-wallet/pix-gateway/cmd/outbound
 mkdir -p /home/artur/Documents/Projects/Ctech/ctech-wallet/pix-gateway/cmd/webhook
 cd /home/artur/Documents/Projects/Ctech/ctech-wallet/pix-gateway
-go mod init github.com/artur-oliveira/ctech-wallet/pix-gateway
+go mod init gopkg.aoctech.app/pix-gateway
 go get github.com/aws/aws-lambda-go@v1.54.0
 ```
 
@@ -235,10 +235,10 @@ type PixClient interface {
 
 Write `pix-gateway/internal/inter/inter.go` — identical body to `api/internal/pix/inter.go`, with:
 - `package pix` → `package inter`
-- import `"github.com/artur-oliveira/ctech-wallet/api/internal/config"` →
-  `"github.com/artur-oliveira/ctech-wallet/pix-gateway/internal/config"`
-- import `"github.com/artur-oliveira/ctech-wallet/api/internal/secrets"` →
-  `"github.com/artur-oliveira/ctech-wallet/pix-gateway/internal/secrets"`
+- import `"gopkg.aoctech.app/api/internal/config"` →
+  `"gopkg.aoctech.app/pix-gateway/internal/config"`
+- import `"gopkg.aoctech.app/api/internal/secrets"` →
+  `"gopkg.aoctech.app/pix-gateway/internal/secrets"`
 - the trailing `var _ PixClient = (*InterClient)(nil)` stays as-is (now checks `inter.PixClient`).
 
 Every other line (struct `InterClient`, path constants, `NewInterClient`, `CreateCharge`, `QueryCharge`,
@@ -534,8 +534,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/artur-oliveira/ctech-wallet/pix-gateway/internal/inter"
-	"github.com/artur-oliveira/ctech-wallet/pix-gateway/internal/rpc"
+	"gopkg.aoctech.app/pix-gateway/internal/inter"
+	"gopkg.aoctech.app/pix-gateway/internal/rpc"
 )
 
 // fakePix is a minimal stand-in — pix-gateway has no dependency on api's fake,
@@ -640,10 +640,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/aws/aws-lambda-go/lambda"
 
-	"github.com/artur-oliveira/ctech-wallet/pix-gateway/internal/config"
-	"github.com/artur-oliveira/ctech-wallet/pix-gateway/internal/inter"
-	"github.com/artur-oliveira/ctech-wallet/pix-gateway/internal/rpc"
-	"github.com/artur-oliveira/ctech-wallet/pix-gateway/internal/secrets"
+	"gopkg.aoctech.app/pix-gateway/internal/config"
+	"gopkg.aoctech.app/pix-gateway/internal/inter"
+	"gopkg.aoctech.app/pix-gateway/internal/rpc"
+	"gopkg.aoctech.app/pix-gateway/internal/secrets"
 )
 
 type handler struct {
@@ -815,10 +815,10 @@ import (
 
 	"github.com/aws/aws-lambda-go/lambda"
 
-	"github.com/artur-oliveira/ctech-wallet/pix-gateway/internal/config"
-	"github.com/artur-oliveira/ctech-wallet/pix-gateway/internal/inter"
-	"github.com/artur-oliveira/ctech-wallet/pix-gateway/internal/rpc"
-	"github.com/artur-oliveira/ctech-wallet/pix-gateway/internal/secrets"
+	"gopkg.aoctech.app/pix-gateway/internal/config"
+	"gopkg.aoctech.app/pix-gateway/internal/inter"
+	"gopkg.aoctech.app/pix-gateway/internal/rpc"
+	"gopkg.aoctech.app/pix-gateway/internal/secrets"
 )
 ```
 
@@ -1480,7 +1480,7 @@ rm -rf /home/artur/Documents/Projects/Ctech/ctech-wallet/api/internal/secrets
 - [ ] **Step 8: Rewire `app.go`**
 
 In `api/internal/app/app.go`, delete `newInterMTLS` (lines 84–100) and `newPixClient` (lines 102–113) and
-`newWebhookSecret` (lines 115–119), and the `"github.com/artur-oliveira/ctech-wallet/api/internal/secrets"`
+`newWebhookSecret` (lines 115–119), and the `"gopkg.aoctech.app/api/internal/secrets"`
 import. Replace them with:
 
 ```go
@@ -1592,7 +1592,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/artur-oliveira/ctech-wallet/pix-gateway/internal/config"
+	"gopkg.aoctech.app/pix-gateway/internal/config"
 )
 
 func TestConfirmDepositSendsBearerAndTxid(t *testing.T) {
@@ -1684,7 +1684,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/artur-oliveira/ctech-wallet/pix-gateway/internal/config"
+	"gopkg.aoctech.app/pix-gateway/internal/config"
 )
 
 const (
@@ -1953,7 +1953,7 @@ func (h *handlers) confirmDeposit(c fiber.Ctx) error {
 }
 ```
 
-Remove the now-unused `"crypto/subtle"` import from `internal.go` (it also imported `"github.com/artur-oliveira/ctech-wallet/api/internal/problem"` and `"github.com/gofiber/fiber/v3"`, both still
+Remove the now-unused `"crypto/subtle"` import from `internal.go` (it also imported `"gopkg.aoctech.app/api/internal/problem"` and `"github.com/gofiber/fiber/v3"`, both still
 needed by `sandboxCredit`/`sandboxDebit`, so only drop `"crypto/subtle"`).
 
 - [ ] **Step 4: Update the router**
@@ -2073,9 +2073,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/artur-oliveira/ctech-wallet/api/internal/domain/wallet"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/pix"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/repositories"
+	"gopkg.aoctech.app/api/internal/domain/wallet"
+	"gopkg.aoctech.app/api/internal/pix"
+	"gopkg.aoctech.app/api/internal/repositories"
 	"github.com/gofiber/fiber/v3"
 )
 
@@ -2252,9 +2252,9 @@ import (
 	awscfg "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 
-	"github.com/artur-oliveira/ctech-wallet/pix-gateway/internal/config"
-	"github.com/artur-oliveira/ctech-wallet/pix-gateway/internal/secrets"
-	"github.com/artur-oliveira/ctech-wallet/pix-gateway/internal/walletclient"
+	"gopkg.aoctech.app/pix-gateway/internal/config"
+	"gopkg.aoctech.app/pix-gateway/internal/secrets"
+	"gopkg.aoctech.app/pix-gateway/internal/walletclient"
 )
 
 // confirmer is the subset of *walletclient.Client the handler depends on —
@@ -3684,9 +3684,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/artur-oliveira/ctech-wallet/api/internal/domain/wallet"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/kycclient"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/pix"
+	"gopkg.aoctech.app/api/internal/domain/wallet"
+	"gopkg.aoctech.app/api/internal/kycclient"
+	"gopkg.aoctech.app/api/internal/pix"
 )
 
 type fakeBroadcaster struct {
@@ -3775,8 +3775,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/artur-oliveira/ctech-wallet/api/internal/middleware"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/ws"
+	"gopkg.aoctech.app/api/internal/middleware"
+	"gopkg.aoctech.app/api/internal/ws"
 
 	fws "github.com/fasthttp/websocket"
 	"github.com/gofiber/fiber/v3"
@@ -3867,7 +3867,7 @@ API on 401, which will also drop and reopen the socket via `useWebSocket`'s reco
 
 - [ ] **Step 5: Wire it in `router.go` and `app.go`**
 
-In `api/internal/api/v1/router.go`, add the import `"github.com/artur-oliveira/ctech-wallet/api/internal/ws"`
+In `api/internal/api/v1/router.go`, add the import `"gopkg.aoctech.app/api/internal/ws"`
 if not already present via another file in the package (Go only needs the import once per file that uses
 it — `RegisterWS` is called from `Register`, so add the call, not necessarily the import, to `router.go`;
 the import itself belongs in whichever file the compiler requires it in — since `RegisterWS` is declared
@@ -3892,7 +3892,7 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 (Insert the `RegisterWS(v1, verifier, wsRegistry)` line right after the existing `RegisterHealth(...)`
 call; everything below it — the `/auth`, `/wallet`, `/internal` groups — is unchanged from Task 6.)
 
-Add the `"github.com/artur-oliveira/ctech-wallet/api/internal/ws"` import to `router.go`'s import block.
+Add the `"gopkg.aoctech.app/api/internal/ws"` import to `router.go`'s import block.
 
 In `api/internal/app/app.go`, add after `newLocker`:
 
@@ -3916,7 +3916,7 @@ func newWsRegistry(lc fx.Lifecycle, c cache.Backend) ws.Registry {
 }
 ```
 
-Add `"github.com/artur-oliveira/ctech-wallet/api/internal/ws"` to `app.go`'s imports. Add `newWsRegistry,`
+Add `"gopkg.aoctech.app/api/internal/ws"` to `app.go`'s imports. Add `newWsRegistry,`
 to the `fx.Provide` list (anywhere after `newCacheBackend,`). Update `registerRoutes` and its
 `fx.Invoke(registerRoutes)` call to pass the registry through and to call `SetBroadcaster`:
 

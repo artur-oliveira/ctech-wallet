@@ -16,10 +16,10 @@ import (
 	awscfg "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 
-	"github.com/artur-oliveira/ctech-wallet/pix-gateway/internal/config"
-	"github.com/artur-oliveira/ctech-wallet/pix-gateway/internal/inter"
-	"github.com/artur-oliveira/ctech-wallet/pix-gateway/internal/rpc"
-	"github.com/artur-oliveira/ctech-wallet/pix-gateway/internal/secrets"
+	"gopkg.aoctech.app/pix-gateway/internal/config"
+	"gopkg.aoctech.app/pix-gateway/internal/inter"
+	"gopkg.aoctech.app/pix-gateway/internal/rpc"
+	"gopkg.aoctech.app/pix-gateway/internal/secrets"
 )
 
 type handler struct {

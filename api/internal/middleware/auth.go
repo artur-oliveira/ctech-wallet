@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/artur-oliveira/ctech-wallet/api/internal/cache"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/problem"
+	"gopkg.aoctech.app/api/internal/cache"
+	"gopkg.aoctech.app/api/internal/problem"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/golang-jwt/jwt/v5"

@@ -1,7 +1,7 @@
 package v1
 
 import (
-	"github.com/artur-oliveira/ctech-wallet/api/internal/middleware"
+	"gopkg.aoctech.app/api/internal/middleware"
 
 	"github.com/gofiber/fiber/v3"
 )

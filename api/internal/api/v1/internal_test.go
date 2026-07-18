@@ -7,11 +7,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/artur-oliveira/ctech-wallet/api/internal/domain/wallet"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/pix"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/repositories"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/recover"
+	"gopkg.aoctech.app/api/internal/domain/wallet"
+	"gopkg.aoctech.app/api/internal/pix"
+	"gopkg.aoctech.app/api/internal/repositories"
 )
 
 // TestConfirmDepositRequiresScope exercises RequireScope directly rather than

@@ -9,11 +9,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	apiv1 "github.com/artur-oliveira/ctech-wallet/api/internal/api/v1"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/awsclient"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/cache"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/config"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/pix"
+	apiv1 "gopkg.aoctech.app/api/internal/api/v1"
+	"gopkg.aoctech.app/api/internal/awsclient"
+	"gopkg.aoctech.app/api/internal/cache"
+	"gopkg.aoctech.app/api/internal/config"
+	"gopkg.aoctech.app/api/internal/pix"
 
 	"github.com/gofiber/fiber/v3"
 )

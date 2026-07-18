@@ -10,7 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 
-	"github.com/artur-oliveira/ctech-wallet/api/internal/config"
+	"gopkg.aoctech.app/api/internal/config"
 )
 
 // Clients holds the initialized AWS service clients. SSM serves the Inter

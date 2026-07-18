@@ -4,9 +4,9 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/artur-oliveira/ctech-wallet/api/internal/domain/wallet"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/pix"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/repositories"
+	"gopkg.aoctech.app/api/internal/domain/wallet"
+	"gopkg.aoctech.app/api/internal/pix"
+	"gopkg.aoctech.app/api/internal/repositories"
 )
 
 const reconcileBatch = 100

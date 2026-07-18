@@ -3,8 +3,8 @@ package middleware
 import (
 	"time"
 
-	"github.com/artur-oliveira/ctech-wallet/api/internal/problem"
 	"github.com/gofiber/fiber/v3"
+	"gopkg.aoctech.app/api/internal/problem"
 )
 
 // StepUpMaxAge is the freshness window for step-up-protected routes (withdrawals),

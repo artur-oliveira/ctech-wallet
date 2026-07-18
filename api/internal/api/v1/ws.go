@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/artur-oliveira/ctech-wallet/api/internal/middleware"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/ws"
+	"gopkg.aoctech.app/api/internal/middleware"
+	"gopkg.aoctech.app/api/internal/ws"
 
 	fws "github.com/fasthttp/websocket"
 	"github.com/gofiber/fiber/v3"

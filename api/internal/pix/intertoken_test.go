@@ -6,8 +6,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/artur-oliveira/ctech-wallet/api/internal/cache"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/lock"
+	"gopkg.aoctech.app/api/internal/cache"
+	"gopkg.aoctech.app/api/internal/lock"
 )
 
 // countingInvoker returns a fixed token for GetToken and counts calls.

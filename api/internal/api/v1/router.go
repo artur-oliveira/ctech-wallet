@@ -2,13 +2,13 @@
 package v1
 
 import (
-	"github.com/artur-oliveira/ctech-wallet/api/internal/awsclient"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/cache"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/config"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/middleware"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/pix"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/services"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/ws"
+	"gopkg.aoctech.app/api/internal/awsclient"
+	"gopkg.aoctech.app/api/internal/cache"
+	"gopkg.aoctech.app/api/internal/config"
+	"gopkg.aoctech.app/api/internal/middleware"
+	"gopkg.aoctech.app/api/internal/pix"
+	"gopkg.aoctech.app/api/internal/services"
+	"gopkg.aoctech.app/api/internal/ws"
 
 	"github.com/gofiber/fiber/v3"
 )

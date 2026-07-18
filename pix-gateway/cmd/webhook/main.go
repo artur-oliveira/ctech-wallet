@@ -18,9 +18,9 @@ import (
 	awscfg "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 
-	"github.com/artur-oliveira/ctech-wallet/pix-gateway/internal/config"
-	"github.com/artur-oliveira/ctech-wallet/pix-gateway/internal/secrets"
-	"github.com/artur-oliveira/ctech-wallet/pix-gateway/internal/walletclient"
+	"gopkg.aoctech.app/pix-gateway/internal/config"
+	"gopkg.aoctech.app/pix-gateway/internal/secrets"
+	"gopkg.aoctech.app/pix-gateway/internal/walletclient"
 )
 
 // confirmer is the subset of *walletclient.Client the handler depends on —

@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/artur-oliveira/ctech-wallet/pix-gateway/internal/config"
+	"gopkg.aoctech.app/pix-gateway/internal/config"
 )
 
 const (

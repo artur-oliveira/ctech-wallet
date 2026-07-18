@@ -4,8 +4,8 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/artur-oliveira/ctech-wallet/api/internal/app"
 	"go.uber.org/fx"
+	"gopkg.aoctech.app/api/internal/app"
 )
 
 func main() {

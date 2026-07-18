@@ -15,12 +15,12 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
-	"github.com/artur-oliveira/ctech-wallet/api/internal/domain/id"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/domain/wallet"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/kycclient"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/pix"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/problem"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/repositories"
+	"gopkg.aoctech.app/api/internal/domain/id"
+	"gopkg.aoctech.app/api/internal/domain/wallet"
+	"gopkg.aoctech.app/api/internal/kycclient"
+	"gopkg.aoctech.app/api/internal/pix"
+	"gopkg.aoctech.app/api/internal/problem"
+	"gopkg.aoctech.app/api/internal/repositories"
 )
 
 const depositTTLMinutes = 5

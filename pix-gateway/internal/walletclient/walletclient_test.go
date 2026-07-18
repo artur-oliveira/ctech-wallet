@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/artur-oliveira/ctech-wallet/pix-gateway/internal/config"
+	"gopkg.aoctech.app/pix-gateway/internal/config"
 )
 
 func TestConfirmDepositSendsBearerAndTxid(t *testing.T) {

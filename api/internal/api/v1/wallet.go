@@ -3,9 +3,9 @@ package v1
 import (
 	"context"
 
-	"github.com/artur-oliveira/ctech-wallet/api/internal/domain/wallet"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/middleware"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/problem"
+	"gopkg.aoctech.app/api/internal/domain/wallet"
+	"gopkg.aoctech.app/api/internal/middleware"
+	"gopkg.aoctech.app/api/internal/problem"
 
 	"github.com/gofiber/fiber/v3"
 )

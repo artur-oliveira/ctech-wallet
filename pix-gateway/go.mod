@@ -1,4 +1,4 @@
-module github.com/artur-oliveira/ctech-wallet/pix-gateway
+module gopkg.aoctech.app/pix-gateway
 
 go 1.26.5
 

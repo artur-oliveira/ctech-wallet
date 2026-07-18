@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/artur-oliveira/ctech-wallet/api/internal/problem"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/repositories"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/validation"
+	"gopkg.aoctech.app/api/internal/problem"
+	"gopkg.aoctech.app/api/internal/repositories"
+	"gopkg.aoctech.app/api/internal/validation"
 
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
@@ -37,6 +37,7 @@ func sendProblem(c fiber.Ctx, err error) error {
 	if p, ok := errors.AsType[*problem.Problem](err); ok {
 		return p.Send(c)
 	}
+	slog.ErrorContext(c.Context(), "unhandled error", "path", c.Path(), "err", err)
 	return problem.InternalServer(err.Error()).Send(c)
 }
 

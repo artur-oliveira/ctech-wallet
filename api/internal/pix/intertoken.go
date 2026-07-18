@@ -17,10 +17,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/artur-oliveira/ctech-wallet/api/internal/cache"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/config"
-	"github.com/artur-oliveira/ctech-wallet/api/internal/lock"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
+	"gopkg.aoctech.app/api/internal/cache"
+	"gopkg.aoctech.app/api/internal/config"
+	"gopkg.aoctech.app/api/internal/lock"
 )
 
 // tokenCacheKey is the Valkey key holding the shared Inter bearer. All replicas
