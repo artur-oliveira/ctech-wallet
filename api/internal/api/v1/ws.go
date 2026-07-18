@@ -19,6 +19,12 @@ const wsPingInterval = 30 * time.Second
 
 const wsAuthTimeout = 5 * time.Second
 
+// wsPongWait is the read deadline after the last native pong — a standard
+// margin (15s) over wsPingInterval so one slow tick doesn't false-positive.
+const wsPongWait = wsPingInterval + 15*time.Second
+
+const wsWriteWait = 5 * time.Second
+
 // readAuthToken reads the first WebSocket frame after the upgrade and extracts
 // the bearer JWT. The client sends it as {"token":"..."} (or a raw token) once;
 // a missing or unreadable frame fails closed so no connection hangs open.
@@ -114,22 +120,15 @@ func RegisterWS(router fiber.Router, verifier *middleware.Verifier, reg ws.Regis
 			send(map[string]any{"type": "connected", "conn_id": connID})
 			slog.Info("ws connected", "conn", connID, "user", userID)
 
+			// Heartbeat: native ping/pong frames — the browser answers these
+			// transparently, no client code involved.
 			done := make(chan struct{})
-			go func() {
-				t := time.NewTicker(wsPingInterval)
-				defer t.Stop()
-				for {
-					select {
-					case <-t.C:
-						if e := conn.WriteMessage(fws.TextMessage, []byte(`{"type":"ping"}`)); e != nil {
-							return
-						}
-					case <-done:
-						return
-					}
-				}
-			}()
+			go startHeartbeat(conn, done, wsPingInterval, wsPongWait, nil)
 
+			// Read loop — detects a dead connection via the heartbeat's read
+			// deadline, and replies to the client's own app-level {"type":"ping"}
+			// heartbeat (the client can't send native ping frames — WHATWG gives
+			// browsers no API for that).
 			for {
 				_, msg, e := conn.ReadMessage()
 				if e != nil {
@@ -143,6 +142,36 @@ func RegisterWS(router fiber.Router, verifier *middleware.Verifier, reg ws.Regis
 			slog.Info("ws disconnected", "conn", connID, "user", userID)
 		})
 	})
+}
+
+// startHeartbeat sends a native ping every pingInterval and arms/resets a read
+// deadline on every native pong, so a half-open connection (no pong within
+// pongWait) breaks the caller's blocking ReadMessage() instead of lingering
+// forever. checkAlive lets the caller veto the next ping (e.g. revoked
+// membership) — returning false closes the connection immediately. Pass nil
+// when there's nothing to veto on.
+func startHeartbeat(conn *fws.Conn, done <-chan struct{}, pingInterval, pongWait time.Duration, checkAlive func() bool) {
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(pongWait))
+	})
+	_ = conn.SetReadDeadline(time.Now().Add(pongWait))
+
+	t := time.NewTicker(pingInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-t.C:
+			if checkAlive != nil && !checkAlive() {
+				_ = conn.Close()
+				return
+			}
+			if e := conn.WriteControl(fws.PingMessage, nil, time.Now().Add(wsWriteWait)); e != nil {
+				return
+			}
+		case <-done:
+			return
+		}
+	}
 }
 
 // isClientPing reports whether msg is the client's app-level heartbeat frame.
