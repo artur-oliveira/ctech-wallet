@@ -24,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: pix-gateway/go.mod
           cache-dependency-path: pix-gateway/go.sum
@@ -51,7 +51,7 @@ jobs:
           esac
 
       # Go is required: the Reconcile stack bundles api/cmd/reconcile at synth time.
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: api/go.mod
           cache-dependency-path: api/go.sum
@@ -129,7 +129,7 @@ jobs:
           esac
 
       # Go is required: the Reconcile stack bundles api/cmd/reconcile at synth time.
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: api/go.mod
           cache-dependency-path: api/go.sum
