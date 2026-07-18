@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	"gopkg.aoctech.app/api/internal/domain/wallet"
-	"gopkg.aoctech.app/api/internal/kycclient"
-	"gopkg.aoctech.app/api/internal/pix"
+	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
+	"gopkg.aoctech.app/wallet/api/internal/kycclient"
+	"gopkg.aoctech.app/wallet/api/internal/pix"
 )
 
 type fakeBroadcaster struct {

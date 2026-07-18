@@ -14,7 +14,7 @@ import (
 	"strings"
 	"sync"
 
-	"gopkg.aoctech.app/api/internal/problem"
+	"gopkg.aoctech.app/wallet/api/internal/problem"
 
 	"github.com/go-playground/validator/v10"
 )

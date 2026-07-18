@@ -8,8 +8,8 @@ import (
 
 	"github.com/aws/aws-lambda-go/lambda"
 
-	"gopkg.aoctech.app/pix-gateway/internal/inter"
-	"gopkg.aoctech.app/pix-gateway/internal/rpc"
+	"gopkg.aoctech.app/wallet/pix-gateway/internal/inter"
+	"gopkg.aoctech.app/wallet/pix-gateway/internal/rpc"
 )
 
 // fakePix is a minimal stand-in — pix-gateway has no dependency on api's fake,

@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.aoctech.app/api/internal/config"
+	"gopkg.aoctech.app/wallet/api/internal/config"
 )
 
 const (

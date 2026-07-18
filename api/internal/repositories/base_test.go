@@ -3,7 +3,7 @@ package repositories
 import (
 	"testing"
 
-	"gopkg.aoctech.app/api/internal/config"
+	"gopkg.aoctech.app/wallet/api/internal/config"
 )
 
 func TestNewBasePrefixesTable(t *testing.T) {

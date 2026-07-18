@@ -17,8 +17,8 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.aoctech.app/pix-gateway/internal/config"
-	"gopkg.aoctech.app/pix-gateway/internal/secrets"
+	"gopkg.aoctech.app/wallet/pix-gateway/internal/config"
+	"gopkg.aoctech.app/wallet/pix-gateway/internal/secrets"
 )
 
 // InterClient is the production PixClient talking to Banco Inter's PIX/Banking

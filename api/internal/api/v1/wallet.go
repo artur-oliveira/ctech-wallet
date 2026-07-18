@@ -3,9 +3,9 @@ package v1
 import (
 	"context"
 
-	"gopkg.aoctech.app/api/internal/domain/wallet"
-	"gopkg.aoctech.app/api/internal/middleware"
-	"gopkg.aoctech.app/api/internal/problem"
+	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
+	"gopkg.aoctech.app/wallet/api/internal/middleware"
+	"gopkg.aoctech.app/wallet/api/internal/problem"
 
 	"github.com/gofiber/fiber/v3"
 )

@@ -20,7 +20,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
-	"gopkg.aoctech.app/api/internal/config"
+	"gopkg.aoctech.app/wallet/api/internal/config"
 )
 
 // Base provides common DynamoDB operations for all repositories.

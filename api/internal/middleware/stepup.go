@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
-	"gopkg.aoctech.app/api/internal/problem"
+	"gopkg.aoctech.app/wallet/api/internal/problem"
 )
 
 // StepUpMaxAge is the freshness window for step-up-protected routes (withdrawals),

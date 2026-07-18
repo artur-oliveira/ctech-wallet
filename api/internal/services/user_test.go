@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"gopkg.aoctech.app/api/internal/domain/wallet"
+	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 )
 
 type stubUserRepo struct {

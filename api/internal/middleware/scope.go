@@ -2,8 +2,8 @@ package middleware
 
 import (
 	"github.com/gofiber/fiber/v3"
-	"gopkg.aoctech.app/api/internal/domain/wallet"
-	"gopkg.aoctech.app/api/internal/problem"
+	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
+	"gopkg.aoctech.app/wallet/api/internal/problem"
 )
 
 // Scopes the wallet defines for its own internal callers (poker/dominó/billing,

@@ -9,9 +9,9 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/recover"
-	"gopkg.aoctech.app/api/internal/domain/wallet"
-	"gopkg.aoctech.app/api/internal/pix"
-	"gopkg.aoctech.app/api/internal/repositories"
+	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
+	"gopkg.aoctech.app/wallet/api/internal/pix"
+	"gopkg.aoctech.app/wallet/api/internal/repositories"
 )
 
 // TestConfirmDepositRequiresScope exercises RequireScope directly rather than

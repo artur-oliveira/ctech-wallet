@@ -217,8 +217,8 @@ import (
 	"context"
 	"testing"
 
-	"gopkg.aoctech.app/api/internal/domain/id"
-	"gopkg.aoctech.app/api/internal/domain/wallet"
+	"gopkg.aoctech.app/wallet/api/internal/domain/id"
+	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 )
 
 func TestAuditAppendIsAppendOnly(t *testing.T) {
@@ -329,9 +329,9 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 
-	"gopkg.aoctech.app/api/internal/config"
-	"gopkg.aoctech.app/api/internal/domain/id"
-	"gopkg.aoctech.app/api/internal/domain/wallet"
+	"gopkg.aoctech.app/wallet/api/internal/config"
+	"gopkg.aoctech.app/wallet/api/internal/domain/id"
+	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 )
 
 // AuditRepository is the append-only store for non-money events. It exposes no
@@ -672,10 +672,10 @@ import (
 	"errors"
 	"testing"
 
-	"gopkg.aoctech.app/api/internal/domain/id"
-	"gopkg.aoctech.app/api/internal/domain/wallet"
-	"gopkg.aoctech.app/api/internal/kycclient"
-	"gopkg.aoctech.app/api/internal/problem"
+	"gopkg.aoctech.app/wallet/api/internal/domain/id"
+	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
+	"gopkg.aoctech.app/wallet/api/internal/kycclient"
+	"gopkg.aoctech.app/wallet/api/internal/problem"
 )
 
 // Activation requires KYC `verified` — real money is about to enter a gambling

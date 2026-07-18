@@ -13,7 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/aws/aws-sdk-go-v2/service/ssm/types"
 
-	"gopkg.aoctech.app/pix-gateway/internal/secrets"
+	"gopkg.aoctech.app/wallet/pix-gateway/internal/secrets"
 )
 
 func TestCentavosReaisRoundTrip(t *testing.T) {

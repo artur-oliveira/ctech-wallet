@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Module path: `gopkg.aoctech.app/api`. Go `1.26`.
+- Module path: `gopkg.aoctech.app/wallet/api`. Go `1.26`.
 - Deployed binary MUST be named `app` (CDK userdata expects `/opt/app/current/app`).
 - Auth is **RS256 only**. No HS256, no `SECRET_KEY`.
 - **All money is integer centavos.** Never float. Fee = `max(min(amount*2/100, 1000), 100)` computed in integer math.
@@ -106,7 +106,7 @@ api/
 **Interfaces:**
 - Produces: `config.Config`, `config.Load() (*Config, error)`; `cache.Backend`; `awsclient.Clients{DynamoDB *dynamodb.Client}`, `awsclient.New(ctx, cfg)`; `problem.*` constructors; `validation.Struct(dst) *problem.Problem`.
 
-- [ ] **Step 1: Copy boilerplate verbatim, change module path.** Copy these files from `/home/artur/Documents/Projects/Ctech/ctech-dfe/api/` preserving content, then `sed`-replace the import prefix `github.com/artur-oliveira/ctech-dfe/api` → `gopkg.aoctech.app/api`:
+- [ ] **Step 1: Copy boilerplate verbatim, change module path.** Copy these files from `/home/artur/Documents/Projects/Ctech/ctech-dfe/api/` preserving content, then `sed`-replace the import prefix `github.com/artur-oliveira/ctech-dfe/api` → `gopkg.aoctech.app/wallet/api`:
   - `internal/cache/cache.go`, `internal/cache/memory.go`, `internal/cache/redis.go` (verbatim — the `cache.Backend` interface is reused unchanged).
   - `internal/problem/problem.go` (see Step 3 for wallet-specific edits).
   - `internal/validation/validation.go` + any `validators.go` (keep generic validators: required, email; **drop** SEFAZ/BR-fiscal validators cfop/ncm/etc. — but KEEP `cpf` if present, wallet uses it).
@@ -227,7 +227,7 @@ import (
 	awscfg "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 
-	"gopkg.aoctech.app/api/internal/config"
+	"gopkg.aoctech.app/wallet/api/internal/config"
 )
 
 type Clients struct{ DynamoDB *dynamodb.Client }
@@ -255,7 +255,7 @@ import (
 	"log/slog"
 	"os"
 
-	"gopkg.aoctech.app/api/internal/app"
+	"gopkg.aoctech.app/wallet/api/internal/app"
 	"go.uber.org/fx"
 )
 
@@ -417,7 +417,7 @@ Expected: FAIL → (implement) → PASS
 package middleware
 
 import "github.com/gofiber/fiber/v3"
-import "gopkg.aoctech.app/api/internal/problem"
+import "gopkg.aoctech.app/wallet/api/internal/problem"
 
 const (
 	ScopeWalletCredit = "internal:wallet:credit"

@@ -6,8 +6,8 @@ import (
 	"context"
 	"testing"
 
-	"gopkg.aoctech.app/api/internal/domain/id"
-	"gopkg.aoctech.app/api/internal/domain/wallet"
+	"gopkg.aoctech.app/wallet/api/internal/domain/id"
+	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 )
 
 // Two independent consent documents live on one row. Accepting either must never

@@ -6,9 +6,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
-	"gopkg.aoctech.app/api/internal/config"
-	"gopkg.aoctech.app/api/internal/domain/id"
-	"gopkg.aoctech.app/api/internal/domain/wallet"
+	"gopkg.aoctech.app/wallet/api/internal/config"
+	"gopkg.aoctech.app/wallet/api/internal/domain/id"
+	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 )
 
 // AuditRepository is the append-only store for non-money events: consent,

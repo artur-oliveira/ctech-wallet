@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"gopkg.aoctech.app/api/internal/cache"
-	"gopkg.aoctech.app/api/internal/pix"
+	"gopkg.aoctech.app/wallet/api/internal/cache"
+	"gopkg.aoctech.app/wallet/api/internal/pix"
 
 	"github.com/gofiber/fiber/v3"
 )

@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"go.uber.org/fx"
-	"gopkg.aoctech.app/api/internal/app"
+	"gopkg.aoctech.app/wallet/api/internal/app"
 )
 
 func main() {

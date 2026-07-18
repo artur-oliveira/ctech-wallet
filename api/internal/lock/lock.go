@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"gopkg.aoctech.app/api/internal/cache"
+	"gopkg.aoctech.app/wallet/api/internal/cache"
 )
 
 // LockTTL bounds how long a lock is held before it auto-releases, so a crashed

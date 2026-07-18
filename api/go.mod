@@ -1,4 +1,4 @@
-module gopkg.aoctech.app/api
+module gopkg.aoctech.app/wallet/api
 
 go 1.26
 

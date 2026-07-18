@@ -5,8 +5,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"gopkg.aoctech.app/api/internal/cache"
-	"gopkg.aoctech.app/api/internal/config"
+	"gopkg.aoctech.app/wallet/api/internal/cache"
+	"gopkg.aoctech.app/wallet/api/internal/config"
 
 	"github.com/gofiber/fiber/v3"
 )

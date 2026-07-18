@@ -18,14 +18,14 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	dtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
-	"gopkg.aoctech.app/api/internal/cache"
-	"gopkg.aoctech.app/api/internal/config"
-	"gopkg.aoctech.app/api/internal/domain/wallet"
-	"gopkg.aoctech.app/api/internal/kycclient"
-	"gopkg.aoctech.app/api/internal/lock"
-	"gopkg.aoctech.app/api/internal/pix"
-	"gopkg.aoctech.app/api/internal/repositories"
-	"gopkg.aoctech.app/api/internal/services"
+	"gopkg.aoctech.app/wallet/api/internal/cache"
+	"gopkg.aoctech.app/wallet/api/internal/config"
+	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
+	"gopkg.aoctech.app/wallet/api/internal/kycclient"
+	"gopkg.aoctech.app/wallet/api/internal/lock"
+	"gopkg.aoctech.app/wallet/api/internal/pix"
+	"gopkg.aoctech.app/wallet/api/internal/repositories"
+	"gopkg.aoctech.app/wallet/api/internal/services"
 )
 
 const tablePrefix = "test"

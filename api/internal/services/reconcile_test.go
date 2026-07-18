@@ -6,10 +6,10 @@ import (
 	"errors"
 	"testing"
 
-	"gopkg.aoctech.app/api/internal/domain/wallet"
-	"gopkg.aoctech.app/api/internal/kycclient"
-	"gopkg.aoctech.app/api/internal/pix"
-	"gopkg.aoctech.app/api/internal/repositories"
+	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
+	"gopkg.aoctech.app/wallet/api/internal/kycclient"
+	"gopkg.aoctech.app/wallet/api/internal/pix"
+	"gopkg.aoctech.app/wallet/api/internal/repositories"
 )
 
 // reconRepo extends the behavior needed for reconciliation tests.

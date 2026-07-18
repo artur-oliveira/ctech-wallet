@@ -18,9 +18,9 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
-	"gopkg.aoctech.app/api/internal/cache"
-	"gopkg.aoctech.app/api/internal/config"
-	"gopkg.aoctech.app/api/internal/lock"
+	"gopkg.aoctech.app/wallet/api/internal/cache"
+	"gopkg.aoctech.app/wallet/api/internal/config"
+	"gopkg.aoctech.app/wallet/api/internal/lock"
 )
 
 // tokenCacheKey is the Valkey key holding the shared Inter bearer. All replicas

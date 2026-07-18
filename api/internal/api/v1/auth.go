@@ -1,7 +1,7 @@
 package v1
 
 import (
-	"gopkg.aoctech.app/api/internal/middleware"
+	"gopkg.aoctech.app/wallet/api/internal/middleware"
 
 	"github.com/gofiber/fiber/v3"
 )

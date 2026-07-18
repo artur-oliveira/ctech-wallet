@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.aoctech.app/api/internal/middleware"
-	"gopkg.aoctech.app/api/internal/ws"
+	"gopkg.aoctech.app/wallet/api/internal/middleware"
+	"gopkg.aoctech.app/wallet/api/internal/ws"
 
 	fws "github.com/fasthttp/websocket"
 	"github.com/gofiber/fiber/v3"

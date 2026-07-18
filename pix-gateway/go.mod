@@ -1,4 +1,4 @@
-module gopkg.aoctech.app/pix-gateway
+module gopkg.aoctech.app/wallet/pix-gateway
 
 go 1.26.5
 

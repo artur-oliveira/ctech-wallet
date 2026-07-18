@@ -9,11 +9,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	apiv1 "gopkg.aoctech.app/api/internal/api/v1"
-	"gopkg.aoctech.app/api/internal/awsclient"
-	"gopkg.aoctech.app/api/internal/cache"
-	"gopkg.aoctech.app/api/internal/config"
-	"gopkg.aoctech.app/api/internal/pix"
+	apiv1 "gopkg.aoctech.app/wallet/api/internal/api/v1"
+	"gopkg.aoctech.app/wallet/api/internal/awsclient"
+	"gopkg.aoctech.app/wallet/api/internal/cache"
+	"gopkg.aoctech.app/wallet/api/internal/config"
+	"gopkg.aoctech.app/wallet/api/internal/pix"
 
 	"github.com/gofiber/fiber/v3"
 )

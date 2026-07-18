@@ -5,8 +5,8 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 
-	"gopkg.aoctech.app/api/internal/config"
-	"gopkg.aoctech.app/api/internal/domain/wallet"
+	"gopkg.aoctech.app/wallet/api/internal/config"
+	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 )
 
 // UserRepository persists the wallet-side per-user state (terms acceptance).

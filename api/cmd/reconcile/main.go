@@ -16,15 +16,15 @@ import (
 	awscfg "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 
-	"gopkg.aoctech.app/api/internal/awsclient"
-	"gopkg.aoctech.app/api/internal/cache"
-	"gopkg.aoctech.app/api/internal/config"
-	"gopkg.aoctech.app/api/internal/kycclient"
-	"gopkg.aoctech.app/api/internal/lock"
-	"gopkg.aoctech.app/api/internal/pix"
-	"gopkg.aoctech.app/api/internal/repositories"
-	"gopkg.aoctech.app/api/internal/services"
-	"gopkg.aoctech.app/api/internal/ws"
+	"gopkg.aoctech.app/wallet/api/internal/awsclient"
+	"gopkg.aoctech.app/wallet/api/internal/cache"
+	"gopkg.aoctech.app/wallet/api/internal/config"
+	"gopkg.aoctech.app/wallet/api/internal/kycclient"
+	"gopkg.aoctech.app/wallet/api/internal/lock"
+	"gopkg.aoctech.app/wallet/api/internal/pix"
+	"gopkg.aoctech.app/wallet/api/internal/repositories"
+	"gopkg.aoctech.app/wallet/api/internal/services"
+	"gopkg.aoctech.app/wallet/api/internal/ws"
 )
 
 // Result is what the Lambda returns (and what the CLI logs).

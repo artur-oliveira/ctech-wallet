@@ -3,7 +3,7 @@ package services
 import (
 	"context"
 
-	"gopkg.aoctech.app/api/internal/domain/wallet"
+	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 )
 
 // UserRepo is the persistence surface for wallet-side user state: the consent

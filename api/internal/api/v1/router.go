@@ -2,13 +2,13 @@
 package v1
 
 import (
-	"gopkg.aoctech.app/api/internal/awsclient"
-	"gopkg.aoctech.app/api/internal/cache"
-	"gopkg.aoctech.app/api/internal/config"
-	"gopkg.aoctech.app/api/internal/middleware"
-	"gopkg.aoctech.app/api/internal/pix"
-	"gopkg.aoctech.app/api/internal/services"
-	"gopkg.aoctech.app/api/internal/ws"
+	"gopkg.aoctech.app/wallet/api/internal/awsclient"
+	"gopkg.aoctech.app/wallet/api/internal/cache"
+	"gopkg.aoctech.app/wallet/api/internal/config"
+	"gopkg.aoctech.app/wallet/api/internal/middleware"
+	"gopkg.aoctech.app/wallet/api/internal/pix"
+	"gopkg.aoctech.app/wallet/api/internal/services"
+	"gopkg.aoctech.app/wallet/api/internal/ws"
 
 	"github.com/gofiber/fiber/v3"
 )

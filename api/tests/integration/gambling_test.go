@@ -6,10 +6,10 @@ import (
 	"context"
 	"testing"
 
-	"gopkg.aoctech.app/api/internal/domain/id"
-	"gopkg.aoctech.app/api/internal/domain/wallet"
-	"gopkg.aoctech.app/api/internal/kycclient"
-	"gopkg.aoctech.app/api/internal/problem"
+	"gopkg.aoctech.app/wallet/api/internal/domain/id"
+	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
+	"gopkg.aoctech.app/wallet/api/internal/kycclient"
+	"gopkg.aoctech.app/wallet/api/internal/problem"
 )
 
 // Activation requires KYC `verified` — real money is about to enter a gambling
