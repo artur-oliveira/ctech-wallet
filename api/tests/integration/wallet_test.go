@@ -598,3 +598,106 @@ func TestSweepPendingDepositsCreditsOnceInterConfirms(t *testing.T) {
 		t.Fatalf("balance = %d, want 5000 (deposit should have been credited)", got)
 	}
 }
+
+// TestConcurrentCreditSameIdempotencyKeyAppliesOnce closes the remaining part
+// of the audit's testing gap: N concurrent Credit calls with the SAME
+// idempotency key must apply exactly once.
+func TestConcurrentCreditSameIdempotencyKeyAppliesOnce(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(verified())
+	user := "u-" + id.New()
+	real, err := h.repo.EnsureRealWallet(ctx, user)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const n = 10
+	var wg sync.WaitGroup
+	errs := make([]error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, _, errs[i] = h.repo.Credit(ctx, repositories.Mutation{
+				WalletID: real.WalletID, Amount: 1000, EntryType: wallet.EntryDeposit,
+				Ref: "concurrent-credit", IdempotencyKey: "credit-race#" + user, ReqHash: "same-hash",
+			})
+		}(i)
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("goroutine %d: %v", i, err)
+		}
+	}
+	if got := balance(t, h, real.WalletID); got != 1000 {
+		t.Fatalf("balance = %d, want 1000 (double-credit if higher)", got)
+	}
+}
+
+// TestConcurrentFundGameSameIdempotencyKeyAppliesOnce proves the real→game
+// ring-fence transfer applies exactly once under concurrent identical calls.
+func TestConcurrentFundGameSameIdempotencyKeyAppliesOnce(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(verified())
+	user := fundedAndActivated(t, h, 50000)
+	real, err := h.repo.EnsureRealWallet(ctx, user)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const n = 10
+	var wg sync.WaitGroup
+	errs := make([]error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, _, errs[i] = h.svc.FundGame(ctx, user, 5000, "fund-race")
+		}(i)
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("goroutine %d: %v", i, err)
+		}
+	}
+	if got := balance(t, h, real.WalletID); got != 45000 {
+		t.Fatalf("real balance = %d, want 45000 (double-fund if lower)", got)
+	}
+}
+
+// TestConcurrentPurchaseSandboxSameIdempotencyKeyAppliesOnce proves the
+// game→sandbox conversion applies exactly once under concurrent identical calls.
+func TestConcurrentPurchaseSandboxSameIdempotencyKeyAppliesOnce(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(verified())
+	user := "u-" + id.New()
+	game, _ := activate(t, h, user)
+	if _, _, err := h.repo.Credit(ctx, repositories.Mutation{
+		WalletID: game.WalletID, Amount: 20000, EntryType: wallet.EntryGameFundCredit,
+		Ref: "seed", IdempotencyKey: "seed-game#" + user, ReqHash: "seed",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	const n = 10
+	var wg sync.WaitGroup
+	errs := make([]error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, _, errs[i] = h.svc.PurchaseSandbox(ctx, user, 5000, "purchase-race")
+		}(i)
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("goroutine %d: %v", i, err)
+		}
+	}
+	if got := balance(t, h, game.WalletID); got != 15000 {
+		t.Fatalf("game balance = %d, want 15000 (double-purchase if lower)", got)
+	}
+}
