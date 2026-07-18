@@ -478,19 +478,6 @@ func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, a
 	}
 	withdrawalID := "withdraw#" + userID + "#" + idemKey
 
-	// Idempotent replay: same key → return the existing withdrawal.
-	if existing, err := s.repo.GetWithdrawal(ctx, withdrawalID); err != nil {
-		return nil, err
-	} else if existing != nil {
-		return existing, nil
-	}
-
-	kyc, err := s.kyc.Get(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	pixKey := kyc.CPF
-
 	realw, err := s.repo.EnsureRealWallet(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -505,10 +492,32 @@ func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, a
 	}
 	defer release()
 
+	// Idempotent replay: same key → return the existing withdrawal. Checked
+	// under the wallet lock (not before it) so two concurrent identical calls
+	// can't both pass this check before either has written anything.
+	if existing, err := s.repo.GetWithdrawal(ctx, withdrawalID); err != nil {
+		return nil, err
+	} else if existing != nil {
+		return existing, nil
+	}
+
+	kyc, err := s.kyc.Get(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	pixKey := kyc.CPF
+
 	fee := wallet.WithdrawalFee(amount, realw)
 	rh := reqHash(pixKey, amount)
-	if _, _, _, err := s.repo.DebitWithFee(ctx, realw.WalletID, amount, fee, withdrawalID, rh, withdrawalID); err != nil {
+	_, _, replayed, err := s.repo.DebitWithFee(ctx, realw.WalletID, amount, fee, withdrawalID, rh, withdrawalID)
+	if err != nil {
 		return nil, err
+	}
+	if replayed {
+		// The debit itself was a replay (same idempotency key already
+		// committed) — someone else is mid-flight on this withdrawal. Never
+		// re-transfer; return whatever is on record.
+		return s.repo.GetWithdrawal(ctx, withdrawalID)
 	}
 
 	w := &wallet.Withdrawal{
@@ -524,6 +533,9 @@ func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, a
 		UpdatedAt:      repositories.NowStr(),
 	}
 	if err := s.repo.PutWithdrawal(ctx, w); err != nil {
+		if errors.Is(err, repositories.ErrWithdrawalExists) {
+			return s.repo.GetWithdrawal(ctx, withdrawalID)
+		}
 		return nil, err
 	}
 

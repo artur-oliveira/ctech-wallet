@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -143,7 +144,7 @@ func TestDepositConfirmCreditsOnCPFMatch(t *testing.T) {
 	}
 	h.pix.StageCharge(dep.Txid, 5000, pix.ChargeCompleted, cpf, "E2E-1")
 
-	if err := h.svc.ConfirmDeposit(ctx, dep.Txid); err != nil {
+	if err := h.svc.ConfirmDeposit(ctx, dep.Txid, cpf, "Fake Payer"); err != nil {
 		t.Fatalf("ConfirmDeposit: %v", err)
 	}
 	if got := balance(t, h, dep.WalletID); got != 5000 {
@@ -151,7 +152,7 @@ func TestDepositConfirmCreditsOnCPFMatch(t *testing.T) {
 	}
 
 	// Idempotent: re-confirming does not double-credit.
-	_ = h.svc.ConfirmDeposit(ctx, dep.Txid)
+	_ = h.svc.ConfirmDeposit(ctx, dep.Txid, cpf, "Fake Payer")
 	if got := balance(t, h, dep.WalletID); got != 5000 {
 		t.Fatalf("balance after re-confirm = %d, want 5000", got)
 	}
@@ -289,7 +290,7 @@ func TestDepositRejectsAndRefundsOnCPFMismatch(t *testing.T) {
 	}
 	h.pix.StageCharge(dep.Txid, 5000, pix.ChargeCompleted, "99999999999", "E2E-9")
 
-	if err := h.svc.ConfirmDeposit(ctx, dep.Txid); err != nil {
+	if err := h.svc.ConfirmDeposit(ctx, dep.Txid, "99999999999", "Fake Payer"); err != nil {
 		t.Fatalf("ConfirmDeposit: %v", err)
 	}
 	if got := balance(t, h, dep.WalletID); got != 0 {
@@ -458,4 +459,42 @@ func TestIdempotencyConflictOnDifferentPayload(t *testing.T) {
 	// Same key, different amount → conflict.
 	_, err := h.svc.CreditSandbox(ctx, user, 2000, idem, "bonus")
 	wantProblem(t, err, problem.TypeIdempotencyConflict)
+}
+
+// TestWithdrawConcurrentSameIdempotencyKeyExactlyOneTransfer proves F2's fix:
+// N concurrent Withdraw calls with the SAME idempotency key must debit and
+// PIX-transfer exactly once, never twice (the previous unconditional
+// PutWithdrawal + a replay check taken before the lock let two racing calls
+// both win).
+func TestWithdrawConcurrentSameIdempotencyKeyExactlyOneTransfer(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(verified())
+	user := "u-" + id.New()
+	real := fund(t, h, user, 100000)
+
+	const n = 10
+	var wg sync.WaitGroup
+	errs := make([]error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, errs[i] = h.svc.Withdraw(ctx, user, "verified", 5000, "idem-race")
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("goroutine %d: unexpected error: %v", i, err)
+		}
+	}
+	if got := len(h.pix.Transfers); got != 1 {
+		t.Fatalf("expected exactly 1 PIX transfer call, got %d", got)
+	}
+	fee := wallet.WithdrawalFee(5000, nil)
+	want := int64(100000) - 5000 - fee
+	if got := balance(t, h, real.WalletID); got != want {
+		t.Fatalf("balance = %d, want %d (double-debit if lower)", got, want)
+	}
 }

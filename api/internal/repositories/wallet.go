@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -418,12 +419,24 @@ func (r *WalletRepository) UpdateDepositPayer(ctx context.Context, txid, payerCP
 
 // --- withdrawal persistence ---
 
+// ErrWithdrawalExists means PutWithdrawal lost a race — another call already
+// created this withdrawal record. The caller must re-fetch and return the
+// winner's record instead of retrying the write or the PIX transfer.
+var ErrWithdrawalExists = errors.New("repositories: withdrawal already exists")
+
 func (r *WalletRepository) PutWithdrawal(ctx context.Context, w *wallet.Withdrawal) error {
 	av, err := Encode(w)
 	if err != nil {
 		return err
 	}
-	return r.withdrawal.PutItem(ctx, av)
+	item := r.withdrawal.BuildPutTxItemIfAbsent(av)
+	if err := r.withdrawal.TransactWrite(ctx, []types.TransactWriteItem{item}); err != nil {
+		if IsConditionFailed(err) {
+			return ErrWithdrawalExists
+		}
+		return err
+	}
+	return nil
 }
 
 func (r *WalletRepository) GetWithdrawal(ctx context.Context, withdrawalID string) (*wallet.Withdrawal, error) {
