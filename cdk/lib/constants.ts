@@ -38,7 +38,7 @@ export const ACCOUNTS_DOMAIN_PREFIX = 'accounts';
  * 10 = ctech-dfe api, 20 = ctech-account api, 30 = ctech-wallet api.
  * Must stay unique across every service that attaches to the shared listener.
  */
-export const ALB_LISTENER_PRIORITY = 30;
+export const ALB_LISTENER_PRIORITY = 35;
 
 /** Port the Go binary listens on (nginx proxies :8080 → :8000). */
 export const APP_PORT = 8000;
@@ -60,7 +60,7 @@ export const S3_PREFIX = SERVICE;
 export const API_CURRENT_ARTIFACT_KEY = `${S3_PREFIX}/api/current.zip`;
 
 // ── Per-environment names ───────────────────────────────────────────────────
-export const asgName = (env: Environment) => `${env}-${SERVICE}-api`;
+export const asgName = (env: Environment) => `${env}-${SERVICE}-v2-api`;
 export const instanceRoleName = (env: Environment) => `${env}-${SERVICE}-api-role`;
 export const instanceProfileName = (env: Environment) => `${env}-${SERVICE}-api-instance-profile`;
 export const frontendBucketName = (env: Environment) => `${env}-${SERVICE}-frontend`;
