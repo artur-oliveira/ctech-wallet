@@ -10,7 +10,7 @@ import {formatBRL, formatCreditsAmount, toCredits} from '@/lib/utils/money'
 import {useAuth} from '@/lib/hooks/useAuth'
 import {ProtectedRoute} from '@/components/protected-route'
 import {BalanceCards} from '@/components/wallet/balance-cards'
-import {LedgerList} from '@/components/wallet/ledger-list'
+import {LedgerTabs} from '@/components/wallet/ledger-tabs'
 import {AmountDialog} from '@/components/wallet/amount-dialog'
 import {ConfirmMoneyDialog} from '@/components/wallet/confirm-money-dialog'
 import {MoneyReceiptDialog} from '@/components/wallet/money-receipt-dialog'
@@ -19,7 +19,7 @@ import {TransactionStatusList} from '@/components/wallet/transaction-status-list
 import {Button} from '@/components/ui/button'
 import {LanguageSwitcher} from '@/components/language-switcher'
 import {useWalletRealtime} from '@/lib/hooks/useWalletRealtime'
-import type {DepositResult, WalletType} from '@/lib/types/api'
+import type {DepositResult} from '@/lib/types/api'
 import {
     applyRealtimeStatus,
     parseStoredDeposit,
@@ -32,10 +32,6 @@ import {SESSION_KEY_PIX_CHARGE_PREFIX, SESSION_KEY_TRANSACTION_PREFIX} from '@/l
 import Image from 'next/image'
 
 type Flow = 'deposit' | 'withdraw' | 'credits' | 'fund-game' | 'return-game' | null
-
-/** Game and sandbox statements exist only once the user has activated gambling. */
-const LEDGER_TABS = (activated: boolean): WalletType[] =>
-    activated ? ['real', 'game', 'sandbox'] : ['real']
 
 const TRANSACTION_POLL_INTERVAL_MS = 10_000
 
@@ -98,8 +94,6 @@ function DashboardInner() {
         details?: Array<{label: string; value: string}>
     } | null>(null)
     const [stepUp, setStepUp] = useState(false)
-    const [tab, setTab] = useState<WalletType>('real')
-
     const balances = useQuery({queryKey: ['balances'], queryFn: () => apiClient.getBalances()})
     const responsible = useQuery({queryKey: ['gambling-limits'], queryFn: () => apiClient.getGameLimits()})
     const walletID = balances.data?.real.wallet_id
@@ -361,24 +355,7 @@ function DashboardInner() {
                             }}
                         />
 
-                        <section className="overflow-hidden rounded-xl border border-border bg-card">
-                            <div className="flex overflow-x-auto border-b border-border">
-                                {LEDGER_TABS(balances.data.activated).map((tk) => (
-                                    <button
-                                        key={tk}
-                                        onClick={() => setTab(tk)}
-                                        className={`px-5 py-3.5 text-xs font-semibold uppercase tracking-wider transition-colors whitespace-nowrap focus-visible:outline-offset-[-3px] [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11 ${
-                                            tab === tk
-                                                ? 'border-b-2 border-brand-600 text-brand-700'
-                                                : 'text-muted-foreground hover:text-foreground'
-                                        }`}
-                                    >
-                                        {t(`dashboard.ledger.tab.${tk}`)}
-                                    </button>
-                                ))}
-                            </div>
-                            <LedgerList type={tab}/>
-                        </section>
+                        <LedgerTabs activated={balances.data.activated}/>
                     </>
                 )}
             </main>

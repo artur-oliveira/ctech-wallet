@@ -30,6 +30,7 @@
     "connecting": "Conectando…",
     "offline": "Offline",
     "ledger": {
+      "label": "Extratos das carteiras",
       "tab": {
         "real": "Extrato real",
         "game": "Extrato de jogo",

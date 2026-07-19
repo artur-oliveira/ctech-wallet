@@ -30,6 +30,7 @@
     "connecting": "Connecting…",
     "offline": "Offline",
     "ledger": {
+      "label": "Wallet statements",
       "tab": {
         "real": "Real statement",
         "game": "Game statement",
