@@ -121,7 +121,7 @@ func (s *WalletService) ActivateGambling(ctx context.Context, userID, kycLevel, 
 	if kycLevel != wallet.KYCVerified {
 		return nil, nil, problem.KYCNotVerified()
 	}
-	u, err := s.users.Get(ctx, userID)
+	u, err := s.requireNotExcluded(ctx, userID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -631,6 +631,9 @@ func (s *WalletService) FundGame(ctx context.Context, userID string, amount int6
 	if err != nil {
 		return nil, nil, err
 	}
+	if _, err := s.requireNotExcluded(ctx, userID); err != nil {
+		return nil, nil, err
+	}
 	return s.ringTransfer(ctx, rl, game, amount,
 		wallet.EntryGameFundDebit, wallet.EntryGameFundCredit, "game_fund", idemKey)
 }
@@ -745,6 +748,9 @@ func (s *WalletService) DebitReal(ctx context.Context, userID string, amount int
 func (s *WalletService) HoldGame(ctx context.Context, userID string, amount int64, tableRef, idemKey string) (*wallet.Hold, error) {
 	_, game, _, err := s.requireActivated(ctx, userID)
 	if err != nil {
+		return nil, err
+	}
+	if _, err := s.requireNotExcluded(ctx, userID); err != nil { // defense in depth: an excluded user must not re-enter play
 		return nil, err
 	}
 	release, ok, err := s.lock.Acquire(ctx, game.WalletID)

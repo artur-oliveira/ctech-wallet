@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 )
 
@@ -108,4 +110,28 @@ func TestAcceptGamblingAddendumIsRecordedAndAudited(t *testing.T) {
 	if e.EventType != wallet.EventGamblingAddendumAccepted || e.IP != "203.0.113.7" || e.UserAgent != "agent" {
 		t.Errorf("audit event = %+v, want gambling_addendum_accepted with request context", e)
 	}
+}
+
+func (r *stubUserRepo) SetSelfExclusion(_ context.Context, _ string, ex *wallet.SelfExclusion) error {
+	if r.user == nil {
+		r.user = &wallet.User{}
+	}
+	r.user.SelfExclusion = ex
+	return nil
+}
+
+func (r *stubUserRepo) SetGameLimits(_ context.Context, _ string, lim *wallet.GameLimits) error {
+	if r.user == nil {
+		r.user = &wallet.User{}
+	}
+	r.user.GameLimits = lim
+	return nil
+}
+
+func (r *stubUserRepo) BumpDepositCounters(_ string, _ *wallet.GameDepositCounters, next wallet.GameDepositCounters) (types.TransactWriteItem, error) {
+	if r.user == nil {
+		r.user = &wallet.User{}
+	}
+	r.user.GameDepositCounters = &next
+	return types.TransactWriteItem{}, nil
 }

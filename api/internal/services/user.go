@@ -3,6 +3,8 @@ package services
 import (
 	"context"
 
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 )
 
@@ -13,6 +15,9 @@ type UserRepo interface {
 	Get(ctx context.Context, userID string) (*wallet.User, error)
 	AcceptTerms(ctx context.Context, userID string) error
 	AcceptGamblingAddendum(ctx context.Context, userID string) error
+	SetSelfExclusion(ctx context.Context, userID string, ex *wallet.SelfExclusion) error
+	SetGameLimits(ctx context.Context, userID string, lim *wallet.GameLimits) error
+	BumpDepositCounters(userID string, prev *wallet.GameDepositCounters, next wallet.GameDepositCounters) (types.TransactWriteItem, error)
 }
 
 // UserService owns the consent-acceptance state (terms + gambling addenda).

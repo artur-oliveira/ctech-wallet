@@ -5,6 +5,9 @@ package wallet
 // personal gambling limit.
 const (
 	EventGamblingActivated        = "gambling_activated"
+	EventSelfExcluded             = "self_excluded"
+	EventSelfExclusionRevoked     = "self_exclusion_revoked"
+	EventGameLimitsChanged        = "game_limits_changed"
 	EventGamblingAddendumAccepted = "gambling_addendum_accepted"
 	EventTermsAddendumAccepted    = "terms_addendum_accepted"
 )
