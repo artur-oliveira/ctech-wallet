@@ -1,12 +1,7 @@
 import assert from 'node:assert/strict'
 import {describe, it} from 'node:test'
 
-import {
-    DEFAULT_LOCALE,
-    localeFromPath,
-    localizedPath,
-    normalizeLocale,
-} from './locale.ts'
+import {DEFAULT_LOCALE, localeFromPath, localizedPath, normalizeLocale,} from './locale.ts'
 
 describe('wallet locale delivery', () => {
     it('normalizes supported browser and stored language variants', () => {

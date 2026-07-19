@@ -1,5 +1,5 @@
-import { OAuthClient, decodeIdToken as sdkDecodeIdToken } from '@aoctech/auth-client'
-import type { UnverifiedIdTokenClaims } from '@aoctech/auth-client'
+import type {UnverifiedIdTokenClaims} from '@aoctech/auth-client'
+import {decodeIdToken as sdkDecodeIdToken, OAuthClient} from '@aoctech/auth-client'
 
 const CTECH_URL = process.env.NEXT_PUBLIC_CTECH_URL!
 const CLIENT_ID = process.env.NEXT_PUBLIC_CTECH_CLIENT_ID!
@@ -11,7 +11,7 @@ const client = new OAuthClient({
   scope: 'openid profile kyc',
 })
 
-export type { UnverifiedIdTokenClaims }
+export type {UnverifiedIdTokenClaims}
 /** @deprecated Use UnverifiedIdTokenClaims instead */
 export type IdTokenClaims = UnverifiedIdTokenClaims
 
@@ -42,7 +42,7 @@ export async function exchangeCode(
   state: string,
 ): Promise<{ accessToken: string; idToken: string | null; returnTo: string }> {
   const result = await client.exchangeCode(code, state)
-  return { accessToken: result.accessToken, idToken: result.idToken ?? null, returnTo: result.returnTo }
+  return {accessToken: result.accessToken, idToken: result.idToken ?? null, returnTo: result.returnTo}
 }
 
 // M2: refresh_token is no longer passed in the request body — ctech-account
@@ -56,7 +56,7 @@ export async function exchangeCode(
 // without the ctech_auth hint cookie, or after a local revoked mark.
 export async function doRefresh(): Promise<{ accessToken: string } | null> {
   const result = await client.refresh()
-  return result ? { accessToken: result.accessToken } : null
+  return result ? {accessToken: result.accessToken} : null
 }
 
 /**

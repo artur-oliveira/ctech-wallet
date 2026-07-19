@@ -8,38 +8,38 @@ import i18n, {changeAppLanguage} from '@/lib/i18n'
 import {LOCALE_STORAGE_KEY, localeFromPath, normalizeLocale, persistLocalePreference} from '@/lib/locale'
 
 function LanguageSync() {
-    const {i18n: instance} = useTranslation()
-    const detectedOnce = useRef(false)
+  const {i18n: instance} = useTranslation()
+  const detectedOnce = useRef(false)
 
-    useEffect(() => {
-        if (detectedOnce.current) return
-        detectedOnce.current = true
+  useEffect(() => {
+    if (detectedOnce.current) return
+    detectedOnce.current = true
 
-        const routeLocale = localeFromPath(window.location.pathname)
-        const cached = window.localStorage.getItem(LOCALE_STORAGE_KEY)
-        let resolved = routeLocale ?? cached
+    const routeLocale = localeFromPath(window.location.pathname)
+    const cached = window.localStorage.getItem(LOCALE_STORAGE_KEY)
+    let resolved = routeLocale ?? cached
 
-        if (!resolved) {
-            const detector = new LanguageDetector()
-            detector.init({languageUtils: instance.services.languageUtils})
-            const detected = detector.detect()
-            resolved = Array.isArray(detected) ? detected[0] : detected ?? null
-        }
+    if (!resolved) {
+      const detector = new LanguageDetector()
+      detector.init({languageUtils: instance.services.languageUtils})
+      const detected = detector.detect()
+      resolved = Array.isArray(detected) ? detected[0] : detected ?? null
+    }
 
-        const supported = normalizeLocale(resolved)
+    const supported = normalizeLocale(resolved)
 
-        if (supported !== instance.language) {
-            void changeAppLanguage(supported)
-        }
-    }, [instance])
+    if (supported !== instance.language) {
+      void changeAppLanguage(supported)
+    }
+  }, [instance])
 
-    useEffect(() => {
-        const locale = normalizeLocale(instance.language)
-        document.documentElement.lang = locale
-        persistLocalePreference(locale)
-    }, [instance.language])
+  useEffect(() => {
+    const locale = normalizeLocale(instance.language)
+    document.documentElement.lang = locale
+    persistLocalePreference(locale)
+  }, [instance.language])
 
-    return null
+  return null
 }
 
 /**
@@ -49,32 +49,33 @@ function LanguageSync() {
  * routes render immediately from their route-owned translation catalog.
  */
 export function I18nProvider({children}: { children: React.ReactNode }) {
-    const [mounted, setMounted] = useState(false)
-    const pathname = usePathname()
+  const [mounted, setMounted] = useState(false)
+  const pathname = usePathname()
 
-    useEffect(() => {
-        const timer = setTimeout(() => setMounted(true), 0)
-        return () => clearTimeout(timer)
-    }, [])
+  useEffect(() => {
+    const timer = setTimeout(() => setMounted(true), 0)
+    return () => clearTimeout(timer)
+  }, [])
 
-    const localizedPublicPath = pathname ? localeFromPath(pathname) : null
-    const rendersImmediately = pathname
-        ? pathname === '/' || localizedPublicPath !== null
-        : false
+  const localizedPublicPath = pathname ? localeFromPath(pathname) : null
+  const rendersImmediately = pathname
+    ? pathname === '/' || localizedPublicPath !== null
+    : false
 
-    return (
-        <I18nextProvider i18n={i18n}>
-            <LanguageSync/>
-            {mounted || rendersImmediately ? (
-                children
-            ) : (
-                <div className="min-h-screen flex items-center justify-center bg-transparent" role="status">
-                    <div className="animate-pulse flex flex-col items-center space-y-4">
-                        <div aria-hidden="true" className="size-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin"/>
-                        <span className="sr-only">{i18n.t('common.loading')}</span>
-                    </div>
-                </div>
-            )}
-        </I18nextProvider>
-    )
+  return (
+    <I18nextProvider i18n={i18n}>
+      <LanguageSync/>
+      {mounted || rendersImmediately ? (
+        children
+      ) : (
+        <div className="min-h-screen flex items-center justify-center bg-transparent" role="status">
+          <div className="animate-pulse flex flex-col items-center space-y-4">
+            <div aria-hidden="true"
+                 className="size-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin"/>
+            <span className="sr-only">{i18n.t('common.loading')}</span>
+          </div>
+        </div>
+      )}
+    </I18nextProvider>
+  )
 }

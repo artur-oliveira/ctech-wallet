@@ -4,11 +4,11 @@ import en from '@/locales/en.json'
 import {Metadata} from "next";
 
 export const metadata: Metadata = localizedMetadata({
-    locale: ENGLISH_LOCALE,
-    path: '',
-    title: 'CTech Wallet',
-    description: en.home.description,
-    absoluteTitle: true,
+  locale: ENGLISH_LOCALE,
+  path: '',
+  title: 'CTech Wallet',
+  description: en.home.description,
+  absoluteTitle: true,
 })
 
 export {default} from '@/app/page'

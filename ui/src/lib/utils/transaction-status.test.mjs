@@ -41,11 +41,33 @@ test('realtime withdrawal outcomes only update the matching server id', () => {
 
 test('ledger reconciliation confirms a deposit only by its exact txid', () => {
     const deposits = [
-        {id: 'tx_expected', kind: 'deposit', amount: 10_000, status: 'pending', created_at: '2026-07-19T18:00:00.000Z', expires_at: 2_000_000_000},
-        {id: 'tx_other', kind: 'deposit', amount: 10_000, status: 'pending', created_at: '2026-07-19T18:00:00.000Z', expires_at: 2_000_000_000},
+        {
+            id: 'tx_expected',
+            kind: 'deposit',
+            amount: 10_000,
+            status: 'pending',
+            created_at: '2026-07-19T18:00:00.000Z',
+            expires_at: 2_000_000_000
+        },
+        {
+            id: 'tx_other',
+            kind: 'deposit',
+            amount: 10_000,
+            status: 'pending',
+            created_at: '2026-07-19T18:00:00.000Z',
+            expires_at: 2_000_000_000
+        },
     ]
     const result = reconcileTransactionHistory(deposits, [
-        {entry_id: 'e1', wallet_id: 'w_real', type: 'deposit', amount: 10_000, balance_after: 20_000, ref: 'tx_expected', created_at: '2026-07-19T18:01:00.000Z'},
+        {
+            entry_id: 'e1',
+            wallet_id: 'w_real',
+            type: 'deposit',
+            amount: 10_000,
+            balance_after: 20_000,
+            ref: 'tx_expected',
+            created_at: '2026-07-19T18:01:00.000Z'
+        },
     ], 1_900_000_000_000)
 
     assert.equal(result.find((item) => item.id === 'tx_expected')?.status, 'confirmed')
@@ -55,7 +77,15 @@ test('ledger reconciliation confirms a deposit only by its exact txid', () => {
 test('ledger reconciliation marks only the referenced withdrawal as reversed', () => {
     const other = {...withdrawal, id: 'withdraw#user#other'}
     const result = reconcileTransactionHistory([withdrawal, other], [
-        {entry_id: 'e1', wallet_id: 'w_real', type: 'reversal', amount: 5_100, balance_after: 20_000, ref: `reverse:${withdrawal.id}`, created_at: '2026-07-19T18:01:00.000Z'},
+        {
+            entry_id: 'e1',
+            wallet_id: 'w_real',
+            type: 'reversal',
+            amount: 5_100,
+            balance_after: 20_000,
+            ref: `reverse:${withdrawal.id}`,
+            created_at: '2026-07-19T18:01:00.000Z'
+        },
     ], Date.now())
 
     assert.equal(result.find((item) => item.id === withdrawal.id)?.status, 'reversed')

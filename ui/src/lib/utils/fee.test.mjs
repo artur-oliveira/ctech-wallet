@@ -1,10 +1,6 @@
 import assert from 'node:assert/strict'
 import {describe, it} from 'node:test'
-import {
-    FEE_ABSOLUTE_MIN,
-    maxWithdrawable,
-    withdrawalFee,
-} from './fee.ts'
+import {FEE_ABSOLUTE_MIN, maxWithdrawable, withdrawalFee,} from './fee.ts'
 
 describe('withdrawalFee', () => {
     it('uses the documented defaults at the minimum, percentage, and maximum boundaries', () => {
