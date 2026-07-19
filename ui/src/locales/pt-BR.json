@@ -193,7 +193,11 @@
     "termsLink": "Termos Adicionais da CTech Wallet",
     "decline": "Recusar e sair",
     "continue": "Continuar",
-    "confirming": "Confirmando…"
+    "confirming": "Confirmando…",
+    "lookupErrorTitle": "Não foi possível verificar os termos",
+    "lookupErrorDescription": "Para sua proteção, a carteira fica indisponível até confirmarmos que você aceitou os Termos Adicionais atuais. Seus saldos e seu dinheiro não foram alterados.",
+    "lookupSignOut": "Sair",
+    "lookupRetrying": "Verificando novamente…"
   },
   "gambling": {
     "title": "Ativar a carteira de jogo",

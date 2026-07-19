@@ -193,7 +193,11 @@
     "termsLink": "CTech Wallet Additional Terms",
     "decline": "Decline and sign out",
     "continue": "Continue",
-    "confirming": "Confirming…"
+    "confirming": "Confirming…",
+    "lookupErrorTitle": "We couldn't verify your terms status",
+    "lookupErrorDescription": "For your protection, the wallet remains unavailable until we can confirm that you accepted the current Additional Terms. Your balances and money are unchanged.",
+    "lookupSignOut": "Sign out",
+    "lookupRetrying": "Checking again…"
   },
   "gambling": {
     "title": "Activate the game wallet",

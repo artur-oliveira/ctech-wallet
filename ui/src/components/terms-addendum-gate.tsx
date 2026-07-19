@@ -9,6 +9,7 @@ import {Button} from '@/components/ui/button'
 import {WALLET_TERMS_URL} from '@/lib/legal'
 import {useAuth} from '@/lib/hooks/useAuth'
 import {LanguageSwitcher} from '@/components/language-switcher'
+import {QUERY_KEY_ME} from '@/lib/constants/query'
 
 /**
  * Blocks the whole app until the user accepts the wallet's terms addendum.
@@ -26,7 +27,7 @@ export function TermsAddendumGate() {
 
     const accept = useMutation({
         mutationFn: () => apiClient.acceptTermsAddendum(),
-        onSuccess: () => qc.invalidateQueries({queryKey: ['me']}),
+        onSuccess: () => qc.invalidateQueries({queryKey: QUERY_KEY_ME}),
     })
 
     return (
