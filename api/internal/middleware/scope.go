@@ -22,6 +22,9 @@ const (
 	ScopeWalletGameHold = "internal:wallet:game-hold"
 	// ScopeWalletGameCashout release game wallet value
 	ScopeWalletGameCashout = "internal:wallet:game-cashout"
+	// ScopeWalletGameStatus read a user's real-money eligibility (activation,
+	// self-exclusion, limits) — consumed by skill games before buy-in
+	ScopeWalletGameStatus = "internal:wallet:game-status"
 )
 
 // KYC levels are defined once, in the domain — services gate on them too.

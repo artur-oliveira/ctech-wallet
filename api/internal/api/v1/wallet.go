@@ -173,3 +173,62 @@ func (h *handlers) getLedger(c fiber.Ctx) error {
 	}
 	return sendStatement(c, res)
 }
+
+// selfExclude records a self-exclusion (30d / 90d / indefinite). Registered
+// outside the gambling flag: reducing exposure is never blocked.
+func (h *handlers) selfExclude(c fiber.Ctx) error {
+	var body SelfExcludeRequest
+	if p := bindJSON(c, &body); p != nil {
+		return sendProblem(c, p)
+	}
+	cl := middleware.GetClaims(c)
+	ex, err := h.svc.SelfExclude(c.Context(), cl.Sub, body.Period, c.IP(), string(c.RequestCtx().UserAgent()))
+	if err != nil {
+		return sendProblem(c, err)
+	}
+	return c.Status(fiber.StatusCreated).JSON(ex)
+}
+
+// revokeSelfExclusion lifts an indefinite exclusion after its 90-day floor.
+func (h *handlers) revokeSelfExclusion(c fiber.Ctx) error {
+	cl := middleware.GetClaims(c)
+	if err := h.svc.RevokeSelfExclusion(c.Context(), cl.Sub, c.IP(), string(c.RequestCtx().UserAgent())); err != nil {
+		return sendProblem(c, err)
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
+// getGameLimits returns limits, current-window usage and exclusion state.
+func (h *handlers) getGameLimits(c fiber.Ctx) error {
+	st, err := h.svc.GameLimitsStatus(c.Context(), middleware.GetClaims(c).Sub)
+	if err != nil {
+		return sendProblem(c, err)
+	}
+	return c.JSON(st)
+}
+
+// putGameLimits sets the three personal deposit limits. Decreases apply
+// immediately; increases wait out their cooldown as a pending set.
+func (h *handlers) putGameLimits(c fiber.Ctx) error {
+	var body GameLimitsRequest
+	if p := bindJSON(c, &body); p != nil {
+		return sendProblem(c, p)
+	}
+	cl := middleware.GetClaims(c)
+	lim, err := h.svc.SetGameLimits(c.Context(), cl.Sub, body.DailyLimit, body.WeeklyLimit, body.MonthlyLimit,
+		c.IP(), string(c.RequestCtx().UserAgent()))
+	if err != nil {
+		return sendProblem(c, err)
+	}
+	return c.JSON(lim)
+}
+
+// cancelPendingLimits drops a scheduled increase, keeping the stricter
+// current limits.
+func (h *handlers) cancelPendingLimits(c fiber.Ctx) error {
+	lim, err := h.svc.CancelPendingLimits(c.Context(), middleware.GetClaims(c).Sub)
+	if err != nil {
+		return sendProblem(c, err)
+	}
+	return c.JSON(lim)
+}

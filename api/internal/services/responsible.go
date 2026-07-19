@@ -223,3 +223,28 @@ func userExclusion(u *wallet.User) *wallet.SelfExclusion {
 	}
 	return u.SelfExclusion
 }
+
+// GameEligibility is the M2M eligibility snapshot a skill game reads before a
+// real-money buy-in.
+type GameEligibility struct {
+	Activated        bool `json:"activated"`
+	SelfExcluded     bool `json:"self_excluded"`
+	LimitsConfigured bool `json:"limits_configured"`
+}
+
+// GameEligibilityFor reports whether userID may play for real money.
+func (s *WalletService) GameEligibilityFor(ctx context.Context, userID string) (*GameEligibility, error) {
+	_, game, sandbox, err := s.repo.LoadWallets(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	u, err := s.users.Get(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return &GameEligibility{
+		Activated:        game != nil && sandbox != nil,
+		SelfExcluded:     u.SelfExcluded(time.Now()),
+		LimitsConfigured: u.LimitsConfigured(),
+	}, nil
+}

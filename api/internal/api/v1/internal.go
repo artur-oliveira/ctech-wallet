@@ -103,3 +103,15 @@ func (h *handlers) cashoutGame(c fiber.Ctx) error {
 	}
 	return c.Status(fiber.StatusCreated).JSON(entry)
 }
+
+// gameStatus reports a user's real-money eligibility to a skill game (M2M,
+// scope internal:wallet:game-status). Eligibility = activated AND not
+// self-excluded AND limits configured — the caller (e.g. ctech-poker) must
+// treat anything else as not-eligible for real-money buy-in.
+func (h *handlers) gameStatus(c fiber.Ctx) error {
+	st, err := h.svc.GameEligibilityFor(c.Context(), c.Params("user_id"))
+	if err != nil {
+		return sendProblem(c, err)
+	}
+	return c.JSON(st)
+}

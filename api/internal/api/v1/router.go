@@ -54,6 +54,15 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 	// 409 gambling-not-activated.
 	w.Post("/game/withdraw", h.gameWithdraw)
 
+	// Responsible gambling — ALWAYS registered, never behind the flag: self-
+	// excluding and lowering limits reduce exposure (same principle as
+	// game/withdraw above). The deposit door itself stays flag-gated.
+	w.Post("/gambling/self-exclude", h.selfExclude)
+	w.Post("/gambling/self-exclude/revoke", h.revokeSelfExclusion)
+	w.Get("/gambling/limits", h.getGameLimits)
+	w.Put("/gambling/limits", h.putGameLimits)
+	w.Delete("/gambling/limits/pending", h.cancelPendingLimits)
+
 	// Everything that moves money INTO the ring-fence is flag-gated: with
 	// GAMBLING_ENABLED off these routes do not exist (404). An absent route cannot
 	// be reached by a bug, a stale client, or a forgotten check. The flag flips only
@@ -79,4 +88,7 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 	gw.Post("/hold", middleware.RequireScope(middleware.ScopeWalletGameHold), h.holdGame)
 	gw.Post("/hold/:hold_id/release", middleware.RequireScope(middleware.ScopeWalletGameHold), h.releaseHold)
 	gw.Post("/cashout", middleware.RequireScope(middleware.ScopeWalletGameCashout), h.cashoutGame)
+	// Real-money eligibility for skill games (ctech-poker Phase 5). Registered
+	// unconditionally: poker must see "not eligible" even while the flag is off.
+	gw.Get("/status/:user_id", middleware.RequireScope(middleware.ScopeWalletGameStatus), h.gameStatus)
 }

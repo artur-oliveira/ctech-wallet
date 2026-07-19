@@ -265,3 +265,18 @@ func TestGameLimitsStatusReportsUsage(t *testing.T) {
 		t.Fatalf("resets missing: %+v", st.Usage)
 	}
 }
+
+func TestGameEligibilityFor(t *testing.T) {
+	users := configuredUser(100, 200, 300)
+	svc, repo, _ := newRespSvc(users)
+	el, err := svc.GameEligibilityFor(context.Background(), "u1")
+	if err != nil || !el.Activated || el.SelfExcluded || !el.LimitsConfigured {
+		t.Fatalf("eligible user: %+v err=%v", el, err)
+	}
+	repo.notActivated = true
+	users.user.SelfExclusion = &wallet.SelfExclusion{Period: "indefinite", RequestedAt: time.Now().Format(time.RFC3339)}
+	el, err = svc.GameEligibilityFor(context.Background(), "u1")
+	if err != nil || el.Activated || !el.SelfExcluded {
+		t.Fatalf("excluded non-activated user: %+v err=%v", el, err)
+	}
+}

@@ -35,6 +35,18 @@ type ActivateGamblingRequest struct {
 	MonthlyLimit int64 `json:"monthly_limit"`
 }
 
+// SelfExcludeRequest picks the self-exclusion period.
+type SelfExcludeRequest struct {
+	Period string `json:"period" validate:"required,oneof=30d 90d indefinite"`
+}
+
+// GameLimitsRequest carries the three personal deposit limits (centavos).
+type GameLimitsRequest struct {
+	DailyLimit   int64 `json:"daily_limit" validate:"required,gt=0"`
+	WeeklyLimit  int64 `json:"weekly_limit" validate:"required,gt=0"`
+	MonthlyLimit int64 `json:"monthly_limit" validate:"required,gt=0"`
+}
+
 // MovementOpRequest is the M2M body for internal credit/debit. The
 // idempotency key travels in the body (e.g. wallet_id#round_id), not a header.
 type MovementOpRequest struct {
