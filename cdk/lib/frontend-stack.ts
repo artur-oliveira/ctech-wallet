@@ -7,7 +7,16 @@ import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import {Construct} from 'constructs';
 import {Environment} from './types';
-import {API_PATH_PATTERNS, frontendBucketName, routeStoreName, SERVICE} from './constants';
+import {
+    API_PATH_PATTERNS,
+    DEFAULT_PUBLIC_LOCALE,
+    ENGLISH_PUBLIC_LOCALE,
+    frontendBucketName,
+    LOCALIZED_PUBLIC_ROUTES,
+    LOCALE_COOKIE_NAME,
+    routeStoreName,
+    SERVICE,
+} from './constants';
 
 // nginx on the API instances uses proxy_read_timeout 60s — match it so
 // CloudFront does not give up before the origin does.
@@ -80,10 +89,38 @@ export class FrontendStack extends cdk.Stack {
 import cf from 'cloudfront';
 
 const kvs = cf.kvs();
+const localizedRoutes = ${JSON.stringify(Object.fromEntries(LOCALIZED_PUBLIC_ROUTES.map((route) => [route, true])))};
+
+function preferredLocale(request) {
+  var localeCookie = request.cookies && request.cookies['${LOCALE_COOKIE_NAME}'];
+  if (localeCookie && localeCookie.value === '${ENGLISH_PUBLIC_LOCALE}') {
+    return '${ENGLISH_PUBLIC_LOCALE}';
+  }
+  if (localeCookie && localeCookie.value === '${DEFAULT_PUBLIC_LOCALE}') {
+    return '${DEFAULT_PUBLIC_LOCALE}';
+  }
+  var acceptLanguage = request.headers['accept-language'];
+  return acceptLanguage && acceptLanguage.value.toLowerCase().indexOf('en') === 0
+    ? '${ENGLISH_PUBLIC_LOCALE}'
+    : '${DEFAULT_PUBLIC_LOCALE}';
+}
 
 async function handler(event) {
   var uri = event.request.uri;
-  if (uri === '/' || /\\.[^/]+$/.test(uri)) {
+  if (localizedRoutes[uri]) {
+    var locale = preferredLocale(event.request);
+    var suffix = uri === '/' ? '' : uri;
+    return {
+      statusCode: 307,
+      statusDescription: 'Temporary Redirect',
+      headers: {
+        location: {value: '/' + locale + suffix},
+        'cache-control': {value: 'no-store'},
+        vary: {value: 'Accept-Language, Cookie'},
+      },
+    };
+  }
+  if (/\\.[^/]+$/.test(uri)) {
     return event.request;
   }
   var route = uri.endsWith('/') ? uri.slice(0, -1) : uri;

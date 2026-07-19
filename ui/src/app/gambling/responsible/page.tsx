@@ -14,6 +14,7 @@ import {matchesConfirmationPhrase} from '@/lib/utils/confirmation'
 import {CVV_PHONE_URL, CVV_URL, GAMBLERS_ANONYMOUS_URL} from '@/lib/legal'
 import type {GameLimitsInput} from '@/lib/types/api'
 import {LanguageSwitcher} from '@/components/language-switcher'
+import {QueryErrorState} from '@/components/query-error-state'
 
 const EMPTY_LIMITS: GameLimitsInput = {daily_limit: 0, weekly_limit: 0, monthly_limit: 0}
 const CONFIRMATION_INPUT_ID = 'self-exclusion-confirmation'
@@ -114,7 +115,13 @@ function ResponsibleGamblingInner() {
                 {status.isLoading && <div className="h-64 animate-pulse rounded-2xl bg-muted" role="status">
                     <span className="sr-only">{t('common.loading')}</span>
                 </div>}
-                {status.error && <p role="alert" className="rounded-xl border border-border bg-card p-5 text-sm">{t('common.genericError')}</p>}
+                {status.error && (
+                    <QueryErrorState
+                        message={t('common.genericError')}
+                        retrying={status.isFetching}
+                        onRetry={() => void status.refetch()}
+                    />
+                )}
                 {status.data && (
                     <>
                         {status.data.excluded && (

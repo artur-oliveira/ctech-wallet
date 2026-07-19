@@ -54,6 +54,12 @@ export const HEALTH_CHECK_PATH = '/v1.0/health-check';
  */
 export const API_PATH_PATTERNS = ['/v1.0/*'];
 
+/** Public routes negotiated to a pre-rendered locale at the edge. */
+export const LOCALE_COOKIE_NAME = 'wallet_locale';
+export const DEFAULT_PUBLIC_LOCALE = 'pt-BR';
+export const ENGLISH_PUBLIC_LOCALE = 'en';
+export const LOCALIZED_PUBLIC_ROUTES = ['/'] as const;
+
 /** S3 key prefix inside the shared deployments/logs buckets. */
 export const S3_PREFIX = SERVICE;
 /** Key of the artifact new ASG instances bootstrap from. */

@@ -1,6 +1,7 @@
 'use client'
 
 import {useCallback, useEffect, useMemo, useState} from 'react'
+import dynamic from 'next/dynamic'
 import {useMutation, useQuery, useQueryClient} from '@tanstack/react-query'
 import {toast} from 'sonner'
 import {LogOut} from 'lucide-react'
@@ -11,12 +12,9 @@ import {useAuth} from '@/lib/hooks/useAuth'
 import {ProtectedRoute} from '@/components/protected-route'
 import {BalanceCards} from '@/components/wallet/balance-cards'
 import {LedgerTabs} from '@/components/wallet/ledger-tabs'
-import {AmountDialog} from '@/components/wallet/amount-dialog'
-import {ConfirmMoneyDialog} from '@/components/wallet/confirm-money-dialog'
-import {MoneyReceiptDialog} from '@/components/wallet/money-receipt-dialog'
-import {PixChargeDialog} from '@/components/wallet/pix-charge-dialog'
 import {TransactionStatusList} from '@/components/wallet/transaction-status-list'
 import {Button} from '@/components/ui/button'
+import {QueryErrorState} from '@/components/query-error-state'
 import {LanguageSwitcher} from '@/components/language-switcher'
 import {useWalletRealtime} from '@/lib/hooks/useWalletRealtime'
 import type {DepositResult} from '@/lib/types/api'
@@ -33,7 +31,15 @@ import Image from 'next/image'
 
 type Flow = 'deposit' | 'withdraw' | 'credits' | 'fund-game' | 'return-game' | null
 
-const TRANSACTION_POLL_INTERVAL_MS = 10_000
+const TRANSACTION_LEDGER_LIMIT = 50
+const TRANSACTION_CONNECTED_POLL_INTERVAL_MS = 60_000
+const TRANSACTION_OFFLINE_POLL_INTERVAL_MS = 15_000
+const TRANSACTION_MAX_POLL_INTERVAL_MS = 60_000
+
+const AmountDialog = dynamic(() => import('@/components/wallet/amount-dialog').then((module) => module.AmountDialog))
+const ConfirmMoneyDialog = dynamic(() => import('@/components/wallet/confirm-money-dialog').then((module) => module.ConfirmMoneyDialog))
+const MoneyReceiptDialog = dynamic(() => import('@/components/wallet/money-receipt-dialog').then((module) => module.MoneyReceiptDialog))
+const PixChargeDialog = dynamic(() => import('@/components/wallet/pix-charge-dialog').then((module) => module.PixChargeDialog))
 
 /** RFC 7807 problem type → i18n key. */
 const PROBLEM_KEY: Record<string, string> = {
@@ -141,9 +147,18 @@ function DashboardInner() {
     )
     const transactionLedger = useQuery({
         queryKey: ['transaction-status-ledger', walletID],
-        queryFn: () => apiClient.getLedger('real', undefined, 200),
+        queryFn: () => apiClient.getLedger('real', undefined, TRANSACTION_LEDGER_LIMIT),
         enabled: hydratedStorageKey === transactionStorageKey && !!walletID && hasUnresolvedTransaction,
-        refetchInterval: hasUnresolvedTransaction ? TRANSACTION_POLL_INTERVAL_MS : false,
+        refetchInterval: (query) => {
+            if (!hasUnresolvedTransaction) return false
+            if (wsStatus === 'connected') return TRANSACTION_CONNECTED_POLL_INTERVAL_MS
+            const attempt = query.state.dataUpdateCount
+            return Math.min(
+                TRANSACTION_OFFLINE_POLL_INTERVAL_MS * 2 ** attempt,
+                TRANSACTION_MAX_POLL_INTERVAL_MS,
+            )
+        },
+        refetchIntervalInBackground: false,
     })
 
     const visibleTransactions = useMemo(
@@ -159,6 +174,21 @@ function DashboardInner() {
     const activeCharge = charge && visibleTransactions.some(
         (item) => item.id === charge.txid && item.status === 'pending',
     ) ? charge : null
+
+    useEffect(() => {
+        if (!charge) return
+        const deposit = visibleTransactions.find((item) => item.id === charge.txid)
+        if (deposit?.status !== 'confirmed') return
+
+        const finalize = window.setTimeout(() => {
+            setCharge(null)
+            setChargeOpen(false)
+            toast.success(t('pix.confirmedToast'))
+            void qc.invalidateQueries({queryKey: ['balances']})
+            void qc.invalidateQueries({queryKey: ['ledger']})
+        }, 0)
+        return () => window.clearTimeout(finalize)
+    }, [charge, qc, t, visibleTransactions])
 
     useEffect(() => {
         if (hydratedStorageKey !== transactionStorageKey || !transactionStorageKey || !chargeStorageKey) return
@@ -321,9 +351,11 @@ function DashboardInner() {
                 )}
 
                 {balances.error && (
-                    <p role="alert" className="rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground">
-                        {t('dashboard.loadError')}
-                    </p>
+                    <QueryErrorState
+                        message={t('dashboard.loadError')}
+                        retrying={balances.isFetching}
+                        onRetry={() => void balances.refetch()}
+                    />
                 )}
 
                 {balances.data && (
@@ -449,7 +481,6 @@ function DashboardInner() {
                 <PixChargeDialog
                     deposit={activeCharge}
                     onClose={() => setChargeOpen(false)}
-                    onConfirmed={() => handleDepositConfirmed(activeCharge.txid)}
                 />
             )}
 

@@ -38,6 +38,8 @@ Sharp, efficient, confident. Terse, data-forward copy and motion that conveys st
 4. **Motion is state, not decoration.** 150–250 ms; conveys loading, feedback, and transition only. No orchestrated page-load sequences, no decorative animation.
 5. **Bilingual by default.** Portuguese (pt-BR) is primary, English is a first-class alternative. No string is hardcoded; every label goes through i18n.
 
+The public homepage is statically pre-rendered under `/pt-BR` and `/en`. CloudFront redirects the legacy unprefixed URL using the `wallet_locale` preference cookie, falling back to the leading `Accept-Language` value. Each localized homepage owns its canonical URL, alternate-language links, description, and Open Graph locale. Authenticated and OAuth routes remain unprefixed so their registered callback and return-path contracts do not change; those routes resolve locale before rendering protected content. Legal documents are owned and hosted exclusively by CTech Accounts: wallet terms at `https://accounts.aoctech.app/products/wallet` and gaming terms at `https://accounts.aoctech.app/products/wallet-gaming`.
+
 ## Accessibility & Inclusion
 
 WCAG 2.1 AA. Body text must clear 4.5:1 against its background; the violet brand ramp is the accent, not the text color on tinted surfaces. Reduced-motion users get instant or crossfade transitions. Inputs use explicit, readable placeholder contrast. All copy is i18n-keyed (pt-BR primary, en secondary) so the surface is never language-locked.

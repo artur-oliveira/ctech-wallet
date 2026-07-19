@@ -1,18 +1,14 @@
 'use client'
 
 import React, {useEffect, useRef, useState} from 'react'
-import {useQuery} from '@tanstack/react-query'
 import {Check, Copy} from 'lucide-react'
 import {useTranslation} from 'react-i18next'
 import {toast} from 'sonner'
 import {Button} from '@/components/ui/button'
 import {formatBRL} from '@/lib/utils/money'
-import {apiClient} from '@/lib/api/client'
 import type {DepositResult} from '@/lib/types/api'
 import {Dialog, DialogContent, DialogDescription, DialogTitle} from '@/components/ui/dialog'
 
-const POLL_DELAY_MS = 30_000 // start polling only after this — the WS path is primary
-const POLL_INTERVAL_MS = 5_000
 const TICK_MS = 1_000
 
 /** mm:ss, floored — never negative. */
@@ -30,23 +26,16 @@ function formatCountdown(remainingSec: number): string {
  * as the code hasn't expired yet.
  */
 export function PixChargeDialog(
-    {deposit, onClose, onConfirmed}: {
+    {deposit, onClose}: {
         deposit: DepositResult
         onClose: () => void
-        onConfirmed: () => void
     },
 ) {
     const {t} = useTranslation()
     const [copied, setCopied] = useState(false)
-    const [polling, setPolling] = useState(false)
     const [remainingSec, setRemainingSec] = useState(() => deposit.expires_at - Date.now() / 1000)
     const copyRef = useRef<HTMLButtonElement>(null)
     const expired = remainingSec <= 0
-
-    useEffect(() => {
-        const timer = setTimeout(() => setPolling(true), POLL_DELAY_MS)
-        return () => clearTimeout(timer)
-    }, [])
 
     // Ticks every second while the code is still valid; stops once expired —
     // nothing left to count down, and no point waking the tab up forever.
@@ -57,23 +46,6 @@ export function PixChargeDialog(
         }, TICK_MS)
         return () => clearInterval(tick)
     }, [expired, deposit.expires_at])
-
-    const depositLedger = useQuery({
-        queryKey: ['deposit-status', deposit.txid],
-        queryFn: () => apiClient.getLedger('real', undefined, 200),
-        enabled: polling && !expired,
-        refetchInterval: polling && !expired ? POLL_INTERVAL_MS : false,
-    })
-
-    useEffect(() => {
-        const confirmed = depositLedger.data?.items.some(
-            (entry) => entry.type === 'deposit' && entry.ref === deposit.txid,
-        )
-        if (confirmed) {
-            toast.success(t('pix.confirmedToast'))
-            onConfirmed()
-        }
-    }, [depositLedger.data, deposit.txid, onConfirmed, t])
 
     async function copy() {
         try {

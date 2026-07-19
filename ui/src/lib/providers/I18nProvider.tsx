@@ -4,10 +4,8 @@ import {useEffect, useRef, useState} from 'react'
 import {usePathname} from 'next/navigation'
 import {I18nextProvider, useTranslation} from 'react-i18next'
 import LanguageDetector from 'i18next-browser-languagedetector'
-import i18n from '@/lib/i18n'
-import {normalizeLocale} from '@/lib/locale'
-
-const STORAGE_KEY = 'i18nextLng'
+import i18n, {changeAppLanguage} from '@/lib/i18n'
+import {LOCALE_STORAGE_KEY, localeFromPath, normalizeLocale, persistLocalePreference} from '@/lib/locale'
 
 function LanguageSync() {
     const {i18n: instance} = useTranslation()
@@ -17,8 +15,9 @@ function LanguageSync() {
         if (detectedOnce.current) return
         detectedOnce.current = true
 
-        const cached = window.localStorage.getItem(STORAGE_KEY)
-        let resolved = cached
+        const routeLocale = localeFromPath(window.location.pathname)
+        const cached = window.localStorage.getItem(LOCALE_STORAGE_KEY)
+        let resolved = routeLocale ?? cached
 
         if (!resolved) {
             const detector = new LanguageDetector()
@@ -30,14 +29,14 @@ function LanguageSync() {
         const supported = normalizeLocale(resolved)
 
         if (supported !== instance.language) {
-            void instance.changeLanguage(supported)
+            void changeAppLanguage(supported)
         }
     }, [instance])
 
     useEffect(() => {
         const locale = normalizeLocale(instance.language)
         document.documentElement.lang = locale
-        window.localStorage.setItem(STORAGE_KEY, locale)
+        persistLocalePreference(locale)
     }, [instance.language])
 
     return null
@@ -46,9 +45,8 @@ function LanguageSync() {
 /**
  * Mirrors ctech-account's i18n provider. Client-rendered pages wait for mount
  * before rendering so `t()` never mismatches between SSR and the detected
- * browser language — that is what removes hydration warnings. Public and legal
- * pages render immediately in the default locale, then react-i18next updates
- * their copy and document language together after browser detection.
+ * browser language — that is what removes hydration warnings. Public locale
+ * routes render immediately from their route-owned translation catalog.
  */
 export function I18nProvider({children}: { children: React.ReactNode }) {
     const [mounted, setMounted] = useState(false)
@@ -59,8 +57,9 @@ export function I18nProvider({children}: { children: React.ReactNode }) {
         return () => clearTimeout(timer)
     }, [])
 
+    const localizedPublicPath = pathname ? localeFromPath(pathname) : null
     const rendersImmediately = pathname
-        ? (pathname === '/' || pathname.startsWith('/terms-addendum') || pathname.startsWith('/gambling-addendum'))
+        ? pathname === '/' || localizedPublicPath !== null
         : false
 
     return (

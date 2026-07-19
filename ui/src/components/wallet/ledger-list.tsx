@@ -7,6 +7,7 @@ import {formatSigned} from '@/lib/utils/money'
 import {walletHasMonetaryValue} from '@/lib/utils/wallet-semantics'
 import type {WalletType} from '@/lib/types/api'
 import {Button} from '@/components/ui/button'
+import {QueryErrorState} from '@/components/query-error-state'
 
 export function LedgerList({type}: { type: WalletType }) {
     const {t, i18n} = useTranslation()
@@ -19,6 +20,8 @@ export function LedgerList({type}: { type: WalletType }) {
         fetchNextPage,
         isFetchingNextPage,
         isFetchNextPageError,
+        refetch,
+        isFetching,
     } = useInfiniteQuery({
         queryKey: ['ledger', type],
         queryFn: ({pageParam}) => apiClient.getLedger(type, pageParam),
@@ -41,9 +44,12 @@ export function LedgerList({type}: { type: WalletType }) {
 
     if (error && !data) {
         return (
-            <p role="alert" className="px-5 py-8 text-center text-sm text-muted-foreground">
-                {t('dashboard.ledger.error')}
-            </p>
+            <QueryErrorState
+                message={t('dashboard.ledger.error')}
+                retrying={isFetching}
+                onRetry={() => void refetch()}
+                className="rounded-none border-0 px-5 py-8 text-center"
+            />
         )
     }
 

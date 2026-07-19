@@ -5,29 +5,32 @@ import {useRouter, useSearchParams} from 'next/navigation'
 import {useTranslation} from 'react-i18next'
 import {useAuth} from '@/lib/hooks/useAuth'
 import {exchangeCode} from '@/lib/auth/oauth'
+import {callbackErrorKey} from '@/lib/auth/callback-error'
+import {Button} from '@/components/ui/button'
+import {LanguageSwitcher} from '@/components/language-switcher'
 
 function CallbackInner() {
     const {t} = useTranslation()
     const {handleCallback} = useAuth()
     const router = useRouter()
     const searchParams = useSearchParams()
-    const [asyncError, setAsyncError] = useState<string | null>(null)
+    const [asyncErrorKey, setAsyncErrorKey] = useState<string | null>(null)
     const ran = useRef(false)
 
     const code = searchParams.get('code')
     const state = searchParams.get('state')
     const errorParam = searchParams.get('error')
 
-    const paramError = errorParam
-        ? `${t('callback.errorPrefix')}${errorParam}`
+    const paramErrorKey = errorParam
+        ? callbackErrorKey(errorParam)
         : !code || !state
-            ? t('callback.invalidParams')
+            ? 'invalidCallback'
             : null
 
-    const error = paramError ?? asyncError
+    const errorKey = paramErrorKey ?? asyncErrorKey
 
     useEffect(() => {
-        if (ran.current || paramError) return
+        if (ran.current || paramErrorKey) return
         ran.current = true
 
         void (async () => {
@@ -35,24 +38,31 @@ function CallbackInner() {
                 const {accessToken, idToken, returnTo} = await exchangeCode(code!, state!)
                 await handleCallback(accessToken, idToken)
                 router.replace(returnTo)
-            } catch (err) {
-                setAsyncError(err instanceof Error ? err.message : t('common.genericError'))
+            } catch {
+                setAsyncErrorKey('generic')
             }
         })()
-    }, [searchParams, handleCallback, router, paramError, code, state, t])
+    }, [handleCallback, router, paramErrorKey, code, state])
 
-    if (error) {
+    if (errorKey) {
         return (
-            <div className="min-h-screen flex items-center justify-center">
-                <div className="text-center space-y-4 max-w-sm">
-                    <p role="alert" className="text-destructive text-sm">{error}</p>
-                    <button
-                        className="inline-flex items-center justify-center text-sm text-primary-600 underline [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
-                        onClick={() => router.push('/login')}
-                    >
-                        {t('callback.tryAgain')}
-                    </button>
-                </div>
+            <div className="flex min-h-screen items-center justify-center bg-background px-4 py-6">
+                <main className="w-full max-w-md space-y-5 rounded-xl border border-border bg-card p-6">
+                    <div className="flex justify-end">
+                        <LanguageSwitcher/>
+                    </div>
+                    <div role="alert">
+                        <h1 className="text-lg font-semibold text-foreground">
+                            {t(`callback.error.${errorKey}.title`)}
+                        </h1>
+                        <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                            {t(`callback.error.${errorKey}.description`)}
+                        </p>
+                    </div>
+                    <Button variant="brand" className="w-full whitespace-normal" onClick={() => router.replace('/login')}>
+                        {t('callback.returnToLogin')}
+                    </Button>
+                </main>
             </div>
         )
     }

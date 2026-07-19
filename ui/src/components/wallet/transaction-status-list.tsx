@@ -1,5 +1,6 @@
 'use client'
 
+import {useEffect, useRef, useState} from 'react'
 import {CircleCheck, Clock3, RotateCcw, TriangleAlert} from 'lucide-react'
 import {useTranslation} from 'react-i18next'
 import {Button} from '@/components/ui/button'
@@ -33,6 +34,22 @@ export function TransactionStatusList({
     onResumeDeposit?: (txid: string) => void
 }) {
     const {t, i18n} = useTranslation()
+    const previousStatuses = useRef(new Map<string, TrackedTransactionStatus>())
+    const [announcement, setAnnouncement] = useState('')
+
+    useEffect(() => {
+        const changes = transactions.flatMap((item) => {
+            const previous = previousStatuses.current.get(item.id)
+            previousStatuses.current.set(item.id, item.status)
+            if (!previous || previous === item.status) return []
+            return [t('transactions.statusAnnouncement', {
+                kind: t(`transactions.kind.${item.kind}`),
+                status: t(`transactions.status.${item.status}`),
+            })]
+        })
+        if (changes.length > 0) setAnnouncement(changes.join(' '))
+    }, [t, transactions])
+
     if (transactions.length === 0) return null
 
     const dateFmt = new Intl.DateTimeFormat(i18n.language || 'pt-BR', {
@@ -42,6 +59,9 @@ export function TransactionStatusList({
 
     return (
         <section aria-labelledby="transaction-status-heading" className="overflow-hidden rounded-xl border border-border bg-card">
+            <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+                {announcement}
+            </p>
             <div className="border-b border-border px-5 py-4">
                 <h2 id="transaction-status-heading" className="font-semibold text-foreground">
                     {t('transactions.title')}
@@ -65,7 +85,7 @@ export function TransactionStatusList({
                                         <p className="text-sm font-semibold text-foreground">
                                             {t(`transactions.kind.${item.kind}`)}
                                         </p>
-                                        <span role="status" className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[item.status]}`}>
+                                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[item.status]}`}>
                                             {t(`transactions.status.${item.status}`)}
                                         </span>
                                     </div>
