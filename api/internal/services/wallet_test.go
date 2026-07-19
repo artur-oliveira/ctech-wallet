@@ -90,12 +90,12 @@ func (s *stubRepo) DebitWithFee(_ context.Context, walletID string, amount, fee 
 	}
 	return &wallet.LedgerEntry{WalletID: walletID, Amount: -amount}, &wallet.LedgerEntry{WalletID: walletID, Amount: -fee}, false, nil
 }
-func (s *stubRepo) Transfer(_ context.Context, from, to string, amount int64, dt, ct, _, _, _ string, _ ...types.TransactWriteItem) (*wallet.LedgerEntry, *wallet.LedgerEntry, bool, error) {
+func (s *stubRepo) Transfer(_ context.Context, from, to string, amount, creditAmount int64, dt, ct, _, _, _ string, _ ...types.TransactWriteItem) (*wallet.LedgerEntry, *wallet.LedgerEntry, bool, error) {
 	s.transferCalled = true
 	if s.transferErr != nil {
 		return nil, nil, false, s.transferErr
 	}
-	return &wallet.LedgerEntry{WalletID: from, Amount: -amount, Type: dt}, &wallet.LedgerEntry{WalletID: to, Amount: amount, Type: ct}, false, nil
+	return &wallet.LedgerEntry{WalletID: from, Amount: -amount, Type: dt}, &wallet.LedgerEntry{WalletID: to, Amount: creditAmount, Type: ct}, false, nil
 }
 func (s *stubRepo) Statement(_ context.Context, _ string, _ int, _ map[string]types.AttributeValue) (*repositories.QueryResult, error) {
 	return &repositories.QueryResult{}, nil

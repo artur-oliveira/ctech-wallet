@@ -107,7 +107,23 @@ const (
 	MaxInboundAmount = MaxInboundReais * 100 // centavos
 )
 
-// Wallet is the authoritative balance record. Balance is integer centavos.
+// SandboxCreditsPerCentavo is the fixed conversion applied when real money is
+// turned into sandbox credits (game → sandbox). R$ 1,00 (100 centavos) becomes
+// 1000 credits, so this is 10 credits per centavo. The rate is a backend
+// constant — never client-supplied — and is applied to the full real amount
+// debited from `game`. Keep in sync with ui SANDBOX_CREDITS_PER_CENTAVO.
+const SandboxCreditsPerCentavo = 10
+
+// ToSandboxCredits converts a real-money amount in centavos into the number of
+// sandbox credits it buys at the fixed rate.
+func ToSandboxCredits(centavos int64) int64 {
+	return centavos * SandboxCreditsPerCentavo
+}
+
+// Wallet is the authoritative balance record. Balance is integer centavos for
+// `real` and `game`; for `sandbox` it is integer CREDITS (a virtual unit with no
+// monetary value, converted from real money at SandboxCreditsPerCentavo). The two
+// units never mix within one wallet.
 //
 // FeeBps/FeeMin/FeeMax are OPTIONAL per-wallet withdrawal-fee overrides, and
 // MinDeposit/MaxDeposit are OPTIONAL per-wallet PIX deposit-range overrides. All
@@ -132,12 +148,16 @@ type Wallet struct {
 
 // LedgerEntry is an immutable audit row. balance_after is advisory; the
 // authoritative balance is always Wallet.Balance.
+//
+// Amount is signed and its unit matches the owning wallet: centavos for `real`
+// and `game`, credits for `sandbox` (e.g. a sandbox_purchase credit entry carries
+// the credited credit amount, not the debited centavos).
 type LedgerEntry struct {
 	WalletID       string `dynamodbav:"pk" json:"wallet_id"`
 	SK             string `dynamodbav:"sk" json:"-"`
 	EntryID        string `dynamodbav:"entry_id" json:"entry_id"`
 	Type           string `dynamodbav:"type" json:"type"`
-	Amount         int64  `dynamodbav:"amount" json:"amount"` // signed centavos
+	Amount         int64  `dynamodbav:"amount" json:"amount"` // signed; unit = owning wallet (centavos for real/game, credits for sandbox)
 	BalanceAfter   int64  `dynamodbav:"balance_after" json:"balance_after"`
 	IdempotencyKey string `dynamodbav:"idempotency_key" json:"-"`
 	Ref            string `dynamodbav:"ref" json:"ref,omitempty"`

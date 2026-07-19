@@ -48,7 +48,7 @@ type Repo interface {
 	Credit(ctx context.Context, m repositories.Mutation) (*wallet.LedgerEntry, bool, error)
 	Debit(ctx context.Context, m repositories.Mutation) (*wallet.LedgerEntry, bool, error)
 	DebitWithFee(ctx context.Context, walletID string, amount, fee int64, idemKey, reqHash, ref string) (*wallet.LedgerEntry, *wallet.LedgerEntry, bool, error)
-	Transfer(ctx context.Context, from, to string, amount int64, debitType, creditType, ref, idemKey, reqHash string, extra ...types.TransactWriteItem) (*wallet.LedgerEntry, *wallet.LedgerEntry, bool, error)
+	Transfer(ctx context.Context, from, to string, amount, creditAmount int64, debitType, creditType, ref, idemKey, reqHash string, extra ...types.TransactWriteItem) (*wallet.LedgerEntry, *wallet.LedgerEntry, bool, error)
 	Statement(ctx context.Context, walletID string, limit int, startKey map[string]types.AttributeValue) (*repositories.QueryResult, error)
 	PutDeposit(ctx context.Context, d *wallet.PixDeposit) error
 	GetDeposit(ctx context.Context, txid string) (*wallet.PixDeposit, error)
@@ -604,7 +604,7 @@ func (s *WalletService) requireActivated(ctx context.Context, userID string) (re
 // locking both. AcquireOrdered sorts the wallet IDs, so the lock order is total
 // and deadlock-free for any number of wallets. The ledger pair and the
 // idempotency guard are co-written in one transaction by repo.Transfer.
-func (s *WalletService) ringTransfer(ctx context.Context, from, to *wallet.Wallet, amount int64, debitType, creditType, ns, idemKey string, extra ...types.TransactWriteItem) (debit, credit *wallet.LedgerEntry, err error) {
+func (s *WalletService) ringTransfer(ctx context.Context, from, to *wallet.Wallet, amount, creditAmount int64, debitType, creditType, ns, idemKey string, extra ...types.TransactWriteItem) (debit, credit *wallet.LedgerEntry, err error) {
 	release, ok, err := s.lock.AcquireOrdered(ctx, from.WalletID, to.WalletID)
 	if err != nil {
 		return nil, nil, err
@@ -615,7 +615,7 @@ func (s *WalletService) ringTransfer(ctx context.Context, from, to *wallet.Walle
 	defer release()
 
 	key := ns + "#" + from.UserID + "#" + idemKey
-	d, c, _, err := s.repo.Transfer(ctx, from.WalletID, to.WalletID, amount,
+	d, c, _, err := s.repo.Transfer(ctx, from.WalletID, to.WalletID, amount, creditAmount,
 		debitType, creditType, key, key, reqHash(ns, amount), extra...)
 	if err != nil {
 		return nil, nil, err
@@ -678,7 +678,7 @@ func (s *WalletService) FundGame(ctx context.Context, userID string, amount int6
 	if err != nil {
 		return nil, nil, err
 	}
-	return s.ringTransfer(ctx, rl, game, amount,
+	return s.ringTransfer(ctx, rl, game, amount, amount,
 		wallet.EntryGameFundDebit, wallet.EntryGameFundCredit, "game_fund", idemKey, counterTx)
 }
 
@@ -693,7 +693,7 @@ func (s *WalletService) ReturnFromGame(ctx context.Context, userID string, amoun
 	if err != nil {
 		return nil, nil, err
 	}
-	return s.ringTransfer(ctx, game, rl, amount,
+	return s.ringTransfer(ctx, game, rl, amount, amount,
 		wallet.EntryGameReturnDebit, wallet.EntryGameReturnCredit, "game_return", idemKey)
 }
 
@@ -709,8 +709,13 @@ func (s *WalletService) PurchaseSandbox(ctx context.Context, userID string, amou
 	if err != nil {
 		return nil, nil, err
 	}
-	return s.ringTransfer(ctx, game, sandbox, amount,
-		wallet.EntrySandboxPurchase, wallet.EntrySandboxCredit, "sandbox_purchase", idemKey)
+	// The debit is real money (centavos) from `game`; the credit is the same
+	// amount converted into sandbox credits at the fixed rate. The two units are
+	// different, so they are passed as separate amounts to ringTransfer.
+	credits := wallet.ToSandboxCredits(amount)
+	return s.ringTransfer(ctx, game, sandbox, amount, credits,
+		wallet.EntrySandboxPurchase, wallet.EntrySandboxCredit, "sandbox_purchase", idemKey,
+	)
 }
 
 // CreditSandbox grants sandbox currency to a user (M2M, e.g. poker/dominó bonus).

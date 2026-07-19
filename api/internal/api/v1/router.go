@@ -41,7 +41,7 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 	// User routes — Bearer user JWT.
 	w := v1.Group("/wallet", auth)
 	w.Get("/", h.getWallet)
-	w.Post("/deposits", middleware.RequireKYC(middleware.KYCBasic), h.createDeposit)
+	w.Post("/deposits", middleware.RequireKYC(middleware.KYCVerified), h.createDeposit)
 	w.Post("/withdrawals", middleware.RequireKYC(middleware.KYCVerified), middleware.RequireRecentMFA(middleware.StepUpMaxAge), h.createWithdrawal)
 	w.Post("/sandbox/purchase", h.purchaseSandbox)
 	w.Get("/:type/ledger", h.getLedger)
@@ -62,6 +62,7 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 	w.Get("/gambling/limits", h.getGameLimits)
 	w.Put("/gambling/limits", h.putGameLimits)
 	w.Delete("/gambling/limits/pending", h.cancelPendingLimits)
+	w.Post("/gambling/activate", middleware.RequireKYC(middleware.KYCVerified), h.activateGambling)
 
 	// Everything that moves money INTO the ring-fence is flag-gated: with
 	// GAMBLING_ENABLED off these routes do not exist (404). An absent route cannot
@@ -70,7 +71,6 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 	// wallet with no limits configured. /sandbox/purchase stays registered above
 	// because the service already refuses it for a non-activated user.
 	if cfg.GamblingEnabled {
-		w.Post("/gambling/activate", middleware.RequireKYC(middleware.KYCVerified), h.activateGambling)
 		w.Post("/game/deposit", middleware.RequireKYC(middleware.KYCVerified), h.gameDeposit)
 	}
 

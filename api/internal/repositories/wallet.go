@@ -323,10 +323,13 @@ func (r *WalletRepository) DebitWithFee(ctx context.Context, walletID string, am
 // Transfer atomically debits fromWalletID and credits toWalletID by the same
 // amount, writing two ledger entries and one idempotency guard. Used by sandbox
 // purchase (real → sandbox).
-// Transfer moves amount between two wallets in one transaction. Optional extra
-// items (e.g. the responsible-gambling deposit-counter bump) are co-written
-// atomically: if any extra item's condition fails, the whole transfer cancels.
-func (r *WalletRepository) Transfer(ctx context.Context, fromWalletID, toWalletID string, amount int64, debitType, creditType, ref, idemKey, reqHash string, extra ...types.TransactWriteItem) (debit, credit *wallet.LedgerEntry, replayed bool, err error) {
+// Transfer moves amount from fromWalletID to toWalletID in one transaction. The
+// debit is always `amount`; the credit may differ (e.g. a sandbox purchase
+// converts real centavos into a larger number of credits at a fixed rate), so
+// creditAmount is passed separately. Optional extra items (e.g. the
+// responsible-gambling deposit-counter bump) are co-written atomically: if any
+// extra item's condition fails, the whole transfer cancels.
+func (r *WalletRepository) Transfer(ctx context.Context, fromWalletID, toWalletID string, amount, creditAmount int64, debitType, creditType, ref, idemKey, reqHash string, extra ...types.TransactWriteItem) (debit, credit *wallet.LedgerEntry, replayed bool, err error) {
 	prior, conflict, e := r.checkReplay(ctx, idemKey, reqHash)
 	if e != nil {
 		return nil, nil, false, e
@@ -349,13 +352,13 @@ func (r *WalletRepository) Transfer(ctx context.Context, fromWalletID, toWalletI
 		return nil, nil, false, problem.NotFound("carteira não encontrada")
 	}
 	dEntry := r.newEntry(fromWalletID, debitType, -amount, from.Balance-amount, idemKey, ref)
-	cEntry := r.newEntry(toWalletID, creditType, +amount, to.Balance+amount, idemKey, ref)
+	cEntry := r.newEntry(toWalletID, creditType, +creditAmount, to.Balance+creditAmount, idemKey, ref)
 
 	debitTx, err := r.balanceTx(fromWalletID, amount, -1)
 	if err != nil {
 		return nil, nil, false, err
 	}
-	creditTx, err := r.balanceTx(toWalletID, amount, +1)
+	creditTx, err := r.balanceTx(toWalletID, creditAmount, +1)
 	if err != nil {
 		return nil, nil, false, err
 	}

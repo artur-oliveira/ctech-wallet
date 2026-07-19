@@ -72,6 +72,14 @@ func activate(t *testing.T, h *harness, userID string) (game, sandbox *wallet.Wa
 	if err != nil {
 		t.Fatalf("EnsureGamblingWallets: %v", err)
 	}
+	// Since personal limits became mandatory, an activated test user must carry
+	// coherent limits too. This helper bypasses the service activation flow, so it
+	// must establish the same postcondition explicitly.
+	if err := h.userRepo.SetGameLimits(ctx, userID, &wallet.GameLimits{
+		Daily: testDailyGameLimit, Weekly: testWeeklyGameLimit, Monthly: testMonthlyGameLimit,
+	}); err != nil {
+		t.Fatalf("SetGameLimits: %v", err)
+	}
 	return game, sandbox
 }
 
@@ -414,8 +422,8 @@ func TestSandboxPurchaseAtomic(t *testing.T) {
 	if got := balance(t, h, game.WalletID); got != 2000 {
 		t.Fatalf("game = %d, want 2000 (5000 funded - 3000 spent)", got)
 	}
-	if got := balance(t, h, sandbox.WalletID); got != 3000 {
-		t.Fatalf("sandbox = %d, want 3000", got)
+	if got := balance(t, h, sandbox.WalletID); got != 30000 {
+		t.Fatalf("sandbox = %d, want 30000 (3000¢ × 10 credits/centavo)", got)
 	}
 }
 

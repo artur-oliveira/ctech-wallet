@@ -12,6 +12,12 @@ import (
 	"gopkg.aoctech.app/wallet/api/internal/problem"
 )
 
+const (
+	testDailyGameLimit   int64 = 100_000
+	testWeeklyGameLimit  int64 = 500_000
+	testMonthlyGameLimit int64 = 1_000_000
+)
+
 // Activation requires KYC `verified` — real money is about to enter a gambling
 // ring-fence, so `basic` is not enough.
 func TestActivateGamblingRequiresVerifiedKYC(t *testing.T) {
@@ -20,7 +26,8 @@ func TestActivateGamblingRequiresVerifiedKYC(t *testing.T) {
 	user := "u-" + id.New()
 	acceptGambling(t, h, user)
 
-	_, _, err := h.svc.ActivateGambling(ctx, user, wallet.KYCBasic, "", "")
+	_, _, err := h.svc.ActivateGambling(ctx, user, wallet.KYCBasic, "", "",
+		testDailyGameLimit, testWeeklyGameLimit, testMonthlyGameLimit)
 	wantProblem(t, err, problem.TypeKYCNotVerified)
 
 	_, game, sandbox, err := h.repo.LoadWallets(ctx, user)
@@ -42,7 +49,8 @@ func TestActivateGamblingRequiresAddendum(t *testing.T) {
 		t.Fatalf("AcceptTerms: %v", err)
 	}
 
-	_, _, err := h.svc.ActivateGambling(ctx, user, wallet.KYCVerified, "", "")
+	_, _, err := h.svc.ActivateGambling(ctx, user, wallet.KYCVerified, "", "",
+		testDailyGameLimit, testWeeklyGameLimit, testMonthlyGameLimit)
 	wantProblem(t, err, problem.TypeGamblingTermsRequired)
 }
 
@@ -52,7 +60,8 @@ func TestActivateGamblingHappyPathIsIdempotentAndAudited(t *testing.T) {
 	user := "u-" + id.New()
 	acceptGambling(t, h, user)
 
-	game, sandbox, err := h.svc.ActivateGambling(ctx, user, wallet.KYCVerified, "203.0.113.7", "test-agent")
+	game, sandbox, err := h.svc.ActivateGambling(ctx, user, wallet.KYCVerified, "203.0.113.7", "test-agent",
+		testDailyGameLimit, testWeeklyGameLimit, testMonthlyGameLimit)
 	if err != nil {
 		t.Fatalf("ActivateGambling: %v", err)
 	}
@@ -61,7 +70,8 @@ func TestActivateGamblingHappyPathIsIdempotentAndAudited(t *testing.T) {
 	}
 
 	// Idempotent: activating twice converges on the same wallets.
-	game2, _, err := h.svc.ActivateGambling(ctx, user, wallet.KYCVerified, "", "")
+	game2, _, err := h.svc.ActivateGambling(ctx, user, wallet.KYCVerified, "", "",
+		testDailyGameLimit, testWeeklyGameLimit, testMonthlyGameLimit)
 	if err != nil {
 		t.Fatalf("ActivateGambling replay: %v", err)
 	}
@@ -109,7 +119,8 @@ func TestGetBalancesHidesGamblingWalletsUntilActivated(t *testing.T) {
 	}
 
 	acceptGambling(t, h, user)
-	if _, _, err := h.svc.ActivateGambling(ctx, user, wallet.KYCVerified, "", ""); err != nil {
+	if _, _, err := h.svc.ActivateGambling(ctx, user, wallet.KYCVerified, "", "",
+		testDailyGameLimit, testWeeklyGameLimit, testMonthlyGameLimit); err != nil {
 		t.Fatalf("ActivateGambling: %v", err)
 	}
 
@@ -211,6 +222,64 @@ func TestReturnFromGameCannotOverdrawGame(t *testing.T) {
 	wantProblem(t, err, problem.TypeInsufficientBalance)
 }
 
+func TestGameDepositLimitCountsGrossInflowTransactionally(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(verified())
+	user := fundedAndActivated(t, h, 10_000)
+	if _, err := h.svc.SetGameLimits(ctx, user, 1_000, 2_000, 3_000, "", ""); err != nil {
+		t.Fatalf("SetGameLimits: %v", err)
+	}
+	if _, _, err := h.svc.FundGame(ctx, user, 700, "limit-fund-1#"+user); err != nil {
+		t.Fatalf("first FundGame: %v", err)
+	}
+	if _, _, err := h.svc.ReturnFromGame(ctx, user, 700, "limit-return#"+user); err != nil {
+		t.Fatalf("ReturnFromGame: %v", err)
+	}
+
+	_, _, err := h.svc.FundGame(ctx, user, 301, "limit-fund-2#"+user)
+	wantProblem(t, err, problem.TypeDepositLimitExceeded)
+
+	real, game, _, err := h.repo.LoadWallets(ctx, user)
+	if err != nil {
+		t.Fatalf("LoadWallets: %v", err)
+	}
+	if real.Balance != 10_000 || game.Balance != 0 {
+		t.Fatalf("rejected deposit moved money: real=%d game=%d", real.Balance, game.Balance)
+	}
+	status, err := h.svc.GameLimitsStatus(ctx, user)
+	if err != nil {
+		t.Fatalf("GameLimitsStatus: %v", err)
+	}
+	if status.Usage.Daily != 700 {
+		t.Fatalf("daily gross inflow = %d, want 700", status.Usage.Daily)
+	}
+}
+
+func TestSelfExclusionBlocksFundingButNeverReturn(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(verified())
+	user := fundedAndActivated(t, h, 10_000)
+	if _, _, err := h.svc.FundGame(ctx, user, 1_000, "exclusion-seed#"+user); err != nil {
+		t.Fatalf("FundGame seed: %v", err)
+	}
+	if _, err := h.svc.SelfExclude(ctx, user, "30d", "203.0.113.8", "integration-test"); err != nil {
+		t.Fatalf("SelfExclude: %v", err)
+	}
+
+	_, _, err := h.svc.FundGame(ctx, user, 100, "excluded-fund#"+user)
+	wantProblem(t, err, problem.TypeSelfExcluded)
+	if _, _, err := h.svc.ReturnFromGame(ctx, user, 1_000, "excluded-return#"+user); err != nil {
+		t.Fatalf("return while excluded must remain available: %v", err)
+	}
+	status, err := h.svc.GameLimitsStatus(ctx, user)
+	if err != nil {
+		t.Fatalf("GameLimitsStatus: %v", err)
+	}
+	if status.Excluded == nil || status.Excluded.Period != "30d" {
+		t.Fatalf("self-exclusion was not persisted: %+v", status.Excluded)
+	}
+}
+
 // --- the bypass ---
 
 // THE BYPASS REGRESSION. Real money must never reach sandbox except across the
@@ -239,8 +308,8 @@ func TestSandboxPurchaseNeverDebitsRealWallet(t *testing.T) {
 	if game.Balance != 2500 {
 		t.Errorf("game = %d, want 2500 (4000 funded - 1500 spent)", game.Balance)
 	}
-	if sandbox.Balance != 1500 {
-		t.Errorf("sandbox = %d, want 1500", sandbox.Balance)
+	if sandbox.Balance != 15000 {
+		t.Errorf("sandbox = %d, want 15000 (1500¢ × 10 credits/centavo)", sandbox.Balance)
 	}
 }
 
@@ -311,7 +380,8 @@ func TestLegacySandboxHolderIsNotTreatedAsActivated(t *testing.T) {
 	// After consent + activation the SAME sandbox wallet comes back: activation must
 	// not orphan an existing balance by minting a second sandbox wallet.
 	acceptGambling(t, h, user)
-	_, sandbox, err := h.svc.ActivateGambling(ctx, user, wallet.KYCVerified, "", "")
+	_, sandbox, err := h.svc.ActivateGambling(ctx, user, wallet.KYCVerified, "", "",
+		testDailyGameLimit, testWeeklyGameLimit, testMonthlyGameLimit)
 	if err != nil {
 		t.Fatalf("ActivateGambling: %v", err)
 	}
