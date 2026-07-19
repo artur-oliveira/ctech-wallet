@@ -48,9 +48,9 @@ export function formatCredits(centavos: number, locale: string = i18n.language |
     return plain(locale).format(centavos / 100)
 }
 
-/** Signed centavos → "+R$ 10,00" / "−R$ 10,00" for ledger rows. */
-export function formatSigned(centavos: number, real: boolean, locale: string = i18n.language || 'pt-BR'): string {
+/** Signed centavos → "+R$ 10,00" / "−R$ 10,00" for monetary ledger rows. */
+export function formatSigned(centavos: number, monetary: boolean, locale: string = i18n.language || 'pt-BR'): string {
     const sign = centavos < 0 ? '−' : '+'
     const abs = Math.abs(centavos)
-    return `${sign}${real ? formatBRL(abs, locale) : formatCredits(abs, locale)}`
+    return `${sign}${monetary ? formatBRL(abs, locale) : formatCredits(abs, locale)}`
 }

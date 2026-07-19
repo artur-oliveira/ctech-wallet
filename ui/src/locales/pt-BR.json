@@ -12,7 +12,7 @@
   },
   "login": {
     "title": "CTech Wallet",
-    "subtitle": "Sua carteira digital: saldo real via PIX e créditos para jogar.",
+    "subtitle": "Seu saldo real para PIX e serviços CTech.",
     "button": "Entrar com a conta CTech"
   },
   "callback": {
@@ -39,8 +39,11 @@
       "loadMore": "Carregar movimentações anteriores",
       "loadingMore": "Carregando movimentações anteriores…",
       "loadMoreError": "Não foi possível carregar movimentações anteriores. Tente de novo.",
-      "emptyReal": "Nenhuma movimentação ainda. Faça um depósito para começar.",
-      "emptyOther": "Nenhum crédito ainda. Compre créditos com seu saldo real para jogar."
+      "empty": {
+        "real": "Nenhuma movimentação no saldo real. Faça um depósito PIX para começar.",
+        "game": "Nenhuma movimentação no saldo de jogo. Envie dinheiro do saldo real quando quiser usá-lo em jogos.",
+        "sandbox": "Nenhuma movimentação de créditos sandbox. Compre créditos com o saldo de jogo quando quiser usá-los."
+      }
     }
   },
   "balance": {
@@ -182,10 +185,11 @@
   },
   "terms": {
     "title": "Só mais um passo",
-    "description": "A carteira movimenta dinheiro real e créditos sandbox. Antes de continuar, confirme que você leu os termos específicos da CTech Wallet.",
+    "description": "Antes de acessar seu saldo real e movimentá-lo via PIX, leia e aceite os Termos Adicionais da CTech Wallet.",
     "error": "Não foi possível confirmar. Tente de novo.",
     "checkboxPrefix": "Li e concordo com os",
     "termsLink": "Termos Adicionais da CTech Wallet",
+    "decline": "Recusar e sair",
     "continue": "Continuar",
     "confirming": "Confirmando…"
   },
@@ -642,12 +646,12 @@
         "body": "Deposite e saque por PIX, com o saldo disponível assim que o pagamento é confirmado."
       },
       "segregated": {
-        "title": "Saldo protegido",
-        "body": "Seu dinheiro fica isolado por finalidade: saldo real, saldo de jogo e créditos sandbox nunca se misturam."
+        "title": "Movimentações claras",
+        "body": "Consulte depósitos, saques, taxas e o status de cada transação em um só lugar."
       },
       "future": {
-        "title": "Pronto para o futuro",
-        "body": "Em breve: pague assinaturas dos produtos CTech e jogue com saldo dedicado, tudo na mesma carteira."
+        "title": "Feita para os serviços CTech",
+        "body": "Use um só saldo para assinaturas e outros serviços do ecossistema CTech."
       }
     },
     "footer": {

@@ -33,7 +33,7 @@ export const metadata: Metadata = {
     },
 
     description:
-        'Carteira digital do ecossistema CTech. Centralize seu saldo para pagar assinaturas, utilizar serviços e jogar com uma única carteira.',
+        'Carteira digital do ecossistema CTech. Centralize seu saldo para pagar assinaturas, utilizar serviços e movimentar dinheiro via PIX.',
 
     keywords: [
         'CTech Wallet',
@@ -44,10 +44,6 @@ export const metadata: Metadata = {
         'payments',
         'assinaturas',
         'subscription',
-        'gaming wallet',
-        'poker',
-        'domino',
-        'credits',
         'ecossistema CTech',
     ],
 

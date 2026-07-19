@@ -12,7 +12,7 @@
   },
   "login": {
     "title": "CTech Wallet",
-    "subtitle": "Your digital wallet: real balance via PIX and credits to play.",
+    "subtitle": "Your real balance for PIX and CTech services.",
     "button": "Sign in with CTech account"
   },
   "callback": {
@@ -39,8 +39,11 @@
       "loadMore": "Load older transactions",
       "loadingMore": "Loading older transactions…",
       "loadMoreError": "We couldn't load older transactions. Try again.",
-      "emptyReal": "No transactions yet. Make a deposit to get started.",
-      "emptyOther": "No credits yet. Buy credits with your real balance to play."
+      "empty": {
+        "real": "No real-balance transactions yet. Make a PIX deposit to get started.",
+        "game": "No game-balance transactions yet. Send money from your real balance when you want to use it in games.",
+        "sandbox": "No sandbox-credit transactions yet. Buy credits with your game balance when you want to use them."
+      }
     }
   },
   "balance": {
@@ -182,10 +185,11 @@
   },
   "terms": {
     "title": "Just one more step",
-    "description": "The wallet moves real money and sandbox credits. Before continuing, confirm that you've read the CTech Wallet-specific terms.",
+    "description": "Before accessing your real balance and PIX activity, read and accept the CTech Wallet Additional Terms.",
     "error": "We couldn't confirm. Please try again.",
     "checkboxPrefix": "I have read and agree with the",
     "termsLink": "CTech Wallet Additional Terms",
+    "decline": "Decline and sign out",
     "continue": "Continue",
     "confirming": "Confirming…"
   },
@@ -640,12 +644,12 @@
         "body": "Deposit and withdraw via PIX, with your balance available as soon as the payment is confirmed."
       },
       "segregated": {
-        "title": "Protected balance",
-        "body": "Your money is kept separated by purpose: real balance, game balance, and sandbox credits never mix."
+        "title": "Clear activity",
+        "body": "Review deposits, withdrawals, fees, and transaction status in one place."
       },
       "future": {
-        "title": "Built for what's next",
-        "body": "Coming soon: pay for CTech product subscriptions and play with a dedicated balance, all in the same wallet."
+        "title": "Made for CTech services",
+        "body": "Use one balance for subscriptions and other services across the CTech ecosystem."
       }
     },
     "footer": {

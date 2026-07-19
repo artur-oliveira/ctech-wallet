@@ -4,12 +4,13 @@ import {useInfiniteQuery} from '@tanstack/react-query'
 import {useTranslation} from 'react-i18next'
 import {apiClient} from '@/lib/api/client'
 import {formatSigned} from '@/lib/utils/money'
+import {walletHasMonetaryValue} from '@/lib/utils/wallet-semantics'
 import type {WalletType} from '@/lib/types/api'
 import {Button} from '@/components/ui/button'
 
 export function LedgerList({type}: { type: WalletType }) {
     const {t, i18n} = useTranslation()
-    const real = type === 'real'
+    const monetary = walletHasMonetaryValue(type)
     const {
         data,
         isLoading,
@@ -51,7 +52,7 @@ export function LedgerList({type}: { type: WalletType }) {
     if (items.length === 0) {
         return (
             <p className="px-5 py-10 text-center text-sm text-muted-foreground">
-                {real ? t('dashboard.ledger.emptyReal') : t('dashboard.ledger.emptyOther')}
+                {t(`dashboard.ledger.empty.${type}`)}
             </p>
         )
     }
@@ -70,7 +71,7 @@ export function LedgerList({type}: { type: WalletType }) {
                                 entry.amount < 0 ? 'text-muted-foreground' : 'text-brand-700'
                             }`}
                         >
-                            {formatSigned(entry.amount, real)}
+                            {formatSigned(entry.amount, monetary)}
                         </p>
                     </li>
                 ))}

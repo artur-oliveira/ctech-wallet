@@ -7,17 +7,19 @@ import {useTranslation} from 'react-i18next'
 import {apiClient} from '@/lib/api/client'
 import {Button} from '@/components/ui/button'
 import {WALLET_TERMS_URL} from '@/lib/legal'
+import {useAuth} from '@/lib/hooks/useAuth'
 
 /**
  * Blocks the whole app until the user accepts the wallet's terms addendum.
  *
- * The wallet custodies real money and holds a non-convertible sandbox balance —
- * neither is covered by the account's master terms, and an SSO sign-up never
- * presents a checkbox for product-specific terms. Acceptance is checked against
- * the current version, so bumping it re-gates everyone.
+ * The wallet custodies real money, which is not covered by the account's master
+ * terms, and an SSO sign-up never presents a checkbox for product-specific terms.
+ * Game and sandbox wallets remain a separate, optional consent. Acceptance is
+ * checked against the current version, so bumping it re-gates everyone.
  */
 export function TermsAddendumGate() {
     const {t} = useTranslation()
+    const {logout} = useAuth()
     const qc = useQueryClient()
     const [checked, setChecked] = useState(false)
 
@@ -65,14 +67,19 @@ export function TermsAddendumGate() {
           </span>
                 </label>
 
-                <Button
-                    variant="brand"
-                    className="w-full"
-                    disabled={!checked || accept.isPending}
-                    onClick={() => accept.mutate()}
-                >
-                    {accept.isPending ? t('terms.confirming') : t('terms.continue')}
-                </Button>
+                <div className="flex flex-col-reverse gap-2 sm:flex-row">
+                    <Button variant="outline" className="flex-1" onClick={logout}>
+                        {t('terms.decline')}
+                    </Button>
+                    <Button
+                        variant="brand"
+                        className="flex-1"
+                        disabled={!checked || accept.isPending}
+                        onClick={() => accept.mutate()}
+                    >
+                        {accept.isPending ? t('terms.confirming') : t('terms.continue')}
+                    </Button>
+                </div>
             </div>
         </div>
     )
