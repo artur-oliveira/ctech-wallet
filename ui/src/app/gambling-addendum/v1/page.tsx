@@ -1,6 +1,7 @@
 import type {Metadata} from 'next'
 import {LegalPage, LegalSection} from '@/components/legal-page'
 import i18n from '@/lib/i18n-static'
+import {WALLET_TERMS_URL} from '@/lib/legal'
 
 // Keep in sync with wallet.CurrentGamblingAddendumVersion in the Go API
 // (api/internal/domain/wallet/user.go). The gate decision is server-side; this is
@@ -24,7 +25,7 @@ export default function GamblingAddendumPage() {
                 {i18n.t('legal.gambling.v1.intro1a')}
                 <strong>{i18n.t('legal.gambling.v1.intro1Bold')}</strong>
                 {i18n.t('legal.gambling.v1.intro1b')}
-                <a href="/terms-addendum" className="underline underline-offset-4">
+                <a href={WALLET_TERMS_URL} target="_blank" rel="noreferrer" className="underline underline-offset-4">
                     {i18n.t('legal.gambling.v1.addendumLink')}
                 </a>
                 {i18n.t('legal.gambling.v1.intro1c')}

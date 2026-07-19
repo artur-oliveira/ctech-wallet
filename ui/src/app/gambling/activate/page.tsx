@@ -9,6 +9,7 @@ import {useTranslation} from 'react-i18next'
 import {apiClient, ApiError} from '@/lib/api/client'
 import {ProtectedRoute} from '@/components/protected-route'
 import {Button} from '@/components/ui/button'
+import {WALLET_GAMING_TERMS_URL} from '@/lib/legal'
 
 function activationMessage(err: unknown, t: (k: string) => string): string {
     if (!(err instanceof ApiError)) return t('gambling.error.generic')
@@ -75,7 +76,7 @@ function ActivateGamblingInner() {
                     <span>
             {t('gambling.checkboxPrefix')}{' '}
                         <a
-                            href="/gambling-addendum"
+                            href={WALLET_GAMING_TERMS_URL}
                             target="_blank"
                             rel="noreferrer"
                             className="text-foreground underline underline-offset-4"

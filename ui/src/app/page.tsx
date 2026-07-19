@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import {ACCOUNTS_LEGAL_URL, PRIVACY_POLICY_URL, WALLET_TERMS_URL} from '@/lib/legal'
 import { useTranslation } from 'react-i18next'
 import { Sparkles, Wallet, Zap, ShieldCheck } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
@@ -69,11 +70,14 @@ export default function Home() {
                 <div className="mx-auto flex max-w-5xl flex-col items-center gap-3 px-6 py-8 text-sm text-muted-foreground md:flex-row md:justify-between">
                     <p>© {new Date().getFullYear()} A O CARVALHO TECH</p>
                     <div className="flex items-center gap-4">
-                        <a href="https://accounts.aoctech.app/terms" className="hover:text-foreground" target="_blank" rel="noreferrer">
+                        <a href={WALLET_TERMS_URL} className="hover:text-foreground" target="_blank" rel="noreferrer">
                             {t('home.footer.terms')}
                         </a>
-                        <a href="https://accounts.aoctech.app/privacy" className="hover:text-foreground" target="_blank" rel="noreferrer">
+                        <a href={PRIVACY_POLICY_URL} className="hover:text-foreground" target="_blank" rel="noreferrer">
                             {t('home.footer.privacy')}
+                        </a>
+                        <a href={ACCOUNTS_LEGAL_URL} className="hover:text-foreground" target="_blank" rel="noreferrer">
+                            {t('home.footer.legalCenter', {defaultValue: 'Central Jurídica'})}
                         </a>
                     </div>
                 </div>

@@ -6,6 +6,7 @@ import {ShieldCheck} from 'lucide-react'
 import {useTranslation} from 'react-i18next'
 import {apiClient} from '@/lib/api/client'
 import {Button} from '@/components/ui/button'
+import {WALLET_TERMS_URL} from '@/lib/legal'
 
 /**
  * Blocks the whole app until the user accepts the wallet's terms addendum.
@@ -53,7 +54,7 @@ export function TermsAddendumGate() {
                     <span>
             {t('terms.checkboxPrefix')}{' '}
                         <a
-                            href="/terms-addendum"
+                            href={WALLET_TERMS_URL}
                             target="_blank"
                             rel="noreferrer"
                             className="text-foreground underline underline-offset-4"

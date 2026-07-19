@@ -1,6 +1,7 @@
 import type {Metadata} from 'next'
 import {LegalPage, LegalSection} from '@/components/legal-page'
 import i18n from '@/lib/i18n-static'
+import {WALLET_TERMS_URL} from '@/lib/legal'
 
 export const metadata: Metadata = {
     title: i18n.t('legal.gambling.v2.metaTitle'),
@@ -20,7 +21,9 @@ export default function GamblingAddendumPage() {
             <p>
                 {i18n.t('legal.gambling.v2.intro1')}{' '}
                 <a
-                    href="/terms-addendum"
+                    href={WALLET_TERMS_URL}
+                    target="_blank"
+                    rel="noreferrer"
                     className="underline underline-offset-4"
                 >
                     {i18n.t('legal.gambling.v2.addendumLink')}
