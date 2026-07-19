@@ -1,10 +1,11 @@
 'use client'
 
-import {useCallback, useEffect, useRef} from 'react'
+import {useEffect, useRef} from 'react'
 import {useTranslation} from 'react-i18next'
 import {Button} from '@/components/ui/button'
 import {formatBRL} from '@/lib/utils/money'
 import {withdrawalFee, type WithdrawalFeeConfig} from '@/lib/utils/fee'
+import {Dialog, DialogContent, DialogDescription, DialogTitle} from '@/components/ui/dialog'
 
 type Flow = 'withdraw' | 'fund-game' | 'return-game'
 
@@ -49,7 +50,6 @@ export function ConfirmMoneyDialog({
     const {t} = useTranslation()
     const confirmRef = useRef<HTMLButtonElement>(null)
     const reverifyRef = useRef<HTMLButtonElement>(null)
-    const panelRef = useRef<HTMLDivElement>(null)
 
     const isWithdraw = flow === 'withdraw'
     const fee = isWithdraw ? withdrawalFee(amountCents, feeConfig) : 0
@@ -60,61 +60,25 @@ export function ConfirmMoneyDialog({
     const titleKey = `confirm.${flowKey}.title`
     const descKey = `confirm.${flowKey}.description`
 
-    const onKeyDown = useCallback(
-        (e: React.KeyboardEvent) => {
-            if (e.key === 'Escape' && !pending) {
-                e.preventDefault()
-                onClose()
-                return
-            }
-            if (e.key === 'Tab') {
-                const focusables = panelRef.current?.querySelectorAll<HTMLElement>(
-                    'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-                )
-                if (!focusables || focusables.length === 0) return
-                const first = focusables[0]
-                const last = focusables[focusables.length - 1]
-                if (e.shiftKey && document.activeElement === first) {
-                    e.preventDefault()
-                    last.focus()
-                } else if (!e.shiftKey && document.activeElement === last) {
-                    e.preventDefault()
-                    first.focus()
-                }
-            }
-        },
-        [onClose, pending],
-    )
-
     useEffect(() => {
-        const previouslyFocused = document.activeElement as HTMLElement | null
         if (stepUp) reverifyRef.current?.focus()
-        else confirmRef.current?.focus()
-        return () => previouslyFocused?.focus?.()
     }, [stepUp])
 
     return (
-        <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-            onMouseDown={(e) => {
-                if (e.target === e.currentTarget && !pending) onClose()
+        <Dialog
+            open
+            disablePointerDismissal={!!pending}
+            onOpenChange={(open) => {
+                if (!open && !pending) onClose()
             }}
         >
-            <div
-                ref={panelRef}
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="confirm-money-title"
-                aria-describedby={stepUp ? 'confirm-stepup-alert' : 'confirm-money-desc'}
-                onKeyDown={onKeyDown}
-                className="w-full max-w-sm rounded-2xl bg-card p-6 shadow-modal"
-            >
-                <h2 id="confirm-money-title" className="text-lg font-semibold text-foreground">
+            <DialogContent initialFocus={stepUp ? reverifyRef : confirmRef}>
+                <DialogTitle>
                     {t(stepUp ? 'confirm.stepUp.title' : titleKey)}
-                </h2>
-                <p id="confirm-money-desc" className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                </DialogTitle>
+                <DialogDescription className="mt-1">
                     {t(descKey)}
-                </p>
+                </DialogDescription>
 
                 <dl className="mt-5 space-y-2 rounded-xl bg-muted p-4 text-sm" aria-live="polite">
                     <div className="flex items-center justify-between">
@@ -201,7 +165,7 @@ export function ConfirmMoneyDialog({
                         </>
                     )}
                 </div>
-            </div>
-        </div>
+            </DialogContent>
+        </Dialog>
     )
 }

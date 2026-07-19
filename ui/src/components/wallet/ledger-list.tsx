@@ -36,12 +36,12 @@ export function LedgerList({type}: { type: WalletType }) {
     })
 
     if (isLoading) {
-        return <p className="px-5 py-8 text-center text-sm text-muted-foreground">{t('dashboard.ledger.loading')}</p>
+        return <p role="status" className="px-5 py-8 text-center text-sm text-muted-foreground">{t('dashboard.ledger.loading')}</p>
     }
 
     if (error && !data) {
         return (
-            <p className="px-5 py-8 text-center text-sm text-muted-foreground">
+            <p role="alert" className="px-5 py-8 text-center text-sm text-muted-foreground">
                 {t('dashboard.ledger.error')}
             </p>
         )

@@ -1,6 +1,6 @@
 'use client'
 
-import {useCallback, useEffect, useMemo, useRef} from 'react'
+import {useMemo} from 'react'
 import {Controller, useForm, useWatch} from 'react-hook-form'
 import {zodResolver} from '@hookform/resolvers/zod'
 import {z} from 'zod'
@@ -8,6 +8,7 @@ import {useTranslation} from 'react-i18next'
 import {Button} from '@/components/ui/button'
 import {formatBRL, formatCredits, formatCreditsAmount, MAX_AMOUNT_CENTS, MAX_AMOUNT_DIGITS, toCredits} from '@/lib/utils/money'
 import {maxWithdrawable, withdrawalFee, type WithdrawalFeeConfig} from '@/lib/utils/fee'
+import {Dialog, DialogContent, DialogDescription, DialogTitle} from '@/components/ui/dialog'
 
 type Flow = 'deposit' | 'withdraw' | 'credits' | 'fund-game' | 'return-game'
 
@@ -84,40 +85,6 @@ export function AmountDialog({flow, maxCents, feeConfig, pending, onSubmit, onPr
 
     const amount = useWatch({control, name: 'amount'}) ?? 0
 
-    const panelRef = useRef<HTMLFormElement>(null)
-
-    const onKeyDown = useCallback(
-        (e: React.KeyboardEvent) => {
-            if (e.key === 'Escape' && !pending) {
-                e.preventDefault()
-                onClose()
-                return
-            }
-            if (e.key === 'Tab') {
-                const focusables = panelRef.current?.querySelectorAll<HTMLElement>(
-                    'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-                )
-                if (!focusables || focusables.length === 0) return
-                const first = focusables[0]
-                const last = focusables[focusables.length - 1]
-                if (e.shiftKey && document.activeElement === first) {
-                    e.preventDefault()
-                    last.focus()
-                } else if (!e.shiftKey && document.activeElement === last) {
-                    e.preventDefault()
-                    first.focus()
-                }
-            }
-        },
-        [onClose, pending],
-    )
-
-    useEffect(() => {
-        const previouslyFocused = document.activeElement as HTMLElement | null
-        panelRef.current?.querySelector<HTMLElement>('input, button')?.focus()
-        return () => previouslyFocused?.focus?.()
-    }, [])
-
     const submit = handleSubmit((data) => {
         if (onProceed) {
             onProceed(data.amount)
@@ -127,25 +94,16 @@ export function AmountDialog({flow, maxCents, feeConfig, pending, onSubmit, onPr
     })
 
     return (
-        <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-            onMouseDown={(e) => {
-                if (e.target === e.currentTarget && !pending) onClose()
+        <Dialog
+            open
+            disablePointerDismissal={!!pending}
+            onOpenChange={(open) => {
+                if (!open && !pending) onClose()
             }}
         >
-            <form
-                onSubmit={submit}
-                noValidate
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="amount-dialog-title"
-                onKeyDown={onKeyDown}
-                ref={panelRef}
-                className="w-full max-w-sm rounded-2xl bg-card p-6 shadow-modal"
-            >
-                <h2 id="amount-dialog-title"
-                    className="text-lg font-semibold text-foreground">{t(`dialog.${flowKey}.title`)}</h2>
-                <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{t(`dialog.${flowKey}.description`)}</p>
+            <DialogContent render={<form onSubmit={submit} noValidate/>}>
+                <DialogTitle>{t(`dialog.${flowKey}.title`)}</DialogTitle>
+                <DialogDescription className="mt-1">{t(`dialog.${flowKey}.description`)}</DialogDescription>
 
                 <label className="mt-5 block text-sm font-medium text-foreground" htmlFor="amount">
                     {t('dialog.amount.label')}
@@ -236,7 +194,7 @@ export function AmountDialog({flow, maxCents, feeConfig, pending, onSubmit, onPr
                         {pending ? t('common.loading') : t(`dialog.${flowKey}.submit`)}
                     </Button>
                 </div>
-            </form>
-        </div>
+            </DialogContent>
+        </Dialog>
     )
 }

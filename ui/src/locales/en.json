@@ -8,7 +8,8 @@
     "loading": "Loading…",
     "tryAgain": "Try again",
     "genericError": "Something went wrong. Please try again.",
-    "close": "Close"
+    "close": "Close",
+    "changeLanguage": "Switch language to {{language}}"
   },
   "login": {
     "title": "CTech Wallet",

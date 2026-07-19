@@ -6,11 +6,14 @@ import {useQuery} from '@tanstack/react-query'
 import {apiClient} from '@/lib/api/client'
 import {useAuth} from '@/lib/hooks/useAuth'
 import {TermsAddendumGate} from '@/components/terms-addendum-gate'
+import {useTranslation} from 'react-i18next'
 
 function Spinner() {
+    const {t} = useTranslation()
     return (
-        <div className="flex min-h-screen items-center justify-center">
-            <div className="size-10 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600"/>
+        <div className="flex min-h-screen items-center justify-center" role="status">
+            <div aria-hidden="true" className="size-10 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600"/>
+            <span className="sr-only">{t('common.loading')}</span>
         </div>
     )
 }

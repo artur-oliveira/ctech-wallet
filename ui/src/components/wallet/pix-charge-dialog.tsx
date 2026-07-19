@@ -1,6 +1,6 @@
 'use client'
 
-import React, {useCallback, useEffect, useRef, useState} from 'react'
+import React, {useEffect, useRef, useState} from 'react'
 import {useQuery} from '@tanstack/react-query'
 import {Check, Copy} from 'lucide-react'
 import {useTranslation} from 'react-i18next'
@@ -9,6 +9,7 @@ import {Button} from '@/components/ui/button'
 import {formatBRL} from '@/lib/utils/money'
 import {apiClient} from '@/lib/api/client'
 import type {DepositResult} from '@/lib/types/api'
+import {Dialog, DialogContent, DialogDescription, DialogTitle} from '@/components/ui/dialog'
 
 const POLL_DELAY_MS = 30_000 // start polling only after this — the WS path is primary
 const POLL_INTERVAL_MS = 5_000
@@ -39,40 +40,8 @@ export function PixChargeDialog(
     const [copied, setCopied] = useState(false)
     const [polling, setPolling] = useState(false)
     const [remainingSec, setRemainingSec] = useState(() => deposit.expires_at - Date.now() / 1000)
-    const panelRef = useRef<HTMLDivElement>(null)
+    const copyRef = useRef<HTMLButtonElement>(null)
     const expired = remainingSec <= 0
-
-    const onKeyDown = useCallback(
-        (e: React.KeyboardEvent) => {
-            if (e.key === 'Escape') {
-                e.preventDefault()
-                onClose()
-                return
-            }
-            if (e.key === 'Tab') {
-                const focusables = panelRef.current?.querySelectorAll<HTMLElement>(
-                    'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-                )
-                if (!focusables || focusables.length === 0) return
-                const first = focusables[0]
-                const last = focusables[focusables.length - 1]
-                if (e.shiftKey && document.activeElement === first) {
-                    e.preventDefault()
-                    last.focus()
-                } else if (!e.shiftKey && document.activeElement === last) {
-                    e.preventDefault()
-                    first.focus()
-                }
-            }
-        },
-        [onClose],
-    )
-
-    useEffect(() => {
-        const previouslyFocused = document.activeElement as HTMLElement | null
-        panelRef.current?.querySelector<HTMLElement>('button')?.focus()
-        return () => previouslyFocused?.focus?.()
-    }, [])
 
     useEffect(() => {
         const timer = setTimeout(() => setPolling(true), POLL_DELAY_MS)
@@ -118,26 +87,19 @@ export function PixChargeDialog(
     }
 
     return (
-        <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-            onMouseDown={(e) => {
-                if (e.target === e.currentTarget) onClose()
+        <Dialog
+            open
+            onOpenChange={(open) => {
+                if (!open) onClose()
             }}
         >
-            <div
-                ref={panelRef}
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="pix-charge-title"
-                onKeyDown={onKeyDown}
-                className="w-full max-w-sm rounded-2xl bg-card p-6 shadow-modal"
-            >
-                <h2 id="pix-charge-title" className="text-lg font-semibold text-foreground">
+            <DialogContent initialFocus={copyRef}>
+                <DialogTitle>
                     {t('pix.title', {amount: formatBRL(deposit.amount)})}
-                </h2>
-                <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                </DialogTitle>
+                <DialogDescription className="mt-1">
                     {t('pix.description')}
-                </p>
+                </DialogDescription>
 
                 {expired ? (
                     <p role="status" className="mt-5 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-center text-sm text-destructive">
@@ -158,7 +120,7 @@ export function PixChargeDialog(
                             {deposit.pix_copia_e_cola}
                         </p>
 
-                        <Button variant="brand" className="mt-3 w-full" onClick={copy}>
+                        <Button ref={copyRef} variant="brand" className="mt-3 w-full" onClick={copy}>
                             {copied ? <Check size={16}/> : <Copy size={16}/>}
                             {copied ? t('pix.copied') : t('pix.copy')}
                         </Button>
@@ -172,7 +134,7 @@ export function PixChargeDialog(
                 <Button variant="ghost" className="mt-2 w-full" onClick={onClose}>
                     {t('pix.close')}
                 </Button>
-            </div>
-        </div>
+            </DialogContent>
+        </Dialog>
     )
 }

@@ -319,12 +319,13 @@ function DashboardInner() {
 
             <main className="mx-auto max-w-4xl space-y-6 px-6 py-8">
                 {balances.isLoading && (
-                    <div className="h-44 animate-pulse rounded-2xl bg-muted"
-                         aria-label={t('dashboard.loadingBalances')}/>
+                    <div className="h-44 animate-pulse rounded-2xl bg-muted" role="status">
+                        <span className="sr-only">{t('dashboard.loadingBalances')}</span>
+                    </div>
                 )}
 
                 {balances.error && (
-                    <p className="rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground">
+                    <p role="alert" className="rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground">
                         {t('dashboard.loadError')}
                     </p>
                 )}

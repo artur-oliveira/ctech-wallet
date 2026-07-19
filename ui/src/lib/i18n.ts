@@ -2,8 +2,7 @@ import i18n from 'i18next'
 import {initReactI18next} from 'react-i18next'
 import en from '@/locales/en.json'
 import ptBR from '@/locales/pt-BR.json'
-
-export const DEFAULT_LOCALE = 'pt-BR'
+import {DEFAULT_LOCALE} from '@/lib/locale'
 
 i18n.use(initReactI18next).init({
     resources: {

@@ -107,8 +107,10 @@ function ResponsibleGamblingInner() {
                     <p className="mt-1 text-sm text-muted-foreground">{t('responsible.description')}</p>
                 </div>
 
-                {status.isLoading && <div className="h-64 animate-pulse rounded-2xl bg-muted"/>}
-                {status.error && <p className="rounded-xl border border-border bg-card p-5 text-sm">{t('common.genericError')}</p>}
+                {status.isLoading && <div className="h-64 animate-pulse rounded-2xl bg-muted" role="status">
+                    <span className="sr-only">{t('common.loading')}</span>
+                </div>}
+                {status.error && <p role="alert" className="rounded-xl border border-border bg-card p-5 text-sm">{t('common.genericError')}</p>}
                 {status.data && (
                     <>
                         {status.data.excluded && (
@@ -134,7 +136,17 @@ function ResponsibleGamblingInner() {
                                         const limit = current[window]
                                         return <div key={window}>
                                             <div className="flex justify-between text-xs"><span>{t(`responsible.limits.${window}`)}</span><span>{formatBRL(used)} / {formatBRL(limit)}</span></div>
-                                            <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted"><div className="h-full bg-brand-600" style={{width: `${Math.min(100, limit ? used / limit * 100 : 0)}%`}}/></div>
+                                            <div
+                                                className="mt-2 h-2 overflow-hidden rounded-full bg-muted"
+                                                role="progressbar"
+                                                aria-label={t(`responsible.limits.${window}`)}
+                                                aria-valuemin={0}
+                                                aria-valuemax={limit}
+                                                aria-valuenow={used}
+                                                aria-valuetext={`${formatBRL(used)} / ${formatBRL(limit)}`}
+                                            >
+                                                <div className="h-full bg-brand-600" style={{width: `${Math.min(100, limit ? used / limit * 100 : 0)}%`}}/>
+                                            </div>
                                         </div>
                                     })}
                                 </div>

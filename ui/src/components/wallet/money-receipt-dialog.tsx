@@ -1,9 +1,10 @@
 'use client'
 
-import {useCallback, useEffect, useRef} from 'react'
+import {useRef} from 'react'
 import {CheckCircle2} from 'lucide-react'
 import {useTranslation} from 'react-i18next'
 import {Button} from '@/components/ui/button'
+import {Dialog, DialogContent, DialogTitle} from '@/components/ui/dialog'
 
 /**
  * Brief peak-end confirmation for a completed real-money move — replaces a
@@ -17,45 +18,22 @@ export function MoneyReceiptDialog({title, amountLabel, details, onClose}: {
     onClose: () => void
 }) {
     const {t} = useTranslation()
-    const panelRef = useRef<HTMLDivElement>(null)
-
-    const onKeyDown = useCallback(
-        (e: React.KeyboardEvent) => {
-            if (e.key === 'Escape') {
-                e.preventDefault()
-                onClose()
-            }
-        },
-        [onClose],
-    )
-
-    useEffect(() => {
-        const previouslyFocused = document.activeElement as HTMLElement | null
-        panelRef.current?.querySelector<HTMLElement>('button')?.focus()
-        return () => previouslyFocused?.focus?.()
-    }, [])
+    const closeRef = useRef<HTMLButtonElement>(null)
 
     return (
-        <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-            onMouseDown={(e) => {
-                if (e.target === e.currentTarget) onClose()
+        <Dialog
+            open
+            onOpenChange={(open) => {
+                if (!open) onClose()
             }}
         >
-            <div
-                ref={panelRef}
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="money-receipt-title"
-                onKeyDown={onKeyDown}
-                className="w-full max-w-sm rounded-2xl bg-card p-6 text-center shadow-modal"
-            >
+            <DialogContent initialFocus={closeRef} className="text-center">
                 <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-brand-50 text-brand-600">
-                    <CheckCircle2 size={28}/>
+                    <CheckCircle2 aria-hidden="true" size={28}/>
                 </div>
-                <h2 id="money-receipt-title" className="mt-4 text-lg font-semibold text-foreground">
+                <DialogTitle className="mt-4">
                     {title}
-                </h2>
+                </DialogTitle>
                 <p className="mt-1 font-mono text-2xl font-bold tabular-nums text-foreground">
                     {amountLabel}
                 </p>
@@ -69,10 +47,10 @@ export function MoneyReceiptDialog({title, amountLabel, details, onClose}: {
                         ))}
                     </dl>
                 )}
-                <Button variant="brand" className="mt-6 w-full" onClick={onClose}>
+                <Button ref={closeRef} variant="brand" className="mt-6 w-full" onClick={onClose}>
                     {t('common.close')}
                 </Button>
-            </div>
-        </div>
+            </DialogContent>
+        </Dialog>
     )
 }

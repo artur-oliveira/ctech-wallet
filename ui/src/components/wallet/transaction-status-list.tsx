@@ -65,7 +65,7 @@ export function TransactionStatusList({
                                         <p className="text-sm font-semibold text-foreground">
                                             {t(`transactions.kind.${item.kind}`)}
                                         </p>
-                                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[item.status]}`}>
+                                        <span role="status" className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[item.status]}`}>
                                             {t(`transactions.status.${item.status}`)}
                                         </span>
                                     </div>
