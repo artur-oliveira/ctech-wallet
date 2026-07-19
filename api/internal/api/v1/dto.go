@@ -53,3 +53,30 @@ type ConfirmDepositRequest struct {
 	PayerCPF  string `json:"payer_cpf"`
 	PayerName string `json:"payer_name"`
 }
+
+// HoldRequest reserves a player's buy-in against their game wallet (M2M,
+// scope internal:wallet:game-hold). TableRef is an opaque caller-supplied
+// session identifier (e.g. table_id:seat) — the wallet never interprets it.
+type HoldRequest struct {
+	UserID         string `json:"user_id" validate:"required"`
+	Amount         int64  `json:"amount" validate:"required,gt=0"`
+	TableRef       string `json:"table_ref" validate:"required"`
+	IdempotencyKey string `json:"idempotency_key" validate:"required"`
+}
+
+// ReleaseRequest refunds a `held` hold in full (M2M, scope
+// internal:wallet:game-hold). The hold id travels in the route path.
+type ReleaseRequest struct {
+	IdempotencyKey string `json:"idempotency_key" validate:"required"`
+}
+
+// CashoutRequest credits the caller's final stack (M2M, scope
+// internal:wallet:game-cashout). Amount is NEVER validated against the sum of
+// HoldIDs — see WalletService.CashoutGame.
+type CashoutRequest struct {
+	UserID         string   `json:"user_id" validate:"required"`
+	Amount         int64    `json:"amount" validate:"required,gt=0"`
+	TableRef       string   `json:"table_ref" validate:"required"`
+	HoldIDs        []string `json:"hold_ids" validate:"required,min=1"`
+	IdempotencyKey string   `json:"idempotency_key" validate:"required"`
+}

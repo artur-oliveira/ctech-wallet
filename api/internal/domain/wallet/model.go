@@ -33,6 +33,19 @@ const (
 	EntryGameReturnCredit = "game_return_credit" // credit real
 
 	EntryBillingDebit = "billing_debit" // real debited by an authorized M2M client (ctech-billing)
+
+	// game wallet holds (see Hold below) — buy-in reservation, full refund, and
+	// final-stack cash-out for skill-game (poker/dominó) integration.
+	EntryGameHoldDebit     = "game_hold_debit"     // buy-in reservation
+	EntryGameHoldRelease   = "game_hold_release"   // full refund, table/hand aborted before play
+	EntryGameCashoutCredit = "game_cashout_credit" // final stack credited back on leaving the table
+)
+
+// Hold statuses.
+const (
+	HoldHeld     = "held"
+	HoldReleased = "released"
+	HoldSettled  = "settled" // consumed by a cash-out credit
 )
 
 // PIX deposit statuses.
@@ -65,13 +78,15 @@ const (
 	TableWithdrawals = "wallet_withdrawals"
 	TableUsers       = "wallet_users"
 	TableAudit       = "wallet_audit"
+	TableHolds       = "wallet_holds"
 )
 
 // DynamoDB GSI names.
 const (
-	GSIUser   = "gsi_user"   // wallets.user_id → both wallets of a user
-	GSIIdem   = "gsi_idem"   // ledger_entries.idempotency_key → replay lookup
-	GSIStatus = "gsi_status" // withdrawals.status → reconciliation scan; deposits.status → pending sweep
+	GSIUser       = "gsi_user"        // wallets.user_id → both wallets of a user
+	GSIIdem       = "gsi_idem"        // ledger_entries.idempotency_key → replay lookup
+	GSIStatus     = "gsi_status"      // withdrawals.status → reconciliation scan; deposits.status → pending sweep
+	GSIHoldStatus = "gsi_hold_status" // holds.status → stale-hold reconciliation scan
 )
 
 // IdemPrefix namespaces idempotency guard items in the idempotency table.
@@ -158,6 +173,23 @@ type Withdrawal struct {
 	PixKey         string `dynamodbav:"pix_key" json:"pix_key"`
 	Status         string `dynamodbav:"status" json:"status"`
 	E2EID          string `dynamodbav:"e2e_id" json:"e2e_id,omitempty"`
+	IdempotencyKey string `dynamodbav:"idempotency_key" json:"-"`
+	CreatedAt      string `dynamodbav:"created_at" json:"created_at"`
+	UpdatedAt      string `dynamodbav:"updated_at" json:"updated_at"`
+}
+
+// Hold is an open reservation against a player's game wallet, created at
+// buy-in. It never bounds the eventual cash-out amount — the calling skill
+// game's own table ledger is authoritative for how much a player's stack is
+// worth when they leave; this record exists for idempotency, audit, and
+// stale-hold detection (see the stale-hold reconciliation sweep).
+type Hold struct {
+	HoldID         string `dynamodbav:"pk" json:"hold_id"`
+	WalletID       string `dynamodbav:"wallet_id" json:"wallet_id"`
+	UserID         string `dynamodbav:"user_id" json:"user_id"`
+	Amount         int64  `dynamodbav:"amount" json:"amount"`       // original reservation, centavos
+	TableRef       string `dynamodbav:"table_ref" json:"table_ref"` // opaque caller reference (e.g. table_id:seat)
+	Status         string `dynamodbav:"status" json:"status"`
 	IdempotencyKey string `dynamodbav:"idempotency_key" json:"-"`
 	CreatedAt      string `dynamodbav:"created_at" json:"created_at"`
 	UpdatedAt      string `dynamodbav:"updated_at" json:"updated_at"`

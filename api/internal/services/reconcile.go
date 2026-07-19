@@ -17,6 +17,11 @@ const reconcileBatch = 100
 // fallback path to eventual consistency before the row is lost (F6).
 const sweepAgeThreshold = 3 * time.Minute
 
+// staleHoldCeiling: no real cash-game session should run longer than this. A
+// hold still `held` past the ceiling is Invariant #12's "money left in limbo"
+// case, applied to holds.
+const staleHoldCeiling = 24 * time.Hour
+
 // ReconcileWithdrawals resolves withdrawals stuck in the processing state: it
 // asks the bank whether each payout actually went through. Completed payouts are
 // marked completed; payouts that never happened are reversed (the debited amount
@@ -104,4 +109,25 @@ func (s *WalletService) SweepPendingDeposits(ctx context.Context) (swept int, er
 		swept++
 	}
 	return swept, nil
+}
+
+// SweepStaleHolds raises an operational alarm for every hold stuck `held`
+// past staleHoldCeiling. It never auto-releases or auto-cashes-out: the
+// calling skill game's own crash-recovery may still resume the table and
+// later call release/cashout itself, and auto-resolving here would race that
+// and risk a double-credit — this is a page-a-human case, same as a stuck
+// withdrawal (Invariant #12).
+func (s *WalletService) SweepStaleHolds(ctx context.Context) (alarmed int, err error) {
+	cutoff := time.Now().Add(-staleHoldCeiling)
+	holds, err := s.repo.ScanStaleHolds(ctx, cutoff, reconcileBatch)
+	if err != nil {
+		return 0, err
+	}
+	for i := range holds {
+		h := holds[i]
+		slog.Error("ALARM stale game hold past ceiling", "hold_id", h.HoldID, "user_id", h.UserID,
+			"wallet_id", h.WalletID, "amount", h.Amount, "table_ref", h.TableRef, "created_at", h.CreatedAt)
+		alarmed++
+	}
+	return alarmed, nil
 }

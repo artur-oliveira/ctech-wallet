@@ -74,4 +74,9 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 	sb.Post("/debit", middleware.RequireScope(middleware.ScopeWalletDebit), h.sandboxDebit)
 	rw := internal.Group("/wallet/real")
 	rw.Post("/debit", middleware.RequireScope(middleware.ScopeWalletRealDebit), h.realDebit)
+	// game wallet holds (skill-game integration, e.g. ctech-poker real-money mode).
+	gw := internal.Group("/wallet/game")
+	gw.Post("/hold", middleware.RequireScope(middleware.ScopeWalletGameHold), h.holdGame)
+	gw.Post("/hold/:hold_id/release", middleware.RequireScope(middleware.ScopeWalletGameHold), h.releaseHold)
+	gw.Post("/cashout", middleware.RequireScope(middleware.ScopeWalletGameCashout), h.cashoutGame)
 }

@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
@@ -58,6 +59,10 @@ type Repo interface {
 	UpdateWithdrawal(ctx context.Context, withdrawalID string, updates map[string]any) error
 	ListProcessingWithdrawals(ctx context.Context, limit int) ([]wallet.Withdrawal, error)
 	ListPendingDepositsOlderThan(ctx context.Context, cutoff time.Time, limit int) ([]wallet.PixDeposit, error)
+	CreateHold(ctx context.Context, holdID, walletID, userID string, amount int64, tableRef, idemKey, reqHash string) (*wallet.Hold, bool, error)
+	GetHold(ctx context.Context, holdID string) (*wallet.Hold, error)
+	UpdateHoldStatus(ctx context.Context, holdID, fromStatus, toStatus string) (bool, error)
+	ScanStaleHolds(ctx context.Context, cutoff time.Time, limit int) ([]wallet.Hold, error)
 }
 
 // Locker is the per-wallet lock surface.
@@ -728,6 +733,134 @@ func (s *WalletService) DebitReal(ctx context.Context, userID string, amount int
 		ReqHash:        reqHash(reason, amount),
 	})
 	return entry, err
+}
+
+// HoldGame reserves amount out of the caller's game wallet at buy-in — a real
+// conditional debit (Invariant #1), not a soft reservation: GetBalances and the
+// ledger continue to reflect the true spendable amount with no separate
+// available-vs-held computation anywhere else. The resulting Hold record never
+// bounds the eventual cash-out (see CashoutGame) — it exists for idempotency,
+// audit, and stale-hold detection (see the reconciliation sweep in
+// reconcile.go).
+func (s *WalletService) HoldGame(ctx context.Context, userID string, amount int64, tableRef, idemKey string) (*wallet.Hold, error) {
+	_, game, _, err := s.requireActivated(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	release, ok, err := s.lock.Acquire(ctx, game.WalletID)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, problem.WalletBusy()
+	}
+	defer release()
+
+	holdID := "hold#" + userID + "#" + idemKey
+	h, _, err := s.repo.CreateHold(ctx, holdID, game.WalletID, userID, amount, tableRef,
+		wallet.EntryGameHoldDebit+"#"+idemKey, reqHash(tableRef, amount))
+	return h, err
+}
+
+// ReleaseHold refunds a hold's full original amount — the plain-refund path for
+// a table/hand that never played (e.g. the player leaves before any hand
+// starts). Only valid on a `held` hold; an already-released/settled hold is a
+// benign idempotent replay, not an error, so a caller retry never
+// double-credits.
+func (s *WalletService) ReleaseHold(ctx context.Context, holdID, idemKey string) (*wallet.Hold, error) {
+	h, err := s.repo.GetHold(ctx, holdID)
+	if err != nil {
+		return nil, err
+	}
+	if h == nil {
+		return nil, problem.NotFound("hold não encontrado")
+	}
+	if h.Status != wallet.HoldHeld {
+		return h, nil // already resolved — idempotent no-op
+	}
+
+	release, ok, err := s.lock.Acquire(ctx, h.WalletID)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, problem.WalletBusy()
+	}
+	defer release()
+
+	// Re-check under the lock: a concurrent release/cashout may have won the
+	// race between the check above and acquiring the lock.
+	h, err = s.repo.GetHold(ctx, holdID)
+	if err != nil {
+		return nil, err
+	}
+	if h.Status != wallet.HoldHeld {
+		return h, nil
+	}
+
+	if _, _, err := s.repo.Credit(ctx, repositories.Mutation{
+		WalletID:       h.WalletID,
+		Amount:         h.Amount,
+		EntryType:      wallet.EntryGameHoldRelease,
+		Ref:            h.TableRef,
+		IdempotencyKey: wallet.EntryGameHoldRelease + "#" + idemKey,
+		ReqHash:        reqHash(holdID, h.Amount),
+	}); err != nil {
+		return nil, err
+	}
+	if ok, err := s.repo.UpdateHoldStatus(ctx, holdID, wallet.HoldHeld, wallet.HoldReleased); err != nil {
+		return nil, err
+	} else if !ok {
+		// Lost a race to a concurrent transition after the credit above committed
+		// (the credit is idempotent-keyed, so a retry of this call would simply
+		// replay it) — return the current state rather than erroring.
+		return s.repo.GetHold(ctx, holdID)
+	}
+	h.Status = wallet.HoldReleased
+	return h, nil
+}
+
+// CashoutGame credits the caller's game wallet with amount — the calling
+// skill game's own table ledger is authoritative for what a player's final
+// stack is worth when they leave, so amount is credited exactly as sent,
+// NEVER validated or bounded against the sum of the listed holds' amounts (see
+// the design spec's "Why cash-out isn't bounded by the hold" — a player can
+// leave with more than any single hold, e.g. having won another seated
+// player's buy-in). Every listed hold is marked settled; a hold not currently
+// `held` (already released/settled) is a benign idempotent-replay case, not an
+// error, so a retry after a prior partial failure never fails the whole
+// cash-out.
+func (s *WalletService) CashoutGame(ctx context.Context, userID string, amount int64, tableRef string, holdIDs []string, idemKey string) (*wallet.LedgerEntry, error) {
+	_, game, _, err := s.requireActivated(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	release, ok, err := s.lock.Acquire(ctx, game.WalletID)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, problem.WalletBusy()
+	}
+	defer release()
+
+	entry, _, err := s.repo.Credit(ctx, repositories.Mutation{
+		WalletID:       game.WalletID,
+		Amount:         amount,
+		EntryType:      wallet.EntryGameCashoutCredit,
+		Ref:            tableRef + "#" + strings.Join(holdIDs, ","),
+		IdempotencyKey: wallet.EntryGameCashoutCredit + "#" + idemKey,
+		ReqHash:        reqHash(tableRef, amount),
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, holdID := range holdIDs {
+		if _, err := s.repo.UpdateHoldStatus(ctx, holdID, wallet.HoldHeld, wallet.HoldSettled); err != nil {
+			return nil, err
+		}
+	}
+	return entry, nil
 }
 
 // reqHash is the canonical fingerprint guarding "same idempotency key, different

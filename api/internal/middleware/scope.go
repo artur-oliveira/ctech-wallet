@@ -13,6 +13,15 @@ const (
 	ScopeWalletDebit       = "internal:wallet:debit"      // sandbox only
 	ScopeWalletRealDebit   = "internal:wallet:real:debit" // real wallet — deliberately separate from sandbox debit
 	ScopePixConfirmDeposit = "internal:wallet:confirm-deposit"
+
+	// game wallet holds (skill-game integration, e.g. poker). Deliberately
+	// separate scopes so a caller that only ever holds/releases never needs
+	// cashout, and vice versa.
+
+	// ScopeWalletGameHold hold game wallet value
+	ScopeWalletGameHold = "internal:wallet:game-hold"
+	// ScopeWalletGameCashout release game wallet value
+	ScopeWalletGameCashout = "internal:wallet:game-cashout"
 )
 
 // KYC levels are defined once, in the domain — services gate on them too.

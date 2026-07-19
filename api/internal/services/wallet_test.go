@@ -33,6 +33,9 @@ type stubRepo struct {
 	debitFeeCalled      bool
 	transferErr         error
 	transferCalled      bool
+	holds               map[string]*wallet.Hold
+	createHoldErr       error
+	staleHolds          []wallet.Hold
 }
 
 func newStubRepo() *stubRepo {
@@ -41,6 +44,7 @@ func newStubRepo() *stubRepo {
 		game:        wallet.Wallet{WalletID: "w-game", UserID: "u1", Type: wallet.TypeGame},
 		sandbox:     wallet.Wallet{WalletID: "w-sand", UserID: "u1", Type: wallet.TypeSandbox},
 		withdrawals: map[string]*wallet.Withdrawal{},
+		holds:       map[string]*wallet.Hold{},
 	}
 }
 
@@ -136,6 +140,34 @@ func (s *stubRepo) ListProcessingWithdrawals(_ context.Context, _ int) ([]wallet
 }
 func (s *stubRepo) ListPendingDepositsOlderThan(_ context.Context, _ time.Time, _ int) ([]wallet.PixDeposit, error) {
 	return nil, nil
+}
+func (s *stubRepo) CreateHold(_ context.Context, holdID, walletID, userID string, amount int64, tableRef, _, _ string) (*wallet.Hold, bool, error) {
+	if existing, ok := s.holds[holdID]; ok {
+		return existing, true, nil
+	}
+	if s.createHoldErr != nil {
+		return nil, false, s.createHoldErr
+	}
+	h := &wallet.Hold{
+		HoldID: holdID, WalletID: walletID, UserID: userID, Amount: amount,
+		TableRef: tableRef, Status: wallet.HoldHeld,
+	}
+	s.holds[holdID] = h
+	return h, false, nil
+}
+func (s *stubRepo) GetHold(_ context.Context, holdID string) (*wallet.Hold, error) {
+	return s.holds[holdID], nil
+}
+func (s *stubRepo) UpdateHoldStatus(_ context.Context, holdID, fromStatus, toStatus string) (bool, error) {
+	h, ok := s.holds[holdID]
+	if !ok || h.Status != fromStatus {
+		return false, nil
+	}
+	h.Status = toStatus
+	return true, nil
+}
+func (s *stubRepo) ScanStaleHolds(_ context.Context, _ time.Time, _ int) ([]wallet.Hold, error) {
+	return s.staleHolds, nil
 }
 
 type stubLocker struct{ busy bool }
@@ -573,4 +605,144 @@ func TestDebitRealWalletBusy(t *testing.T) {
 	svc := newSvc(newStubRepo(), &stubLocker{busy: true}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{CPF: "1"}})
 	_, err := svc.DebitReal(context.Background(), "u1", 5000, "charge-1", "subscription")
 	isProblem(t, err, problem.TypeWalletBusy)
+}
+
+// --- game wallet holds (skill-game integration, e.g. ctech-poker) ---
+
+func TestHoldGameHappyPath(t *testing.T) {
+	repo := newStubRepo()
+	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	h, err := svc.HoldGame(context.Background(), "u1", 5000, "table-1:seat-2", "idem-1")
+	if err != nil {
+		t.Fatalf("HoldGame: %v", err)
+	}
+	if h.WalletID != "w-game" || h.Amount != 5000 || h.Status != wallet.HoldHeld {
+		t.Fatalf("unexpected hold: %+v", h)
+	}
+
+	// Idempotent replay: same key returns the same hold, no second reservation.
+	h2, err := svc.HoldGame(context.Background(), "u1", 5000, "table-1:seat-2", "idem-1")
+	if err != nil {
+		t.Fatalf("HoldGame replay: %v", err)
+	}
+	if h2.HoldID != h.HoldID {
+		t.Fatalf("replay created a new hold: %s vs %s", h2.HoldID, h.HoldID)
+	}
+}
+
+func TestHoldGameInsufficientBalance(t *testing.T) {
+	repo := newStubRepo()
+	repo.createHoldErr = problem.InsufficientBalance()
+	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	_, err := svc.HoldGame(context.Background(), "u1", 5000, "table-1", "idem-1")
+	isProblem(t, err, problem.TypeInsufficientBalance)
+}
+
+func TestHoldGameRequiresActivation(t *testing.T) {
+	repo := newStubRepo()
+	repo.notActivated = true
+	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	_, err := svc.HoldGame(context.Background(), "u1", 5000, "table-1", "idem-1")
+	isProblem(t, err, problem.TypeGamblingNotActivated)
+}
+
+func TestHoldGameWalletBusy(t *testing.T) {
+	svc := newSvc(newStubRepo(), &stubLocker{busy: true}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	_, err := svc.HoldGame(context.Background(), "u1", 5000, "table-1", "idem-1")
+	isProblem(t, err, problem.TypeWalletBusy)
+}
+
+func TestReleaseHoldRefundsFullAmount(t *testing.T) {
+	repo := newStubRepo()
+	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	h, err := svc.HoldGame(context.Background(), "u1", 5000, "table-1", "idem-hold")
+	if err != nil {
+		t.Fatalf("HoldGame: %v", err)
+	}
+
+	released, err := svc.ReleaseHold(context.Background(), h.HoldID, "idem-release")
+	if err != nil {
+		t.Fatalf("ReleaseHold: %v", err)
+	}
+	if released.Status != wallet.HoldReleased {
+		t.Fatalf("status = %q, want released", released.Status)
+	}
+	if len(repo.creditCalls) != 1 || repo.creditCalls[0].Amount != 5000 || repo.creditCalls[0].EntryType != wallet.EntryGameHoldRelease {
+		t.Fatalf("expected one release credit of 5000, got %+v", repo.creditCalls)
+	}
+
+	// Already released — a retry is a benign no-op, not an error, and must not
+	// credit a second time.
+	released2, err := svc.ReleaseHold(context.Background(), h.HoldID, "idem-release-2")
+	if err != nil {
+		t.Fatalf("ReleaseHold retry: %v", err)
+	}
+	if released2.Status != wallet.HoldReleased {
+		t.Fatalf("retry status = %q, want released", released2.Status)
+	}
+	if len(repo.creditCalls) != 1 {
+		t.Fatalf("retry must not credit again, got %d credits", len(repo.creditCalls))
+	}
+}
+
+func TestReleaseHoldNotFound(t *testing.T) {
+	repo := newStubRepo()
+	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	_, err := svc.ReleaseHold(context.Background(), "hold#missing", "idem-1")
+	isProblem(t, err, problem.TypeNotFound)
+}
+
+// CashoutGame is regression-tested for the "not bounded by the hold" behavior:
+// a cash-out larger than any single hold must succeed, proving this is
+// intentional (a player can win another seated player's buy-in), not an
+// oversight.
+func TestCashoutGameNotBoundedByHoldAmount(t *testing.T) {
+	repo := newStubRepo()
+	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+
+	hA, err := svc.HoldGame(context.Background(), "u1", 10000, "table-1", "idem-a")
+	if err != nil {
+		t.Fatalf("HoldGame A: %v", err)
+	}
+	hB, err := svc.HoldGame(context.Background(), "u1", 10000, "table-1", "idem-b")
+	if err != nil {
+		t.Fatalf("HoldGame B: %v", err)
+	}
+
+	// Player A wins the whole 20000 pot — double either single hold's amount.
+	entry, err := svc.CashoutGame(context.Background(), "u1", 20000, "table-1", []string{hA.HoldID, hB.HoldID}, "idem-cashout")
+	if err != nil {
+		t.Fatalf("CashoutGame: %v", err)
+	}
+	if entry.Amount != 20000 || entry.Type != wallet.EntryGameCashoutCredit {
+		t.Fatalf("unexpected cashout entry: %+v", entry)
+	}
+
+	for _, id := range []string{hA.HoldID, hB.HoldID} {
+		h, err := repo.GetHold(context.Background(), id)
+		if err != nil {
+			t.Fatalf("GetHold: %v", err)
+		}
+		if h.Status != wallet.HoldSettled {
+			t.Fatalf("hold %s status = %q, want settled", id, h.Status)
+		}
+	}
+}
+
+func TestCashoutGameRetryAfterPartialFailureIsBenign(t *testing.T) {
+	repo := newStubRepo()
+	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	h, err := svc.HoldGame(context.Background(), "u1", 5000, "table-1", "idem-hold")
+	if err != nil {
+		t.Fatalf("HoldGame: %v", err)
+	}
+	// Simulate a prior partial failure: the hold was already settled by an
+	// earlier, since-crashed cash-out attempt.
+	if _, err := repo.UpdateHoldStatus(context.Background(), h.HoldID, wallet.HoldHeld, wallet.HoldSettled); err != nil {
+		t.Fatalf("UpdateHoldStatus: %v", err)
+	}
+
+	if _, err := svc.CashoutGame(context.Background(), "u1", 5000, "table-1", []string{h.HoldID}, "idem-cashout-retry"); err != nil {
+		t.Fatalf("CashoutGame retry must not fail on an already-settled hold: %v", err)
+	}
 }

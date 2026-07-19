@@ -60,3 +60,46 @@ func (h *handlers) realDebit(c fiber.Ctx) error {
 	}
 	return c.Status(fiber.StatusCreated).JSON(entry)
 }
+
+// holdGame reserves a player's buy-in against their game wallet (M2M, scope
+// internal:wallet:game-hold — e.g. ctech-poker at table-join).
+func (h *handlers) holdGame(c fiber.Ctx) error {
+	var body HoldRequest
+	if p := bindJSON(c, &body); p != nil {
+		return sendProblem(c, p)
+	}
+	hold, err := h.svc.HoldGame(c.Context(), body.UserID, body.Amount, body.TableRef, body.IdempotencyKey)
+	if err != nil {
+		return sendProblem(c, err)
+	}
+	return c.Status(fiber.StatusCreated).JSON(hold)
+}
+
+// releaseHold refunds a `held` hold in full (M2M, scope
+// internal:wallet:game-hold — e.g. a table/hand that never played).
+func (h *handlers) releaseHold(c fiber.Ctx) error {
+	var body ReleaseRequest
+	if p := bindJSON(c, &body); p != nil {
+		return sendProblem(c, p)
+	}
+	hold, err := h.svc.ReleaseHold(c.Context(), c.Params("hold_id"), body.IdempotencyKey)
+	if err != nil {
+		return sendProblem(c, err)
+	}
+	return c.Status(fiber.StatusCreated).JSON(hold)
+}
+
+// cashoutGame credits the caller's final stack (M2M, scope
+// internal:wallet:game-cashout). Amount is credited exactly as sent, never
+// bounded by the sum of the listed holds — see WalletService.CashoutGame.
+func (h *handlers) cashoutGame(c fiber.Ctx) error {
+	var body CashoutRequest
+	if p := bindJSON(c, &body); p != nil {
+		return sendProblem(c, p)
+	}
+	entry, err := h.svc.CashoutGame(c.Context(), body.UserID, body.Amount, body.TableRef, body.HoldIDs, body.IdempotencyKey)
+	if err != nil {
+		return sendProblem(c, err)
+	}
+	return c.Status(fiber.StatusCreated).JSON(entry)
+}

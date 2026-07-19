@@ -27,6 +27,7 @@ type WalletRepository struct {
 	idem       Base
 	deposits   Base
 	withdrawal Base
+	holds      Base
 }
 
 // NewWalletRepository builds the repository with one Base per wallet table.
@@ -37,6 +38,7 @@ func NewWalletRepository(db *dynamodb.Client, cfg *config.Config) *WalletReposit
 		idem:       NewBase(db, cfg, wallet.TableIdempotency),
 		deposits:   NewBase(db, cfg, wallet.TablePixDeposits),
 		withdrawal: NewBase(db, cfg, wallet.TableWithdrawals),
+		holds:      NewBase(db, cfg, wallet.TableHolds),
 	}
 }
 

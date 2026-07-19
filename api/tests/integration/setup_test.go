@@ -122,6 +122,13 @@ func createTables(ctx context.Context) error {
 			KeySchema:            []dtypes.KeySchemaElement{hashKey("pk"), rangeKey("sk")},
 			BillingMode:          dtypes.BillingModePayPerRequest,
 		},
+		{
+			TableName:              aws.String(table(wallet.TableHolds)),
+			AttributeDefinitions:   []dtypes.AttributeDefinition{s("pk"), s("status")},
+			KeySchema:              []dtypes.KeySchemaElement{hashKey("pk")},
+			GlobalSecondaryIndexes: []dtypes.GlobalSecondaryIndex{gsi(wallet.GSIHoldStatus, "status")},
+			BillingMode:            dtypes.BillingModePayPerRequest,
+		},
 	}
 	for _, in := range defs {
 		if _, err := db.CreateTable(ctx, in); err != nil {
@@ -139,7 +146,7 @@ func dropTables(ctx context.Context) error {
 	for _, t := range []string{
 		wallet.TableWallets, wallet.TableLedger, wallet.TableIdempotency,
 		wallet.TablePixDeposits, wallet.TableWithdrawals, wallet.TableUsers,
-		wallet.TableAudit,
+		wallet.TableAudit, wallet.TableHolds,
 	} {
 		_, _ = db.DeleteTable(ctx, &dynamodb.DeleteTableInput{TableName: aws.String(table(t))})
 	}

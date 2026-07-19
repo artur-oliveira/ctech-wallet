@@ -65,6 +65,72 @@ func TestRealDebitRouteRegistered(t *testing.T) {
 	}
 }
 
+// TestHoldGameRouteRegistered proves /internal/wallet/game/hold is wired to
+// holdGame, mirroring TestRealDebitRouteRegistered's style.
+func TestHoldGameRouteRegistered(t *testing.T) {
+	app := fiber.New()
+	app.Use(recover.New())
+	h := &handlers{}
+	app.Post("/internal/wallet/game/hold", func(c fiber.Ctx) error {
+		return h.holdGame(c)
+	})
+
+	body, _ := json.Marshal(HoldRequest{UserID: "u1", Amount: 5000, TableRef: "table-1:seat-2", IdempotencyKey: "k1"})
+	req := httptest.NewRequest(http.MethodPost, "/internal/wallet/game/hold", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		t.Fatal("route not registered")
+	}
+}
+
+// TestReleaseHoldRouteRegistered proves /internal/wallet/game/hold/{id}/release
+// is wired to releaseHold.
+func TestReleaseHoldRouteRegistered(t *testing.T) {
+	app := fiber.New()
+	app.Use(recover.New())
+	h := &handlers{}
+	app.Post("/internal/wallet/game/hold/:hold_id/release", func(c fiber.Ctx) error {
+		return h.releaseHold(c)
+	})
+
+	body, _ := json.Marshal(ReleaseRequest{IdempotencyKey: "k1"})
+	req := httptest.NewRequest(http.MethodPost, "/internal/wallet/game/hold/hold-1/release", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		t.Fatal("route not registered")
+	}
+}
+
+// TestCashoutGameRouteRegistered proves /internal/wallet/game/cashout is wired
+// to cashoutGame.
+func TestCashoutGameRouteRegistered(t *testing.T) {
+	app := fiber.New()
+	app.Use(recover.New())
+	h := &handlers{}
+	app.Post("/internal/wallet/game/cashout", func(c fiber.Ctx) error {
+		return h.cashoutGame(c)
+	})
+
+	body, _ := json.Marshal(CashoutRequest{UserID: "u1", Amount: 20000, TableRef: "table-1", HoldIDs: []string{"h1", "h2"}, IdempotencyKey: "k1"})
+	req := httptest.NewRequest(http.MethodPost, "/internal/wallet/game/cashout", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		t.Fatal("route not registered")
+	}
+}
+
 var _ = wallet.EntryDeposit
 var _ = pix.ChargeCompleted
 var _ = repositories.Mutation{}

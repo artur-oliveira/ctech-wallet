@@ -22,13 +22,15 @@ export type TableName = (
     'wallet_idempotency' |
     'wallet_pix_deposits' |
     'wallet_withdrawals' |
-    'wallet_users'
+    'wallet_users' |
+    'wallet_holds'
     );
 
 // GSI names — must match internal/domain/wallet/model.go.
 const GSI_USER = 'gsi_user';
 const GSI_IDEM = 'gsi_idem';
 const GSI_STATUS = 'gsi_status';
+const GSI_HOLD_STATUS = 'gsi_hold_status';
 
 // DynamoDB attribute names (single source of truth).
 const ATTR_PK = 'pk';
@@ -121,6 +123,12 @@ export class DynamoDBStack extends cdk.Stack {
 
         // ── wallet_users: per-user wallet metadata ────────────────────────────────
         const usersTable = table('wallet_users');
+
+        // ── wallet_holds: open game-wallet reservations (skill-game integration,
+        // e.g. ctech-poker buy-ins). gsi_hold_status drives the stale-hold
+        // reconciliation sweep (24h ceiling, alarm-only — see reconcile.go).
+        const holdsTable = table('wallet_holds');
+        gsi(holdsTable, GSI_HOLD_STATUS, ATTR_STATUS);
 
         // ── wallet_audit: append-only record of actions that move NO money ─────────
         // consent, gambling activation, and every personal-limit change. The ledger

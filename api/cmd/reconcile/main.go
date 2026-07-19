@@ -33,6 +33,7 @@ type Result struct {
 	Reversed      int `json:"reversed"`
 	Alarmed       int `json:"alarmed"`
 	SweptDeposits int `json:"swept_deposits"`
+	StaleHolds    int `json:"stale_holds_alarmed"`
 }
 
 func main() {
@@ -49,9 +50,10 @@ func main() {
 		slog.Error("reconcile failed", "err", err)
 		os.Exit(1)
 	}
-	slog.Info("reconcile complete", "resolved", res.Resolved, "reversed", res.Reversed, "alarmed", res.Alarmed, "swept_deposits", res.SweptDeposits)
-	if res.Alarmed > 0 {
-		os.Exit(3) // non-zero so the scheduler/alarm notices unresolved refunds
+	slog.Info("reconcile complete", "resolved", res.Resolved, "reversed", res.Reversed, "alarmed", res.Alarmed,
+		"swept_deposits", res.SweptDeposits, "stale_holds_alarmed", res.StaleHolds)
+	if res.Alarmed > 0 || res.StaleHolds > 0 {
+		os.Exit(3) // non-zero so the scheduler/alarm notices unresolved refunds/stale holds
 	}
 }
 
@@ -60,10 +62,11 @@ func handler(ctx context.Context) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	if res.Alarmed > 0 {
+	if res.Alarmed > 0 || res.StaleHolds > 0 {
 		// Surface as a Lambda error so the schedule's failure alarm fires. The
-		// affected withdrawals are already flagged refund_failed for manual work.
-		return res, fmt.Errorf("reconcile: %d reversal(s) failed and need manual reconciliation", res.Alarmed)
+		// affected withdrawals are already flagged refund_failed; stale holds are
+		// never auto-resolved (Invariant #12) — both need manual reconciliation.
+		return res, fmt.Errorf("reconcile: %d reversal(s) and %d stale hold(s) need manual reconciliation", res.Alarmed, res.StaleHolds)
 	}
 	return res, nil
 }
@@ -96,7 +99,11 @@ func run(ctx context.Context) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Result{Resolved: resolved, Reversed: reversed, Alarmed: alarmed, SweptDeposits: swept}, nil
+	staleHolds, err := svc.SweepStaleHolds(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &Result{Resolved: resolved, Reversed: reversed, Alarmed: alarmed, SweptDeposits: swept, StaleHolds: staleHolds}, nil
 }
 
 // newBroadcaster builds a publish-only WebSocket broadcaster so reconciliation
