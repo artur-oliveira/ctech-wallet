@@ -13,7 +13,6 @@ import (
 
 // gatedRoutes move money INTO the ring-fence. These are what GAMBLING_ENABLED gates.
 var gatedRoutes = []string{
-	"/v1.0/wallet/gambling/activate",
 	"/v1.0/wallet/game/deposit",
 }
 

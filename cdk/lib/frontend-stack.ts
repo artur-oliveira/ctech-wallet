@@ -110,15 +110,24 @@ async function handler(event) {
   if (localizedRoutes[uri]) {
     var locale = preferredLocale(event.request);
     var suffix = uri === '/' ? '' : uri;
-    return {
-      statusCode: 307,
-      statusDescription: 'Temporary Redirect',
-      headers: {
-        location: {value: '/' + locale + suffix},
-        'cache-control': {value: 'no-store'},
-        vary: {value: 'Accept-Language, Cookie'},
-      },
-    };
+    var target = '/' + locale + suffix;
+    // Guard against a missing locale route (stale KVS key or partial deploy):
+    // only redirect when the target actually exists in the route store.
+    // Without this, a deploy that lags the url-rewrite function 404s every
+    // visitor instead of degrading to the root page.
+    if (await kvs.exists(target)) {
+      return {
+        statusCode: 307,
+        statusDescription: 'Temporary Redirect',
+        headers: {
+          location: {value: target},
+          'cache-control': {value: 'no-store'},
+          vary: {value: 'Accept-Language, Cookie'},
+        },
+      };
+    }
+    event.request.uri = '/index.html';
+    return event.request;
   }
   if (/\\.[^/]+$/.test(uri)) {
     return event.request;
