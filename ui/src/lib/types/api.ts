@@ -90,3 +90,42 @@ export interface MeResponse {
     terms_addendum_accepted: boolean
     terms_addendum_version: string
 }
+
+export interface PendingGameLimits {
+    daily: number
+    weekly: number
+    monthly: number
+    applies_at: string
+}
+
+export interface GameLimits {
+    daily: number
+    weekly: number
+    monthly: number
+    pending?: PendingGameLimits
+}
+
+export interface SelfExclusion {
+    period: '30d' | '90d' | 'indefinite'
+    requested_at: string
+    until?: string
+}
+
+export interface GameLimitsStatus {
+    limits: GameLimits | null
+    usage: {
+        daily: number
+        weekly: number
+        monthly: number
+        day_resets_at: string
+        week_resets_at: string
+        month_resets_at: string
+    }
+    excluded?: SelfExclusion
+}
+
+export interface GameLimitsInput {
+    daily_limit: number
+    weekly_limit: number
+    monthly_limit: number
+}

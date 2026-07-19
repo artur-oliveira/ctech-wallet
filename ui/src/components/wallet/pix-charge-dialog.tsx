@@ -29,9 +29,8 @@ function formatCountdown(remainingSec: number): string {
  * as the code hasn't expired yet.
  */
 export function PixChargeDialog(
-    {deposit, initialRealBalance, onClose, onConfirmed}: {
+    {deposit, onClose, onConfirmed}: {
         deposit: DepositResult
-        initialRealBalance: number
         onClose: () => void
         onConfirmed: () => void
     },
@@ -90,20 +89,22 @@ export function PixChargeDialog(
         return () => clearInterval(tick)
     }, [expired, deposit.expires_at])
 
-    const balances = useQuery({
-        queryKey: ['balances'],
-        queryFn: () => apiClient.getBalances(),
-        enabled: polling,
-        refetchInterval: polling ? POLL_INTERVAL_MS : false,
+    const depositLedger = useQuery({
+        queryKey: ['deposit-status', deposit.txid],
+        queryFn: () => apiClient.getLedger('real', undefined, 200),
+        enabled: polling && !expired,
+        refetchInterval: polling && !expired ? POLL_INTERVAL_MS : false,
     })
 
     useEffect(() => {
-        const realBalance = balances.data?.real?.balance
-        if (realBalance != null && realBalance >= initialRealBalance + deposit.amount) {
+        const confirmed = depositLedger.data?.items.some(
+            (entry) => entry.type === 'deposit' && entry.ref === deposit.txid,
+        )
+        if (confirmed) {
             toast.success(t('pix.confirmedToast'))
             onConfirmed()
         }
-    }, [balances.data, initialRealBalance, deposit.amount, onConfirmed, t])
+    }, [depositLedger.data, deposit.txid, onConfirmed, t])
 
     async function copy() {
         try {

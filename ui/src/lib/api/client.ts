@@ -2,6 +2,9 @@ import axios, {AxiosError, type AxiosInstance, type AxiosRequestConfig, type Axi
 import type {
     Balances,
     DepositResult,
+    GameLimits,
+    GameLimitsInput,
+    GameLimitsStatus,
     LedgerPage,
     MeResponse,
     Transfer,
@@ -155,8 +158,31 @@ class ApiClient {
     }
 
     /** Opts into the game + sandbox wallets. Requires verified KYC. */
-    async activateGambling(): Promise<{ game: Wallet; sandbox: Wallet }> {
-        return (await this.http.post('/v1.0/wallet/gambling/activate', {accept_addendum: true})).data
+    async activateGambling(limits: GameLimitsInput): Promise<{ game: Wallet; sandbox: Wallet }> {
+        return (await this.http.post('/v1.0/wallet/gambling/activate', {
+            accept_addendum: true,
+            ...limits,
+        })).data
+    }
+
+    async getGameLimits(): Promise<GameLimitsStatus> {
+        return (await this.http.get<GameLimitsStatus>('/v1.0/wallet/gambling/limits')).data
+    }
+
+    async setGameLimits(limits: GameLimitsInput): Promise<GameLimits> {
+        return (await this.http.put<GameLimits>('/v1.0/wallet/gambling/limits', limits)).data
+    }
+
+    async cancelPendingGameLimits(): Promise<GameLimits> {
+        return (await this.http.delete<GameLimits>('/v1.0/wallet/gambling/limits/pending')).data
+    }
+
+    async selfExclude(period: '30d' | '90d' | 'indefinite'): Promise<void> {
+        await this.http.post('/v1.0/wallet/gambling/self-exclude', {period})
+    }
+
+    async revokeSelfExclusion(): Promise<void> {
+        await this.http.post('/v1.0/wallet/gambling/self-exclude/revoke')
     }
 
     /** real → game. The edge the user's personal limits are enforced on. */

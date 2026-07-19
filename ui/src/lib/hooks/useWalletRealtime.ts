@@ -6,6 +6,7 @@ import {toast} from 'sonner'
 import {useTranslation} from 'react-i18next'
 import {useWebSocket, type WSStatus} from '@aoctech/ws-client'
 import {getAccessToken, subscribeAccessToken} from '@/lib/api/client'
+import type {RealtimeTransactionStatus} from '@/lib/utils/transaction-status'
 
 // NEXT_PUBLIC_API_URL already carries the environment's API origin (set in
 // frontend.yml) — converted http(s) → ws(s). Empty means same-origin, exactly
@@ -40,7 +41,21 @@ const WITHDRAW_TOAST_KEY: Record<string, string> = {
     withdraw_refund_failed: 'toast.withdrawRefundFailed',
 }
 
-export function useWalletRealtime(onDepositConfirmed?: (txid: string) => void): { wsStatus: WSStatus } {
+const WITHDRAW_STATUS_EVENT: Record<string, RealtimeTransactionStatus['type']> = {
+    withdraw_completed: 'withdraw_completed',
+    withdraw_reversed: 'withdraw_reversed',
+    withdraw_refund_failed: 'withdraw_refund_failed',
+}
+
+interface WalletRealtimeCallbacks {
+    onDepositConfirmed?: (txid: string) => void
+    onWithdrawalStatus?: (event: RealtimeTransactionStatus) => void
+}
+
+export function useWalletRealtime({
+    onDepositConfirmed,
+    onWithdrawalStatus,
+}: WalletRealtimeCallbacks = {}): { wsStatus: WSStatus } {
     const {t, i18n} = useTranslation()
     const qc = useQueryClient()
     const token = getAccessToken()
@@ -72,8 +87,12 @@ export function useWalletRealtime(onDepositConfirmed?: (txid: string) => void): 
             } else {
                 toast.error(t(toastKey))
             }
+            const statusType = WITHDRAW_STATUS_EVENT[msg.type]
+            if (statusType && msg.withdrawal_id) {
+                onWithdrawalStatus?.({type: statusType, transactionId: msg.withdrawal_id})
+            }
         }
-    }, [qc, t, i18n.language, onDepositConfirmed])
+    }, [qc, t, i18n.language, onDepositConfirmed, onWithdrawalStatus])
 
     const {status: wsStatus} = useWebSocket({
         url: wsUrl,

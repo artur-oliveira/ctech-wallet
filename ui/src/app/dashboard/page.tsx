@@ -1,6 +1,6 @@
 'use client'
 
-import {useCallback, useState} from 'react'
+import {useCallback, useEffect, useMemo, useState} from 'react'
 import {useMutation, useQuery, useQueryClient} from '@tanstack/react-query'
 import {toast} from 'sonner'
 import {LogOut} from 'lucide-react'
@@ -15,9 +15,19 @@ import {AmountDialog} from '@/components/wallet/amount-dialog'
 import {ConfirmMoneyDialog} from '@/components/wallet/confirm-money-dialog'
 import {MoneyReceiptDialog} from '@/components/wallet/money-receipt-dialog'
 import {PixChargeDialog} from '@/components/wallet/pix-charge-dialog'
+import {TransactionStatusList} from '@/components/wallet/transaction-status-list'
 import {Button} from '@/components/ui/button'
 import {useWalletRealtime} from '@/lib/hooks/useWalletRealtime'
 import type {DepositResult, WalletType} from '@/lib/types/api'
+import {
+    applyRealtimeStatus,
+    parseStoredDeposit,
+    parseTransactionHistory,
+    reconcileTransactionHistory,
+    upsertTransaction,
+    type TrackedTransaction,
+} from '@/lib/utils/transaction-status'
+import {SESSION_KEY_PIX_CHARGE_PREFIX, SESSION_KEY_TRANSACTION_PREFIX} from '@/lib/constants/storage'
 import Image from 'next/image'
 
 type Flow = 'deposit' | 'withdraw' | 'credits' | 'fund-game' | 'return-game' | null
@@ -25,6 +35,8 @@ type Flow = 'deposit' | 'withdraw' | 'credits' | 'fund-game' | 'return-game' | n
 /** Game and sandbox statements exist only once the user has activated gambling. */
 const LEDGER_TABS = (activated: boolean): WalletType[] =>
     activated ? ['real', 'game', 'sandbox'] : ['real']
+
+const TRANSACTION_POLL_INTERVAL_MS = 10_000
 
 /** RFC 7807 problem type → i18n key. */
 const PROBLEM_KEY: Record<string, string> = {
@@ -38,6 +50,9 @@ const PROBLEM_KEY: Record<string, string> = {
     '/problems/gambling-not-activated': 'errors.gamblingNotActivated',
     '/problems/gambling-terms-required': 'errors.gamblingTermsRequired',
     '/problems/amount-above-limit': 'errors.amountAboveLimit',
+    '/problems/self-excluded': 'errors.selfExcluded',
+    '/problems/limits-not-configured': 'errors.limitsNotConfigured',
+    '/problems/deposit-limit-exceeded': 'errors.depositLimitExceeded',
 }
 
 /** Turns an RFC 7807 problem from the API into copy the user can act on. */
@@ -73,14 +88,89 @@ function DashboardInner() {
         amount: number
     } | null>(null)
     const [charge, setCharge] = useState<DepositResult | null>(null)
-    const {wsStatus} = useWalletRealtime(
-        useCallback((txid: string) => setCharge((c) => (c && c.txid === txid ? null : c)), []),
-    )
-    const [receipt, setReceipt] = useState<{ title: string; amountLabel: string } | null>(null)
+    const [chargeOpen, setChargeOpen] = useState(false)
+    const [transactions, setTransactions] = useState<TrackedTransaction[]>([])
+    const [hydratedStorageKey, setHydratedStorageKey] = useState<string | null>(null)
+    const [receipt, setReceipt] = useState<{
+        title: string
+        amountLabel: string
+        details?: Array<{label: string; value: string}>
+    } | null>(null)
     const [stepUp, setStepUp] = useState(false)
     const [tab, setTab] = useState<WalletType>('real')
 
     const balances = useQuery({queryKey: ['balances'], queryFn: () => apiClient.getBalances()})
+    const responsible = useQuery({queryKey: ['gambling-limits'], queryFn: () => apiClient.getGameLimits()})
+    const walletID = balances.data?.real.wallet_id
+    const transactionStorageKey = walletID ? `${SESSION_KEY_TRANSACTION_PREFIX}${walletID}` : null
+    const chargeStorageKey = walletID ? `${SESSION_KEY_PIX_CHARGE_PREFIX}${walletID}` : null
+
+    const handleDepositConfirmed = useCallback((txid: string) => {
+        setTransactions((current) => applyRealtimeStatus(current, {
+            type: 'deposit_confirmed',
+            transactionId: txid,
+        }))
+        setCharge((current) => current?.txid === txid ? null : current)
+        setChargeOpen(false)
+        void qc.invalidateQueries({queryKey: ['balances']})
+        void qc.invalidateQueries({queryKey: ['ledger']})
+    }, [qc])
+
+    const handleWithdrawalStatus = useCallback((event: Parameters<typeof applyRealtimeStatus>[1]) => {
+        setTransactions((current) => applyRealtimeStatus(current, event))
+    }, [])
+
+    const {wsStatus} = useWalletRealtime({
+        onDepositConfirmed: handleDepositConfirmed,
+        onWithdrawalStatus: handleWithdrawalStatus,
+    })
+
+    useEffect(() => {
+        if (!transactionStorageKey || !chargeStorageKey) return
+        const hydrate = window.setTimeout(() => {
+            const storedTransactions = parseTransactionHistory(sessionStorage.getItem(transactionStorageKey))
+            setTransactions(storedTransactions)
+
+            const rawCharge = sessionStorage.getItem(chargeStorageKey)
+            const storedCharge = parseStoredDeposit(rawCharge)
+            if (rawCharge && !storedCharge) sessionStorage.removeItem(chargeStorageKey)
+            setCharge(storedCharge)
+            setChargeOpen(false)
+            setHydratedStorageKey(transactionStorageKey)
+        }, 0)
+        return () => window.clearTimeout(hydrate)
+    }, [chargeStorageKey, transactionStorageKey])
+
+    const hasUnresolvedTransaction = transactions.some(
+        (item) => item.status === 'pending' || item.status === 'processing',
+    )
+    const transactionLedger = useQuery({
+        queryKey: ['transaction-status-ledger', walletID],
+        queryFn: () => apiClient.getLedger('real', undefined, 200),
+        enabled: hydratedStorageKey === transactionStorageKey && !!walletID && hasUnresolvedTransaction,
+        refetchInterval: hasUnresolvedTransaction ? TRANSACTION_POLL_INTERVAL_MS : false,
+    })
+
+    const visibleTransactions = useMemo(
+        () => transactionLedger.data
+            ? reconcileTransactionHistory(
+                transactions,
+                transactionLedger.data.items,
+                transactionLedger.dataUpdatedAt,
+            )
+            : transactions,
+        [transactionLedger.data, transactionLedger.dataUpdatedAt, transactions],
+    )
+    const activeCharge = charge && visibleTransactions.some(
+        (item) => item.id === charge.txid && item.status === 'pending',
+    ) ? charge : null
+
+    useEffect(() => {
+        if (hydratedStorageKey !== transactionStorageKey || !transactionStorageKey || !chargeStorageKey) return
+        sessionStorage.setItem(transactionStorageKey, JSON.stringify(visibleTransactions))
+        if (activeCharge) sessionStorage.setItem(chargeStorageKey, JSON.stringify(activeCharge))
+        else sessionStorage.removeItem(chargeStorageKey)
+    }, [activeCharge, chargeStorageKey, hydratedStorageKey, transactionStorageKey, visibleTransactions])
 
     function refresh() {
         void qc.invalidateQueries({queryKey: ['balances']})
@@ -92,6 +182,15 @@ function DashboardInner() {
         onSuccess: (result) => {
             setFlow(null)
             setCharge(result)
+            setChargeOpen(true)
+            setTransactions((current) => upsertTransaction(current, {
+                id: result.txid,
+                kind: 'deposit',
+                amount: result.amount,
+                status: 'pending',
+                created_at: new Date().toISOString(),
+                expires_at: result.expires_at,
+            }))
         },
         onError: (err) => toast.error(problemMessage(err, t)),
     })
@@ -102,10 +201,26 @@ function DashboardInner() {
             setConfirm(null)
             setFlow(null)
             refresh()
+            setTransactions((current) => upsertTransaction(current, {
+                id: w.withdrawal_id,
+                kind: 'withdrawal',
+                amount: w.amount,
+                fee: w.fee,
+                status: w.status,
+                created_at: w.created_at,
+                updated_at: w.updated_at,
+            }))
             if (w.status === 'processing') {
-                toast.success(t('toast.withdrawProcessing'))
+                toast.info(t('toast.withdrawProcessing'))
             } else {
-                setReceipt({title: t('toast.withdrawSent'), amountLabel: formatBRL(w.amount)})
+                setReceipt({
+                    title: t('toast.withdrawSent'),
+                    amountLabel: formatBRL(w.amount),
+                    details: [
+                        {label: t('confirm.fee'), value: formatBRL(w.fee)},
+                        {label: t('confirm.total'), value: formatBRL(w.amount + w.fee)},
+                    ],
+                })
             }
         },
         onError: (err) => {
@@ -223,6 +338,24 @@ function DashboardInner() {
                             onBuyCredits={() => setFlow('credits')}
                             onFundGame={() => setFlow('fund-game')}
                             onReturnFromGame={() => setFlow('return-game')}
+                            selfExcluded={!!responsible.data?.excluded}
+                        />
+
+                        {responsible.data?.excluded && (
+                            <section className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm">
+                                <p className="font-semibold">{t('responsible.exclusion.activeTitle')}</p>
+                                <p className="mt-1 text-muted-foreground">{responsible.data.excluded.until
+                                    ? t('responsible.exclusion.until', {date: new Intl.DateTimeFormat(undefined, {dateStyle: 'long'}).format(new Date(responsible.data.excluded.until))})
+                                    : t('responsible.exclusion.indefinite')}</p>
+                            </section>
+                        )}
+
+                        <TransactionStatusList
+                            transactions={visibleTransactions}
+                            activeDepositId={activeCharge?.txid}
+                            onResumeDeposit={(txid) => {
+                                if (activeCharge?.txid === txid) setChargeOpen(true)
+                            }}
                         />
 
                         <section className="overflow-hidden rounded-xl border border-border bg-card">
@@ -260,6 +393,7 @@ function DashboardInner() {
                 <AmountDialog
                     flow="withdraw"
                     maxCents={balances.data?.real?.balance}
+                    feeConfig={balances.data?.real}
                     pending={withdraw.isPending || confirm?.flow === 'withdraw'}
                     onProceed={(amount) => {
                         setStepUp(false)
@@ -310,6 +444,7 @@ function DashboardInner() {
                             ? balances.data?.game?.balance ?? 0
                             : balances.data?.real?.balance ?? 0
                     }
+                    feeConfig={balances.data?.real}
                     pending={
                         confirm.flow === 'withdraw'
                             ? withdraw.isPending
@@ -330,12 +465,11 @@ function DashboardInner() {
                 />
             )}
 
-            {charge && (
+            {activeCharge && chargeOpen && (
                 <PixChargeDialog
-                    deposit={charge}
-                    initialRealBalance={balances.data?.real?.balance ?? 0}
-                    onClose={() => setCharge(null)}
-                    onConfirmed={() => setCharge(null)}
+                    deposit={activeCharge}
+                    onClose={() => setChargeOpen(false)}
+                    onConfirmed={() => handleDepositConfirmed(activeCharge.txid)}
                 />
             )}
 
@@ -343,6 +477,7 @@ function DashboardInner() {
                 <MoneyReceiptDialog
                     title={receipt.title}
                     amountLabel={receipt.amountLabel}
+                    details={receipt.details}
                     onClose={() => setReceipt(null)}
                 />
             )}

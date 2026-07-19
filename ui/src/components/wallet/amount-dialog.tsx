@@ -7,7 +7,7 @@ import {z} from 'zod'
 import {useTranslation} from 'react-i18next'
 import {Button} from '@/components/ui/button'
 import {formatBRL, formatCredits, MAX_AMOUNT_CENTS, MAX_AMOUNT_DIGITS} from '@/lib/utils/money'
-import {withdrawalFee} from '@/lib/utils/fee'
+import {maxWithdrawable, withdrawalFee, type WithdrawalFeeConfig} from '@/lib/utils/fee'
 
 type Flow = 'deposit' | 'withdraw' | 'credits' | 'fund-game' | 'return-game'
 
@@ -23,6 +23,8 @@ interface AmountDialogProps {
     flow: Flow
     /** Caps the amount at the available balance (withdraw, fund-game, credits, return-game). */
     maxCents?: number
+    /** Effective fee fields from the real wallet; used only by the withdrawal flow. */
+    feeConfig?: WithdrawalFeeConfig
     pending?: boolean
     onSubmit?: (amount: number) => void
     /** When set, replaces the mutation: the amount is handed to a confirm step instead of committing. */
@@ -31,7 +33,7 @@ interface AmountDialogProps {
 }
 
 /** Shared amount entry used by deposit, withdrawal, and credit purchase. */
-export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onClose}: AmountDialogProps) {
+export function AmountDialog({flow, maxCents, feeConfig, pending, onSubmit, onProceed, onClose}: AmountDialogProps) {
     const {t} = useTranslation()
     const flowKey = FLOW_KEY[flow]
 
@@ -47,7 +49,7 @@ export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onCl
     // returns, and real↔game transfers carry no fee, so their cap is raw balance.
     const feeAwareCap =
         flow === 'withdraw' && maxCents != null
-            ? Math.max(0, maxCents - withdrawalFee(maxCents))
+            ? maxWithdrawable(maxCents, feeConfig)
             : balanceCap
     const effectiveMax = Math.min(feeAwareCap, millionCap)
     // Sandbox credits carry no currency symbol (contract + invariant #7) — every
@@ -56,7 +58,9 @@ export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onCl
 
     const schema = useMemo(() => {
         const overMsg =
-            balanceCap <= millionCap && maxCents != null
+            flow === 'withdraw'
+                ? t('dialog.error.overWithdrawable', {amount: formatBRL(effectiveMax)})
+                : balanceCap <= millionCap && maxCents != null
                 ? t('dialog.error.overBalance', {amount: fmt(maxCents)})
                 : t('dialog.error.maxExceeded', {max: formatBRL(MAX_AMOUNT_CENTS)})
 
@@ -67,7 +71,7 @@ export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onCl
             .max(effectiveMax, overMsg)
 
         return z.object({amount})
-    }, [effectiveMax, balanceCap, millionCap, maxCents, t, fmt])
+    }, [effectiveMax, flow, balanceCap, millionCap, maxCents, t, fmt])
 
     const {
         control,
@@ -170,12 +174,10 @@ export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onCl
                                     value={formatCredits(field.value ?? 0)}
                                     onChange={(e) => {
                                         // 9 digits caps typing at R$ 1.000.000 when the million cap
-                                        // applies; without it, allow more and let effectiveMax clamp.
+                                        // applies; otherwise allow more and let the schema explain the limit.
                                         const maxDigits = capMillion ? MAX_AMOUNT_DIGITS : 12
                                         const digits = e.target.value.replace(/\D/g, '').slice(0, maxDigits)
-                                        let cents = parseInt(digits || '0', 10)
-                                        if (cents > effectiveMax) cents = effectiveMax
-                                        field.onChange(cents)
+                                        field.onChange(parseInt(digits || '0', 10))
                                     }}
                                     onBlur={field.onBlur}
                                     aria-invalid={!!errors.amount}
@@ -207,7 +209,7 @@ export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onCl
 
                 {flow === 'withdraw' && amount > 0 && (
                     <p className="mt-1.5 text-xs text-muted-foreground">
-                        {t('dialog.amount.feePreview', {fee: formatBRL(withdrawalFee(amount))})}
+                        {t('dialog.amount.feePreview', {fee: formatBRL(withdrawalFee(amount, feeConfig))})}
                     </p>
                 )}
 

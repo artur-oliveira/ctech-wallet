@@ -36,6 +36,9 @@
       },
       "loading": "Carregando extrato…",
       "error": "Não foi possível carregar o extrato. Atualize a página para tentar de novo.",
+      "loadMore": "Carregar movimentações anteriores",
+      "loadingMore": "Carregando movimentações anteriores…",
+      "loadMoreError": "Não foi possível carregar movimentações anteriores. Tente de novo.",
       "emptyReal": "Nenhuma movimentação ainda. Faça um depósito para começar.",
       "emptyOther": "Nenhum crédito ainda. Compre créditos com seu saldo real para jogar."
     }
@@ -59,7 +62,8 @@
       "label": "Créditos sandbox",
       "subtitle": "Moeda virtual para partidas, comprada com o saldo de jogo. Não tem valor em dinheiro e não pode ser sacada nem convertida de volta."
     },
-    "activateLink": "Vai usar a carteira para jogos? Ative a carteira de jogo."
+    "activateLink": "Vai usar a carteira para jogos? Ative a carteira de jogo.",
+    "responsibleLink": "Jogo responsável e limites"
   },
   "dialog": {
     "deposit": {
@@ -100,7 +104,8 @@
       "required": "Informe um valor.",
       "invalid": "Informe um valor válido.",
       "maxExceeded": "O valor máximo é {{max}}.",
-      "overBalance": "Acima do disponível ({{amount}})."
+      "overBalance": "Acima do disponível ({{amount}}).",
+      "overWithdrawable": "Com a taxa, o máximo disponível para saque é {{amount}}."
     }
   },
   "confirm": {
@@ -138,10 +143,34 @@
     "close": "Fechar",
     "confirmedToast": "Depósito confirmado"
   },
+  "transactions": {
+    "title": "Status das transações",
+    "description": "As atualizações usam a referência abaixo e continuam visíveis após atualizar a página.",
+    "kind": {
+      "deposit": "Depósito PIX",
+      "withdrawal": "Saque PIX"
+    },
+    "status": {
+      "pending": "Aguardando pagamento",
+      "processing": "Em processamento",
+      "confirmed": "Confirmado",
+      "completed": "Enviado",
+      "expired": "Expirado",
+      "reversed": "Estornado",
+      "refund_failed": "Estorno pendente"
+    },
+    "reference": "Referência {{id}}",
+    "fee": "Taxa {{fee}}",
+    "resumeDeposit": "Ver código PIX",
+    "guidance": {
+      "processing": "O débito já aparece no seu saldo enquanto o banco confirma o PIX. Se ele não puder ser concluído, o valor e a taxa serão devolvidos automaticamente. Você pode fechar esta página com segurança.",
+      "refund_failed": "O PIX não foi concluído e o estorno automático ainda precisa de conciliação. Nossa equipe já foi avisada; guarde a referência acima se falar com o suporte."
+    }
+  },
   "toast": {
     "depositConfirmed": "Depósito confirmado",
     "realtimeDeposit": "Depósito de {{amount}} confirmado",
-    "withdrawProcessing": "Saque em processamento. O PIX cai em instantes.",
+    "withdrawProcessing": "Saque enviado e aguardando confirmação do banco.",
     "withdrawSent": "Saque enviado.",
     "withdrawReversed": "Não foi possível concluir o saque — o valor foi estornado para o seu saldo.",
     "withdrawRefundFailed": "O saque falhou e o estorno está pendente. Nossa equipe já foi avisada.",
@@ -171,10 +200,32 @@
     "later": "Agora não",
     "activate": "Ativar",
     "activating": "Ativando…",
+    "limitsTitle": "Defina seus limites",
+    "limitsDescription": "Informe quanto pode enviar para jogos por dia, semana e mês.",
     "error": {
       "kycNotVerified": "Verifique sua identidade na sua conta CTech antes de ativar a carteira de jogo.",
       "termsRequired": "Aceite o termo de jogo responsável para continuar.",
       "generic": "Não foi possível ativar. Tente de novo."
+    }
+  },
+  "responsible": {
+    "back": "Voltar para a carteira",
+    "title": "Jogo responsável",
+    "description": "Acompanhe e ajuste seus limites ou faça uma pausa do jogo com dinheiro real.",
+    "limits": {
+      "title": "Limites de depósito em jogos", "description": "Eles contam todo valor enviado do saldo real para o saldo de jogo. Devoluções não liberam limite.",
+      "daily": "Diário", "weekly": "Semanal", "monthly": "Mensal",
+      "coherence": "Use valores maiores que zero, com diário menor ou igual ao semanal e semanal menor ou igual ao mensal.",
+      "cooldown": "Aumentos entram em vigor em 7 dias; aumentos no limite mensal entram em vigor em 14 dias. Reduções valem imediatamente.",
+      "pending": "Há um aumento agendado para {{date}}.", "cancelPending": "Cancelar aumento", "pendingCancelled": "Aumento cancelado.",
+      "save": "Salvar limites", "saved": "Limites atualizados."
+    },
+    "exclusion": {
+      "title": "Autoexclusão", "description": "Bloqueia novos depósitos e partidas com dinheiro real. Você ainda poderá devolver seu saldo de jogo e usar o sandbox.",
+      "period": {"30d": "30 dias", "90d": "90 dias", "indefinite": "Por tempo indeterminado"},
+      "action": "Iniciar autoexclusão", "confirm": "Essa decisão não pode ser desfeita antes do prazo. Digite EXCLUIR para confirmar.",
+      "confirmAction": "Confirmar autoexclusão", "success": "Autoexclusão ativada.", "activeTitle": "Autoexclusão ativa",
+      "until": "Depósitos e partidas com dinheiro real estão bloqueados até {{date}}.", "indefinite": "Depósitos e partidas com dinheiro real estão bloqueados por tempo indeterminado."
     }
   },
   "errors": {
@@ -189,6 +240,9 @@
     "gamblingTermsRequired": "Aceite o termo de jogo responsável para continuar.",
     "depositOutOfRange": "O depósito precisa ser entre {{min}} e {{max}}.",
     "amountAboveLimit": "O valor máximo por operação é {{max}}.",
+    "selfExcluded": "Sua autoexclusão bloqueia depósitos na carteira de jogo.",
+    "limitsNotConfigured": "Defina seus limites de jogo antes de continuar.",
+    "depositLimitExceeded": "Esse envio ultrapassa um dos seus limites de jogo.",
     "generic": "Algo deu errado. Tente de novo."
   },
   "ledger": {

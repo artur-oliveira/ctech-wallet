@@ -4,7 +4,7 @@ import {useCallback, useEffect, useRef} from 'react'
 import {useTranslation} from 'react-i18next'
 import {Button} from '@/components/ui/button'
 import {formatBRL} from '@/lib/utils/money'
-import {withdrawalFee} from '@/lib/utils/fee'
+import {withdrawalFee, type WithdrawalFeeConfig} from '@/lib/utils/fee'
 
 type Flow = 'withdraw' | 'fund-game' | 'return-game'
 
@@ -19,6 +19,8 @@ interface ConfirmMoneyDialogProps {
     amountCents: number
     /** Available balance of the wallet being debited (real for withdraw/fund-game, game for return-game). */
     availableCents: number
+    /** Effective fee fields from the real wallet; used only by the withdrawal flow. */
+    feeConfig?: WithdrawalFeeConfig
     pending?: boolean
     /** When true, the API rejected the commit with step-up-required: show an in-flow re-verify step. */
     stepUp?: boolean
@@ -37,6 +39,7 @@ export function ConfirmMoneyDialog({
                                        flow,
                                        amountCents,
                                        availableCents,
+                                       feeConfig,
                                        pending,
                                        stepUp,
                                        onReverify,
@@ -49,7 +52,7 @@ export function ConfirmMoneyDialog({
     const panelRef = useRef<HTMLDivElement>(null)
 
     const isWithdraw = flow === 'withdraw'
-    const fee = isWithdraw ? withdrawalFee(amountCents) : 0
+    const fee = isWithdraw ? withdrawalFee(amountCents, feeConfig) : 0
     const totalDebit = amountCents + fee
     const resultingBalance = Math.max(0, availableCents - totalDebit)
 

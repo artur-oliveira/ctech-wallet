@@ -14,6 +14,7 @@ interface BalanceCardsProps {
     onBuyCredits: () => void
     onFundGame: () => void
     onReturnFromGame: () => void
+    selfExcluded?: boolean
 }
 
 /**
@@ -39,6 +40,7 @@ export function BalanceCards({
                                  onBuyCredits,
                                  onFundGame,
                                  onReturnFromGame,
+                                 selfExcluded,
                              }: BalanceCardsProps) {
     const {t} = useTranslation()
     const {game, sandbox, activated} = balances
@@ -75,7 +77,7 @@ export function BalanceCards({
                             <ArrowUpFromLine size={16}/>
                             {t('balance.withdraw')}
                         </Button>
-                        {activated && (
+                        {activated && !selfExcluded && (
                             <Button
                                 variant="outline"
                                 className="border-brand-400/60 bg-transparent text-white hover:bg-brand-700"
@@ -137,6 +139,12 @@ export function BalanceCards({
                         {t('balance.sandbox.subtitle')}
                     </p>
                 </section>
+            )}
+
+            {activated && (
+                <Link href="/gambling/responsible" className="flex items-center gap-2 text-sm font-medium text-brand-700 hover:underline">
+                    <ShieldCheck size={16}/>{t('balance.responsibleLink')}
+                </Link>
             )}
 
             {/* Not activated — one quiet link, never an upsell. */}

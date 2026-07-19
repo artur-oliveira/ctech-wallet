@@ -36,6 +36,9 @@
       },
       "loading": "Loading statement…",
       "error": "We couldn't load the statement. Refresh the page to try again.",
+      "loadMore": "Load older transactions",
+      "loadingMore": "Loading older transactions…",
+      "loadMoreError": "We couldn't load older transactions. Try again.",
       "emptyReal": "No transactions yet. Make a deposit to get started.",
       "emptyOther": "No credits yet. Buy credits with your real balance to play."
     }
@@ -59,7 +62,8 @@
       "label": "Sandbox credits",
       "subtitle": "Virtual currency for matches, bought with your game balance. It has no monetary value and can't be withdrawn or converted back."
     },
-    "activateLink": "Going to use the wallet for games? Activate the game wallet."
+    "activateLink": "Going to use the wallet for games? Activate the game wallet.",
+    "responsibleLink": "Responsible gaming and limits"
   },
   "dialog": {
     "deposit": {
@@ -100,7 +104,8 @@
       "required": "Enter an amount.",
       "invalid": "Enter a valid amount.",
       "maxExceeded": "The maximum amount is {{max}}.",
-      "overBalance": "Above what's available ({{amount}})."
+      "overBalance": "Above what's available ({{amount}}).",
+      "overWithdrawable": "Including the fee, the maximum available to withdraw is {{amount}}."
     }
   },
   "confirm": {
@@ -138,10 +143,34 @@
     "close": "Close",
     "confirmedToast": "Deposit confirmed"
   },
+  "transactions": {
+    "title": "Transaction status",
+    "description": "Updates are tied to the reference below and remain visible after a refresh.",
+    "kind": {
+      "deposit": "PIX deposit",
+      "withdrawal": "PIX withdrawal"
+    },
+    "status": {
+      "pending": "Awaiting payment",
+      "processing": "Processing",
+      "confirmed": "Confirmed",
+      "completed": "Sent",
+      "expired": "Expired",
+      "reversed": "Refunded",
+      "refund_failed": "Refund pending"
+    },
+    "reference": "Reference {{id}}",
+    "fee": "Fee {{fee}}",
+    "resumeDeposit": "View PIX code",
+    "guidance": {
+      "processing": "The debit is already reflected in your balance while the bank confirms the PIX. If it cannot be completed, the amount and fee are returned automatically. You can close this page safely.",
+      "refund_failed": "The PIX was not completed and the automatic refund still needs reconciliation. Our team has been notified; keep the reference above if you contact support."
+    }
+  },
   "toast": {
     "depositConfirmed": "Deposit confirmed",
     "realtimeDeposit": "Deposit of {{amount}} confirmed",
-    "withdrawProcessing": "Withdrawal processing. The PIX arrives shortly.",
+    "withdrawProcessing": "Withdrawal submitted and awaiting bank confirmation.",
     "withdrawSent": "Withdrawal sent.",
     "withdrawReversed": "Withdrawal could not be completed — the amount was refunded to your balance.",
     "withdrawRefundFailed": "Withdrawal failed and the refund is pending. Our team has been notified.",
@@ -171,10 +200,30 @@
     "later": "Not now",
     "activate": "Activate",
     "activating": "Activating…",
+    "limitsTitle": "Set your limits",
+    "limitsDescription": "Choose how much you can send to games per day, week, and month.",
     "error": {
       "kycNotVerified": "Verify your identity in your CTech account before activating the game wallet.",
       "termsRequired": "Accept the responsible gaming terms to continue.",
       "generic": "We couldn't activate. Please try again."
+    }
+  },
+  "responsible": {
+    "back": "Back to wallet", "title": "Responsible gaming", "description": "Review and adjust your limits or take a break from real-money gaming.",
+    "limits": {
+      "title": "Game deposit limits", "description": "They count every transfer from real balance to game balance. Returns do not restore headroom.",
+      "daily": "Daily", "weekly": "Weekly", "monthly": "Monthly",
+      "coherence": "Use values above zero, with daily no greater than weekly and weekly no greater than monthly.",
+      "cooldown": "Increases take effect in 7 days; monthly increases take effect in 14 days. Reductions are immediate.",
+      "pending": "An increase is scheduled for {{date}}.", "cancelPending": "Cancel increase", "pendingCancelled": "Increase cancelled.",
+      "save": "Save limits", "saved": "Limits updated."
+    },
+    "exclusion": {
+      "title": "Self-exclusion", "description": "Blocks new real-money deposits and play. You can still return your game balance and use sandbox credits.",
+      "period": {"30d": "30 days", "90d": "90 days", "indefinite": "Indefinitely"},
+      "action": "Start self-exclusion", "confirm": "This cannot be undone before the period ends. Type EXCLUIR to confirm.",
+      "confirmAction": "Confirm self-exclusion", "success": "Self-exclusion activated.", "activeTitle": "Self-exclusion active",
+      "until": "Real-money deposits and play are blocked until {{date}}.", "indefinite": "Real-money deposits and play are blocked indefinitely."
     }
   },
   "errors": {
@@ -189,6 +238,9 @@
     "gamblingTermsRequired": "Accept the responsible gaming terms to continue.",
     "depositOutOfRange": "The deposit must be between {{min}} and {{max}}.",
     "amountAboveLimit": "The maximum amount per operation is {{max}}.",
+    "selfExcluded": "Your self-exclusion blocks deposits to the game wallet.",
+    "limitsNotConfigured": "Set your game limits before continuing.",
+    "depositLimitExceeded": "This transfer exceeds one of your game limits.",
     "generic": "Something went wrong. Please try again."
   },
   "ledger": {

@@ -4,6 +4,9 @@
 import type {
     Balances,
     DepositResult,
+    GameLimits,
+    GameLimitsInput,
+    GameLimitsStatus,
     LedgerEntry,
     LedgerPage,
     MeResponse,
@@ -12,6 +15,7 @@ import type {
     WalletType,
     Withdrawal,
 } from '@/lib/types/api'
+import {withdrawalFee} from '@/lib/utils/fee'
 
 export const USE_MOCK = process.env.NEXT_PUBLIC_MOCK_AUTH === 'true'
 
@@ -39,6 +43,8 @@ const state = {
     game: mk('game', 50_000),
     sandbox: mk('sandbox', 1200),
     activated: true,
+    limits: {daily: 50_000, weekly: 200_000, monthly: 500_000} as GameLimits,
+    excluded: undefined as GameLimitsStatus['excluded'],
     ledger: [
         {entry_id: 'e3', wallet_id: 'w_real', type: 'deposit', amount: 100_000, balance_after: 2_500_00, created_at: new Date(Date.now() - 86_400_000).toISOString()},
         {entry_id: 'e2', wallet_id: 'w_real', type: 'withdraw', amount: -5_000, balance_after: 1_500_00, created_at: new Date(Date.now() - 2 * 86_400_000).toISOString()},
@@ -93,13 +99,15 @@ export class MockApiClient {
 
     async createWithdrawal(amount: number, _idempotencyKey: string): Promise<Withdrawal> {
         void _idempotencyKey
+        const fee = withdrawalFee(amount, state.real)
         addEntry(state.real, 'withdraw', -amount)
+        addEntry(state.real, 'fee', -fee)
         return {
             withdrawal_id: `wd_${Date.now()}`,
             wallet_id: state.real.wallet_id,
             user_id: 'mock_user',
             amount,
-            fee: 0,
+            fee,
             pix_key: '12345678901', // mock user's registered CPF — no client-supplied key anymore
             status: 'completed',
             created_at: new Date().toISOString(),
@@ -113,9 +121,47 @@ export class MockApiClient {
         return {debit, credit}
     }
 
-    async activateGambling(): Promise<{ game: Wallet; sandbox: Wallet }> {
+    async activateGambling(limits: GameLimitsInput): Promise<{ game: Wallet; sandbox: Wallet }> {
         state.activated = true
+        state.limits = {daily: limits.daily_limit, weekly: limits.weekly_limit, monthly: limits.monthly_limit}
         return {game: state.game, sandbox: state.sandbox}
+    }
+
+    async getGameLimits(): Promise<GameLimitsStatus> {
+        return {
+            limits: state.limits,
+            usage: {
+                daily: 12_000,
+                weekly: 35_000,
+                monthly: 80_000,
+                day_resets_at: new Date(Date.now() + 86_400_000).toISOString(),
+                week_resets_at: new Date(Date.now() + 4 * 86_400_000).toISOString(),
+                month_resets_at: new Date(Date.now() + 12 * 86_400_000).toISOString(),
+            },
+            excluded: state.excluded,
+        }
+    }
+
+    async setGameLimits(input: GameLimitsInput): Promise<GameLimits> {
+        state.limits = {daily: input.daily_limit, weekly: input.weekly_limit, monthly: input.monthly_limit}
+        return state.limits
+    }
+
+    async cancelPendingGameLimits(): Promise<GameLimits> {
+        state.limits = {...state.limits, pending: undefined}
+        return state.limits
+    }
+
+    async selfExclude(period: '30d' | '90d' | 'indefinite'): Promise<void> {
+        state.excluded = {
+            period,
+            requested_at: new Date().toISOString(),
+            until: period === 'indefinite' ? undefined : new Date(Date.now() + (period === '30d' ? 30 : 90) * 86_400_000).toISOString(),
+        }
+    }
+
+    async revokeSelfExclusion(): Promise<void> {
+        state.excluded = undefined
     }
 
     async fundGame(amount: number): Promise<Transfer> {
