@@ -11,7 +11,7 @@ import (
 const (
 	ScopeWalletCredit      = "internal:wallet:credit"     // sandbox only
 	ScopeWalletDebit       = "internal:wallet:debit"      // sandbox only
-	ScopeWalletRealDebit   = "internal:wallet:real:debit" // real wallet — deliberately separate from sandbox debit
+	ScopeWalletRealDebit   = "internal:wallet:debit-real" // real wallet — deliberately separate from sandbox debit
 	ScopePixConfirmDeposit = "internal:wallet:confirm-deposit"
 
 	// game wallet holds (skill-game integration, e.g. poker). Deliberately
