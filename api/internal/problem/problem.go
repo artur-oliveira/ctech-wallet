@@ -5,7 +5,9 @@ package problem
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 	commonproblem "gopkg.aoctech.app/api-commons/problem"
@@ -39,6 +41,12 @@ const (
 
 	TypeGamblingNotActivated  = "/problems/gambling-not-activated"
 	TypeGamblingTermsRequired = "/problems/gambling-terms-required"
+
+	// responsible gambling (docs/specs/2026-07-19-responsible-gambling-design.md)
+	TypeSelfExcluded            = "/problems/self-excluded"
+	TypeLimitsNotConfigured     = "/problems/limits-not-configured"
+	TypeDepositLimitExceeded    = "/problems/deposit-limit-exceeded"
+	TypeExclusionChangeRejected = "/problems/exclusion-change-rejected"
 )
 
 // FieldError is a single field-level validation failure. It mirrors the shape
@@ -201,4 +209,37 @@ func StepUpRequired(maxAgeSeconds int) *Problem {
 	p := New(http.StatusForbidden, TypeStepUpRequired, "Step-Up Required", "esta operação exige autenticação MFA recente")
 	p.MaxAgeSeconds = maxAgeSeconds
 	return p
+}
+
+// SelfExcluded: the user self-excluded from real-money gambling. until is
+// RFC3339, or "" for an indefinite exclusion; the UI shows it via Detail.
+func SelfExcluded(until string) *Problem {
+	detail := "você se autoexcluiu do jogo por tempo indeterminado"
+	if until != "" {
+		detail = "você se autoexcluiu do jogo até " + until
+	}
+	return New(http.StatusConflict, TypeSelfExcluded, "Self-Excluded", detail)
+}
+
+// LimitsNotConfigured: gambling is activated but the mandatory deposit limits
+// were never set (pre-limits activation) — the user must configure them first.
+func LimitsNotConfigured() *Problem {
+	return New(http.StatusConflict, TypeLimitsNotConfigured, "Limits Not Configured",
+		"defina seus limites de depósito (diário, semanal e mensal) antes de continuar")
+}
+
+// DepositLimitExceeded: the deposit would overflow a responsible-gambling
+// window. MaxAmount carries the window's limit; Detail says which window and
+// when it resets (RFC3339) so the UI need not recompute calendars.
+func DepositLimitExceeded(window string, limit, used int64, resetsAt time.Time) *Problem {
+	names := map[string]string{"daily": "diário", "weekly": "semanal", "monthly": "mensal"}
+	p := New(http.StatusConflict, TypeDepositLimitExceeded, "Deposit Limit Exceeded",
+		fmt.Sprintf("limite %s de depósito atingido; renova em %s", names[window], resetsAt.Format(time.RFC3339)))
+	p.MaxAmount = limit
+	return p
+}
+
+// ExclusionChangeRejected: revoke too early, or a shortening re-exclusion.
+func ExclusionChangeRejected(detail string) *Problem {
+	return New(http.StatusConflict, TypeExclusionChangeRejected, "Exclusion Change Rejected", detail)
 }
