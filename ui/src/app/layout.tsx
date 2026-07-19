@@ -9,6 +9,8 @@ import {QueryProvider} from '@/lib/providers/QueryProvider'
 import {I18nProvider} from '@/lib/providers/I18nProvider'
 import {Toaster} from 'sonner'
 
+const LIGHT_THEME_COLOR = '#f8fafc'
+
 const geistSans = Geist({
     variable: '--font-geist-sans',
     subsets: ['latin'],
@@ -22,6 +24,7 @@ const geistMono = Geist_Mono({
 export const viewport: Viewport = {
     width: 'device-width',
     initialScale: 1,
+    themeColor: LIGHT_THEME_COLOR,
     viewportFit: 'cover',
     interactiveWidget: 'resizes-content',
 }
@@ -118,6 +121,7 @@ export default function RootLayout({
         </QueryProvider>
 
         <Toaster
+            theme="light"
             richColors
             position="top-right"
         />
