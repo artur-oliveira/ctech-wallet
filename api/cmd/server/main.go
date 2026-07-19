@@ -3,6 +3,7 @@ package main
 import (
 	"log/slog"
 	"os"
+	_ "time/tzdata" // responsible-gambling windows need America/Sao_Paulo everywhere
 
 	"go.uber.org/fx"
 	"gopkg.aoctech.app/wallet/api/internal/app"

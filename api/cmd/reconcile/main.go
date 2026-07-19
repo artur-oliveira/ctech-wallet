@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	_ "time/tzdata" // responsible-gambling windows need America/Sao_Paulo everywhere
 
 	awslambda "github.com/aws/aws-lambda-go/lambda"
 	awscfg "github.com/aws/aws-sdk-go-v2/config"

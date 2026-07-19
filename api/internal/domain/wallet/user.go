@@ -41,6 +41,11 @@ type User struct {
 	GamblingActivatedAt     string `dynamodbav:"gambling_activated_at,omitempty" json:"-"`
 	CreatedAt               string `dynamodbav:"created_at,omitempty" json:"-"`
 	UpdatedAt               string `dynamodbav:"updated_at,omitempty" json:"-"`
+
+	// Responsible-gambling state (docs/specs/2026-07-19-responsible-gambling-design.md).
+	SelfExclusion       *SelfExclusion       `dynamodbav:"self_exclusion,omitempty" json:"-"`
+	GameLimits          *GameLimits          `dynamodbav:"game_limits,omitempty" json:"-"`
+	GameDepositCounters *GameDepositCounters `dynamodbav:"game_deposit_counters,omitempty" json:"-"`
 }
 
 // TermsAccepted reports whether the user has accepted the CURRENT addendum
