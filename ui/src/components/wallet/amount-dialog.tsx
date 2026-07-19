@@ -6,7 +6,7 @@ import {zodResolver} from '@hookform/resolvers/zod'
 import {z} from 'zod'
 import {useTranslation} from 'react-i18next'
 import {Button} from '@/components/ui/button'
-import {formatBRL, formatCredits, MAX_AMOUNT_CENTS, MAX_AMOUNT_DIGITS} from '@/lib/utils/money'
+import {formatBRL, formatCredits, formatCreditsAmount, MAX_AMOUNT_CENTS, MAX_AMOUNT_DIGITS, toCredits} from '@/lib/utils/money'
 import {maxWithdrawable, withdrawalFee, type WithdrawalFeeConfig} from '@/lib/utils/fee'
 
 type Flow = 'deposit' | 'withdraw' | 'credits' | 'fund-game' | 'return-game'
@@ -162,9 +162,7 @@ export function AmountDialog({flow, maxCents, feeConfig, pending, onSubmit, onPr
                                         : 'border-border focus-within:border-brand-500 focus-within:ring-brand-500/20'
                                 }`}
                             >
-                                {flow !== 'credits' && (
-                                    <span className="text-sm text-muted-foreground">R$</span>
-                                )}
+                                <span className="text-sm text-muted-foreground">R$</span>
                                 <input
                                     id="amount"
                                     autoFocus
@@ -195,6 +193,11 @@ export function AmountDialog({flow, maxCents, feeConfig, pending, onSubmit, onPr
                                         {t('dialog.amount.maxButton', {max: fmt(effectiveMax)})}
                                     </button>
                                 </div>
+                            )}
+                            {flow === 'credits' && amount > 0 && (
+                                <p className="mt-1.5 text-xs text-muted-foreground">
+                                    {t('dialog.amount.creditsPreview', {credits: formatCreditsAmount(toCredits(amount))})}
+                                </p>
                             )}
                         </>
                     )}

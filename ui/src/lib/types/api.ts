@@ -30,10 +30,12 @@ export interface Balances {
     sandbox?: Wallet
 }
 
-/** The ledger pair written by any transfer between two of the caller's wallets. */
+/** The ledger pair written by any transfer between two of the caller's wallets.
+ *  `credit` is omitted on an idempotent replay (the server returns only the prior
+ *  debit entry), so consumers must not assume it is always present. */
 export interface Transfer {
     debit: LedgerEntry
-    credit: LedgerEntry
+    credit?: LedgerEntry
 }
 
 export interface DepositResult {
@@ -62,7 +64,7 @@ export interface LedgerEntry {
     entry_id: string
     wallet_id: string
     type: string
-    amount: number // signed centavos
+    amount: number // signed; unit matches the owning wallet (centavos for real/game, credits for sandbox)
     balance_after: number
     ref?: string
     created_at: string

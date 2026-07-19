@@ -20,14 +20,14 @@ exclusion live with the custodian, not with each game)
 All real-money gambling surfaces already funnel through
 `WalletService.requireActivated` — that stays the single chokepoint.
 
-| Surface | Self-excluded | Limits |
-|---|---|---|
-| `POST /wallet/gambling/activate` | blocked (409 `self-excluded`) | limits now required in body |
-| `POST /wallet/game/deposit` | blocked | enforced per window |
-| `POST /internal/wallet/game/hold` (poker buy-in) | blocked (defense in depth) | not enforced (money already ring-fenced) |
-| `POST /wallet/sandbox/purchase` | **allowed** — sandbox is play-money; exclusion covers real money | n/a |
-| `POST /wallet/game/withdraw` | **always allowed** — reducing exposure is never blocked (existing invariant) | n/a |
-| `POST /internal/wallet/game/{hold/:id/release,cashout}` | allowed — settlement of an existing hold must never strand money | n/a |
+| Surface                                                 | Self-excluded                                                                | Limits                                   |
+|---------------------------------------------------------|------------------------------------------------------------------------------|------------------------------------------|
+| `POST /wallet/gambling/activate`                        | blocked (409 `self-excluded`)                                                | limits now required in body              |
+| `POST /wallet/game/deposit`                             | blocked                                                                      | enforced per window                      |
+| `POST /internal/wallet/game/hold` (poker buy-in)        | blocked (defense in depth)                                                   | not enforced (money already ring-fenced) |
+| `POST /wallet/sandbox/purchase`                         | **allowed** — sandbox is play-money; exclusion covers real money             | n/a                                      |
+| `POST /wallet/game/withdraw`                            | **always allowed** — reducing exposure is never blocked (existing invariant) | n/a                                      |
+| `POST /internal/wallet/game/{hold/:id/release,cashout}` | allowed — settlement of an existing hold must never strand money             | n/a                                      |
 
 ## Self-exclusion
 
@@ -52,13 +52,13 @@ All real-money gambling surfaces already funnel through
   without limits are re-gated: `game/deposit` ⇒ 409 `limits-not-configured` until they
   set limits via the PUT below.
 - `PUT /v1.0/wallet/gambling/limits` (same three fields):
-  - Any decrease applies immediately.
-  - Any increase becomes **pending** with `applies_at` = now + 7 days (daily or weekly
-    field increased) / now + 14 days (monthly increased). One pending set at a time; a
-    new PUT replaces it (re-deriving `applies_at`). Pending auto-applies lazily on the
-    next read past `applies_at`; `DELETE /v1.0/wallet/gambling/limits/pending` cancels.
-  - A mixed request (some fields down, some up) applies the decreases now and pends the
-    increases.
+    - Any decrease applies immediately.
+    - Any increase becomes **pending** with `applies_at` = now + 7 days (daily or weekly
+      field increased) / now + 14 days (monthly increased). One pending set at a time; a
+      new PUT replaces it (re-deriving `applies_at`). Pending auto-applies lazily on the
+      next read past `applies_at`; `DELETE /v1.0/wallet/gambling/limits/pending` cancels.
+    - A mixed request (some fields down, some up) applies the decreases now and pends the
+      increases.
 - Windows are **calendar windows in America/Sao_Paulo**: day rolls at local midnight,
   week starts Monday, month is the civil month. Chosen over rolling windows because
   users can reason about them ("meu limite volta segunda-feira").
@@ -69,28 +69,28 @@ All real-money gambling surfaces already funnel through
 
 ```go
 type SelfExclusion struct {
-    Status      string // "" | "excluded"
-    Period      string // "30d" | "90d" | "indefinite"
-    RequestedAt string // RFC3339
-    Until       string // RFC3339; empty for indefinite
+Status      string // "" | "excluded"
+Period      string // "30d" | "90d" | "indefinite"
+RequestedAt string // RFC3339
+Until       string // RFC3339; empty for indefinite
 }
 
 type GameLimits struct {
-    Daily, Weekly, Monthly int64 // centavos; 0 = not configured
-    Pending *PendingLimits       // nil when none
+Daily, Weekly, Monthly int64 // centavos; 0 = not configured
+Pending *PendingLimits       // nil when none
 }
 type PendingLimits struct {
-    Daily, Weekly, Monthly int64
-    AppliesAt              string // RFC3339
+Daily, Weekly, Monthly int64
+AppliesAt              string // RFC3339
 }
 
 type GameDepositCounters struct {
-    DayKey   string // "2026-07-19" (America/Sao_Paulo)
-    DaySum   int64
-    WeekKey  string // ISO week "2026-W29"
-    WeekSum  int64
-    MonthKey string // "2026-07"
-    MonthSum int64
+DayKey   string // "2026-07-19" (America/Sao_Paulo)
+DaySum   int64
+WeekKey  string // ISO week "2026-W29"
+WeekSum  int64
+MonthKey string // "2026-07"
+MonthSum int64
 }
 ```
 
@@ -116,6 +116,7 @@ type GameDepositCounters struct {
 ## UI (ctech-wallet/ui)
 
 "Jogo responsável" page:
+
 - Limits form with current values, usage bars for the three current windows
   ("R$ 120 / R$ 500 esta semana"), cooldown warning when a field increases, pending
   change banner with `applies_at` and cancel button.

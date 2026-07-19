@@ -68,7 +68,6 @@ export default function GamblingAddendumPage() {
                     <li>{i18n.t('legal.gambling.v2.s4.li1')}</li>
                     <li>{i18n.t('legal.gambling.v2.s4.li2')}</li>
                     <li>{i18n.t('legal.gambling.v2.s4.li3')}</li>
-                    <li>{i18n.t('legal.gambling.v2.s4.li4')}</li>
                 </ul>
                 <p>{i18n.t('legal.gambling.v2.s4.p2')}</p>
             </LegalSection>

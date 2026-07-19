@@ -99,7 +99,8 @@
       "label": "Amount",
       "placeholder": "0.00",
       "feePreview": "Includes a {{fee}} withdrawal fee.",
-      "maxButton": "Max {{max}}"
+      "maxButton": "Max {{max}}",
+      "creditsPreview": "Corresponds to {{credits}} credits."
     },
     "max": "Maximum {{max}}",
     "available": "Available {{amount}}",
@@ -224,10 +225,15 @@
     },
     "exclusion": {
       "title": "Self-exclusion", "description": "Blocks new real-money deposits and play. You can still return your game balance and use sandbox credits.",
+      "periodLabel": "Choose how long to block real-money gaming",
       "period": {"30d": "30 days", "90d": "90 days", "indefinite": "Indefinitely"},
-      "action": "Start self-exclusion", "confirm": "This cannot be undone before the period ends. Type EXCLUIR to confirm.",
+      "action": "Start self-exclusion", "confirm": "Selected duration: {{period}}. Self-exclusion starts immediately and cannot end early. Type {{phrase}} to confirm.",
+      "confirmationPhrase": "EXCLUDE", "confirmationLabel": "Confirmation phrase", "confirmationHint": "Type {{phrase}}. Letter case does not matter.",
+      "confirmationMismatch": "The phrase does not match {{phrase}}.", "confirming": "Activating self-exclusion…", "error": "We couldn't activate self-exclusion. Your settings have not changed. Try again.",
       "confirmAction": "Confirm self-exclusion", "success": "Self-exclusion activated.", "activeTitle": "Self-exclusion active",
-      "until": "Real-money deposits and play are blocked until {{date}}.", "indefinite": "Real-money deposits and play are blocked indefinitely."
+      "until": "Real-money deposits and play are blocked until {{date}}.", "indefinite": "Real-money deposits and play are blocked indefinitely.",
+      "helpTitle": "Need support now?", "helpDescription": "These independent support services are available before or after you start self-exclusion.",
+      "cvvPhone": "Call CVV at 188 (24/7 in Brazil)", "cvvWebsite": "Visit the CVV website", "gamblersAnonymous": "Visit Jogadores Anônimos"
     }
   },
   "errors": {
@@ -484,12 +490,11 @@
         },
         "s4": {
           "heading": "4. Self-exclusion and voluntary pauses",
-          "p1": "The user may voluntarily request:",
-          "li1": "temporary block;",
-          "li2": "preventive pause;",
-          "li3": "fixed-term self-exclusion;",
-          "li4": "permanent self-exclusion.",
-          "p2": "During self-exclusion periods, new participation in games, transfers to the game wallet, and early reactivations may be prevented."
+          "p1": "The user may start self-exclusion for:",
+          "li1": "30 days;",
+          "li2": "90 days;",
+          "li3": "an indefinite period.",
+          "p2": "During self-exclusion, real-money play and transfers to the game wallet are blocked. Fixed periods cannot end early. An indefinite exclusion can only be revoked after at least 90 days."
         },
         "s5": {
           "heading": "5. Sandbox Credits",
@@ -526,9 +531,9 @@
           "p2": "Where there are reasonable indications of fraud, abuse, or breach of this term, CTech may block accounts and cancel matches, without prejudice to the user's right to defense."
         },
         "s8": {
-          "heading": "8. Closure of the game wallet",
-          "p1": "The user may deactivate the game wallet at any time.",
-          "p2": "Before deactivation, any existing balances must be transferred to the real balance, subject to security measures and anti-fraud checks."
+          "heading": "8. Returning funds and stopping play",
+          "p1": "Money in the game wallet can be returned to the real balance at any time, without a fee or a game limit, subject to security and fraud-prevention checks.",
+          "p2": "To stop real-money gaming, the user can start self-exclusion from the Responsible Gaming page under the conditions in section 4. The platform does not currently offer deactivation or deletion of the game wallet."
         },
         "s9": {
           "heading": "9. Play responsibly",

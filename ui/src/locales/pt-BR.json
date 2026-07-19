@@ -99,7 +99,8 @@
       "label": "Valor",
       "placeholder": "0,00",
       "feePreview": "Inclui uma taxa de saque de {{fee}}.",
-      "maxButton": "Máx {{max}}"
+      "maxButton": "Máx {{max}}",
+      "creditsPreview": "Corresponde a {{credits}} créditos."
     },
     "max": "Máximo {{max}}",
     "available": "Disponível {{amount}}",
@@ -226,10 +227,15 @@
     },
     "exclusion": {
       "title": "Autoexclusão", "description": "Bloqueia novos depósitos e partidas com dinheiro real. Você ainda poderá devolver seu saldo de jogo e usar o sandbox.",
+      "periodLabel": "Escolha por quanto tempo bloquear jogos com dinheiro real",
       "period": {"30d": "30 dias", "90d": "90 dias", "indefinite": "Por tempo indeterminado"},
-      "action": "Iniciar autoexclusão", "confirm": "Essa decisão não pode ser desfeita antes do prazo. Digite EXCLUIR para confirmar.",
+      "action": "Iniciar autoexclusão", "confirm": "Prazo escolhido: {{period}}. A autoexclusão começa imediatamente e não pode terminar antes. Digite {{phrase}} para confirmar.",
+      "confirmationPhrase": "EXCLUIR", "confirmationLabel": "Frase de confirmação", "confirmationHint": "Digite {{phrase}}. Letras maiúsculas e minúsculas são aceitas.",
+      "confirmationMismatch": "A frase não corresponde a {{phrase}}.", "confirming": "Ativando autoexclusão…", "error": "Não foi possível ativar a autoexclusão. Suas configurações não mudaram. Tente de novo.",
       "confirmAction": "Confirmar autoexclusão", "success": "Autoexclusão ativada.", "activeTitle": "Autoexclusão ativa",
-      "until": "Depósitos e partidas com dinheiro real estão bloqueados até {{date}}.", "indefinite": "Depósitos e partidas com dinheiro real estão bloqueados por tempo indeterminado."
+      "until": "Depósitos e partidas com dinheiro real estão bloqueados até {{date}}.", "indefinite": "Depósitos e partidas com dinheiro real estão bloqueados por tempo indeterminado.",
+      "helpTitle": "Precisa de ajuda agora?", "helpDescription": "Estes serviços independentes de apoio estão disponíveis antes ou depois de iniciar a autoexclusão.",
+      "cvvPhone": "Ligar para o CVV no 188 (24 horas)", "cvvWebsite": "Acessar o site do CVV", "gamblersAnonymous": "Acessar Jogadores Anônimos"
     }
   },
   "errors": {
@@ -486,12 +492,11 @@
         },
         "s4": {
           "heading": "4. Autoexclusão e pausas voluntárias",
-          "p1": "O usuário poderá solicitar voluntariamente:",
-          "li1": "bloqueio temporário;",
-          "li2": "pausa preventiva;",
-          "li3": "autoexclusão por prazo determinado;",
-          "li4": "autoexclusão permanente.",
-          "p2": "Durante períodos de autoexclusão, novas participações em jogos, transferências para a carteira de jogo e reativações antecipadas poderão ser impedidas."
+          "p1": "O usuário poderá iniciar uma autoexclusão por:",
+          "li1": "30 dias;",
+          "li2": "90 dias;",
+          "li3": "prazo indeterminado.",
+          "p2": "Durante a autoexclusão, partidas com dinheiro real e transferências para a carteira de jogo ficam bloqueadas. Prazos fixos não podem terminar antes. Uma autoexclusão por prazo indeterminado só pode ser revogada após pelo menos 90 dias."
         },
         "s5": {
           "heading": "5. Créditos Sandbox",
@@ -528,9 +533,9 @@
           "p2": "Havendo indícios razoáveis de fraude, abuso ou descumprimento deste termo, a CTech poderá bloquear contas e cancelar partidas, preservado o direito de defesa do usuário."
         },
         "s8": {
-          "heading": "8. Encerramento da carteira de jogo",
-          "p1": "O usuário poderá desativar a carteira de jogo a qualquer momento.",
-          "p2": "Antes da desativação, eventuais saldos existentes deverão ser transferidos para o saldo real, observadas medidas de segurança e verificações antifraude."
+          "heading": "8. Devolução de valores e interrupção do jogo",
+          "p1": "O dinheiro na carteira de jogo pode ser devolvido ao saldo real a qualquer momento, sem taxa e sem limite de jogo, observadas verificações de segurança e prevenção a fraudes.",
+          "p2": "Para interromper jogos com dinheiro real, o usuário pode iniciar a autoexclusão na página Jogo Responsável, nas condições da seção 4. A plataforma não oferece atualmente a desativação ou exclusão da carteira de jogo."
         },
         "s9": {
           "heading": "9. Jogue com responsabilidade",

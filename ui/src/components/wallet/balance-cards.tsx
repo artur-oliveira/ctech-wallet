@@ -4,7 +4,7 @@ import Link from 'next/link'
 import {ArrowDownToLine, ArrowUpFromLine, Dice5, Gamepad2, Plus, ShieldCheck} from 'lucide-react'
 import {useTranslation} from 'react-i18next'
 import {Button} from '@/components/ui/button'
-import {formatBRL, formatCredits} from '@/lib/utils/money'
+import {formatBRL, formatCreditsAmount} from '@/lib/utils/money'
 import type {Balances} from '@/lib/types/api'
 
 interface BalanceCardsProps {
@@ -132,7 +132,7 @@ export function BalanceCards({
                     </div>
 
                     <p className="mt-3 font-mono text-3xl font-semibold tabular-nums tracking-tight text-foreground">
-                        {formatCredits(sandbox.balance)}
+                        {formatCreditsAmount(sandbox.balance)}
                     </p>
 
                     <p className="mt-2 text-sm leading-relaxed text-muted-foreground">

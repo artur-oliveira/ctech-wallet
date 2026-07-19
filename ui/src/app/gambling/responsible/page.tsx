@@ -3,16 +3,21 @@
 import Link from 'next/link'
 import {useState} from 'react'
 import {useMutation, useQuery, useQueryClient} from '@tanstack/react-query'
-import {ArrowLeft, ShieldAlert} from 'lucide-react'
+import {ArrowLeft, ExternalLink, Phone, ShieldAlert} from 'lucide-react'
 import {toast} from 'sonner'
 import {useTranslation} from 'react-i18next'
 import {ProtectedRoute} from '@/components/protected-route'
 import {Button} from '@/components/ui/button'
 import {apiClient, ApiError} from '@/lib/api/client'
 import {formatBRL, formatCredits, MAX_AMOUNT_DIGITS} from '@/lib/utils/money'
+import {matchesConfirmationPhrase} from '@/lib/utils/confirmation'
+import {CVV_PHONE_URL, CVV_URL, GAMBLERS_ANONYMOUS_URL} from '@/lib/legal'
 import type {GameLimitsInput} from '@/lib/types/api'
 
 const EMPTY_LIMITS: GameLimitsInput = {daily_limit: 0, weekly_limit: 0, monthly_limit: 0}
+const CONFIRMATION_INPUT_ID = 'self-exclusion-confirmation'
+const CONFIRMATION_HINT_ID = 'self-exclusion-confirmation-hint'
+const CONFIRMATION_ERROR_ID = 'self-exclusion-confirmation-error'
 
 function errorMessage(error: unknown, fallback: string): string {
     return error instanceof ApiError ? error.detail : fallback
@@ -74,7 +79,7 @@ function ResponsibleGamblingInner() {
             refresh()
             toast.success(t('responsible.exclusion.success'))
         },
-        onError: (error) => toast.error(errorMessage(error, t('common.genericError'))),
+        onError: () => toast.error(t('responsible.exclusion.error')),
     })
 
     const current = status.data?.limits
@@ -86,6 +91,9 @@ function ResponsibleGamblingInner() {
     const coherent = limits.daily_limit > 0 && limits.daily_limit <= limits.weekly_limit && limits.weekly_limit <= limits.monthly_limit
     const hasIncrease = !!current && (limits.daily_limit > current.daily || limits.weekly_limit > current.weekly || limits.monthly_limit > current.monthly)
     const locale = i18n.language || 'pt-BR'
+    const confirmationPhrase = t('responsible.exclusion.confirmationPhrase')
+    const confirmationMatches = matchesConfirmationPhrase(confirmation, confirmationPhrase, locale)
+    const showConfirmationError = confirmation.length > 0 && !confirmationMatches
     const date = (value: string) => new Intl.DateTimeFormat(locale, {dateStyle: 'long', timeStyle: 'short'}).format(new Date(value))
 
     return (
@@ -149,15 +157,115 @@ function ResponsibleGamblingInner() {
                             <h2 className="text-lg font-semibold">{t('responsible.exclusion.title')}</h2>
                             <p className="mt-1 text-sm text-muted-foreground">{t('responsible.exclusion.description')}</p>
                             {!status.data.excluded && <>
-                                <div className="mt-5 flex flex-wrap gap-4">
-                                    {(['30d', '90d', 'indefinite'] as const).map((value) => <label key={value} className="flex items-center gap-2 text-sm"><input type="radio" name="period" value={value} checked={period === value} onChange={() => setPeriod(value)}/>{t(`responsible.exclusion.period.${value}`)}</label>)}
-                                </div>
-                                {!confirming ? <Button className="mt-5" variant="destructive" onClick={() => setConfirming(true)}>{t('responsible.exclusion.action')}</Button> : <div className="mt-5 rounded-xl bg-destructive/5 p-4">
-                                    <p className="text-sm font-medium">{t('responsible.exclusion.confirm')}</p>
-                                    <input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} className="mt-3 h-10 w-full rounded-lg border border-border bg-background px-3" placeholder="EXCLUIR"/>
-                                    <div className="mt-3 flex gap-2"><Button variant="ghost" onClick={() => setConfirming(false)}>{t('common.cancel')}</Button><Button variant="destructive" disabled={confirmation !== 'EXCLUIR' || exclude.isPending} onClick={() => exclude.mutate()}>{t('responsible.exclusion.confirmAction')}</Button></div>
+                                <fieldset className="mt-5">
+                                    <legend className="text-sm font-medium text-foreground">
+                                        {t('responsible.exclusion.periodLabel')}
+                                    </legend>
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                        {(['30d', '90d', 'indefinite'] as const).map((value) => (
+                                            <label
+                                                key={value}
+                                                className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border px-3 text-sm ${
+                                                    period === value
+                                                        ? 'border-destructive bg-destructive/5'
+                                                        : 'border-border'
+                                                }`}
+                                            >
+                                                <input
+                                                    type="radio"
+                                                    name="period"
+                                                    value={value}
+                                                    checked={period === value}
+                                                    onChange={() => setPeriod(value)}
+                                                    className="size-4 accent-destructive"
+                                                />
+                                                {t(`responsible.exclusion.period.${value}`)}
+                                            </label>
+                                        ))}
+                                    </div>
+                                </fieldset>
+                                {!confirming ? <Button className="mt-5" variant="destructive" onClick={() => { exclude.reset(); setConfirming(true) }}>{t('responsible.exclusion.action')}</Button> : <div className="mt-5 rounded-xl bg-destructive/5 p-4">
+                                    <p className="text-sm font-medium">
+                                        {t('responsible.exclusion.confirm', {
+                                            period: t(`responsible.exclusion.period.${period}`),
+                                            phrase: confirmationPhrase,
+                                        })}
+                                    </p>
+                                    <label htmlFor={CONFIRMATION_INPUT_ID} className="mt-4 block text-sm font-medium text-foreground">
+                                        {t('responsible.exclusion.confirmationLabel')}
+                                    </label>
+                                    <p id={CONFIRMATION_HINT_ID} className="mt-1 text-xs text-muted-foreground">
+                                        {t('responsible.exclusion.confirmationHint', {phrase: confirmationPhrase})}
+                                    </p>
+                                    <input
+                                        id={CONFIRMATION_INPUT_ID}
+                                        value={confirmation}
+                                        onChange={(event) => setConfirmation(event.target.value)}
+                                        className="mt-2 h-11 w-full rounded-lg border border-border bg-background px-3 font-mono uppercase focus:border-destructive focus:ring-3 focus:ring-destructive/20 focus:outline-none"
+                                        autoComplete="off"
+                                        autoFocus
+                                        spellCheck={false}
+                                        maxLength={confirmationPhrase.length + 2}
+                                        disabled={exclude.isPending}
+                                        aria-invalid={showConfirmationError}
+                                        aria-errormessage={showConfirmationError ? CONFIRMATION_ERROR_ID : undefined}
+                                        aria-describedby={CONFIRMATION_HINT_ID}
+                                    />
+                                    <div aria-live="polite">
+                                        {showConfirmationError && (
+                                            <p id={CONFIRMATION_ERROR_ID} className="mt-2 text-sm text-destructive">
+                                                {t('responsible.exclusion.confirmationMismatch', {phrase: confirmationPhrase})}
+                                            </p>
+                                        )}
+                                    </div>
+                                    {exclude.isError && (
+                                        <p role="alert" className="mt-2 text-sm text-destructive">
+                                            {t('responsible.exclusion.error')}
+                                        </p>
+                                    )}
+                                    <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row">
+                                        <Button
+                                            variant="ghost"
+                                            disabled={exclude.isPending}
+                                            onClick={() => { exclude.reset(); setConfirming(false); setConfirmation('') }}
+                                        >
+                                            {t('common.cancel')}
+                                        </Button>
+                                        <Button
+                                            variant="destructive"
+                                            disabled={!confirmationMatches || exclude.isPending}
+                                            onClick={() => exclude.mutate()}
+                                        >
+                                            {exclude.isPending
+                                                ? t('responsible.exclusion.confirming')
+                                                : t('responsible.exclusion.confirmAction')}
+                                        </Button>
+                                    </div>
                                 </div>}
                             </>}
+
+                            <div className="mt-6 border-t border-border pt-5">
+                                <h3 className="text-sm font-semibold text-foreground">
+                                    {t('responsible.exclusion.helpTitle')}
+                                </h3>
+                                <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+                                    {t('responsible.exclusion.helpDescription')}
+                                </p>
+                                <div className="mt-3 flex flex-col items-start gap-2 text-sm">
+                                    <a href={CVV_PHONE_URL} className="inline-flex min-h-11 items-center gap-2 font-medium text-foreground underline underline-offset-4">
+                                        <Phone size={16} aria-hidden="true"/>
+                                        {t('responsible.exclusion.cvvPhone')}
+                                    </a>
+                                    <a href={CVV_URL} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-2 font-medium text-foreground underline underline-offset-4">
+                                        <ExternalLink size={16} aria-hidden="true"/>
+                                        {t('responsible.exclusion.cvvWebsite')}
+                                    </a>
+                                    <a href={GAMBLERS_ANONYMOUS_URL} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-2 font-medium text-foreground underline underline-offset-4">
+                                        <ExternalLink size={16} aria-hidden="true"/>
+                                        {t('responsible.exclusion.gamblersAnonymous')}
+                                    </a>
+                                </div>
+                            </div>
                         </section>
                     </>
                 )}

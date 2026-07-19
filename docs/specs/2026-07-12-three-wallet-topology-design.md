@@ -143,6 +143,14 @@ scope letting game services read balances, is a separate spec.
 
 `sandbox_purchase` / `sandbox_credit` keep their names; only the source wallet changes.
 
+**Sandbox unit.** A sandbox balance is measured in **credits**, a virtual unit with no monetary value — not
+centavos. A `game → sandbox` purchase converts the real-money `amount` (centavos) into credits at a **fixed
+backend rate**: `R$ 1,00 (100 centavos) = 1000 credits` (`SandboxCreditsPerCentavo = 10`, in
+`api/internal/domain/wallet/model.go`; mirror `SANDBOX_CREDITS_PER_CENTAVO` in the UI). The rate is a
+constant, never client-supplied. The `sandbox_purchase` debit entry stays in centavos (on `game`); the
+`sandbox_credit` entry is in credits (on `sandbox`). This decouples the unit so a credit never reads as real
+money (Invariant #6).
+
 **`User`** gains `gambling_addendum_version` + `gambling_activated_at`.
 
 **New table `wallet_audit`** — append-only, non-money events, which the ledger deliberately does not carry:

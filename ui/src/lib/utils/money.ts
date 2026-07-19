@@ -38,19 +38,38 @@ export const MAX_AMOUNT_CENTS = 100_000_000
 /** Max digits a user can type before hitting MAX_AMOUNT_CENTS (9 = 100.000.000). */
 export const MAX_AMOUNT_DIGITS = 9
 
+/**
+ * Fixed sandbox conversion rate: R$ 1,00 (100 centavos) = 1000 credits.
+ * Must match api SandboxCreditsPerCentavo (api/internal/domain/wallet/model.go).
+ * The rate is a backend constant, never client-supplied.
+ */
+export const SANDBOX_CREDITS_PER_CENTAVO = 10
+
+/** Converts a real-money amount in centavos into the credits it buys. */
+export const toCredits = (centavos: number): number => centavos * SANDBOX_CREDITS_PER_CENTAVO
+
 /** Formats integer centavos as BRL, e.g. 12345 → "R$ 123,45". */
 export function formatBRL(centavos: number, locale: string = i18n.language || 'pt-BR'): string {
     return brl(locale).format(centavos / 100)
 }
 
-/** Formats integer centavos as a bare number — used for sandbox credit. */
+/**
+ * Formats integer centavos as a bare number — used only for the amount input
+ * field (no currency symbol; the symbol is a separate span).
+ */
 export function formatCredits(centavos: number, locale: string = i18n.language || 'pt-BR'): string {
     return plain(locale).format(centavos / 100)
 }
 
-/** Signed centavos → "+R$ 10,00" / "−R$ 10,00" for monetary ledger rows. */
-export function formatSigned(centavos: number, monetary: boolean, locale: string = i18n.language || 'pt-BR'): string {
-    const sign = centavos < 0 ? '−' : '+'
-    const abs = Math.abs(centavos)
-    return `${sign}${monetary ? formatBRL(abs, locale) : formatCredits(abs, locale)}`
+/** Formats raw sandbox credits (NOT centavos), e.g. 1000 → "1.000". */
+export function formatCreditsAmount(credits: number, locale: string = i18n.language || 'pt-BR'): string {
+    return plain(locale).format(credits)
+}
+
+/** Signed amount → "+R$ 10,00" / "−R$ 10,00" for monetary rows, or "+1.000" / "−1.000"
+ *  for sandbox (credits) rows. `monetary` is false for sandbox. */
+export function formatSigned(amount: number, monetary: boolean, locale: string = i18n.language || 'pt-BR'): string {
+    const sign = amount < 0 ? '−' : '+'
+    const abs = Math.abs(amount)
+    return `${sign}${monetary ? formatBRL(abs, locale) : formatCreditsAmount(abs, locale)}`
 }

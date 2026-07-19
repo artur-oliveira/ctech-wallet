@@ -6,7 +6,7 @@ import {toast} from 'sonner'
 import {LogOut} from 'lucide-react'
 import {useTranslation} from 'react-i18next'
 import {apiClient, ApiError} from '@/lib/api/client'
-import {formatBRL, formatCredits} from '@/lib/utils/money'
+import {formatBRL, formatCreditsAmount, toCredits} from '@/lib/utils/money'
 import {useAuth} from '@/lib/hooks/useAuth'
 import {ProtectedRoute} from '@/components/protected-route'
 import {BalanceCards} from '@/components/wallet/balance-cards'
@@ -234,32 +234,32 @@ function DashboardInner() {
 
     const buyCredits = useMutation({
         mutationFn: (amount: number) => apiClient.purchaseSandbox(amount, newIdemKey()),
-        onSuccess: (transfer) => {
+        onSuccess: (_transfer, amount) => {
             setFlow(null)
             refresh()
-            setReceipt({title: t('toast.creditsAdded'), amountLabel: formatCredits(transfer.credit.amount)})
+            setReceipt({title: t('toast.creditsAdded'), amountLabel: formatCreditsAmount(toCredits(amount))})
         },
         onError: (err) => toast.error(problemMessage(err, t)),
     })
 
     const fundGame = useMutation({
         mutationFn: (amount: number) => apiClient.fundGame(amount, newIdemKey()),
-        onSuccess: (transfer) => {
+        onSuccess: (_transfer, amount) => {
             setConfirm(null)
             setFlow(null)
             refresh()
-            setReceipt({title: t('toast.fundGameSent'), amountLabel: formatBRL(transfer.credit.amount)})
+            setReceipt({title: t('toast.fundGameSent'), amountLabel: formatBRL(amount)})
         },
         onError: (err) => toast.error(problemMessage(err, t)),
     })
 
     const returnFromGame = useMutation({
         mutationFn: (amount: number) => apiClient.returnFromGame(amount, newIdemKey()),
-        onSuccess: (transfer) => {
+        onSuccess: (_transfer, amount) => {
             setConfirm(null)
             setFlow(null)
             refresh()
-            setReceipt({title: t('toast.returned'), amountLabel: formatBRL(transfer.credit.amount)})
+            setReceipt({title: t('toast.returned'), amountLabel: formatBRL(amount)})
         },
         onError: (err) => toast.error(problemMessage(err, t)),
     })
