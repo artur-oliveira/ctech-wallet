@@ -12,6 +12,7 @@ import {Button} from '@/components/ui/button'
 import {WALLET_GAMING_TERMS_URL} from '@/lib/legal'
 import {formatCredits, MAX_AMOUNT_DIGITS} from '@/lib/utils/money'
 import type {GameLimitsInput} from '@/lib/types/api'
+import {LanguageSwitcher} from '@/components/language-switcher'
 
 function activationMessage(err: unknown, t: (k: string) => string): string {
     if (!(err instanceof ApiError)) return t('gambling.error.generic')
@@ -51,10 +52,13 @@ function ActivateGamblingInner() {
     })
 
     return (
-        <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <div className="flex min-h-screen items-center justify-center bg-background px-4 py-4">
             <div className="w-full max-w-md space-y-5 rounded-2xl border border-brand-100 bg-card p-6">
-                <div className="flex size-10 items-center justify-center rounded-lg bg-brand-600 text-white">
-                    <Dice5 size={20}/>
+                <div className="flex items-center justify-between">
+                    <div className="flex size-10 items-center justify-center rounded-lg bg-brand-600 text-white">
+                        <Dice5 aria-hidden="true" size={20}/>
+                    </div>
+                    <LanguageSwitcher/>
                 </div>
 
                 <div>
@@ -78,7 +82,7 @@ function ActivateGamblingInner() {
                             const key = `${window}_limit` as keyof GameLimitsInput
                             return <label key={window} className="text-xs font-medium text-foreground">
                                 {t(`responsible.limits.${window}`)}
-                                <div className="mt-1 flex items-center gap-1 rounded-lg border border-border px-2">
+                                <div className="mt-1 flex items-center gap-1 rounded-lg border border-border px-2 focus-within:border-brand-500 focus-within:ring-3 focus-within:ring-brand-500/20">
                                     <span className="text-muted-foreground">R$</span>
                                     <input
                                         inputMode="decimal"
@@ -96,12 +100,12 @@ function ActivateGamblingInner() {
                     {!coherent && <p className="mt-2 text-xs text-destructive">{t('responsible.limits.coherence')}</p>}
                 </div>
 
-                <label className="flex items-start gap-2 text-sm text-muted-foreground">
+                <label className="flex min-h-11 cursor-pointer items-start gap-2 text-sm text-muted-foreground">
                     <input
                         type="checkbox"
                         checked={checked}
                         onChange={(e) => setChecked(e.target.checked)}
-                        className="mt-0.5 size-4 shrink-0 rounded border-border accent-brand-600"
+                        className="mt-0.5 size-4 shrink-0 rounded border-border accent-brand-600 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-brand-500/30"
                     />
                     <span>
             {t('gambling.checkboxPrefix')}{' '}
@@ -117,13 +121,13 @@ function ActivateGamblingInner() {
           </span>
                 </label>
 
-                <div className="flex gap-2">
-                    <Button variant="outline" className="flex-1" onClick={() => router.push('/dashboard')}>
+                <div className="flex flex-col-reverse gap-2 sm:flex-row">
+                    <Button variant="outline" className="w-full sm:flex-1" onClick={() => router.push('/dashboard')}>
                         {t('gambling.later')}
                     </Button>
                     <Button
                         variant="brand"
-                        className="flex-1"
+                        className="w-full sm:flex-1"
                         disabled={!checked || !coherent || activate.isPending}
                         onClick={() => activate.mutate()}
                     >

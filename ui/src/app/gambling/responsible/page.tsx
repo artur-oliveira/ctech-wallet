@@ -13,6 +13,7 @@ import {formatBRL, formatCredits, MAX_AMOUNT_DIGITS} from '@/lib/utils/money'
 import {matchesConfirmationPhrase} from '@/lib/utils/confirmation'
 import {CVV_PHONE_URL, CVV_URL, GAMBLERS_ANONYMOUS_URL} from '@/lib/legal'
 import type {GameLimitsInput} from '@/lib/types/api'
+import {LanguageSwitcher} from '@/components/language-switcher'
 
 const EMPTY_LIMITS: GameLimitsInput = {daily_limit: 0, weekly_limit: 0, monthly_limit: 0}
 const CONFIRMATION_INPUT_ID = 'self-exclusion-confirmation'
@@ -99,9 +100,12 @@ function ResponsibleGamblingInner() {
     return (
         <div className="min-h-screen bg-background px-4 py-8">
             <main className="mx-auto max-w-3xl space-y-6">
-                <Link href="/dashboard" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11">
-                    <ArrowLeft size={16}/>{t('responsible.back')}
-                </Link>
+                <div className="flex items-center justify-between gap-4">
+                    <Link href="/dashboard" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11">
+                        <ArrowLeft size={16}/>{t('responsible.back')}
+                    </Link>
+                    <LanguageSwitcher/>
+                </div>
                 <div>
                     <h1 className="text-2xl font-semibold text-foreground">{t('responsible.title')}</h1>
                     <p className="mt-1 text-sm text-muted-foreground">{t('responsible.description')}</p>

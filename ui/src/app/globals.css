@@ -134,7 +134,7 @@ body {
 
 ::-webkit-scrollbar-thumb {
     background: var(--gray-300);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -162,6 +162,12 @@ input::placeholder, textarea::placeholder {
 
     html {
         @apply font-sans;
+    }
+
+    :where(a, button):not([data-slot="button"]):focus-visible {
+        border-radius: var(--radius-sm);
+        outline: 2px solid var(--brand-600);
+        outline-offset: 3px;
     }
 }
 

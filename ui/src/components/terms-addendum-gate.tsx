@@ -8,6 +8,7 @@ import {apiClient} from '@/lib/api/client'
 import {Button} from '@/components/ui/button'
 import {WALLET_TERMS_URL} from '@/lib/legal'
 import {useAuth} from '@/lib/hooks/useAuth'
+import {LanguageSwitcher} from '@/components/language-switcher'
 
 /**
  * Blocks the whole app until the user accepts the wallet's terms addendum.
@@ -29,10 +30,13 @@ export function TermsAddendumGate() {
     })
 
     return (
-        <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <div className="flex min-h-screen items-center justify-center bg-background px-4 py-4">
             <div className="w-full max-w-md space-y-5 rounded-2xl border border-brand-100 bg-card p-6">
-                <div className="flex size-10 items-center justify-center rounded-lg bg-brand-600 text-white">
-                    <ShieldCheck size={20}/>
+                <div className="flex items-center justify-between">
+                    <div className="flex size-10 items-center justify-center rounded-lg bg-brand-600 text-white">
+                        <ShieldCheck aria-hidden="true" size={20}/>
+                    </div>
+                    <LanguageSwitcher/>
                 </div>
 
                 <div>
@@ -46,12 +50,12 @@ export function TermsAddendumGate() {
                     <p role="alert" className="text-sm text-destructive">{t('terms.error')}</p>
                 )}
 
-                <label className="flex items-start gap-2 text-sm text-muted-foreground">
+                <label className="flex min-h-11 cursor-pointer items-start gap-2 text-sm text-muted-foreground">
                     <input
                         type="checkbox"
                         checked={checked}
                         onChange={(e) => setChecked(e.target.checked)}
-                        className="mt-0.5 size-4 shrink-0 rounded border-border accent-brand-600"
+                        className="mt-0.5 size-4 shrink-0 rounded border-border accent-brand-600 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-brand-500/30"
                     />
                     <span>
             {t('terms.checkboxPrefix')}{' '}

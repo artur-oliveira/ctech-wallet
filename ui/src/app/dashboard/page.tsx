@@ -17,6 +17,7 @@ import {MoneyReceiptDialog} from '@/components/wallet/money-receipt-dialog'
 import {PixChargeDialog} from '@/components/wallet/pix-charge-dialog'
 import {TransactionStatusList} from '@/components/wallet/transaction-status-list'
 import {Button} from '@/components/ui/button'
+import {LanguageSwitcher} from '@/components/language-switcher'
 import {useWalletRealtime} from '@/lib/hooks/useWalletRealtime'
 import type {DepositResult, WalletType} from '@/lib/types/api'
 import {
@@ -270,11 +271,11 @@ function DashboardInner() {
         <div className="min-h-screen bg-background">
             <header className="border-b border-border bg-card">
                 <h1 className="sr-only">CTech Wallet</h1>
-                <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-4">
+                <div className="mx-auto flex max-w-4xl items-center justify-between gap-3 px-4 py-4 sm:px-6">
                     <div className="flex items-center gap-2.5">
                         <div className="flex size-8 items-center justify-center rounded-lg bg-brand-600 text-white">
                             <Image src="/app.svg"
-                                   alt="Wallet"
+                                   alt=""
                                    width={32}
                                    height={32}/>
                         </div>
@@ -301,7 +302,7 @@ function DashboardInner() {
                                             : 'bg-gray-300'
                                 }`}
                             />
-                            <span className="text-xs text-muted-foreground">
+                            <span className="hidden text-xs text-muted-foreground sm:inline">
                                 {wsStatus === 'connected'
                                     ? t('dashboard.live')
                                     : wsStatus === 'connecting'
@@ -309,7 +310,8 @@ function DashboardInner() {
                                         : t('dashboard.offline')}
                             </span>
                         </span>
-                        {name && <span className="hidden max-w-[10rem] truncate text-sm text-muted-foreground sm:inline">{name}</span>}
+                        {name && <span className="hidden max-w-[10rem] truncate text-sm text-muted-foreground lg:inline">{name}</span>}
+                        <LanguageSwitcher/>
                         <Button variant="ghost" size="icon-sm" onClick={logout} aria-label={t('dashboard.logout')}>
                             <LogOut size={16}/>
                         </Button>
@@ -317,7 +319,7 @@ function DashboardInner() {
                 </div>
             </header>
 
-            <main className="mx-auto max-w-4xl space-y-6 px-6 py-8">
+            <main className="mx-auto max-w-4xl space-y-6 px-4 py-8 sm:px-6">
                 {balances.isLoading && (
                     <div className="h-44 animate-pulse rounded-2xl bg-muted" role="status">
                         <span className="sr-only">{t('dashboard.loadingBalances')}</span>
@@ -365,7 +367,7 @@ function DashboardInner() {
                                     <button
                                         key={tk}
                                         onClick={() => setTab(tk)}
-                                        className={`px-5 py-3.5 text-xs font-semibold uppercase tracking-wider transition-colors whitespace-nowrap [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11 ${
+                                        className={`px-5 py-3.5 text-xs font-semibold uppercase tracking-wider transition-colors whitespace-nowrap focus-visible:outline-offset-[-3px] [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11 ${
                                             tab === tk
                                                 ? 'border-b-2 border-brand-600 text-brand-700'
                                                 : 'text-muted-foreground hover:text-foreground'
