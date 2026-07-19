@@ -18,20 +18,13 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/oklog/ulid/v2 v2.1.1
-	github.com/valkey-io/valkey-go v1.0.76
 	github.com/valyala/fasthttp v1.72.0
 	go.uber.org/fx v1.24.0
-	gopkg.aoctech.app/api-commons v1.1.0
+	gopkg.aoctech.app/api-commons v1.2.0
 	gopkg.aoctech.app/wallet/rpc-contract v0.0.0
 )
 
 replace gopkg.aoctech.app/wallet/rpc-contract => ../rpc-contract
-
-// LOCAL DEV ONLY — points at ctech-go-common's uncommitted/unpublished lock
-// package while it's tested against a real consumer. Remove once
-// ctech-go-common v1.2.0 (or later) is tagged and pushed, and replace with
-// `go get gopkg.aoctech.app/api-commons@vX.Y.Z` instead.
-replace gopkg.aoctech.app/api-commons => ../../ctech-go-common
 
 require (
 	github.com/andybalholm/brotli v1.2.2 // indirect
@@ -61,6 +54,7 @@ require (
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/savsgio/gotils v0.0.0-20250924091648-bce9a52d7761 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect
+	github.com/valkey-io/valkey-go v1.0.76 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	go.uber.org/dig v1.19.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
