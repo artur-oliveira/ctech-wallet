@@ -47,7 +47,7 @@ function CallbackInner() {
                 <div className="text-center space-y-4 max-w-sm">
                     <p role="alert" className="text-destructive text-sm">{error}</p>
                     <button
-                        className="text-primary-600 underline text-sm"
+                        className="inline-flex items-center justify-center text-sm text-primary-600 underline [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
                         onClick={() => router.push('/login')}
                     >
                         {t('callback.tryAgain')}

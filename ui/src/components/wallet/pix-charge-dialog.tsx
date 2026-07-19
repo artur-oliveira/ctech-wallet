@@ -112,7 +112,7 @@ export function PixChargeDialog(
                             <img
                                 src={`data:image/png;base64,${deposit.qr_code_base64}`}
                                 alt={t('pix.qrAlt')}
-                                className="mx-auto mt-5 size-44 rounded-lg border border-border"
+                                className="mx-auto mt-5 aspect-square h-auto w-44 max-w-full rounded-lg border border-border"
                             />
                         )}
 

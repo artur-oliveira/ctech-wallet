@@ -20,7 +20,7 @@ function DialogOverlay({className, ...props}: DialogPrimitive.Backdrop.Props) {
         <DialogPrimitive.Backdrop
             data-slot="dialog-overlay"
             className={cn(
-                'fixed inset-0 z-50 bg-black/40 duration-150 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0',
+                'fixed inset-0 z-50 min-h-dvh bg-black/40 duration-150 supports-[-webkit-touch-callout:none]:absolute data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0',
                 className,
             )}
             {...props}
@@ -38,24 +38,29 @@ function DialogContent({
     return (
         <DialogPortal>
             <DialogOverlay/>
-            <DialogPrimitive.Popup
-                data-slot="dialog-content"
-                className={cn(
-                    'fixed left-1/2 top-1/2 z-50 w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl bg-card p-6 text-foreground shadow-modal outline-none duration-150 max-h-[calc(100dvh-2rem)] sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95',
-                    className,
-                )}
-                {...props}
+            <DialogPrimitive.Viewport
+                data-slot="dialog-viewport"
+                className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain [padding-top:max(1rem,env(safe-area-inset-top))] [padding-right:max(1rem,env(safe-area-inset-right))] [padding-bottom:max(1rem,env(safe-area-inset-bottom))] [padding-left:max(1rem,env(safe-area-inset-left))]"
             >
-                {children}
-                {showCloseButton && (
-                    <DialogPrimitive.Close
-                        render={<Button variant="ghost" size="icon-sm" className="absolute right-2 top-2"/>}
-                    >
-                        <X aria-hidden="true"/>
-                        <span className="sr-only">{t('common.close')}</span>
-                    </DialogPrimitive.Close>
-                )}
-            </DialogPrimitive.Popup>
+                <DialogPrimitive.Popup
+                    data-slot="dialog-content"
+                    className={cn(
+                        'relative max-h-full min-h-0 w-full overflow-y-auto overscroll-contain rounded-2xl bg-card p-4 text-foreground shadow-modal outline-none duration-150 sm:max-w-sm sm:p-6 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95',
+                        className,
+                    )}
+                    {...props}
+                >
+                    {children}
+                    {showCloseButton && (
+                        <DialogPrimitive.Close
+                            render={<Button variant="ghost" size="icon-sm" className="absolute right-2 top-2"/>}
+                        >
+                            <X aria-hidden="true"/>
+                            <span className="sr-only">{t('common.close')}</span>
+                        </DialogPrimitive.Close>
+                    )}
+                </DialogPrimitive.Popup>
+            </DialogPrimitive.Viewport>
         </DialogPortal>
     )
 }

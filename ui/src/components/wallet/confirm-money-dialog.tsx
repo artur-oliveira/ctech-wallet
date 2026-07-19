@@ -119,13 +119,13 @@ export function ConfirmMoneyDialog({
                         {t('confirm.stepUp.description')}
                     </p>
                 )}
-                <div className="mt-6 flex gap-2">
+                <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row">
                     {stepUp ? (
                         <>
                             <Button
                                 type="button"
                                 variant="ghost"
-                                className="flex-1"
+                                className="w-full sm:flex-1"
                                 onClick={onClose}
                                 disabled={pending}
                             >
@@ -135,7 +135,7 @@ export function ConfirmMoneyDialog({
                                 ref={reverifyRef}
                                 type="button"
                                 variant="brand"
-                                className="flex-1"
+                                className="w-full sm:flex-1"
                                 onClick={onReverify}
                             >
                                 {t('confirm.stepUp.reverify')}
@@ -146,7 +146,7 @@ export function ConfirmMoneyDialog({
                             <Button
                                 type="button"
                                 variant="ghost"
-                                className="flex-1"
+                                className="w-full sm:flex-1"
                                 onClick={onClose}
                                 disabled={pending}
                             >
@@ -156,7 +156,7 @@ export function ConfirmMoneyDialog({
                                 ref={confirmRef}
                                 type="button"
                                 variant="brand"
-                                className="flex-1"
+                                className="w-full sm:flex-1"
                                 onClick={onConfirm}
                                 disabled={pending}
                             >

@@ -99,7 +99,7 @@ function ResponsibleGamblingInner() {
     return (
         <div className="min-h-screen bg-background px-4 py-8">
             <main className="mx-auto max-w-3xl space-y-6">
-                <Link href="/dashboard" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
+                <Link href="/dashboard" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11">
                     <ArrowLeft size={16}/>{t('responsible.back')}
                 </Link>
                 <div>

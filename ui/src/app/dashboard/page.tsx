@@ -365,7 +365,7 @@ function DashboardInner() {
                                     <button
                                         key={tk}
                                         onClick={() => setTab(tk)}
-                                        className={`px-5 py-3.5 text-xs font-semibold uppercase tracking-wider transition-colors whitespace-nowrap ${
+                                        className={`px-5 py-3.5 text-xs font-semibold uppercase tracking-wider transition-colors whitespace-nowrap [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11 ${
                                             tab === tk
                                                 ? 'border-b-2 border-brand-600 text-brand-700'
                                                 : 'text-muted-foreground hover:text-foreground'

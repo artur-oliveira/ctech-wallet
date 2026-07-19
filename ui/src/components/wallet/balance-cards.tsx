@@ -142,7 +142,7 @@ export function BalanceCards({
             )}
 
             {activated && (
-                <Link href="/gambling/responsible" className="flex items-center gap-2 text-sm font-medium text-brand-700 hover:underline">
+                <Link href="/gambling/responsible" className="flex items-center gap-2 text-sm font-medium text-brand-700 hover:underline [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11">
                     <ShieldCheck size={16}/>{t('balance.responsibleLink')}
                 </Link>
             )}

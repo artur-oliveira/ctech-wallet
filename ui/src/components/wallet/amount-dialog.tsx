@@ -146,7 +146,7 @@ export function AmountDialog({flow, maxCents, feeConfig, pending, onSubmit, onPr
                                     <button
                                         type="button"
                                         onClick={() => field.onChange(effectiveMax)}
-                                        className="text-xs font-semibold text-brand-600 hover:text-brand-700 hover:underline"
+                                        className="inline-flex items-center justify-center text-xs font-semibold text-brand-600 hover:text-brand-700 hover:underline [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
                                     >
                                         {t('dialog.amount.maxButton', {max: fmt(effectiveMax)})}
                                     </button>
@@ -186,11 +186,11 @@ export function AmountDialog({flow, maxCents, feeConfig, pending, onSubmit, onPr
                     </p>
                 )}
 
-                <div className="mt-6 flex gap-2">
-                    <Button type="button" variant="ghost" className="flex-1" onClick={onClose} disabled={pending}>
+                <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row">
+                    <Button type="button" variant="ghost" className="w-full sm:flex-1" onClick={onClose} disabled={pending}>
                         {t('common.cancel')}
                     </Button>
-                    <Button type="submit" variant="brand" className="flex-1" disabled={pending}>
+                    <Button type="submit" variant="brand" className="w-full sm:flex-1" disabled={pending}>
                         {pending ? t('common.loading') : t(`dialog.${flowKey}.submit`)}
                     </Button>
                 </div>
