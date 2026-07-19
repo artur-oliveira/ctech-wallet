@@ -90,7 +90,7 @@ func (s *stubRepo) DebitWithFee(_ context.Context, walletID string, amount, fee 
 	}
 	return &wallet.LedgerEntry{WalletID: walletID, Amount: -amount}, &wallet.LedgerEntry{WalletID: walletID, Amount: -fee}, false, nil
 }
-func (s *stubRepo) Transfer(_ context.Context, from, to string, amount int64, dt, ct, _, _, _ string) (*wallet.LedgerEntry, *wallet.LedgerEntry, bool, error) {
+func (s *stubRepo) Transfer(_ context.Context, from, to string, amount int64, dt, ct, _, _, _ string, _ ...types.TransactWriteItem) (*wallet.LedgerEntry, *wallet.LedgerEntry, bool, error) {
 	s.transferCalled = true
 	if s.transferErr != nil {
 		return nil, nil, false, s.transferErr
@@ -545,7 +545,9 @@ func TestPurchaseSandboxRequiresActivation(t *testing.T) {
 
 func TestFundGameMovesRealIntoGame(t *testing.T) {
 	repo := newStubRepo()
-	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	// FundGame now requires configured personal limits (responsible gambling).
+	users := &stubUserRepo{user: &wallet.User{GameLimits: &wallet.GameLimits{Daily: 10000, Weekly: 10000, Monthly: 10000}}}
+	svc := NewWalletService(repo, users, &stubAudit{}, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 	d, c, err := svc.FundGame(context.Background(), "u1", 3000, "idem-1")
 	if err != nil {
 		t.Fatalf("FundGame: %v", err)

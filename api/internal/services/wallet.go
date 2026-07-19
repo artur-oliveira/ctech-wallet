@@ -48,7 +48,7 @@ type Repo interface {
 	Credit(ctx context.Context, m repositories.Mutation) (*wallet.LedgerEntry, bool, error)
 	Debit(ctx context.Context, m repositories.Mutation) (*wallet.LedgerEntry, bool, error)
 	DebitWithFee(ctx context.Context, walletID string, amount, fee int64, idemKey, reqHash, ref string) (*wallet.LedgerEntry, *wallet.LedgerEntry, bool, error)
-	Transfer(ctx context.Context, from, to string, amount int64, debitType, creditType, ref, idemKey, reqHash string) (*wallet.LedgerEntry, *wallet.LedgerEntry, bool, error)
+	Transfer(ctx context.Context, from, to string, amount int64, debitType, creditType, ref, idemKey, reqHash string, extra ...types.TransactWriteItem) (*wallet.LedgerEntry, *wallet.LedgerEntry, bool, error)
 	Statement(ctx context.Context, walletID string, limit int, startKey map[string]types.AttributeValue) (*repositories.QueryResult, error)
 	PutDeposit(ctx context.Context, d *wallet.PixDeposit) error
 	GetDeposit(ctx context.Context, txid string) (*wallet.PixDeposit, error)
@@ -117,7 +117,7 @@ func (s *WalletService) SetBroadcaster(b Broadcaster) {
 //
 // Idempotent: activating twice returns the same wallets. Writes an audit event,
 // because consent must be provable after the fact.
-func (s *WalletService) ActivateGambling(ctx context.Context, userID, kycLevel, ip, userAgent string) (game, sandbox *wallet.Wallet, err error) {
+func (s *WalletService) ActivateGambling(ctx context.Context, userID, kycLevel, ip, userAgent string, daily, weekly, monthly int64) (game, sandbox *wallet.Wallet, err error) {
 	if kycLevel != wallet.KYCVerified {
 		return nil, nil, problem.KYCNotVerified()
 	}
@@ -127,6 +127,15 @@ func (s *WalletService) ActivateGambling(ctx context.Context, userID, kycLevel, 
 	}
 	if !u.GamblingAccepted() {
 		return nil, nil, problem.GamblingTermsRequired()
+	}
+	// Personal limits are mandatory from day one: a user must never reach a
+	// gambling wallet with no limits configured (router.go's own invariant).
+	// An already-configured replay may omit them (zeros); anyone else sets
+	// them here, which is the immediate first-set path of SetGameLimits.
+	if !u.LimitsConfigured() {
+		if _, err := s.SetGameLimits(ctx, userID, daily, weekly, monthly, ip, userAgent); err != nil {
+			return nil, nil, err
+		}
 	}
 	if _, err := s.repo.EnsureRealWallet(ctx, userID); err != nil {
 		return nil, nil, err
@@ -595,7 +604,7 @@ func (s *WalletService) requireActivated(ctx context.Context, userID string) (re
 // locking both. AcquireOrdered sorts the wallet IDs, so the lock order is total
 // and deadlock-free for any number of wallets. The ledger pair and the
 // idempotency guard are co-written in one transaction by repo.Transfer.
-func (s *WalletService) ringTransfer(ctx context.Context, from, to *wallet.Wallet, amount int64, debitType, creditType, ns, idemKey string) (debit, credit *wallet.LedgerEntry, err error) {
+func (s *WalletService) ringTransfer(ctx context.Context, from, to *wallet.Wallet, amount int64, debitType, creditType, ns, idemKey string, extra ...types.TransactWriteItem) (debit, credit *wallet.LedgerEntry, err error) {
 	release, ok, err := s.lock.AcquireOrdered(ctx, from.WalletID, to.WalletID)
 	if err != nil {
 		return nil, nil, err
@@ -607,7 +616,7 @@ func (s *WalletService) ringTransfer(ctx context.Context, from, to *wallet.Walle
 
 	key := ns + "#" + from.UserID + "#" + idemKey
 	d, c, _, err := s.repo.Transfer(ctx, from.WalletID, to.WalletID, amount,
-		debitType, creditType, key, key, reqHash(ns, amount))
+		debitType, creditType, key, key, reqHash(ns, amount), extra...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -631,11 +640,46 @@ func (s *WalletService) FundGame(ctx context.Context, userID string, amount int6
 	if err != nil {
 		return nil, nil, err
 	}
-	if _, err := s.requireNotExcluded(ctx, userID); err != nil {
+	u, err := s.requireNotExcluded(ctx, userID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Personal limit engine: meter this deposit against the user's calendar
+	// windows and co-write the bumped counters in the transfer's transaction.
+	now := time.Now()
+	lim, matured := u.EffectiveGameLimits(now)
+	if matured { // lazy-apply a matured pending increase before metering
+		promoted := lim
+		if err := s.users.SetGameLimits(ctx, userID, &promoted); err != nil {
+			return nil, nil, err
+		}
+	}
+	if !(u.LimitsConfigured() || matured) {
+		return nil, nil, problem.LimitsNotConfigured()
+	}
+	var prev *wallet.GameDepositCounters
+	var cur wallet.GameDepositCounters
+	if u != nil && u.GameDepositCounters != nil {
+		prev = u.GameDepositCounters
+		cur = *prev
+	}
+	if breach := wallet.CheckDeposit(lim, cur, amount, now); breach != nil {
+		return nil, nil, problem.DepositLimitExceeded(breach.Window, breach.Limit, breach.Used, breach.ResetsAt)
+	}
+	day, week, month := wallet.WindowKeys(now)
+	d, w, m := cur.SumsFor(day, week, month)
+	next := wallet.GameDepositCounters{
+		DayKey: day, DaySum: d + amount,
+		WeekKey: week, WeekSum: w + amount,
+		MonthKey: month, MonthSum: m + amount,
+	}
+	counterTx, err := s.users.BumpDepositCounters(userID, prev, next)
+	if err != nil {
 		return nil, nil, err
 	}
 	return s.ringTransfer(ctx, rl, game, amount,
-		wallet.EntryGameFundDebit, wallet.EntryGameFundCredit, "game_fund", idemKey)
+		wallet.EntryGameFundDebit, wallet.EntryGameFundCredit, "game_fund", idemKey, counterTx)
 }
 
 // ReturnFromGame moves money back out of the ring-fence (game → real).

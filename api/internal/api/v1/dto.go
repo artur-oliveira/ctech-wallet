@@ -27,6 +27,12 @@ type GameTransferRequest struct {
 // true: activation is opt-in, and a defaulted-true field would not be consent.
 type ActivateGamblingRequest struct {
 	AcceptAddendum bool `json:"accept_addendum" validate:"required"`
+	// Mandatory personal deposit limits (centavos) — activation without limits
+	// is impossible by design. Ignored (may be zero) only when the caller is
+	// already activated with limits configured (idempotent replay).
+	DailyLimit   int64 `json:"daily_limit"`
+	WeeklyLimit  int64 `json:"weekly_limit"`
+	MonthlyLimit int64 `json:"monthly_limit"`
 }
 
 // MovementOpRequest is the M2M body for internal credit/debit. The

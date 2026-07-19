@@ -94,7 +94,7 @@ func TestExclusionGates(t *testing.T) {
 	if _, err := svc.HoldGame(ctx, "u1", 100, "table-1", "k2"); err == nil {
 		t.Fatal("HoldGame must be blocked for excluded user")
 	}
-	if _, _, err := svc.ActivateGambling(ctx, "u1", wallet.KYCVerified, "", ""); err == nil {
+	if _, _, err := svc.ActivateGambling(ctx, "u1", wallet.KYCVerified, "", "", 100, 200, 300); err == nil {
 		t.Fatal("ActivateGambling must be blocked for excluded user")
 	}
 
@@ -113,5 +113,155 @@ func TestExpiredExclusionNoLongerGates(t *testing.T) {
 	svc, _, _ := newRespSvc(users)
 	if _, _, err := svc.FundGame(context.Background(), "u1", 100, "k1"); err != nil {
 		t.Fatalf("expired exclusion must not block: %v", err)
+	}
+}
+
+func configuredUser(d, w, m int64) *stubUserRepo {
+	return &stubUserRepo{user: &wallet.User{
+		GamblingAddendumVersion: wallet.CurrentGamblingAddendumVersion,
+		GameLimits:              &wallet.GameLimits{Daily: d, Weekly: w, Monthly: m},
+	}}
+}
+
+func TestSetGameLimitsFirstSetIsImmediate(t *testing.T) {
+	users := &stubUserRepo{}
+	svc, _, _ := newRespSvc(users)
+	lim, err := svc.SetGameLimits(context.Background(), "u1", 100, 200, 300, "", "")
+	if err != nil || lim.Daily != 100 || lim.Pending != nil {
+		t.Fatalf("first set must be immediate: %+v err=%v", lim, err)
+	}
+}
+
+func TestSetGameLimitsDecreaseImmediateIncreasePended(t *testing.T) {
+	svc, _, _ := newRespSvc(configuredUser(100, 200, 300))
+	// Pure decrease: immediate.
+	lim, err := svc.SetGameLimits(context.Background(), "u1", 50, 100, 300, "", "")
+	if err != nil || lim.Daily != 50 || lim.Weekly != 100 || lim.Pending != nil {
+		t.Fatalf("decrease must be immediate: %+v err=%v", lim, err)
+	}
+	// Mixed: daily down now, weekly increase pended at +7d.
+	svc2, _, _ := newRespSvc(configuredUser(100, 200, 300))
+	lim, err = svc2.SetGameLimits(context.Background(), "u1", 80, 250, 300, "", "")
+	if err != nil || lim.Daily != 80 || lim.Weekly != 200 || lim.Pending == nil {
+		t.Fatalf("mixed change wrong: %+v err=%v", lim, err)
+	}
+	at, _ := time.Parse(time.RFC3339, lim.Pending.AppliesAt)
+	if d := time.Until(at); d < 6*24*time.Hour || d > 8*24*time.Hour {
+		t.Fatalf("weekly increase cooldown must be ~7d, got %v", d)
+	}
+	// Monthly increase: whole pending set waits 14d.
+	svc3, _, _ := newRespSvc(configuredUser(100, 200, 300))
+	lim, err = svc3.SetGameLimits(context.Background(), "u1", 100, 250, 400, "", "")
+	if err != nil || lim.Pending == nil {
+		t.Fatalf("monthly increase must pend: %+v err=%v", lim, err)
+	}
+	at, _ = time.Parse(time.RFC3339, lim.Pending.AppliesAt)
+	if d := time.Until(at); d < 13*24*time.Hour || d > 15*24*time.Hour {
+		t.Fatalf("monthly increase cooldown must be ~14d, got %v", d)
+	}
+}
+
+func TestSetGameLimitsRejectsIncoherentOrdering(t *testing.T) {
+	svc, _, _ := newRespSvc(&stubUserRepo{})
+	if _, err := svc.SetGameLimits(context.Background(), "u1", 100, 50, 300, "", ""); err == nil {
+		t.Fatal("weekly < daily must be rejected")
+	}
+}
+
+func TestFundGameRequiresConfiguredLimits(t *testing.T) {
+	svc, _, _ := newRespSvc(&stubUserRepo{})
+	_, _, err := svc.FundGame(context.Background(), "u1", 100, "k1")
+	isProblem(t, err, problem.TypeLimitsNotConfigured)
+}
+
+func TestFundGameEnforcesAndAccumulates(t *testing.T) {
+	users := configuredUser(1000, 2000, 3000)
+	svc, repo, _ := newRespSvc(users)
+	ctx := context.Background()
+
+	if _, _, err := svc.FundGame(ctx, "u1", 600, "k1"); err != nil {
+		t.Fatal(err)
+	}
+	c := users.user.GameDepositCounters
+	if c == nil || c.DaySum != 600 || c.WeekSum != 600 || c.MonthSum != 600 {
+		t.Fatalf("counters after first deposit: %+v", c)
+	}
+	if _, _, err := svc.FundGame(ctx, "u1", 400, "k2"); err != nil {
+		t.Fatal(err)
+	}
+	if users.user.GameDepositCounters.DaySum != 1000 {
+		t.Fatalf("counters must accumulate: %+v", users.user.GameDepositCounters)
+	}
+	// Daily window exhausted.
+	repo.transferCalled = false
+	_, _, err := svc.FundGame(ctx, "u1", 1, "k3")
+	isProblem(t, err, problem.TypeDepositLimitExceeded)
+	if repo.transferCalled {
+		t.Fatal("a blocked deposit must not touch wallets")
+	}
+	// A rolled day window resets the day sum but the week still counts.
+	users.user.GameDepositCounters.DayKey = "2000-01-01"
+	if _, _, err := svc.FundGame(ctx, "u1", 900, "k4"); err != nil {
+		t.Fatalf("fresh day must reset the daily sum: %v", err)
+	}
+	if got := users.user.GameDepositCounters; got.DaySum != 900 || got.WeekSum != 1900 {
+		t.Fatalf("after day roll: %+v", got)
+	}
+	// Weekly window now nearly exhausted: 1900/2000 — 200 more must breach weekly.
+	_, _, err = svc.FundGame(ctx, "u1", 200, "k5")
+	isProblem(t, err, problem.TypeDepositLimitExceeded)
+}
+
+func TestFundGamePromotesMaturedPending(t *testing.T) {
+	users := configuredUser(100, 200, 300)
+	users.user.GameLimits.Pending = &wallet.PendingLimits{Daily: 1000, Weekly: 2000, Monthly: 3000,
+		AppliesAt: time.Now().Add(-time.Minute).Format(time.RFC3339)}
+	svc, _, _ := newRespSvc(users)
+	if _, _, err := svc.FundGame(context.Background(), "u1", 500, "k1"); err != nil {
+		t.Fatalf("matured pending must apply before metering: %v", err)
+	}
+	if users.user.GameLimits.Pending != nil || users.user.GameLimits.Daily != 1000 {
+		t.Fatalf("pending not promoted: %+v", users.user.GameLimits)
+	}
+}
+
+func TestActivateGamblingRequiresLimits(t *testing.T) {
+	users := &stubUserRepo{user: &wallet.User{GamblingAddendumVersion: wallet.CurrentGamblingAddendumVersion}}
+	svc, repo, _ := newRespSvc(users)
+	repo.notActivated = true
+	if _, _, err := svc.ActivateGambling(context.Background(), "u1", wallet.KYCVerified, "", "", 0, 0, 0); err == nil {
+		t.Fatal("fresh activation without limits must fail")
+	}
+	if _, _, err := svc.ActivateGambling(context.Background(), "u1", wallet.KYCVerified, "", "", 100, 200, 300); err != nil {
+		t.Fatalf("activation with limits: %v", err)
+	}
+	if users.user.GameLimits == nil || users.user.GameLimits.Daily != 100 {
+		t.Fatalf("limits not stored at activation: %+v", users.user.GameLimits)
+	}
+}
+
+func TestCancelPendingLimits(t *testing.T) {
+	users := configuredUser(100, 200, 300)
+	users.user.GameLimits.Pending = &wallet.PendingLimits{Daily: 1000, Weekly: 2000, Monthly: 3000,
+		AppliesAt: time.Now().Add(time.Hour).Format(time.RFC3339)}
+	svc, _, _ := newRespSvc(users)
+	lim, err := svc.CancelPendingLimits(context.Background(), "u1")
+	if err != nil || lim.Pending != nil || lim.Daily != 100 {
+		t.Fatalf("cancel failed: %+v err=%v", lim, err)
+	}
+}
+
+func TestGameLimitsStatusReportsUsage(t *testing.T) {
+	users := configuredUser(1000, 2000, 3000)
+	svc, _, _ := newRespSvc(users)
+	if _, _, err := svc.FundGame(context.Background(), "u1", 250, "k1"); err != nil {
+		t.Fatal(err)
+	}
+	st, err := svc.GameLimitsStatus(context.Background(), "u1")
+	if err != nil || st.Limits == nil || st.Usage.Daily != 250 || st.Usage.Weekly != 250 {
+		t.Fatalf("status: %+v err=%v", st, err)
+	}
+	if st.Usage.DayReset == "" || st.Usage.MonthReset == "" {
+		t.Fatalf("resets missing: %+v", st.Usage)
 	}
 }

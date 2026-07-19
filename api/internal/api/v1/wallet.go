@@ -94,7 +94,7 @@ func (h *handlers) activateGambling(c fiber.Ctx) error {
 	if err := h.userSvc.AcceptGamblingAddendum(c.Context(), cl.Sub, ip, ua); err != nil {
 		return sendProblem(c, err)
 	}
-	game, sandbox, err := h.svc.ActivateGambling(c.Context(), cl.Sub, cl.KYCLevel, ip, ua)
+	game, sandbox, err := h.svc.ActivateGambling(c.Context(), cl.Sub, cl.KYCLevel, ip, ua, body.DailyLimit, body.WeeklyLimit, body.MonthlyLimit)
 	if err != nil {
 		return sendProblem(c, err)
 	}
