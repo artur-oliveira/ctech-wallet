@@ -27,6 +27,12 @@ require (
 
 replace gopkg.aoctech.app/wallet/rpc-contract => ../rpc-contract
 
+// LOCAL DEV ONLY — points at ctech-go-common's uncommitted/unpublished lock
+// package while it's tested against a real consumer. Remove once
+// ctech-go-common v1.2.0 (or later) is tagged and pushed, and replace with
+// `go get gopkg.aoctech.app/api-commons@vX.Y.Z` instead.
+replace gopkg.aoctech.app/api-commons => ../../ctech-go-common
+
 require (
 	github.com/andybalholm/brotli v1.2.2 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.14 // indirect

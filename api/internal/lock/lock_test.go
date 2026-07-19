@@ -3,12 +3,17 @@ package lock
 import (
 	"context"
 	"testing"
+
+	"gopkg.aoctech.app/api-commons/cache"
 )
 
-func newTestLocker() *Locker { return &Locker{store: newMemStore()} }
+// The CAS acquire/release/ordered-lock semantics are covered by the shared
+// gopkg.aoctech.app/api-commons/lock package's own tests. This file only
+// confirms the wrapper wires up correctly: NewLocker returns a working
+// *Locker using wallet's own TTL and "wallet:" key namespace.
 
-func TestAcquireAndRelease(t *testing.T) {
-	l := newTestLocker()
+func TestNewLockerAcquireAndRelease(t *testing.T) {
+	l := NewLocker(cache.NewMemoryBackend(16))
 	ctx := context.Background()
 
 	rel, ok, err := l.Acquire(ctx, "w1")
@@ -16,7 +21,8 @@ func TestAcquireAndRelease(t *testing.T) {
 		t.Fatalf("first acquire: ok=%v err=%v", ok, err)
 	}
 
-	// Second acquire on the same wallet is contended.
+	// Second acquire on the same wallet is contended — confirms the wrapper
+	// actually delegates to the shared CAS locker rather than no-oping.
 	_, ok2, err := l.Acquire(ctx, "w1")
 	if err != nil {
 		t.Fatalf("second acquire err: %v", err)
@@ -25,51 +31,56 @@ func TestAcquireAndRelease(t *testing.T) {
 		t.Fatal("expected contention on held wallet")
 	}
 
-	// Different wallet is independent.
-	rel3, ok3, _ := l.Acquire(ctx, "w2")
-	if !ok3 {
-		t.Fatal("expected independent wallet to acquire")
-	}
-	rel3()
-
-	// After release, the wallet is acquirable again.
 	rel()
-	_, ok4, _ := l.Acquire(ctx, "w1")
-	if !ok4 {
+	_, ok3, _ := l.Acquire(ctx, "w1")
+	if !ok3 {
 		t.Fatal("expected reacquire after release")
 	}
 }
 
-func TestAcquireOrderedAllOrNothing(t *testing.T) {
-	l := newTestLocker()
+func TestNewLockerAcquireOrderedWiresThrough(t *testing.T) {
+	l := NewLocker(cache.NewMemoryBackend(16))
 	ctx := context.Background()
 
-	// Pre-hold the sandbox wallet so the ordered acquire must fail cleanly.
-	rel, ok, _ := l.Acquire(ctx, "sandbox")
-	if !ok {
-		t.Fatal("setup acquire failed")
+	rel, ok, err := l.AcquireOrdered(ctx, "game", "real", "sandbox")
+	if err != nil || !ok {
+		t.Fatalf("ordered acquire: ok=%v err=%v", ok, err)
 	}
-
-	_, ok2, err := l.AcquireOrdered(ctx, "real", "sandbox")
-	if err != nil {
-		t.Fatalf("ordered acquire err: %v", err)
-	}
-	if ok2 {
-		t.Fatal("expected ordered acquire to fail when one lock is held")
-	}
-
-	// The "real" lock must have been released back (all-or-nothing).
-	relReal, okReal, _ := l.Acquire(ctx, "real")
-	if !okReal {
-		t.Fatal("expected 'real' to be free after failed ordered acquire")
-	}
-	relReal()
 	rel()
+}
 
-	// Now both free → ordered acquire succeeds.
-	relAll, ok3, _ := l.AcquireOrdered(ctx, "real", "sandbox")
-	if !ok3 {
-		t.Fatal("expected ordered acquire to succeed when both free")
+// TestNewLockerAppliesWalletKeyPrefix proves the "wallet:" prefix is actually
+// applied to the underlying store, not just self-consistent within the
+// wrapper. It bypasses the wrapper's own Acquire by calling the embedded
+// sharedlock.Locker directly (l.Locker) — the exact same store instance the
+// wrapper's Acquire wrote to — so a raw Acquire on the literal prefixed
+// string must find it contended, and a raw Acquire on the bare id must find
+// it free (proving the wrapper didn't lock the unprefixed key instead).
+//
+// A second, independent NewLocker/sharedlock.New instance can't be used for
+// this: the in-memory backend's CAS state lives in a per-Locker memStore,
+// not in the cache.Backend argument itself (true of both the merged package
+// and both of its pre-migration originals) — two separate instances never
+// share lock state even when constructed against "the same" MemoryBackend.
+func TestNewLockerAppliesWalletKeyPrefix(t *testing.T) {
+	l := NewLocker(cache.NewMemoryBackend(16))
+	ctx := context.Background()
+
+	rel, ok, err := l.Acquire(ctx, "w1")
+	if err != nil || !ok {
+		t.Fatalf("acquire: ok=%v err=%v", ok, err)
 	}
-	relAll()
+	defer rel()
+
+	if _, okPrefixed, err := l.Locker.Acquire(ctx, "wallet:w1"); err != nil {
+		t.Fatalf("raw acquire on prefixed key: %v", err)
+	} else if okPrefixed {
+		t.Fatal(`expected "wallet:w1" to already be held — the wrapper's Acquire must apply exactly this prefix`)
+	}
+
+	if _, okBare, err := l.Locker.Acquire(ctx, "w1"); err != nil {
+		t.Fatalf("raw acquire on bare key: %v", err)
+	} else if !okBare {
+		t.Fatal(`expected the bare key "w1" to remain free — the wrapper must not lock the unprefixed key`)
+	}
 }
