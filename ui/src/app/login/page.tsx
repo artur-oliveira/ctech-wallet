@@ -26,7 +26,7 @@ export default function LoginPage() {
                 <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
                     {t('login.subtitle')}
                 </p>
-                <Button variant="brand" size="lg" className="mt-6 w-full" onClick={login}
+                <Button variant="brand" size="lg" className="mt-6 w-full" onClick={() => login()}
                         disabled={loading || authenticated}>
                     {t('login.button')}
                 </Button>

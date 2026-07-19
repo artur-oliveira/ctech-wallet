@@ -11,7 +11,7 @@ interface AuthContextType {
     profile: Profile | null
     authenticated: boolean
     loading: boolean
-    login: () => void
+    login: (returnTo?: string) => void
     /** Forces a fresh interactive login (max_age=0) for step-up flows — a
      * plain login() would silently reuse the existing SSO session and never
      * re-prove MFA. */
@@ -55,13 +55,13 @@ export function AuthProvider({children}: { children: ReactNode }) {
         registerRefreshFn(tryRefresh)
     }, [tryRefresh])
 
-    const login = useCallback(() => {
+    const login = useCallback((returnTo = window.location.pathname) => {
         if (USE_MOCK) {
             setProfile(MOCK_PROFILE)
             setAuthenticated(true)
             return
         }
-        void startOAuthFlow(window.location.pathname)
+        void startOAuthFlow(returnTo)
     }, [])
 
     const reverify = useCallback(() => {

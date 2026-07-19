@@ -631,36 +631,15 @@
   },
   "home": {
     "cta": {
-      "login": "Sign in",
+      "login": "Sign in with CTech account",
       "dashboard": "Go to dashboard"
     },
-    "hero": {
-      "eyebrow": "CTech Wallet",
-      "title": "Your balance for the whole CTech ecosystem",
-      "subtitle": "Keep your money in one place to pay subscriptions and use CTech services, with instant PIX deposit and withdrawal."
-    },
-    "features": {
-      "title": "Why use CTech Wallet",
-      "free": {
-        "title": "Free to use",
-        "body": "No monthly fee. You only pay a fee when withdrawing (minimum R$ 1.00, may vary per account)."
-      },
-      "pix": {
-        "title": "Instant PIX",
-        "body": "Deposit and withdraw via PIX, with your balance available as soon as the payment is confirmed."
-      },
-      "segregated": {
-        "title": "Clear activity",
-        "body": "Review deposits, withdrawals, fees, and transaction status in one place."
-      },
-      "future": {
-        "title": "Made for CTech services",
-        "body": "Use one balance for subscriptions and other services across the CTech ecosystem."
-      }
-    },
+    "title": "Your CTech balance",
+    "description": "Check your money, deposit or withdraw via PIX, and follow every transaction.",
     "footer": {
       "terms": "Terms of Use",
-      "privacy": "Privacy"
+      "privacy": "Privacy",
+      "legalCenter": "Legal Center"
     }
   }
 }

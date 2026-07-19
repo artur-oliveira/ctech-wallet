@@ -633,36 +633,15 @@
   },
   "home": {
     "cta": {
-      "login": "Entrar",
+      "login": "Entrar com a conta CTech",
       "dashboard": "Ir para o painel"
     },
-    "hero": {
-      "eyebrow": "Carteira CTech",
-      "title": "Seu saldo para todo o ecossistema CTech",
-      "subtitle": "Centralize seu dinheiro em um só lugar para pagar assinaturas e usar os serviços CTech, com depósito e saque via PIX."
-    },
-    "features": {
-      "title": "Por que usar a CTech Wallet",
-      "free": {
-        "title": "Grátis para usar",
-        "body": "Sem mensalidade. Você só paga uma taxa ao sacar (mínimo R$ 1,00, podendo variar por conta)."
-      },
-      "pix": {
-        "title": "PIX instantâneo",
-        "body": "Deposite e saque por PIX, com o saldo disponível assim que o pagamento é confirmado."
-      },
-      "segregated": {
-        "title": "Movimentações claras",
-        "body": "Consulte depósitos, saques, taxas e o status de cada transação em um só lugar."
-      },
-      "future": {
-        "title": "Feita para os serviços CTech",
-        "body": "Use um só saldo para assinaturas e outros serviços do ecossistema CTech."
-      }
-    },
+    "title": "Seu saldo CTech",
+    "description": "Consulte seu dinheiro, deposite ou saque via PIX e acompanhe cada movimentação.",
     "footer": {
       "terms": "Termos de Uso",
-      "privacy": "Privacidade"
+      "privacy": "Privacidade",
+      "legalCenter": "Central Jurídica"
     }
   }
 }

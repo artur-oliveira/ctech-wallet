@@ -1,85 +1,68 @@
 'use client'
 
-import Link from 'next/link'
+import {useRouter} from 'next/navigation'
+import {Wallet} from 'lucide-react'
+import {useTranslation} from 'react-i18next'
+import {Button} from '@/components/ui/button'
+import {LanguageSwitcher} from '@/components/language-switcher'
+import {useAuth} from '@/lib/hooks/useAuth'
 import {ACCOUNTS_LEGAL_URL, PRIVACY_POLICY_URL, WALLET_TERMS_URL} from '@/lib/legal'
-import { useTranslation } from 'react-i18next'
-import { Sparkles, Wallet, Zap, ShieldCheck } from 'lucide-react'
-import { useAuth } from '@/lib/hooks/useAuth'
-import { Button } from '@/components/ui/button'
 
-const FEATURE_ICONS = [Wallet, Zap, ShieldCheck, Sparkles] as const
-const FEATURE_KEYS = ['free', 'pix', 'segregated', 'future'] as const
+const DASHBOARD_PATH = '/dashboard'
 
 export default function Home() {
-    const { t } = useTranslation()
-    const { authenticated } = useAuth()
+    const {t} = useTranslation()
+    const {authenticated, loading, login} = useAuth()
+    const router = useRouter()
 
-    const ctaHref = authenticated ? '/dashboard' : '/login'
     const ctaLabel = authenticated ? t('home.cta.dashboard') : t('home.cta.login')
+    const openDashboard = () => router.push(DASHBOARD_PATH)
+    const loginToDashboard = () => login(DASHBOARD_PATH)
 
     return (
-        <div className="min-h-screen bg-background">
-            <header className="mx-auto flex max-w-5xl items-center justify-between px-6 py-6">
-                <div className="flex items-center gap-2.5">
-                    <div className="flex size-8 items-center justify-center rounded-lg bg-brand-600 text-white">
-                        <Wallet size={16} />
-                    </div>
-                    <span className="font-semibold text-foreground">CTech Wallet</span>
-                </div>
-                <Button variant="brand" render={<Link href={ctaHref} />}>{ctaLabel}</Button>
+        <div className="flex min-h-screen flex-col bg-background">
+            <header className="mx-auto flex w-full max-w-3xl justify-end px-6 py-5">
+                <LanguageSwitcher/>
             </header>
 
-            <section className="mx-auto max-w-3xl px-6 py-16 text-center md:py-24">
-                <p className="font-mono text-xs tracking-widest text-brand-600 uppercase">{t('home.hero.eyebrow')}</p>
-                <h1 className="mt-4 text-4xl font-bold leading-tight tracking-tight text-foreground md:text-5xl">
-                    {t('home.hero.title')}
-                </h1>
-                <p className="mx-auto mt-4 max-w-xl text-base leading-relaxed text-muted-foreground">
-                    {t('home.hero.subtitle')}
-                </p>
-                <div className="mt-8 flex justify-center">
-                    <Button variant="brand" size="lg" render={<Link href={ctaHref} />}>
-                        {ctaLabel}
-                    </Button>
-                </div>
-            </section>
-
-            <section className="mx-auto max-w-5xl px-6 py-16">
-                <h2 className="mb-8 text-center text-2xl font-bold text-foreground md:text-3xl">
-                    {t('home.features.title')}
-                </h2>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    {FEATURE_KEYS.map((key, i) => {
-                        const Icon = FEATURE_ICONS[i]
-                        return (
-                            <div key={key} className="rounded-xl bg-card p-5 ring-1 ring-foreground/10">
-                                <div className="flex size-10 items-center justify-center rounded-lg bg-brand-600/10 text-brand-600">
-                                    <Icon size={20} />
-                                </div>
-                                <p className="mt-3 font-semibold text-foreground">{t(`home.features.${key}.title`)}</p>
-                                <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-                                    {t(`home.features.${key}.body`)}
-                                </p>
-                            </div>
-                        )
-                    })}
-                </div>
-            </section>
-
-            <footer className="border-t border-border">
-                <div className="mx-auto flex max-w-5xl flex-col items-center gap-3 px-6 py-8 text-sm text-muted-foreground md:flex-row md:justify-between">
-                    <p>© {new Date().getFullYear()} A O CARVALHO TECH</p>
-                    <div className="flex items-center gap-4">
-                        <a href={WALLET_TERMS_URL} className="hover:text-foreground" target="_blank" rel="noreferrer">
-                            {t('home.footer.terms')}
-                        </a>
-                        <a href={PRIVACY_POLICY_URL} className="hover:text-foreground" target="_blank" rel="noreferrer">
-                            {t('home.footer.privacy')}
-                        </a>
-                        <a href={ACCOUNTS_LEGAL_URL} className="hover:text-foreground" target="_blank" rel="noreferrer">
-                            {t('home.footer.legalCenter', {defaultValue: 'Central Jurídica'})}
-                        </a>
+            <main className="flex flex-1 items-center px-6 py-12">
+                <section className="mx-auto w-full max-w-md">
+                    <div className="flex items-center gap-2.5">
+                        <div className="flex size-9 items-center justify-center rounded-lg bg-brand-600 text-white">
+                            <Wallet aria-hidden="true" size={18}/>
+                        </div>
+                        <span className="font-semibold text-foreground">CTech Wallet</span>
                     </div>
+                    <h1 className="mt-8 text-2xl font-semibold tracking-tight text-foreground">
+                        {t('home.title')}
+                    </h1>
+                    <p className="mt-3 max-w-prose text-base leading-relaxed text-muted-foreground">
+                        {t('home.description')}
+                    </p>
+                    <Button
+                        variant="brand"
+                        size="lg"
+                        className="mt-8 w-full sm:w-auto"
+                        onClick={authenticated ? openDashboard : loginToDashboard}
+                        disabled={loading}
+                    >
+                        {loading ? t('common.loading') : ctaLabel}
+                    </Button>
+                </section>
+            </main>
+
+            <footer className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-6 py-6 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+                <p>© {new Date().getFullYear()} A O CARVALHO TECH</p>
+                <div className="flex flex-wrap gap-x-4 gap-y-2">
+                    <a href={WALLET_TERMS_URL} className="hover:text-foreground" target="_blank" rel="noreferrer">
+                        {t('home.footer.terms')}
+                    </a>
+                    <a href={PRIVACY_POLICY_URL} className="hover:text-foreground" target="_blank" rel="noreferrer">
+                        {t('home.footer.privacy')}
+                    </a>
+                    <a href={ACCOUNTS_LEGAL_URL} className="hover:text-foreground" target="_blank" rel="noreferrer">
+                        {t('home.footer.legalCenter')}
+                    </a>
                 </div>
             </footer>
         </div>
