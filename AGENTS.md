@@ -171,7 +171,9 @@ passwords, real customer data, or real CPFs.
 - **Step-up:** withdrawals mirror account's `RequireRecentMFA(5m)` — stateless, reads `last_mfa_at` from the JWT;
   no call to account needed.
 
-`ctech-account` requires no code changes — only operational seeding.
+`ctech-account` **does require code changes** for this: `internal/handler/authorize.go` must honor `max_age`,
+and `ui/src/hooks/use-redirect-if-authenticated.ts` must not bypass the login form when the `continue` target
+requests `max_age=0`. Beyond that, only operational seeding is needed.
 
 ---
 

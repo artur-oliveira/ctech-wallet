@@ -129,7 +129,7 @@ for the stale-hold sweep, see below).
 | `POST /v1.0/internal/wallet/game/cashout`                | `internal:wallet:game-cashout` | `{user_id, amount, table_ref, hold_ids: [...], idempotency_key}` | Credits `game` by `amount` — **the player's final stack as computed by poker's own table ledger, independent of the sum of `hold_ids`.** Marks every listed hold `settled`. Ledger entry `game_cashout_credit`, `ref` includes the hold ids consumed for audit trail. |
 
 A deliberately separate scope for `hold` vs `cashout` (mirrors the existing `internal:wallet:debit` vs
-`internal:wallet:real:debit` separation) — `ctech-poker`'s M2M client is issued both, but the split keeps
+`internal:wallet:debit-real` separation) — `ctech-poker`'s M2M client is issued both, but the split keeps
 IAM/JWT scopes legible if a future skill game only ever needs one side.
 
 ### Why cash-out isn't bounded by the hold

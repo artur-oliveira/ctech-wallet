@@ -1,17 +1,22 @@
 # CLAUDE.md — api (ctech-wallet-api)
 
-Go REST API — Fiber v3, DynamoDB, Valkey, PIX (Inter), AWS SDK v2.
+Go REST API — Fiber v3, DynamoDB, Valkey, PIX (Banco Inter **via `pix-gateway`**), AWS SDK v2.
 
 **Before any task:** Read `../docs/specs/2026-07-10-wallet-design.md` and the root `../CLAUDE.md` Financial Safety
 Invariants. This service custodies real money — those invariants override convenience.
+
+> The API never talks to Inter directly: every PIX op invokes `pix-gateway`'s
+> outbound Lambda (`PIX_GATEWAY_FUNCTION_NAME`) with a bearer from
+> `InterTokenManager`. The Inter mTLS cert/secret live in `pix-gateway`/SSM.
+> Endpoint contract: **[ENDPOINTS.md](ENDPOINTS.md)**.
 
 ---
 
 ## Role
 
-Custodies three balances per user (real + game + sandbox), an append-only ledger, PIX deposit/withdraw via Inter, and
-sandbox M2M credit/debit for integrated apps. Bridges the frontend and the Inter partner bank; consumes auth +
-KYC from ctech-account.
+Custodies three balances per user (real + game + sandbox), an append-only ledger, PIX deposit/withdraw via
+`pix-gateway` (which fronts Inter), and sandbox M2M credit/debit for integrated apps. Bridges the frontend and the
+Inter partner bank; consumes auth + KYC from ctech-account.
 
 **Request flow:** `HTTP → Middleware (auth → scope/KYC/step-up) → Route → Service → Repository → DynamoDB`
 
@@ -33,7 +38,7 @@ api/
 │   ├── awsclient/              # aws-sdk-go-v2 (DynamoDB only)
 │   ├── lock/                   # Valkey SETNX per-wallet lock
 │   ├── middleware/             # auth (JWKS), scope, KYC, step-up
-│   ├── pix/                    # PixClient interface + fake + Inter (mTLS)
+│   ├── pix/                    # PixClient iface + fake + Lambda client (talks to pix-gateway, not Inter)
 │   ├── kycclient/              # ctech-account internal KYC client
 │   ├── domain/wallet/          # models, constants, fee calc
 │   ├── domain/id/              # ULID generation
@@ -151,6 +156,54 @@ Run: `make test` (unit) and `make test-integration` (needs `docker compose -f do
 - PIX deposit confirmation (webhook → re-query → credit/refund) and the CPF gate
 - Withdrawal `processing` state and the reconciliation job
 - JWT validation, scope, KYC, and step-up middleware
+
+---
+
+## Financial Safety Invariants (summary — full text in root `../CLAUDE.md`)
+
+These are the reason the service exists; a change weakening any is wrong. All are
+enforced in code — see [ENDPOINTS.md §6](ENDPOINTS.md#6-financial-safety-invariants--how-each-is-enforced-in-code)
+for the `file:line` map.
+
+1. Balance never negative — debit `ConditionExpression: balance >= :amount`.
+2. Ledger append‑only — authoritative balance is `wallets.balance`.
+3. Every mutation idempotent — `IDEM#{key}` guard co‑written in the same txn.
+4. One op/wallet at a time — Valkey `SETNX` + TTL.
+5. Cross‑wallet ops lock in order `real → game → sandbox` (`lock.AcquireOrdered`).
+6. Sandbox never becomes real (sink).
+7. Real money enters the ring‑fence ONLY via `real → game`.
+8. `real → game` limit counts GROSS INFLOW (returns never refund headroom).
+9. `game` is real money (withdrawable via `real`; total = `real + game`).
+10. Consent opt‑in + auditable (`wallet_audit` append‑only).
+11. PIX webhook never source of truth — re‑query Inter by `txid` before crediting.
+12. No money in limbo — `processing` withdrawals resolved by the reconcile job.
+
+## Internal M2M scopes (constant table: `middleware/scope.go:11`)
+
+| Scope | Guards | Notes |
+|-------|--------|-------|
+| `internal:wallet:credit` | `POST /internal/wallet/sandbox/credit` | sandbox only |
+| `internal:wallet:debit` | `POST /internal/wallet/sandbox/debit` | sandbox only |
+| `internal:wallet:debit-real` | `POST /internal/wallet/real/debit` | **real** wallet — distinct from `:debit` |
+| `internal:wallet:confirm-deposit` | `POST /internal/pix/confirm-deposit` | requested by **pix‑gateway** |
+| `internal:wallet:game-hold` | `POST .../game/hold`, `.../hold/:id/release` | |
+| `internal:wallet:game-cashout` | `POST .../game/cashout` | |
+| `internal:wallet:game-status` | `GET .../game/status/:user_id` | |
+
+The wallet's **own** M2M client requests `internal:account:kyc` from
+`ctech-account` to read the verified CPF (`kycclient/kycclient.go:24`) — a
+different scope on a different service. Do not conflate it with
+`internal:wallet:confirm-deposit`.
+
+## Known divergences (documented, NOT fixed here)
+
+| ID | Summary | Anchor |
+|----|---------|--------|
+| B1 | IAM may be missing `dynamodb:TransactWriteItems` — every money op uses `Base.TransactWrite` (→ `ctech-go-common/dynamo`). If absent, all money ops denied at runtime. | `repositories/wallet.go:275`; verify `cdk/README.md` |
+| B2 | `internal:account:kyc` (wallet→account) vs `internal:wallet:confirm-deposit` (pix‑gateway→api) conflated in some comments (`kycclient.go:2`, `config.go:41`). | `kycclient.go:24`, `scope.go:15` |
+| B3 | `internal:wallet:debit-real` (code) vs stale `internal:wallet:real:debit` in `docs/specs/2026-07-19-poker-game-holds-design.md`. | `scope.go:14` |
+| B7 | Valkey fail‑closed in prod (`config.go:74`) but `newCacheBackend` silently falls back to in‑memory on missing/!redis; same for WS registry. Non‑prod ⇒ locks/WS not fleet‑shared with no hard failure. | `app.go:65,72,91` |
+| B18 | Money constants mirrored api↔ui by hand (no float): `FEE_ABSOLUTE_MIN=100`, defaults `200/100/1000`, `SANDBOX_CREDITS_PER_CENTAVO=10`. `rpc-contract` holds NO money constants. | `fee.go:7,13`, `model.go:115`, `ui/src/lib/utils/{fee,money}.ts` |
 
 ---
 

@@ -38,7 +38,7 @@ type Config struct {
 	CtechJWKSURL    string `env:"CTECH_JWKS_URL"`
 	ServiceAudience string `env:"SERVICE_AUDIENCE" envDefault:"https://wallet-api.aoctech.app"` // expected aud claim; empty = no audience check (transition only)
 
-	// Wallet's own M2M client (to call account's internal:wallet:confirm-deposit KYC status endpoint)
+	// Wallet's own M2M client (to call account's internal:account:kyc KYC status endpoint)
 	WalletClientID     string `env:"WALLET_CLIENT_ID"`
 	WalletClientSecret string `env:"WALLET_CLIENT_SECRET"`
 

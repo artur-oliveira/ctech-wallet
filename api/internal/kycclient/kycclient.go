@@ -1,5 +1,5 @@
 // Package kycclient calls ctech-account's internal KYC API using the wallet's
-// own M2M client_credentials token (scope internal:wallet:confirm-deposit).
+// own M2M client_credentials token (scope internal:account:kyc).
 // KYC promotion is manual-review-only on account's side now; this client only
 // reads the verified CPF and level for payer/withdrawal matching.
 package kycclient

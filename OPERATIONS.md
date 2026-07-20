@@ -49,17 +49,20 @@ parameters per environment (`dev` / `stage` / `prod`):
 
 | Parameter                                  | Type             | Read by                             |
 |--------------------------------------------|------------------|-------------------------------------|
-| `/ctech-wallet/{env}/inter/mtls-cert`      | **SecureString** | the Go app at boot (SDK)            |
-| `/ctech-wallet/{env}/inter/mtls-key`       | **SecureString** | the Go app at boot (SDK)            |
-| `/ctech-wallet/{env}/inter/client-id`      | String           | `start.sh` → `INTER_CLIENT_ID`      |
-| `/ctech-wallet/{env}/inter/client-secret`  | **SecureString** | `start.sh` → `INTER_CLIENT_SECRET`  |
-| `/ctech-wallet/{env}/inter/webhook-secret` | **SecureString** | `start.sh` → `INTER_WEBHOOK_SECRET` |
+| `/ctech-wallet/{env}/inter/mtls-cert`      | **SecureString** | `pix-gateway` (SDK)                 |
+| `/ctech-wallet/{env}/inter/mtls-key`       | **SecureString** | `pix-gateway` (SDK)                 |
+| `/ctech-wallet/{env}/inter/client-id`      | String           | `pix-gateway` `start.sh` → `INTER_CLIENT_ID`      |
+| `/ctech-wallet/{env}/inter/client-secret`  | **SecureString** | `pix-gateway` `start.sh` → `INTER_CLIENT_SECRET`  |
+| `/ctech-wallet/{env}/inter/webhook-secret` | **SecureString** | `pix-gateway` `start.sh` → `INTER_WEBHOOK_SECRET` |
 | `/ctech-wallet/{env}/wallet-client-id`     | String           | `start.sh` → `WALLET_CLIENT_ID`     |
 | `/ctech-wallet/{env}/wallet-client-secret` | **SecureString** | `start.sh` → `WALLET_CLIENT_SECRET` |
 
-The **mTLS keypair is deliberately not an env var**: the app reads it from SSM with
-the SDK and holds it in memory (`internal/secrets`), so the bank certificate can be
+The **mTLS keypair is deliberately not an env var**: `pix-gateway` reads it from SSM with
+the SDK and holds it in memory, so the bank certificate can be
 rotated without a redeploy and the PEM never touches the disk or `/proc/<pid>/environ`.
+The wallet `api` does **not** read any Inter secret — it only reads its own M2M
+`WALLET_CLIENT_ID`/`WALLET_CLIENT_SECRET` and `ctech-account`'s base/JWKS URLs (from SSM
+or env), never `mtls-cert`/`mtls-key`/`INTER_*`.
 Cert and key are separate parameters because a standard-tier SecureString caps at 4 KB.
 
 Write them like this (example):

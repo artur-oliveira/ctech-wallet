@@ -1,9 +1,11 @@
 # CTech Wallet
 
-Serviço de carteira digital do ecossistema `aoctech.app`. Mantém **dois saldos por usuário** — **real**
-(depósito/saque via PIX, banco parceiro Inter) e **sandbox** (moeda virtual, sem valor monetário, nunca
-convertível em real). Serve de base para cobrança de assinaturas (futuro `ctech-dfe`/billing) e para apostas de
-habilidade em poker/dominó (futuro).
+Serviço de carteira digital do ecossistema `aoctech.app`. Mantém **três saldos por usuário** — **real**
+(depósito/saque via PIX, banco parceiro Inter), **game** (dinheiro real cercado só para jogos, com limites de
+jogo responsável) e **sandbox** (moeda virtual, sem valor monetário, nunca convertível em real). Dinheiro real
+entra no cercado de jogo **somente** via `real → game`. Serve de base para cobrança de assinaturas (futuro
+`ctech-dfe`/billing) e para apostas de habilidade em poker/dominó. A superfície de jogo (`game`/`sandbox`) fica
+dormente enquanto `GAMBLING_ENABLED=false` (padrão), até a revisão legal do aditivo de jogo.
 
 Consome autenticação (OAuth 2.0 / OIDC, JWT via JWKS) e KYC do [`ctech-account`](../ctech-account). Ledger
 append-only, transacional, idempotente, sem saldo negativo.

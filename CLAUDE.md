@@ -169,7 +169,7 @@ passwords, real customer data, or real CPFs.
 - **KYC promotion:** on the first confirmed deposit call `POST {CTECH_URL}/v1.0/internal/kyc/confirm`
   `{user_id, cpf}` (idempotent; mismatch → 409). CPF for payer/withdrawal matching:
   `GET {CTECH_URL}/v1.0/internal/kyc/:user_id`.
-- **Scopes:** `internal:wallet:credit` / `internal:wallet:debit` (sandbox only) and `internal:wallet:real:debit`
+- **Scopes:** `internal:wallet:credit` / `internal:wallet:debit` (sandbox only) and `internal:wallet:debit-real`
   (real wallet — deliberately a separate scope, never granted to a client that only needs sandbox credit/debit,
   e.g. poker/dominó) seeded into the global catalog via `ctech-account`'s `cmd/seedscopes`. The wallet's own
   M2M client is seeded confidential + `first_party:true` with `allowed_scopes:["internal:account:kyc"]`.
