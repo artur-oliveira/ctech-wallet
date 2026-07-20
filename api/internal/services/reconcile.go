@@ -12,10 +12,13 @@ import (
 
 const reconcileBatch = 100
 
-// sweepAgeThreshold: a pending PixDeposit gets one re-query once it's within
-// this margin of its depositTTLMinutes TTL, so a missed webhook still has a
-// fallback path to eventual consistency before the row is lost (F6).
-const sweepAgeThreshold = 3 * time.Minute
+// sweepAgeThreshold: a pending PixDeposit gets one re-query once it's older than
+// this. It must stay well below depositTTLMinutes so the re-query fallback runs
+// while the row is still alive (SEC-02). With depositTTLMinutes=60 and this=10,
+// the sweep has a 50m buffer before the row is TTL-deleted. The reconcile Lambda
+// interval must be << this threshold (every 1–2 min) so a pending deposit is
+// caught on its first or second sweep, never after it has already expired.
+const sweepAgeThreshold = 10 * time.Minute
 
 // staleHoldCeiling: no real cash-game session should run longer than this. A
 // hold still `held` past the ceiling is Invariant #12's "money left in limbo"
@@ -50,9 +53,21 @@ func (s *WalletService) ReconcileWithdrawals(ctx context.Context) (resolved, rev
 			s.broadcastWithdrawal(ctx, w.UserID, "withdraw_completed", w.WithdrawalID, w.Amount)
 			resolved++
 		case pix.TransferNotFound:
+			// Acquire the per-wallet lock for the reversal so it is serialized
+			// with every other real-wallet mutation (SEC-09). The synchronous
+			// Withdraw path already holds this lock when it calls reverse; here
+			// it is not held, so we take it explicitly.
+			release, ok, lerr := s.lock.Acquire(ctx, w.WalletID)
+			if lerr != nil || !ok {
+				slog.Warn("reconcile: reverse lock unavailable, will retry", "withdrawal_id", w.WithdrawalID, "err", lerr)
+				alarmed++
+				break
+			}
 			if s.reverse(ctx, w) {
+				release()
 				reversed++
 			} else {
+				release()
 				alarmed++
 			}
 		default:
@@ -102,7 +117,7 @@ func (s *WalletService) SweepPendingDeposits(ctx context.Context) (swept int, er
 	}
 	for i := range deps {
 		d := deps[i]
-		if err := s.ConfirmDeposit(ctx, d.Txid, "", ""); err != nil {
+		if err := s.ConfirmDeposit(ctx, d.Txid, "", "", true); err != nil {
 			slog.Warn("sweep: confirm-deposit failed, will retry next run", "txid", d.Txid, "err", err)
 			continue
 		}

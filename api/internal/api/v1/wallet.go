@@ -35,7 +35,11 @@ func (h *handlers) createDeposit(c fiber.Ctx) error {
 		return sendProblem(c, p)
 	}
 	cl := middleware.GetClaims(c)
-	dep, charge, err := h.svc.InitiateDeposit(c.Context(), cl.Sub, cl.KYCLevel, body.Amount)
+	idemKey, p := requireIdempotencyKey(c)
+	if p != nil {
+		return sendProblem(c, p)
+	}
+	dep, charge, err := h.svc.InitiateDeposit(c.Context(), cl.Sub, cl.KYCLevel, body.Amount, idemKey)
 	if err != nil {
 		return sendProblem(c, err)
 	}
@@ -63,6 +67,11 @@ func (h *handlers) createWithdrawal(c fiber.Ctx) error {
 	w, err := h.svc.Withdraw(c.Context(), cl.Sub, cl.KYCLevel, body.Amount, idemKey)
 	if err != nil {
 		return sendProblem(c, err)
+	}
+	if w == nil {
+		// Defensive: Withdraw should always return a record or an error. A nil
+		// record would nil-deref on w.Status below; surface a 500 instead.
+		return sendProblem(c, problem.InternalServer("saque indisponível no momento"))
 	}
 	status := fiber.StatusCreated
 	if w.Status == wallet.WithdrawProcessing {

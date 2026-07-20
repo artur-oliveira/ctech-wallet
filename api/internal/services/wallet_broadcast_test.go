@@ -37,7 +37,7 @@ func TestConfirmDepositBroadcastsOnCredit(t *testing.T) {
 	fb := &fakeBroadcaster{}
 	svc.SetBroadcaster(fb)
 
-	if err := svc.ConfirmDeposit(context.Background(), "tx-broadcast", "12345678901", "Someone"); err != nil {
+	if err := svc.ConfirmDeposit(context.Background(), "tx-broadcast", "12345678901", "Someone", false); err != nil {
 		t.Fatalf("ConfirmDeposit: %v", err)
 	}
 	if fb.calls != 1 {
@@ -119,7 +119,7 @@ func TestConfirmDepositNilBroadcasterIsNoOp(t *testing.T) {
 	kyc := &stubKYC{rec: &kycclient.KYC{Level: "verified", CPF: "12345678901"}}
 
 	svc := newSvc(repo, &stubLocker{}, fake, kyc)
-	if err := svc.ConfirmDeposit(context.Background(), "tx-nobroadcast", "12345678901", "Someone"); err != nil {
+	if err := svc.ConfirmDeposit(context.Background(), "tx-nobroadcast", "12345678901", "Someone", false); err != nil {
 		t.Fatalf("ConfirmDeposit: %v", err)
 	}
 	if repo.depositStatus != wallet.DepositConfirmed {

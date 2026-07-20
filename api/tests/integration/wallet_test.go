@@ -147,13 +147,13 @@ func TestDepositConfirmCreditsOnCPFMatch(t *testing.T) {
 	h := newHarness(&kycclient.KYC{Level: "verified", CPF: cpf})
 	user := "u-" + id.New()
 
-	dep, _, err := h.svc.InitiateDeposit(ctx, user, "verified", 5000)
+	dep, _, err := h.svc.InitiateDeposit(ctx, user, "verified", 5000, id.New())
 	if err != nil {
 		t.Fatalf("InitiateDeposit: %v", err)
 	}
 	h.pix.StageCharge(dep.Txid, 5000, pix.ChargeCompleted, cpf, "E2E-1")
 
-	if err := h.svc.ConfirmDeposit(ctx, dep.Txid, cpf, "Fake Payer"); err != nil {
+	if err := h.svc.ConfirmDeposit(ctx, dep.Txid, cpf, "Fake Payer", false); err != nil {
 		t.Fatalf("ConfirmDeposit: %v", err)
 	}
 	if got := balance(t, h, dep.WalletID); got != 5000 {
@@ -161,7 +161,7 @@ func TestDepositConfirmCreditsOnCPFMatch(t *testing.T) {
 	}
 
 	// Idempotent: re-confirming does not double-credit.
-	_ = h.svc.ConfirmDeposit(ctx, dep.Txid, cpf, "Fake Payer")
+	_ = h.svc.ConfirmDeposit(ctx, dep.Txid, cpf, "Fake Payer", false)
 	if got := balance(t, h, dep.WalletID); got != 5000 {
 		t.Fatalf("balance after re-confirm = %d, want 5000", got)
 	}
@@ -238,7 +238,7 @@ func TestDepositRejectsAmountOutsideGlobalRange(t *testing.T) {
 	user := "u-" + id.New()
 
 	for _, amount := range []int64{wallet.DefaultMinDeposit - 1, wallet.DefaultMaxDeposit + 1} {
-		dep, charge, err := h.svc.InitiateDeposit(ctx, user, "verified", amount)
+		dep, charge, err := h.svc.InitiateDeposit(ctx, user, "verified", amount, id.New())
 		var p *problem.Problem
 		if !errors.As(err, &p) || p.Type != problem.TypeDepositOutOfRange {
 			t.Fatalf("InitiateDeposit(%d) err = %v, want deposit-out-of-range", amount, err)
@@ -255,10 +255,10 @@ func TestDepositRejectsAmountOutsideGlobalRange(t *testing.T) {
 	}
 
 	// The boundaries themselves are accepted.
-	if _, _, err := h.svc.InitiateDeposit(ctx, user, "verified", wallet.DefaultMinDeposit); err != nil {
+	if _, _, err := h.svc.InitiateDeposit(ctx, user, "verified", wallet.DefaultMinDeposit, id.New()); err != nil {
 		t.Fatalf("InitiateDeposit at min: %v", err)
 	}
-	if _, _, err := h.svc.InitiateDeposit(ctx, user, "verified", wallet.DefaultMaxDeposit); err != nil {
+	if _, _, err := h.svc.InitiateDeposit(ctx, user, "verified", wallet.DefaultMaxDeposit, id.New()); err != nil {
 		t.Fatalf("InitiateDeposit at max: %v", err)
 	}
 }
@@ -275,15 +275,15 @@ func TestDepositUsesPerWalletRangeOverride(t *testing.T) {
 	setWalletDepositRange(t, real.WalletID, 5000, 20000)
 
 	// Inside the global range but below this wallet's floor → rejected.
-	if _, _, err := h.svc.InitiateDeposit(ctx, user, "verified", 4999); err == nil {
+	if _, _, err := h.svc.InitiateDeposit(ctx, user, "verified", 4999, id.New()); err == nil {
 		t.Fatal("InitiateDeposit(4999) = nil, want deposit-out-of-range")
 	}
 	// Inside the global range but above this wallet's cap → rejected.
-	if _, _, err := h.svc.InitiateDeposit(ctx, user, "verified", 20001); err == nil {
+	if _, _, err := h.svc.InitiateDeposit(ctx, user, "verified", 20001, id.New()); err == nil {
 		t.Fatal("InitiateDeposit(20001) = nil, want deposit-out-of-range")
 	}
 	// Within the wallet's own range → accepted.
-	if _, _, err := h.svc.InitiateDeposit(ctx, user, "verified", 20000); err != nil {
+	if _, _, err := h.svc.InitiateDeposit(ctx, user, "verified", 20000, id.New()); err != nil {
 		t.Fatalf("InitiateDeposit(20000): %v", err)
 	}
 }
@@ -293,13 +293,13 @@ func TestDepositRejectsAndRefundsOnCPFMismatch(t *testing.T) {
 	h := newHarness(&kycclient.KYC{Level: "verified", CPF: cpf})
 	user := "u-" + id.New()
 
-	dep, _, err := h.svc.InitiateDeposit(ctx, user, "verified", 5000)
+	dep, _, err := h.svc.InitiateDeposit(ctx, user, "verified", 5000, id.New())
 	if err != nil {
 		t.Fatalf("InitiateDeposit: %v", err)
 	}
 	h.pix.StageCharge(dep.Txid, 5000, pix.ChargeCompleted, "99999999999", "E2E-9")
 
-	if err := h.svc.ConfirmDeposit(ctx, dep.Txid, "99999999999", "Fake Payer"); err != nil {
+	if err := h.svc.ConfirmDeposit(ctx, dep.Txid, "99999999999", "Fake Payer", false); err != nil {
 		t.Fatalf("ConfirmDeposit: %v", err)
 	}
 	if got := balance(t, h, dep.WalletID); got != 0 {
@@ -307,6 +307,35 @@ func TestDepositRejectsAndRefundsOnCPFMismatch(t *testing.T) {
 	}
 	if len(h.pix.Refunds) != 1 {
 		t.Fatalf("expected one refund, got %d", len(h.pix.Refunds))
+	}
+}
+
+// TestInitiateDepositIdempotentReturnsSameCharge proves SEC-08: two POSTs with
+// the same Idempotency-Key open exactly ONE Inter charge and return the same
+// txid/QR. A retried client call must never create a second live QR code.
+func TestInitiateDepositIdempotentReturnsSameCharge(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(verified())
+	user := "u-" + id.New()
+	idemKey := "idem-deposit-" + id.New()
+
+	dep1, charge1, err := h.svc.InitiateDeposit(ctx, user, "verified", 5000, idemKey)
+	if err != nil {
+		t.Fatalf("first InitiateDeposit: %v", err)
+	}
+	dep2, charge2, err := h.svc.InitiateDeposit(ctx, user, "verified", 5000, idemKey)
+	if err != nil {
+		t.Fatalf("replay InitiateDeposit: %v", err)
+	}
+	if dep1.Txid != dep2.Txid {
+		t.Fatalf("replay returned a different txid %q, want %q (second Inter charge opened)", dep2.Txid, dep1.Txid)
+	}
+	if charge1.QRCode != charge2.QRCode {
+		t.Fatalf("replay returned a different QR code — a second charge was opened")
+	}
+	// Exactly one Inter charge may have been opened for the whole sequence.
+	if got := len(h.pix.CreatedCharges); got != 1 {
+		t.Fatalf("charges opened = %d, want 1 (idempotent key must not open a second charge)", got)
 	}
 }
 
@@ -604,6 +633,43 @@ func TestSweepPendingDepositsCreditsOnceInterConfirms(t *testing.T) {
 	}
 	if got := balance(t, h, real.WalletID); got != 5000 {
 		t.Fatalf("balance = %d, want 5000 (deposit should have been credited)", got)
+	}
+}
+
+// TestSweepPendingDepositsCreditsWhenPayerCPFAbsent proves SEC-03: a deposit
+// whose webhook never arrived has no persisted payer CPF. The old sweep logic
+// treated the empty CPF as a mismatch and refunded a genuinely paid deposit.
+// With sweep=true the CPF gate is skipped (the re-query already proves the
+// payment is for our txid), so the deposit is credited.
+func TestSweepPendingDepositsCreditsWhenPayerCPFAbsent(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(verified())
+	user := "u-" + id.New()
+	real, err := h.repo.EnsureRealWallet(ctx, user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	txid := "sweep-nocpf-" + id.New()
+	dep := &wallet.PixDeposit{
+		Txid: txid, WalletID: real.WalletID, UserID: user,
+		AmountExpected: 5000, Status: wallet.DepositPending, PayerCPF: "",
+		CreatedAt: time.Now().Add(-4 * time.Minute).UTC().Format(time.RFC3339Nano),
+		TTL:       time.Now().Add(1 * time.Minute).Unix(),
+	}
+	if err := h.repo.PutDeposit(ctx, dep); err != nil {
+		t.Fatal(err)
+	}
+	h.pix.StageCharge(txid, 5000, pix.ChargeCompleted, "", "E2E-sweep-nocpf")
+
+	swept, err := h.svc.SweepPendingDeposits(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if swept != 1 {
+		t.Fatalf("swept = %d, want 1", swept)
+	}
+	if got := balance(t, h, real.WalletID); got != 5000 {
+		t.Fatalf("balance = %d, want 5000 (paid deposit with no CPF must be credited, not refunded)", got)
 	}
 }
 

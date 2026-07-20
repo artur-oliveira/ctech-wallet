@@ -36,6 +36,16 @@ const tokenRefreshLockKey = "inter:token:refresh"
 // stale, so edge-of-expiry calls never hit Inter with an expired bearer.
 const tokenRefreshFloor = 30 * time.Second
 
+// localCacheMaxAge bounds how long a replica trusts its in-process hot cache
+// before re-confirming against the shared Valkey token. The shared key is the
+// cross-replica authority: when ANY replica calls Invalidate() (on a 401) it
+// deletes that key, so every other replica must notice within this window or it
+// keeps sending the revoked bearer from its local hot cache (SEC-06). 5s keeps a
+// revoked token from being used fleet-wide for more than a few seconds; the only
+// cost is a Valkey re-read per token every 5s, and that read returns the same
+// (still-valid) token without an Inter call.
+const localCacheMaxAge = 5 * time.Second
+
 // proactiveRefreshInterval is how often the background loop nudges a refresh.
 // The shared token's Valkey TTL drives the real refresh; the loop just keeps a
 // replica warm so the first post-expiry call never blocks on a fetch.
@@ -58,6 +68,7 @@ type InterTokenManager struct {
 	cond       *sync.Cond // signals waiters when a refresh completes
 	token      string
 	expiry     time.Time
+	setAt      time.Time // when the local hot cache was last populated (SEC-06)
 	refreshing bool  // an in-process refresh is in flight
 	lastErr    error // error from the most recent refresh (shared with waiters)
 }
@@ -258,11 +269,15 @@ func (m *InterTokenManager) fetch(ctx context.Context) (string, time.Time, error
 	return res.Token, exp, nil
 }
 
-// localValid returns the in-process hot-cache token if still usable.
+// localValid returns the in-process hot-cache token if still usable AND fresh
+// enough to trust (see localCacheMaxAge). Even an unexpired token is only
+// honored for localCacheMaxAge after it was cached, after which Get re-confirms
+// against the shared Valkey token — so a cross-replica Invalidate() is observed
+// fleet-wide within that window (SEC-06).
 func (m *InterTokenManager) localValid() (string, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.token != "" && time.Now().Before(m.expiry) {
+	if m.token != "" && time.Now().Before(m.expiry) && time.Since(m.setAt) < localCacheMaxAge {
 		return m.token, true
 	}
 	return "", false
@@ -273,6 +288,7 @@ func (m *InterTokenManager) setLocal(token string, exp time.Time) {
 	m.mu.Lock()
 	m.token = token
 	m.expiry = exp
+	m.setAt = time.Now()
 	m.mu.Unlock()
 }
 

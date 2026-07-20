@@ -25,7 +25,14 @@ import (
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
 )
 
-const depositTTLMinutes = 5
+// depositTTLMinutes is the DynamoDB TTL lifetime of a pending PIX charge row.
+// It MUST be longer than Inter's actual charge validity AND longer than the
+// reconcile sweep interval, so a pending deposit is always re-queried (and
+// credited or refunded) before the row is silently TTL-deleted. Previously 5m —
+// shorter than both Inter's validity and a realistic sweep interval, so a
+// payment landing late was lost (SEC-02). 60m gives the sweep (see
+// sweepAgeThreshold) a 50m window to run before the row disappears.
+const depositTTLMinutes = 60
 
 // interWithdrawalNamespace namespaces the deterministic UUID sent to Inter as
 // x-id-idempotente for PIX payouts (Inter rejects any other format). Derived
@@ -47,11 +54,12 @@ type Repo interface {
 	LoadWallets(ctx context.Context, userID string) (real, game, sandbox *wallet.Wallet, err error)
 	Credit(ctx context.Context, m repositories.Mutation) (*wallet.LedgerEntry, bool, error)
 	Debit(ctx context.Context, m repositories.Mutation) (*wallet.LedgerEntry, bool, error)
-	DebitWithFee(ctx context.Context, walletID string, amount, fee int64, idemKey, reqHash, ref string) (*wallet.LedgerEntry, *wallet.LedgerEntry, bool, error)
+	DebitWithFee(ctx context.Context, w *wallet.Withdrawal, amount, fee int64, idemKey, reqHash string) (*wallet.LedgerEntry, *wallet.LedgerEntry, bool, error)
 	Transfer(ctx context.Context, from, to string, amount, creditAmount int64, debitType, creditType, ref, idemKey, reqHash string, extra ...types.TransactWriteItem) (*wallet.LedgerEntry, *wallet.LedgerEntry, bool, error)
 	Statement(ctx context.Context, walletID string, limit int, startKey map[string]types.AttributeValue) (*repositories.QueryResult, error)
 	PutDeposit(ctx context.Context, d *wallet.PixDeposit) error
 	GetDeposit(ctx context.Context, txid string) (*wallet.PixDeposit, error)
+	ReserveDepositIdem(ctx context.Context, guardPK, txid, userID, reqHash string) (reservedTxid string, existing *wallet.PixDeposit, conflict *problem.Problem, err error)
 	UpdateDepositStatus(ctx context.Context, txid, status, e2eID string) error
 	UpdateDepositPayer(ctx context.Context, txid, payerCPF, payerName string) error
 	PutWithdrawal(ctx context.Context, w *wallet.Withdrawal) error
@@ -186,8 +194,10 @@ func (s *WalletService) Statement(ctx context.Context, walletID string, limit in
 // InitiateDeposit opens a PIX charge and records a pending deposit. Gates:
 // kycLevel != "" (any verification started) and the amount within the wallet's
 // deposit range. Not a balance mutation — money is credited only at
-// ConfirmDeposit after re-querying the charge.
-func (s *WalletService) InitiateDeposit(ctx context.Context, userID, kycLevel string, amount int64) (*wallet.PixDeposit, *pix.Charge, error) {
+// ConfirmDeposit after re-querying the charge. idemKey is required for
+// idempotency: a retried POST /wallet/deposits returns the same txid/QR and
+// never opens a second Inter charge (SEC-08).
+func (s *WalletService) InitiateDeposit(ctx context.Context, userID, kycLevel string, amount int64, idemKey string) (*wallet.PixDeposit, *pix.Charge, error) {
 	if kycLevel == "" {
 		return nil, nil, problem.KYCNotVerified()
 	}
@@ -206,7 +216,28 @@ func (s *WalletService) InitiateDeposit(ctx context.Context, userID, kycLevel st
 		minAmt, maxAmt := wallet.DepositLimits(realw)
 		return nil, nil, problem.DepositOutOfRange(minAmt, maxAmt)
 	}
-	txid := id.New() // 26-char ULID — within Inter's txid charset/length
+
+	// SEC-08: register the idempotency key BEFORE opening any Inter charge so a
+	// retried POST never opens a second PIX charge. On replay we return the prior
+	// deposit + re-query its charge (idempotent).
+	rh := reqHash("deposit#"+userID+"#"+idemKey, amount)
+	guardPK := wallet.IdemPrefix + "initdep#" + idemKey
+	txid, existing, conflict, err := s.repo.ReserveDepositIdem(ctx, guardPK, id.New(), userID, rh)
+	if err != nil {
+		return nil, nil, err
+	}
+	if conflict != nil {
+		return nil, nil, conflict
+	}
+	if existing != nil {
+		// Idempotent replay: return the original deposit + its (re-queried) charge.
+		charge, qerr := s.pix.QueryCharge(ctx, txid)
+		if qerr != nil {
+			return nil, nil, qerr
+		}
+		return existing, charge, nil
+	}
+
 	charge, err := s.pix.CreateCharge(ctx, txid, amount, "")
 	if err != nil {
 		return nil, nil, problem.InternalServer("falha ao criar cobrança PIX: " + err.Error())
@@ -238,7 +269,13 @@ func (s *WalletService) InitiateDeposit(ctx context.Context, userID, kycLevel st
 // A devolução (PIX refund) reported on re-query is handled too: if it lands
 // before this deposit is confirmed, the deposit never credits; if it lands
 // after, the credit is reversed (Invariant 12 — no money left in limbo).
-func (s *WalletService) ConfirmDeposit(ctx context.Context, txid, payerCPF, payerName string) error {
+// ConfirmDeposit re-queries the charge by txid (never the webhook body — Invariant
+// #11) and credits it if paid. sweep=true is the reconciliation path: deposits
+// whose webhook never arrived have no persisted payer CPF, and the re-query already
+// proves the payment is for our txid, so the CPF anti-fraud gate is skipped and the
+// deposit is credited rather than refunded (SEC-03). On the webhook path (sweep=false)
+// a payer CPF is always present and must match KYC.
+func (s *WalletService) ConfirmDeposit(ctx context.Context, txid, payerCPF, payerName string, sweep bool) error {
 	dep, err := s.repo.GetDeposit(ctx, txid)
 	if err != nil {
 		return err
@@ -290,8 +327,15 @@ func (s *WalletService) ConfirmDeposit(ctx context.Context, txid, payerCPF, paye
 		return err
 	}
 
-	if dep.PayerCPF == "" || !maskedCPFMatches(dep.PayerCPF, kyc.CPF) {
-		return s.rejectMismatch(ctx, dep, charge)
+	// CPF anti-fraud gate. On the webhook-driven path a payer CPF is always
+	// present (persisted from the webhook body) and must match KYC. But the sweep
+	// path re-confirms deposits whose webhook never arrived, so dep.PayerCPF is
+	// empty — the charge re-query already proves the payment is for OUR txid, so
+	// we credit it rather than refunding a genuinely paid deposit (SEC-03).
+	if !(sweep && dep.PayerCPF == "") {
+		if dep.PayerCPF == "" || !maskedCPFMatches(dep.PayerCPF, kyc.CPF) {
+			return s.rejectMismatch(ctx, dep, charge)
+		}
 	}
 
 	// Invariant 11 follow-through: the credited amount must match what we opened
@@ -536,17 +580,16 @@ func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, a
 
 	fee := wallet.WithdrawalFee(amount, realw)
 	rh := reqHash(pixKey, amount)
-	_, _, replayed, err := s.repo.DebitWithFee(ctx, realw.WalletID, amount, fee, withdrawalID, rh, withdrawalID)
-	if err != nil {
-		return nil, err
-	}
-	if replayed {
-		// The debit itself was a replay (same idempotency key already
-		// committed) — someone else is mid-flight on this withdrawal. Never
-		// re-transfer; return whatever is on record.
-		return s.repo.GetWithdrawal(ctx, withdrawalID)
-	}
 
+	// Build the withdrawal record up front so the balance debit, both ledger
+	// entries, the idempotency guard, AND the processing withdrawal row all
+	// commit in a single TransactWriteItems. Previously the record was written
+	// by a separate PutWithdrawal call, so a transient failure (or a crash)
+	// between the two left a committed debit with no processing row — money in
+	// limbo, unreconcilable (SEC-01, Invariant #12). Co-writing them makes the
+	// debit and its tracking row atomic: on replay the guard AND the record both
+	// exist, so GetWithdrawal returns it and there is no orphan (and no nil
+	// deref in the handler).
 	w := &wallet.Withdrawal{
 		WithdrawalID:   withdrawalID,
 		WalletID:       realw.WalletID,
@@ -559,11 +602,15 @@ func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, a
 		CreatedAt:      repositories.NowStr(),
 		UpdatedAt:      repositories.NowStr(),
 	}
-	if err := s.repo.PutWithdrawal(ctx, w); err != nil {
-		if errors.Is(err, repositories.ErrWithdrawalExists) {
-			return s.repo.GetWithdrawal(ctx, withdrawalID)
-		}
+	_, _, replayed, err := s.repo.DebitWithFee(ctx, w, amount, fee, withdrawalID, rh)
+	if err != nil {
 		return nil, err
+	}
+	if replayed {
+		// The debit itself was a replay (same idempotency key already
+		// committed) — someone else is mid-flight on this withdrawal. Never
+		// re-transfer; return whatever is on record.
+		return s.repo.GetWithdrawal(ctx, withdrawalID)
 	}
 
 	res, err := s.pix.Transfer(ctx, pixKey, amount, interIdemKey(withdrawalID))
@@ -650,8 +697,7 @@ func (s *WalletService) FundGame(ctx context.Context, userID string, amount int6
 	now := time.Now()
 	lim, matured := u.EffectiveGameLimits(now)
 	if matured { // lazy-apply a matured pending increase before metering
-		promoted := lim
-		if err := s.users.SetGameLimits(ctx, userID, &promoted); err != nil {
+		if err := s.users.SetGameLimits(ctx, userID, new(lim)); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -747,7 +793,7 @@ func (s *WalletService) sandboxOp(ctx context.Context, userID string, amount int
 		Amount:         amount,
 		EntryType:      entryType,
 		Ref:            reason,
-		IdempotencyKey: entryType + "#" + idemKey,
+		IdempotencyKey: entryType + "#" + userID + "#" + idemKey,
 		ReqHash:        reqHash(reason, amount),
 	}
 	var entry *wallet.LedgerEntry
@@ -781,7 +827,7 @@ func (s *WalletService) DebitReal(ctx context.Context, userID string, amount int
 		Amount:         amount,
 		EntryType:      wallet.EntryBillingDebit,
 		Ref:            reason,
-		IdempotencyKey: wallet.EntryBillingDebit + "#" + idemKey,
+		IdempotencyKey: wallet.EntryBillingDebit + "#" + userID + "#" + idemKey,
 		ReqHash:        reqHash(reason, amount),
 	})
 	return entry, err
@@ -813,7 +859,7 @@ func (s *WalletService) HoldGame(ctx context.Context, userID string, amount int6
 
 	holdID := "hold#" + userID + "#" + idemKey
 	h, _, err := s.repo.CreateHold(ctx, holdID, game.WalletID, userID, amount, tableRef,
-		wallet.EntryGameHoldDebit+"#"+idemKey, reqHash(tableRef, amount))
+		wallet.EntryGameHoldDebit+"#"+userID+"#"+idemKey, reqHash(tableRef, amount))
 	return h, err
 }
 
@@ -822,13 +868,20 @@ func (s *WalletService) HoldGame(ctx context.Context, userID string, amount int6
 // starts). Only valid on a `held` hold; an already-released/settled hold is a
 // benign idempotent replay, not an error, so a caller retry never
 // double-credits.
-func (s *WalletService) ReleaseHold(ctx context.Context, holdID, idemKey string) (*wallet.Hold, error) {
+func (s *WalletService) ReleaseHold(ctx context.Context, userID, holdID, idemKey string) (*wallet.Hold, error) {
 	h, err := s.repo.GetHold(ctx, holdID)
 	if err != nil {
 		return nil, err
 	}
 	if h == nil {
 		return nil, problem.NotFound("hold não encontrado")
+	}
+	// SEC-07: a hold id is opaque but not proof of ownership. A compromised or
+	// buggy internal client (scope internal:wallet:game-hold) must not be able to
+	// release another user's hold. The route now requires the caller to name the
+	// user; verify it matches before mutating.
+	if h.UserID != userID {
+		return nil, problem.Forbidden("hold não pertence ao usuário")
 	}
 	if h.Status != wallet.HoldHeld {
 		return h, nil // already resolved — idempotent no-op
@@ -898,6 +951,20 @@ func (s *WalletService) CashoutGame(ctx context.Context, userID string, amount i
 		return nil, problem.WalletBusy()
 	}
 	defer release()
+
+	// SEC-07: verify every listed hold belongs to this user before crediting or
+	// settling. A compromised/bhuggy internal client (scope
+	// internal:wallet:game-cashout) must not credit one user while settling
+	// another's holds. Checked under the lock, before any mutation.
+	for _, holdID := range holdIDs {
+		hh, gerr := s.repo.GetHold(ctx, holdID)
+		if gerr != nil {
+			return nil, gerr
+		}
+		if hh == nil || hh.UserID != userID {
+			return nil, problem.Forbidden("hold não pertence ao usuário")
+		}
+	}
 
 	entry, _, err := s.repo.Credit(ctx, repositories.Mutation{
 		WalletID:       game.WalletID,

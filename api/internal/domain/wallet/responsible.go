@@ -101,12 +101,16 @@ func CheckDeposit(limits GameLimits, c GameDepositCounters, amount int64, now ti
 	day, week, month := WindowKeys(now)
 	d, w, m := c.SumsFor(day, week, month)
 	dr, wr, mr := WindowResets(now)
+	// Use `amount > limit - used` rather than `used + amount > limit`: the latter
+	// can wrap past math.MaxInt64 on huge sums and turn a real breach into a false
+	// negative, defeating the limit (SEC-04). With this form a negative `limit -
+	// used` (counter drifted above the cap) still trips the breach.
 	switch {
-	case d+amount > limits.Daily:
+	case amount > limits.Daily-d:
 		return &LimitBreach{Window: "daily", Limit: limits.Daily, Used: d, ResetsAt: dr}
-	case w+amount > limits.Weekly:
+	case amount > limits.Weekly-w:
 		return &LimitBreach{Window: "weekly", Limit: limits.Weekly, Used: w, ResetsAt: wr}
-	case m+amount > limits.Monthly:
+	case amount > limits.Monthly-m:
 		return &LimitBreach{Window: "monthly", Limit: limits.Monthly, Used: m, ResetsAt: mr}
 	}
 	return nil

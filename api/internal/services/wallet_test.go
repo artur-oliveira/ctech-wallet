@@ -36,6 +36,12 @@ type stubRepo struct {
 	holds               map[string]*wallet.Hold
 	createHoldErr       error
 	staleHolds          []wallet.Hold
+	depositIdem         map[string]depositIdemGuard
+}
+
+type depositIdemGuard struct {
+	txid    string
+	reqHash string
 }
 
 func newStubRepo() *stubRepo {
@@ -45,6 +51,7 @@ func newStubRepo() *stubRepo {
 		sandbox:     wallet.Wallet{WalletID: "w-sand", UserID: "u1", Type: wallet.TypeSandbox},
 		withdrawals: map[string]*wallet.Withdrawal{},
 		holds:       map[string]*wallet.Hold{},
+		depositIdem: map[string]depositIdemGuard{},
 	}
 }
 
@@ -83,12 +90,15 @@ func (s *stubRepo) Debit(_ context.Context, m repositories.Mutation) (*wallet.Le
 	}
 	return &wallet.LedgerEntry{WalletID: m.WalletID, Amount: -m.Amount, Type: m.EntryType}, false, nil
 }
-func (s *stubRepo) DebitWithFee(_ context.Context, walletID string, amount, fee int64, _, _, _ string) (*wallet.LedgerEntry, *wallet.LedgerEntry, bool, error) {
+func (s *stubRepo) DebitWithFee(_ context.Context, w *wallet.Withdrawal, amount, fee int64, _, _ string) (*wallet.LedgerEntry, *wallet.LedgerEntry, bool, error) {
 	s.debitFeeCalled = true
 	if s.debitFeeErr != nil {
 		return nil, nil, false, s.debitFeeErr
 	}
-	return &wallet.LedgerEntry{WalletID: walletID, Amount: -amount}, &wallet.LedgerEntry{WalletID: walletID, Amount: -fee}, false, nil
+	// Mirror the atomic co-write: the processing record is committed alongside
+	// the debit, so persist it here too (SEC-01).
+	s.withdrawals[w.WithdrawalID] = w
+	return &wallet.LedgerEntry{WalletID: w.WalletID, Amount: -amount}, &wallet.LedgerEntry{WalletID: w.WalletID, Amount: -fee}, false, nil
 }
 func (s *stubRepo) Transfer(_ context.Context, from, to string, amount, creditAmount int64, dt, ct, _, _, _ string, _ ...types.TransactWriteItem) (*wallet.LedgerEntry, *wallet.LedgerEntry, bool, error) {
 	s.transferCalled = true
@@ -106,6 +116,18 @@ func (s *stubRepo) PutDeposit(_ context.Context, d *wallet.PixDeposit) error {
 }
 func (s *stubRepo) GetDeposit(_ context.Context, _ string) (*wallet.PixDeposit, error) {
 	return s.deposit, nil
+}
+func (s *stubRepo) ReserveDepositIdem(_ context.Context, guardPK, txid, _ string, reqHash string) (string, *wallet.PixDeposit, *problem.Problem, error) {
+	if g, ok := s.depositIdem[guardPK]; ok {
+		if g.reqHash != reqHash {
+			return "", nil, problem.IdempotencyConflict(), nil
+		}
+		// replay: return the stored deposit if present (mirrors the repo, which
+		// reads the deposit by the guard's txid).
+		return g.txid, s.deposit, nil, nil
+	}
+	s.depositIdem[guardPK] = depositIdemGuard{txid: txid, reqHash: reqHash}
+	return txid, nil, nil, nil
 }
 func (s *stubRepo) UpdateDepositStatus(_ context.Context, _, status, e2e string) error {
 	s.depositStatus = status
@@ -216,7 +238,7 @@ func TestConfirmDepositCreditsOnCPFMatch(t *testing.T) {
 	kyc := &stubKYC{rec: &kycclient.KYC{Level: "verified", CPF: "12345678901"}}
 	svc := newSvc(repo, &stubLocker{}, fake, kyc)
 
-	if err := svc.ConfirmDeposit(context.Background(), "tx1", "***456789**", "Someone"); err != nil {
+	if err := svc.ConfirmDeposit(context.Background(), "tx1", "***456789**", "Someone", false); err != nil {
 		t.Fatalf("ConfirmDeposit: %v", err)
 	}
 	if repo.depositPayerCPF != "***456789**" {
@@ -241,7 +263,7 @@ func TestConfirmDepositRejectsAndRefundsOnCPFMismatch(t *testing.T) {
 	kyc := &stubKYC{rec: &kycclient.KYC{Level: "verified", CPF: "12345678901"}}
 	svc := newSvc(repo, &stubLocker{}, fake, kyc)
 
-	if err := svc.ConfirmDeposit(context.Background(), "tx1", "99999999999", "Other Guy"); err != nil {
+	if err := svc.ConfirmDeposit(context.Background(), "tx1", "99999999999", "Other Guy", false); err != nil {
 		t.Fatalf("ConfirmDeposit: %v", err)
 	}
 	if len(repo.creditCalls) != 0 {
@@ -262,7 +284,7 @@ func TestConfirmDepositNoopWhenNotPaid(t *testing.T) {
 	fake.StageCharge("tx1", 5000, pix.ChargeActive, "", "")
 	svc := newSvc(repo, &stubLocker{}, fake, &stubKYC{rec: &kycclient.KYC{}})
 
-	if err := svc.ConfirmDeposit(context.Background(), "tx1", "", ""); err != nil {
+	if err := svc.ConfirmDeposit(context.Background(), "tx1", "", "", false); err != nil {
 		t.Fatalf("ConfirmDeposit: %v", err)
 	}
 	if len(repo.creditCalls) != 0 {
@@ -283,7 +305,7 @@ func TestConfirmDepositRefundsExcessPayment(t *testing.T) {
 	kyc := &stubKYC{rec: &kycclient.KYC{Level: "verified", CPF: "12345678901"}}
 	svc := newSvc(repo, &stubLocker{}, fake, kyc)
 
-	if err := svc.ConfirmDeposit(context.Background(), "tx1", "12345678901", "Someone"); err != nil {
+	if err := svc.ConfirmDeposit(context.Background(), "tx1", "12345678901", "Someone", false); err != nil {
 		t.Fatalf("ConfirmDeposit: %v", err)
 	}
 	if repo.depositStatus != wallet.DepositConfirmed {
@@ -315,7 +337,7 @@ func TestConfirmDepositExcessPaymentRefundWebhookIsIdempotent(t *testing.T) {
 	svc := newSvc(repo, &stubLocker{}, fake, &stubKYC{rec: &kycclient.KYC{}})
 
 	// A devolução-only webhook call carries no payer info.
-	if err := svc.ConfirmDeposit(context.Background(), "tx1", "", ""); err != nil {
+	if err := svc.ConfirmDeposit(context.Background(), "tx1", "", "", false); err != nil {
 		t.Fatalf("ConfirmDeposit: %v", err)
 	}
 	if len(fake.Refunds) != 0 {
@@ -342,7 +364,7 @@ func TestConfirmDepositRefundedBeforeConfirmNeverCredits(t *testing.T) {
 	kyc := &stubKYC{rec: &kycclient.KYC{Level: "verified", CPF: "12345678901"}}
 	svc := newSvc(repo, &stubLocker{}, fake, kyc)
 
-	if err := svc.ConfirmDeposit(context.Background(), "tx1", "12345678901", "Someone"); err != nil {
+	if err := svc.ConfirmDeposit(context.Background(), "tx1", "12345678901", "Someone", false); err != nil {
 		t.Fatalf("ConfirmDeposit: %v", err)
 	}
 	if len(repo.creditCalls) != 0 {
@@ -366,7 +388,7 @@ func TestConfirmDepositRefundAfterConfirmReversesCredit(t *testing.T) {
 	svc := newSvc(repo, &stubLocker{}, fake, &stubKYC{rec: &kycclient.KYC{}})
 
 	// A devolução-only webhook call carries no payer info.
-	if err := svc.ConfirmDeposit(context.Background(), "tx1", "", ""); err != nil {
+	if err := svc.ConfirmDeposit(context.Background(), "tx1", "", "", false); err != nil {
 		t.Fatalf("ConfirmDeposit: %v", err)
 	}
 	if len(repo.debitCalls) != 1 || repo.debitCalls[0].Amount != 5000 || repo.debitCalls[0].IdempotencyKey != "deposit-refund#RTR1" {
@@ -390,7 +412,7 @@ func TestConfirmDepositRefundReversalFailureFlagsRefundFailed(t *testing.T) {
 	fake.StageChargeRefund("tx1", "RTR1", 5000, pix.RefundCompleted)
 	svc := newSvc(repo, &stubLocker{}, fake, &stubKYC{rec: &kycclient.KYC{}})
 
-	err := svc.ConfirmDeposit(context.Background(), "tx1", "", "")
+	err := svc.ConfirmDeposit(context.Background(), "tx1", "", "", false)
 	if err == nil {
 		t.Fatal("expected an error on refund-reversal debit failure")
 	}
@@ -662,7 +684,7 @@ func TestReleaseHoldRefundsFullAmount(t *testing.T) {
 		t.Fatalf("HoldGame: %v", err)
 	}
 
-	released, err := svc.ReleaseHold(context.Background(), h.HoldID, "idem-release")
+	released, err := svc.ReleaseHold(context.Background(), "u1", h.HoldID, "idem-release")
 	if err != nil {
 		t.Fatalf("ReleaseHold: %v", err)
 	}
@@ -675,7 +697,7 @@ func TestReleaseHoldRefundsFullAmount(t *testing.T) {
 
 	// Already released — a retry is a benign no-op, not an error, and must not
 	// credit a second time.
-	released2, err := svc.ReleaseHold(context.Background(), h.HoldID, "idem-release-2")
+	released2, err := svc.ReleaseHold(context.Background(), "u1", h.HoldID, "idem-release-2")
 	if err != nil {
 		t.Fatalf("ReleaseHold retry: %v", err)
 	}
@@ -690,7 +712,7 @@ func TestReleaseHoldRefundsFullAmount(t *testing.T) {
 func TestReleaseHoldNotFound(t *testing.T) {
 	repo := newStubRepo()
 	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
-	_, err := svc.ReleaseHold(context.Background(), "hold#missing", "idem-1")
+	_, err := svc.ReleaseHold(context.Background(), "u1", "hold#missing", "idem-1")
 	isProblem(t, err, problem.TypeNotFound)
 }
 

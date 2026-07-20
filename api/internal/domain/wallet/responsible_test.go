@@ -1,6 +1,7 @@
 package wallet
 
 import (
+	"math"
 	"testing"
 	"time"
 )
@@ -124,6 +125,20 @@ func TestCheckDeposit(t *testing.T) {
 	c.MonthSum = 495
 	if b := CheckDeposit(lim, c, 20, now); b == nil || b.Window != "monthly" {
 		t.Fatalf("expected monthly breach, got %+v", b)
+	}
+}
+
+func TestCheckDepositOverflow(t *testing.T) {
+	// SEC-04: a near-int64-max running sum must still trip the breach. The old
+	// `used + amount > limit` form wraps past math.MaxInt64 to a negative number
+	// and silently lets the deposit through.
+	now := spTime(t, "2026-07-19 12:00")
+	day, week, month := WindowKeys(now)
+	lim := GameLimits{Daily: 100, Weekly: 100, Monthly: 100}
+	huge := int64(math.MaxInt64) - 10
+	c := GameDepositCounters{DayKey: day, DaySum: huge, WeekKey: week, WeekSum: huge, MonthKey: month, MonthSum: huge}
+	if b := CheckDeposit(lim, c, 50, now); b == nil {
+		t.Fatal("expected breach for near-int64-max running sum")
 	}
 }
 

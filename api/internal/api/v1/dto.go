@@ -83,8 +83,11 @@ type HoldRequest struct {
 }
 
 // ReleaseRequest refunds a `held` hold in full (M2M, scope
-// internal:wallet:game-hold). The hold id travels in the route path.
+// internal:wallet:game-hold). The hold id travels in the route path. UserID is
+// required so the service can verify the hold actually belongs to the named user
+// before releasing it (SEC-07) — a hold id alone is not proof of ownership.
 type ReleaseRequest struct {
+	UserID         string `json:"user_id" validate:"required"`
 	IdempotencyKey string `json:"idempotency_key" validate:"required"`
 }
 

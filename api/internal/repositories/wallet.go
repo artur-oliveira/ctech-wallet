@@ -280,7 +280,13 @@ func (r *WalletRepository) mutate(ctx context.Context, m Mutation, sign int64) (
 
 // DebitWithFee debits amount+fee in one transaction, writing a withdraw entry and
 // a fee entry plus the idempotency guard. Used by the withdrawal flow.
-func (r *WalletRepository) DebitWithFee(ctx context.Context, walletID string, amount, fee int64, idemKey, reqHash, ref string) (withdrawEntry, feeEntry *wallet.LedgerEntry, replayed bool, err error) {
+// DebitWithFee commits the real-wallet balance debit, the withdraw + fee ledger
+// entries, the idempotency guard, AND the processing withdrawal record (w) in a
+// single TransactWriteItems. Co-writing the record with the debit is what keeps
+// money from being left in limbo: a debit is never committed without the row the
+// reconciliation job scans (SEC-01, Invariant #12). On replay the guard already
+// exists, so we return the prior entry and the caller returns the existing record.
+func (r *WalletRepository) DebitWithFee(ctx context.Context, w *wallet.Withdrawal, amount, fee int64, idemKey, reqHash string) (withdrawEntry, feeEntry *wallet.LedgerEntry, replayed bool, err error) {
 	prior, conflict, e := r.checkReplay(ctx, idemKey, reqHash)
 	if e != nil {
 		return nil, nil, false, e
@@ -292,28 +298,29 @@ func (r *WalletRepository) DebitWithFee(ctx context.Context, walletID string, am
 		// On replay we return the withdraw entry as the primary; the fee entry is audit-only.
 		return prior, nil, true, nil
 	}
-	w, err := r.GetWallet(ctx, walletID)
+	wl, err := r.GetWallet(ctx, w.WalletID)
 	if err != nil {
 		return nil, nil, false, err
 	}
-	if w == nil {
+	if wl == nil {
 		return nil, nil, false, problem.NotFound("carteira não encontrada")
 	}
 	total := amount + fee
-	wEntry := r.newEntry(walletID, wallet.EntryWithdraw, -amount, w.Balance-total, idemKey, ref)
-	fEntry := r.newEntry(walletID, wallet.EntryFee, -fee, w.Balance-total, idemKey, ref)
+	wEntry := r.newEntry(w.WalletID, wallet.EntryWithdraw, -amount, wl.Balance-total, idemKey, w.WithdrawalID)
+	fEntry := r.newEntry(w.WalletID, wallet.EntryFee, -fee, wl.Balance-total, idemKey, w.WithdrawalID)
 
-	walletTx, err := r.balanceTx(walletID, total, -1)
+	walletTx, err := r.balanceTx(w.WalletID, total, -1)
 	if err != nil {
 		return nil, nil, false, err
 	}
 	wLedger := r.ledger.BuildPutTxItemIfAbsent(mustEncode(wEntry))
 	fLedger := r.ledger.BuildPutTxItemIfAbsent(mustEncode(fEntry))
-	guardTx, err := r.guardTx(walletID, wEntry.SK, idemKey, reqHash)
+	guardTx, err := r.guardTx(w.WalletID, wEntry.SK, idemKey, reqHash)
 	if err != nil {
 		return nil, nil, false, err
 	}
-	if err := r.wallets.TransactWrite(ctx, []types.TransactWriteItem{walletTx, wLedger, fLedger, guardTx}); err != nil {
+	withdrawalTx := r.withdrawal.BuildPutTxItemIfAbsent(mustEncode(w))
+	if err := r.wallets.TransactWrite(ctx, []types.TransactWriteItem{walletTx, wLedger, fLedger, guardTx, withdrawalTx}); err != nil {
 		e, _, err2 := r.resolveTxErr(ctx, idemKey, reqHash, -1, err)
 		return e, nil, e != nil, err2
 	}
@@ -406,6 +413,61 @@ func (r *WalletRepository) GetDeposit(ctx context.Context, txid string) (*wallet
 		return nil, err
 	}
 	return Decode[wallet.PixDeposit](item)
+}
+
+// ReserveDepositIdem registers an idempotency key for deposit initiation BEFORE
+// any Inter charge is opened, so a retried POST /wallet/deposits never opens a
+// second PIX charge (SEC-08). It writes a guard row carrying txid with
+// attribute_not_exists. Returns:
+//   - conflict != nil  → the same key was used with a different payload (reqHash drift)
+//   - existing != nil  → this key already initiated a deposit; the caller returns
+//     that deposit + re-queries its charge (idempotent replay)
+//   - otherwise reservedTxid is the key to use for the fresh charge
+//
+// existing is nil only on a genuine first attempt OR when a prior attempt
+// reserved the key but never persisted the deposit (charge opened, PutDeposit
+// failed); in the latter case reservedTxid is the prior attempt's txid and the
+// caller recovers by reusing it.
+func (r *WalletRepository) ReserveDepositIdem(ctx context.Context, guardPK, txid, userID, reqHash string) (reservedTxid string, existing *wallet.PixDeposit, conflict *problem.Problem, err error) {
+	g := idemGuard{
+		PK:        guardPK,
+		WalletID:  userID,
+		EntrySK:   txid,
+		ReqHash:   reqHash,
+		CreatedAt: NowStr(),
+		TTL:       time.Now().Add(idemTTLDays * 24 * time.Hour).Unix(),
+	}
+	gav, err := Encode(g)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	if err := r.idem.TransactWrite(ctx, []types.TransactWriteItem{r.idem.BuildPutTxItemIfAbsent(gav)}); err != nil {
+		if !IsConditionFailed(err) {
+			return "", nil, nil, err
+		}
+		// Guard already exists → replay (or conflict).
+		item, gerr := r.idem.GetItem(ctx, guardPK)
+		if gerr != nil {
+			return "", nil, nil, gerr
+		}
+		if item == nil {
+			// Lost the race but the row vanished (TTL) — treat as a fresh attempt.
+			return txid, nil, nil, nil
+		}
+		eg, derr := Decode[idemGuard](item)
+		if derr != nil {
+			return "", nil, nil, derr
+		}
+		if eg.ReqHash != reqHash {
+			return "", nil, problem.IdempotencyConflict(), nil
+		}
+		dep, derr := r.GetDeposit(ctx, eg.EntrySK)
+		if derr != nil {
+			return "", nil, nil, derr
+		}
+		return eg.EntrySK, dep, nil, nil
+	}
+	return txid, nil, nil, nil
 }
 
 func (r *WalletRepository) UpdateDepositStatus(ctx context.Context, txid, status, e2eID string) error {

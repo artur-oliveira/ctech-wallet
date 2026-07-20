@@ -14,7 +14,7 @@ func (h *handlers) confirmDeposit(c fiber.Ctx) error {
 	if p := bindJSON(c, &body); p != nil {
 		return sendProblem(c, p)
 	}
-	if err := h.svc.ConfirmDeposit(c.Context(), body.Txid, body.PayerCPF, body.PayerName); err != nil {
+	if err := h.svc.ConfirmDeposit(c.Context(), body.Txid, body.PayerCPF, body.PayerName, false); err != nil {
 		return sendProblem(c, err)
 	}
 	return c.SendStatus(fiber.StatusOK)
@@ -82,7 +82,7 @@ func (h *handlers) releaseHold(c fiber.Ctx) error {
 	if p := bindJSON(c, &body); p != nil {
 		return sendProblem(c, p)
 	}
-	hold, err := h.svc.ReleaseHold(c.Context(), c.Params("hold_id"), body.IdempotencyKey)
+	hold, err := h.svc.ReleaseHold(c.Context(), body.UserID, c.Params("hold_id"), body.IdempotencyKey)
 	if err != nil {
 		return sendProblem(c, err)
 	}

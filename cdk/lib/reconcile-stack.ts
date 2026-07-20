@@ -24,7 +24,13 @@ const API_DIR = path.join(__dirname, '../../api');
 /** Tables the reconciliation job touches (wallet_-prefixed names). */
 const RECONCILE_TABLES = ['wallets', 'wallet_ledger_entries', 'wallet_idempotency', 'wallet_withdrawals'];
 
-/** How often the job sweeps withdrawals stuck in `processing`. */
+// How often the reconcile job runs (withdrawal reconciliation + pending-deposit
+// sweep). SEC-02 invariant: this MUST stay well below `sweepAgeThreshold` (10m,
+// in api/internal/services/reconcile.go) so a pending deposit is caught on its
+// first or second sweep, and far below `depositTTLMinutes` (60m, api sweep) so a
+// pending row is always re-queried before DynamoDB's TTL deletes it. 5m gives a
+// 50m safety buffer before any deposit row expires. Lower this only if you also
+// lower depositTTLMinutes — never the other way around.
 const RECONCILE_RATE_MINUTES = 5;
 
 interface ReconcileStackProps extends cdk.StackProps {
