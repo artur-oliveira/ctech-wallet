@@ -106,7 +106,8 @@ export class MockApiClient {
     return {real: state.real, activated: state.activated, game: state.game, sandbox: state.sandbox}
   }
 
-  async createDeposit(amount: number): Promise<DepositResult> {
+  async createDeposit(amount: number, _idemKey: string): Promise<DepositResult> {
+    void _idemKey
     return {
       txid: `tx_${Date.now()}`,
       amount,

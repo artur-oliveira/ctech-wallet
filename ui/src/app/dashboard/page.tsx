@@ -203,7 +203,7 @@ function DashboardInner() {
   }
 
   const deposit = useMutation({
-    mutationFn: (amount: number) => apiClient.createDeposit(amount),
+    mutationFn: (amount: number) => apiClient.createDeposit(amount, newIdemKey()),
     onSuccess: (result) => {
       setFlow(null)
       setCharge(result)
