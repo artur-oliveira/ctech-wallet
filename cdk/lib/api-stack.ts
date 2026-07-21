@@ -298,6 +298,7 @@ export class ApiStack extends cdk.Stack {
       `AWS_REGION=${this.region}`,
       `AWS_USE_DUALSTACK_ENDPOINT=true`,
       `PORT=${APP_PORT}`,
+      `GAMBLING_ENABLED=true`,
       `SERVICE_AUDIENCE=https://${domainName}`,
       `PIX_GATEWAY_FUNCTION_NAME=${pixGatewayFunctionName}`,
       `TRUSTED_PROXIES=127.0.0.1`,
