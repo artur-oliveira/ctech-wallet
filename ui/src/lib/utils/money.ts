@@ -32,18 +32,11 @@ function plain(locale: string): Intl.NumberFormat {
   return f
 }
 
-/** Hard ceiling on any user-typed amount: R$ 1.000.000,00 = 100.000.000 centavos. */
-export const MAX_AMOUNT_CENTS = 100_000_000
+import {SANDBOX_CREDITS_PER_CENTAVO} from './money-constants'
 
-/** Max digits a user can type before hitting MAX_AMOUNT_CENTS (9 = 100.000.000). */
-export const MAX_AMOUNT_DIGITS = 9
-
-/**
- * Fixed sandbox conversion rate: R$ 1,00 (100 centavos) = 1000 credits.
- * Must match api SandboxCreditsPerCentavo (api/internal/domain/wallet/model.go).
- * The rate is a backend constant, never client-supplied.
- */
-export const SANDBOX_CREDITS_PER_CENTAVO = 10
+// Constants live in money-constants.ts (dependency-free, pinned to
+// rpc-contract/money.json by money-contract.test.mjs — B18).
+export {MAX_AMOUNT_CENTS, MAX_AMOUNT_DIGITS, SANDBOX_CREDITS_PER_CENTAVO} from './money-constants'
 
 /** Converts a real-money amount in centavos into the credits it buys. */
 export const toCredits = (centavos: number): number => centavos * SANDBOX_CREDITS_PER_CENTAVO
