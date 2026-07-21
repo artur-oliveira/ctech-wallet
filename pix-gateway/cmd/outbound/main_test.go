@@ -16,7 +16,6 @@ import (
 // it defines its own (different module, and this one only needs to exercise
 // the handler's marshal/unmarshal, not real business behavior).
 type fakePix struct {
-	dictErr     error
 	transferErr error
 }
 
@@ -25,12 +24,6 @@ func (f *fakePix) CreateCharge(_ context.Context, txid string, amount int64, _ s
 }
 func (f *fakePix) QueryCharge(_ context.Context, txid string) (*inter.Charge, error) {
 	return &inter.Charge{Txid: txid, Status: inter.ChargeCompleted, Amount: 500, PayerCPF: "111"}, nil
-}
-func (f *fakePix) DictLookup(_ context.Context, key string) (*inter.DictAccount, error) {
-	if f.dictErr != nil {
-		return nil, f.dictErr
-	}
-	return &inter.DictAccount{Key: key, CPF: "222", Name: "Fulano"}, nil
 }
 func (f *fakePix) Transfer(_ context.Context, key string, amount int64, idem string) (*inter.TransferResult, error) {
 	if f.transferErr != nil {

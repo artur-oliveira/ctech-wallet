@@ -91,17 +91,6 @@ type PaymentResult struct {
 	Refunds  []RefundResult `json:"refunds,omitempty"`
 }
 
-type DictLookupArgs struct {
-	PixKey string `json:"pix_key"`
-}
-
-// DictResult mirrors inter.DictAccount field-for-field.
-type DictResult struct {
-	Key  string `json:"key"`
-	CPF  string `json:"cpf"`
-	Name string `json:"name"`
-}
-
 type TransferArgs struct {
 	PixKey  string `json:"pix_key"`
 	Amount  int64  `json:"amount"`

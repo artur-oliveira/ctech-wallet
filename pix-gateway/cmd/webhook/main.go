@@ -111,6 +111,11 @@ func newWalletClient(ctx context.Context, cfg *config.Config) (*walletclient.Cli
 }
 
 func (h *handler) handle(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	// The shared secret rides in the ?hmac= query param because Banco Inter
+	// controls the webhook request format — the only thing we choose is the
+	// callback URL registered with Inter, so a header is not an option (B35).
+	// Primary auth is the mTLS custom domain; this is defense in depth. API
+	// Gateway access logs must never include $request.querystring.
 	if subtle.ConstantTimeCompare([]byte(req.QueryStringParameters["hmac"]), []byte(h.webhookSecret)) != 1 {
 		slog.WarnContext(ctx, "webhook rejected: hmac mismatch")
 		return events.APIGatewayV2HTTPResponse{StatusCode: 401, Body: "unauthorized"}, nil

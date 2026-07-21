@@ -61,13 +61,6 @@ type Refund struct {
 	Status string // one of the Refund* constants
 }
 
-// DictAccount is the owner of a PIX key resolved via DICT.
-type DictAccount struct {
-	Key  string
-	CPF  string // owner CPF (for withdrawal same-owner matching)
-	Name string
-}
-
 // TransferResult is the outcome of a PIX payout or refund.
 type TransferResult struct {
 	E2EID  string
