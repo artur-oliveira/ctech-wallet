@@ -62,22 +62,28 @@ func newDynamoDBClient(clients *awsclient.Clients) *dynamodb.Client {
 	return clients.DynamoDB
 }
 
-func newCacheBackend(lc fx.Lifecycle, cfg *config.Config) cache.Backend {
+func newCacheBackend(lc fx.Lifecycle, cfg *config.Config) (cache.Backend, error) {
 	if cfg.RedisURL == "" {
 		slog.Warn("VALKEY_URL not set — using in-memory cache/lock (not shared across replicas)")
-		return cache.NewMemoryBackend(1000)
+		return cache.NewMemoryBackend(1000), nil
 	}
 	rb, err := cache.NewRedisBackend(cfg.RedisURL)
 	if err != nil {
+		if cfg.Env == "prod" {
+			// Fail closed: a memory fallback here would silently drop the
+			// fleet-shared per-wallet lock (Invariant #4) — mirror config.go's
+			// empty-VALKEY_URL guard instead of degrading.
+			return nil, fmt.Errorf("valkey backend init failed in prod: %w", err)
+		}
 		slog.Warn("redis connection failed, falling back to in-memory", "err", err)
-		return cache.NewMemoryBackend(1000)
+		return cache.NewMemoryBackend(1000), nil
 	}
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error { return rb.Ping(ctx) },
 		OnStop:  func(context.Context) error { rb.Client().Close(); return nil },
 	})
 	slog.Info("cache: Redis backend active", "url", cfg.RedisURL)
-	return rb
+	return rb, nil
 }
 
 func newLocker(c cache.Backend) *lock.Locker {

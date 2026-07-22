@@ -343,8 +343,8 @@ func (c *InterClient) doIdem(ctx context.Context, method, path string, body, out
 	defer func() { _ = resp.Body.Close() }()
 	raw, _ := io.ReadAll(resp.Body)
 	// Log the full Inter response body at info. The gateway is stateless and
-	// returns only a subset of fields upstream (inter.Charge/DictAccount/
-	// TransferResult), so this raw body is the ONLY place every field Inter
+	// returns only a subset of fields upstream (inter.Charge/TransferResult),
+	// so this raw body is the ONLY place every field Inter
 	// documents for the op is captured and auditable. The body never contains
 	// the OAuth bearer (that travels only in the request), so no secret leaks
 	// here — unlike GetToken, which must NOT log its body (it holds access_token).

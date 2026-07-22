@@ -1,16 +1,19 @@
 package wallet
 
+import rpccontract "gopkg.aoctech.app/wallet/rpc-contract"
+
 // Withdrawal fee defaults (design spec §D). A wallet may override any of these
 // via admin-only DynamoDB fields (Wallet.FeeBps/FeeMin/FeeMax); an unset (zero)
-// override falls back to the default here.
+// override falls back to the default here. Values are defined once in
+// rpc-contract (money.json, shared with the ui — B18).
 const (
-	DefaultFeeBps = 200  // 2.00% in basis points
-	DefaultFeeMin = 100  // R$ 1,00 in centavos
-	DefaultFeeMax = 1000 // R$ 10,00 in centavos
+	DefaultFeeBps = rpccontract.DefaultFeeBps
+	DefaultFeeMin = rpccontract.DefaultFeeMin
+	DefaultFeeMax = rpccontract.DefaultFeeMax
 
 	// AbsoluteFeeMin is a hard floor: the effective fee can never be below this,
 	// even if a wallet configures a lower FeeMin. Covers the PIX transfer cost.
-	AbsoluteFeeMin = 100 // R$ 1,00 in centavos
+	AbsoluteFeeMin = rpccontract.AbsoluteFeeMin
 )
 
 // WithdrawalFee returns the fee in centavos for withdrawing amount from w.

@@ -6,13 +6,12 @@ import (
 	"sync"
 )
 
-// FakePixClient is a programmable in-memory PixClient for tests. Stage charges
-// and DICT results, force transfer/refund errors, and inspect recorded calls.
+// FakePixClient is a programmable in-memory PixClient for tests. Stage
+// charges, force transfer/refund errors, and inspect recorded calls.
 type FakePixClient struct {
 	mu sync.Mutex
 
 	Charges        map[string]*Charge         // by txid
-	Dict           map[string]*DictAccount    // by pix key
 	TransferStatus map[string]*TransferResult // by idemKey — reconciliation lookups
 
 	TransferErr error
@@ -42,7 +41,6 @@ type RecordedRefund struct {
 func NewFake() *FakePixClient {
 	return &FakePixClient{
 		Charges:        make(map[string]*Charge),
-		Dict:           make(map[string]*DictAccount),
 		TransferStatus: make(map[string]*TransferResult),
 	}
 }
@@ -137,13 +135,6 @@ func (f *FakePixClient) StageChargePayment(txid, e2eID string, amount int64, pay
 	if c, ok := f.Charges[txid]; ok {
 		c.Payments = append(c.Payments, Payment{E2EID: e2eID, Amount: amount, PayerCPF: payerCPF})
 	}
-}
-
-// StageDict registers a DICT owner for a key — for withdrawal tests.
-func (f *FakePixClient) StageDict(pixKey, cpf, name string) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.Dict[pixKey] = &DictAccount{Key: pixKey, CPF: cpf, Name: name}
 }
 
 var _ PixClient = (*FakePixClient)(nil)

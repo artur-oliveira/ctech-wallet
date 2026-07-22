@@ -3,6 +3,8 @@
 // Every string and numeric key lives here as a named constant.
 package wallet
 
+import rpccontract "gopkg.aoctech.app/wallet/rpc-contract"
+
 // Wallet balance types. `game` holds REAL money earmarked for games: it is
 // withdrawable (via `real`) and counts toward the user's real holdings. It exists
 // so personal gambling limits have exactly one edge to meter — `real → game`.
@@ -103,16 +105,17 @@ const WalletPrefix = "WALLET#"
 // directly in domain/wallet so every inbound path enforces the same number.
 // Stored as centavos in MaxInboundAmount.
 const (
-	MaxInboundReais  = 1_000_000
-	MaxInboundAmount = MaxInboundReais * 100 // centavos
+	MaxInboundAmount = rpccontract.MaxAmountCents // centavos, shared with ui (B18)
+	MaxInboundReais  = MaxInboundAmount / 100
 )
 
 // SandboxCreditsPerCentavo is the fixed conversion applied when real money is
 // turned into sandbox credits (game → sandbox). R$ 1,00 (100 centavos) becomes
 // 1000 credits, so this is 10 credits per centavo. The rate is a backend
 // constant — never client-supplied — and is applied to the full real amount
-// debited from `game`. Keep in sync with ui SANDBOX_CREDITS_PER_CENTAVO.
-const SandboxCreditsPerCentavo = 10
+// debited from `game`. Defined once in rpc-contract (money.json, shared with
+// the ui — B18).
+const SandboxCreditsPerCentavo = rpccontract.SandboxCreditsPerCentavo
 
 // ToSandboxCredits converts a real-money amount in centavos into the number of
 // sandbox credits it buys at the fixed rate.

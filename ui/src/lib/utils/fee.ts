@@ -1,4 +1,7 @@
-/** Withdrawal fee rules mirrored from api/internal/domain/wallet/fee.go. */
+/**
+ * Withdrawal fee rules. Values are pinned to rpc-contract/money.json (the
+ * canonical cross-language source, B18) by money-contract.test.mjs.
+ */
 export const FEE_BPS = 200 // 2.00%
 export const FEE_MIN = 100 // R$ 1,00
 export const FEE_MAX = 1000 // R$ 10,00

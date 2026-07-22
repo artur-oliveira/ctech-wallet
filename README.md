@@ -19,16 +19,15 @@ append-only, transacional, idempotente, sem saldo negativo.
 | [`CLAUDE.md`](CLAUDE.md)                                                                | Instruções para Claude Code                            |
 | [`AGENTS.md`](AGENTS.md)                                                                | Contexto para agentes de IA (idêntico ao `CLAUDE.md`)  |
 
-## Subprojetos (planejado)
+## Subprojetos
 
 ```
-api/        # Backend REST — Go 1.26 (Fiber v3), DynamoDB, Valkey
-ui/         # Frontend — Next.js 16 + TypeScript + ShadCN
-cdk/        # Infraestrutura AWS — CDK TypeScript
+api/          # Backend REST — Go (Fiber v3), DynamoDB, Valkey, Reconcile, PIX
+ui/           # Frontend — Next.js 16 + TypeScript + ShadCN
+cdk/          # Infraestrutura AWS — CDK TypeScript
+pix-gateway/  # Provedor e mock de gateway PIX
+rpc-contract/ # Contrato RPC e DTOs M2M
 ```
-
-Ainda não implementado — a spec de design descreve o desenho completo; a implementação segue o mesmo padrão do
-`ctech-dfe/api` (fx DI, camadas `handler → service → repository`, RFC 7807).
 
 ## Segurança (sistema financeiro)
 
@@ -46,14 +45,14 @@ Este serviço custodia dinheiro real de terceiros. Invariantes não-negociáveis
 ## Início Rápido
 
 ```bash
-# Backend (quando existir)
-cd api && go run ./cmd/server
+# Backend
+cd api && go test ./... && go run ./cmd/server
 
-# Frontend (quando existir)
-cd ui && npm install && npm run dev
+# Frontend
+cd ui && npm install && npm test && npm run dev
 
-# Infraestrutura (quando existir)
-cd cdk && npm install && cdk synth
+# Infraestrutura
+cd cdk && npm install && npx cdk synth
 ```
 
 ## Licença

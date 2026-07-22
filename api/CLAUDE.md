@@ -202,7 +202,7 @@ different scope on a different service. Do not conflate it with
 | B1 | IAM may be missing `dynamodb:TransactWriteItems` — every money op uses `Base.TransactWrite` (→ `ctech-go-common/dynamo`). If absent, all money ops denied at runtime. | `repositories/wallet.go:275`; verify `cdk/README.md` |
 | B2 | `internal:account:kyc` (wallet→account) vs `internal:wallet:confirm-deposit` (pix‑gateway→api) conflated in some comments (`kycclient.go:2`, `config.go:41`). | `kycclient.go:24`, `scope.go:15` |
 | B3 | `internal:wallet:debit-real` (code) vs stale `internal:wallet:real:debit` in `docs/specs/2026-07-19-poker-game-holds-design.md`. | `scope.go:14` |
-| B7 | Valkey fail‑closed in prod (`config.go:74`) but `newCacheBackend` silently falls back to in‑memory on missing/!redis; same for WS registry. Non‑prod ⇒ locks/WS not fleet‑shared with no hard failure. | `app.go:65,72,91` |
+| B7 | **Fixed:** prod fails closed on empty `VALKEY_URL` (`config.go:74`) AND on Valkey init failure (`app.go` `newCacheBackend` returns error in prod). Non‑prod still falls back to in‑memory with a warn log. | `app.go:65` |
 | B18 | Money constants mirrored api↔ui by hand (no float): `FEE_ABSOLUTE_MIN=100`, defaults `200/100/1000`, `SANDBOX_CREDITS_PER_CENTAVO=10`. `rpc-contract` holds NO money constants. | `fee.go:7,13`, `model.go:115`, `ui/src/lib/utils/{fee,money}.ts` |
 
 ---
