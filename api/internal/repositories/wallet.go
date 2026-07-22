@@ -126,6 +126,18 @@ func (r *WalletRepository) EnsureRealWallet(ctx context.Context, userID string) 
 	return byType[wallet.TypeReal], nil
 }
 
+// EnsureSandboxWallet lazily creates the caller's sandbox wallet if it does not
+// already exist. Unlike EnsureGamblingWallets, this does NOT require gambling
+// activation — sandbox is play currency and is created independently of the
+// game wallet's KYC/consent gate.
+func (r *WalletRepository) EnsureSandboxWallet(ctx context.Context, userID string) (*wallet.Wallet, error) {
+	byType, err := r.EnsureWalletsOfType(ctx, userID, wallet.TypeSandbox)
+	if err != nil {
+		return nil, err
+	}
+	return byType[wallet.TypeSandbox], nil
+}
+
 // EnsureWalletsOfType returns the user's wallets of the given types, creating any
 // that are missing in ONE transaction. Existing wallets are always REUSED, never
 // replaced — replacing one would orphan its balance.

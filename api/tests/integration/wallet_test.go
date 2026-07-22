@@ -193,6 +193,39 @@ func TestEnsureRealWalletDoesNotCreateGamblingWallets(t *testing.T) {
 	}
 }
 
+func TestEnsureSandboxWalletIsIdempotentAndSkipsActivation(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(verified())
+	user := "u-" + id.New()
+
+	// No EnsureRealWallet, no ActivateGambling — sandbox must still be creatable.
+	sandbox, err := h.repo.EnsureSandboxWallet(ctx, user)
+	if err != nil {
+		t.Fatalf("EnsureSandboxWallet: %v", err)
+	}
+	if sandbox == nil || sandbox.Type != wallet.TypeSandbox || sandbox.Balance != 0 {
+		t.Fatalf("sandbox = %+v, want zero-balance type %q", sandbox, wallet.TypeSandbox)
+	}
+
+	// game must still be absent — this call must never create it.
+	_, game, _, err := h.repo.LoadWallets(ctx, user)
+	if err != nil {
+		t.Fatalf("LoadWallets: %v", err)
+	}
+	if game != nil {
+		t.Fatalf("EnsureSandboxWallet must not create game, got %+v", game)
+	}
+
+	// Idempotent: a second call converges on the SAME wallet, never a second one.
+	sandbox2, err := h.repo.EnsureSandboxWallet(ctx, user)
+	if err != nil {
+		t.Fatalf("EnsureSandboxWallet replay: %v", err)
+	}
+	if sandbox2.WalletID != sandbox.WalletID {
+		t.Fatalf("replay created a new wallet: %s vs %s", sandbox2.WalletID, sandbox.WalletID)
+	}
+}
+
 func TestEnsureGamblingWalletsIsAtomicAndIdempotent(t *testing.T) {
 	ctx := context.Background()
 	h := newHarness(verified())
