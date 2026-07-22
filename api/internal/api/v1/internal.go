@@ -115,3 +115,13 @@ func (h *handlers) gameStatus(c fiber.Ctx) error {
 	}
 	return c.JSON(st)
 }
+
+// walletBalance reports a user's game+sandbox balance (M2M, scope
+// internal:wallet:balance). real is never exposed here.
+func (h *handlers) walletBalance(c fiber.Ctx) error {
+	b, err := h.svc.BalancesFor(c.Context(), c.Params("user_id"))
+	if err != nil {
+		return sendProblem(c, err)
+	}
+	return c.JSON(b)
+}

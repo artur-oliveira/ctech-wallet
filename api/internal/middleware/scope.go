@@ -25,6 +25,11 @@ const (
 	// ScopeWalletGameStatus read a user's real-money eligibility (activation,
 	// self-exclusion, limits) — consumed by skill games before buy-in
 	ScopeWalletGameStatus = "internal:wallet:game-status"
+
+	// ScopeWalletBalance reads a user's game+sandbox balance (real excluded) —
+	// consumed by skill games to show the user how much they hold. Read-only,
+	// deliberately separate from ScopeWalletGameStatus (eligibility, not balance).
+	ScopeWalletBalance = "internal:wallet:balance"
 )
 
 // KYC levels are defined once, in the domain — services gate on them too.

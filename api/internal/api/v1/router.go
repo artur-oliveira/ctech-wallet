@@ -91,4 +91,7 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 	// Real-money eligibility for skill games (ctech-poker Phase 5). Registered
 	// unconditionally: poker must see "not eligible" even while the flag is off.
 	gw.Get("/status/:user_id", middleware.RequireScope(middleware.ScopeWalletGameStatus), h.gameStatus)
+	// Balance read for skill games (ctech-poker). Read-only, game+sandbox only.
+	bg := internal.Group("/wallet/balance")
+	bg.Get("/:user_id", middleware.RequireScope(middleware.ScopeWalletBalance), h.walletBalance)
 }

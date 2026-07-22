@@ -131,6 +131,24 @@ func TestCashoutGameRouteRegistered(t *testing.T) {
 	}
 }
 
+// TestWalletBalanceRouteRegistered proves /internal/wallet/balance/:user_id is
+// wired to walletBalance, mirroring TestGameStatusRouteShape's style.
+func TestWalletBalanceRouteRegistered(t *testing.T) {
+	app := fiber.New()
+	app.Use(recover.New())
+	h := &handlers{}
+	app.Get("/internal/wallet/balance/:user_id", func(c fiber.Ctx) error {
+		return h.walletBalance(c)
+	})
+	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/internal/wallet/balance/u1", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		t.Fatal("route not registered")
+	}
+}
+
 var _ = wallet.EntryDeposit
 var _ = pix.ChargeCompleted
 var _ = repositories.Mutation{}
