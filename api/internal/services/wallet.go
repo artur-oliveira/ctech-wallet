@@ -635,6 +635,32 @@ func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, a
 	return w, nil
 }
 
+// WalletBalances is the M2M balance snapshot a skill game reads to show a
+// user how much they hold. real is deliberately excluded — poker never
+// touches real money directly.
+type WalletBalances struct {
+	GameBalance    int64 `json:"game_balance"`
+	SandboxBalance int64 `json:"sandbox_balance"`
+}
+
+// BalancesFor reports game+sandbox balances for a user. Read-only — it never
+// creates a wallet; a wallet that doesn't exist yet reports as balance 0,
+// which is the correct value (the user holds nothing there), not an error.
+func (s *WalletService) BalancesFor(ctx context.Context, userID string) (*WalletBalances, error) {
+	_, game, sandbox, err := s.repo.LoadWallets(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	b := &WalletBalances{}
+	if game != nil {
+		b.GameBalance = game.Balance
+	}
+	if sandbox != nil {
+		b.SandboxBalance = sandbox.Balance
+	}
+	return b, nil
+}
+
 // requireActivated loads the caller's wallets and fails if gambling was never
 // activated. Every operation inside the ring-fence goes through this.
 func (s *WalletService) requireActivated(ctx context.Context, userID string) (real, game, sandbox *wallet.Wallet, err error) {

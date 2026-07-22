@@ -626,6 +626,51 @@ func TestReturnFromGameStillRequiresActivation(t *testing.T) {
 	isProblem(t, err, problem.TypeGamblingNotActivated)
 }
 
+func TestBalancesForReturnsZeroForBrandNewUser(t *testing.T) {
+	repo := newStubRepo()
+	repo.notActivated = true
+	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+
+	got, err := svc.BalancesFor(context.Background(), "u1")
+	if err != nil {
+		t.Fatalf("BalancesFor: %v", err)
+	}
+	if got.GameBalance != 0 || got.SandboxBalance != 0 {
+		t.Fatalf("balances = %+v, want zero/zero for a user with no wallets", got)
+	}
+}
+
+func TestBalancesForReturnsActualBalances(t *testing.T) {
+	repo := newStubRepo()
+	repo.game.Balance = 1500
+	repo.sandbox.Balance = 30000
+	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+
+	got, err := svc.BalancesFor(context.Background(), "u1")
+	if err != nil {
+		t.Fatalf("BalancesFor: %v", err)
+	}
+	if got.GameBalance != 1500 || got.SandboxBalance != 30000 {
+		t.Fatalf("balances = %+v, want game=1500 sandbox=30000", got)
+	}
+}
+
+func TestBalancesForSandboxOnlyUser(t *testing.T) {
+	repo := newStubRepo()
+	repo.notActivated = true
+	repo.sandboxCreated = true
+	repo.sandbox.Balance = 700
+	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+
+	got, err := svc.BalancesFor(context.Background(), "u1")
+	if err != nil {
+		t.Fatalf("BalancesFor: %v", err)
+	}
+	if got.GameBalance != 0 || got.SandboxBalance != 700 {
+		t.Fatalf("balances = %+v, want game=0 (never activated) sandbox=700", got)
+	}
+}
+
 func TestFundGameMovesRealIntoGame(t *testing.T) {
 	repo := newStubRepo()
 	// FundGame now requires configured personal limits (responsible gambling).
