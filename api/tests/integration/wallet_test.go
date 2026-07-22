@@ -498,6 +498,82 @@ func TestSandboxDebitNoNegative(t *testing.T) {
 	wantProblem(t, err, problem.TypeInsufficientBalance)
 }
 
+// The reported poker bug: a daily-reward sandbox credit must work for a user
+// who never activated gambling.
+func TestCreditSandboxSucceedsWithoutActivation(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(verified())
+	user := "u-" + id.New() // no EnsureRealWallet, no ActivateGambling at all
+
+	entry, err := h.svc.CreditSandbox(ctx, user, 500, "idem-"+id.New(), "daily-reward")
+	if err != nil {
+		t.Fatalf("CreditSandbox without activation: %v", err)
+	}
+	if entry.Amount != 500 {
+		t.Fatalf("entry.Amount = %d, want 500", entry.Amount)
+	}
+
+	_, game, sandbox, err := h.repo.LoadWallets(ctx, user)
+	if err != nil {
+		t.Fatalf("LoadWallets: %v", err)
+	}
+	if game != nil {
+		t.Fatal("CreditSandbox must never create the game wallet")
+	}
+	if sandbox == nil || sandbox.Balance != 500 {
+		t.Fatalf("sandbox = %+v, want balance 500", sandbox)
+	}
+}
+
+// DebitSandbox on a never-activated, never-funded user still respects the
+// no-negative-balance invariant — it gets insufficient-balance, not
+// gambling-not-activated.
+func TestDebitSandboxOnNeverActivatedUserRespectsBalanceFloor(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(verified())
+	user := "u-" + id.New()
+
+	_, err := h.svc.DebitSandbox(ctx, user, 500, "round-1", "bet")
+	wantProblem(t, err, problem.TypeInsufficientBalance)
+}
+
+// The game wallet's activation gate must remain fully intact.
+func TestFundGameAndReturnFromGameStillGatedWithoutActivation(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(verified())
+	user := "u-" + id.New()
+
+	_, _, err := h.svc.FundGame(ctx, user, 3000, "idem-"+id.New())
+	wantProblem(t, err, problem.TypeGamblingNotActivated)
+
+	_, _, err = h.svc.ReturnFromGame(ctx, user, 3000, "idem-"+id.New())
+	wantProblem(t, err, problem.TypeGamblingNotActivated)
+}
+
+func TestBalancesForReflectsRealBalances(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(verified())
+	user := fundedAndActivated(t, h, 10000)
+
+	if _, _, err := h.svc.FundGame(ctx, user, 4000, "idem-"+id.New()); err != nil {
+		t.Fatalf("FundGame: %v", err)
+	}
+	if _, _, err := h.svc.PurchaseSandbox(ctx, user, 1000, "idem-"+id.New()); err != nil {
+		t.Fatalf("PurchaseSandbox: %v", err)
+	}
+
+	got, err := h.svc.BalancesFor(ctx, user)
+	if err != nil {
+		t.Fatalf("BalancesFor: %v", err)
+	}
+	if got.GameBalance != 3000 {
+		t.Fatalf("GameBalance = %d, want 3000 (4000 funded - 1000 spent)", got.GameBalance)
+	}
+	if got.SandboxBalance != 10000 {
+		t.Fatalf("SandboxBalance = %d, want 10000 (1000¢ x 10 credits/centavo)", got.SandboxBalance)
+	}
+}
+
 func TestIdempotentReplaySameResult(t *testing.T) {
 	ctx := context.Background()
 	h := newHarness(verified())
