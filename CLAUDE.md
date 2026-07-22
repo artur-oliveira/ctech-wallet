@@ -65,8 +65,10 @@ it is.
    encourage.
 9. **`game` balance is real money.** Withdrawable (via `real`), counts toward the user's real holdings, never
    expired or written off. The user's total real money is `real.balance + game.balance`.
-10. **Consent is opt-in and auditable.** `game`/`sandbox` do not exist until the user accepts the gambling
-    addendum (a document distinct from the terms addendum) with verified KYC. Activation, consent, and every
+10. **Consent is opt-in and auditable.** `game` does not exist until the user accepts the gambling
+    addendum (a document distinct from the terms addendum) with verified KYC — `sandbox` is play currency
+    and is created independently (lazily, on first use), with no KYC/consent requirement of its own.
+    Activation, consent, and every
     personal-limit change append to `wallet_audit` — append-only, never updated, never deleted, enforced in IAM
     with an explicit DENY on `UpdateItem`/`DeleteItem`. Never fabricate consent: a legacy user holding a sandbox
     wallet from the old two-wallet model is **not** activated.

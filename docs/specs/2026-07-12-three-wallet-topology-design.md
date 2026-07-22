@@ -69,13 +69,18 @@ that it is gross.)
 
 ## Activation (opt-in)
 
-`game` and `sandbox` do not exist until the user explicitly activates them. A user who only pays for
-subscriptions never sees a gambling surface.
+`game` does not exist until the user explicitly activates it. A user who only pays for subscriptions never
+sees a gambling surface. **`sandbox` no longer shares this gate** (amended in
+`docs/specs/2026-07-22-poker-integration-fixes-design.md`): it is play currency, not real money, so it is
+created independently of KYC/gambling consent — either alongside `game` at activation, or lazily on the
+first M2M sandbox credit/debit, whichever happens first.
 
 **Wallet creation:**
 - `EnsureWallets` creates **`real` only**. This is the change from today (it currently creates
   `real` + `sandbox`).
-- `game` and `sandbox` are created together, atomically, at activation.
+- `game` and `sandbox` are created together, atomically, at activation — but `sandbox` may already exist by
+  then (lazily created by an earlier M2M sandbox op); `EnsureGamblingWallets` reuses it rather than
+  replacing it.
 
 **Activation requires all of:**
 1. KYC `verified` — real money is about to enter a gambling ring-fence.

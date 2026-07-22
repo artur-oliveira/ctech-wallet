@@ -73,6 +73,7 @@ non‑empty `sid` (`scope.go:42`).
 | POST | `/v1.0/internal/wallet/game/hold/:hold_id/release` | `internal:wallet:game-hold` | `internal.go:80` | `{user_id, idempotency_key}` (`dto.go:89`) | Refunds a `held` hold in full (table/hand aborted before play). Requires `user_id` to match the hold's owner (SEC‑07). Idempotent. `wallet.go:871`. |
 | POST | `/v1.0/internal/wallet/game/cashout` | `internal:wallet:game-cashout` (`scope.go:24`) | `internal.go:95` | `{user_id, amount>0, table_ref, hold_ids[], idempotency_key}` (`dto.go:97`) | Credits the player's final stack — amount is credited **exactly as sent, never bounded** by the sum of `hold_ids` (the caller's table ledger is authoritative). Every listed hold must belong to `user_id` (SEC‑07) before any mutation. `wallet.go:941`. |
 | GET | `/v1.0/internal/wallet/game/status/:user_id` | `internal:wallet:game-status` (`scope.go:27`) | `internal.go:111` | — | Real‑money eligibility for a skill game: `{activated, self_excluded, limits_configured}`. Registered unconditionally so poker sees "not eligible" even while the flag is off. `responsible.go:236`. |
+| GET | `/v1.0/internal/wallet/balance/:user_id` | `internal:wallet:balance` (`scope.go:32`) | `internal.go:121` | — | Read‑only `{game_balance, sandbox_balance}` (centavos). `real` deliberately excluded — poker never touches real money directly. Never creates a wallet; a wallet that doesn't exist reports `0`. `wallet.go` `BalancesFor`. |
 
 > **Scope naming note (divergence B2/B3).** The scope guarding
 > `/internal/pix/confirm-deposit` is `internal:wallet:confirm-deposit`
@@ -135,9 +136,11 @@ non‑empty `sid` (`scope.go:42`).
    refunds headroom on `ReturnFromGame` (`wallet.go:737`).
 9. **`game` is real money** — withdrawable via `real`; total real = `real +
    game` (`model.go:6`).
-10. **Consent opt‑in + auditable** — `game`/`sandbox` absent until verified
-    KYC + current gambling addendum accepted; every activation / limit change
-    appends to `wallet_audit` (`Event*` in `domain/wallet/audit.go:6`).
+10. **Consent opt‑in + auditable** — `game` absent until verified KYC +
+    current gambling addendum accepted; every activation / limit change
+    appends to `wallet_audit` (`Event*` in `domain/wallet/audit.go:6`). `sandbox`
+    is play currency and is created independently, lazily, with no KYC/consent
+    requirement (`EnsureSandboxWallet`, `repositories/wallet.go`).
 11. **Webhook never source of truth** — `ConfirmDeposit` re‑queries Inter by
     `txid` before crediting; webhook body only supplies the payer CPF/name
     (masked‑compare, fails closed) (`wallet.go:278`, `maskedCPFMatches:392`).
