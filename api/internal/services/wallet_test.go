@@ -20,6 +20,7 @@ import (
 type stubRepo struct {
 	real, game, sandbox wallet.Wallet
 	notActivated        bool // no game/sandbox wallets — user never opted in
+	sandboxCreated      bool // sandbox created via EnsureSandboxWallet despite notActivated
 	deposit             *wallet.PixDeposit
 	withdrawals         map[string]*wallet.Withdrawal
 	depositStatus       string
@@ -75,9 +76,17 @@ func (s *stubRepo) EnsureGamblingWallets(_ context.Context, _ string) (*wallet.W
 }
 func (s *stubRepo) LoadWallets(_ context.Context, _ string) (*wallet.Wallet, *wallet.Wallet, *wallet.Wallet, error) {
 	if s.notActivated {
-		return &s.real, nil, nil, nil
+		var sandbox *wallet.Wallet
+		if s.sandboxCreated {
+			sandbox = &s.sandbox
+		}
+		return &s.real, nil, sandbox, nil
 	}
 	return &s.real, &s.game, &s.sandbox, nil
+}
+func (s *stubRepo) EnsureSandboxWallet(_ context.Context, _ string) (*wallet.Wallet, error) {
+	s.sandboxCreated = true
+	return &s.sandbox, nil
 }
 func (s *stubRepo) Credit(_ context.Context, m repositories.Mutation) (*wallet.LedgerEntry, bool, error) {
 	s.creditCalls = append(s.creditCalls, m)
@@ -563,6 +572,58 @@ func TestPurchaseSandboxRequiresActivation(t *testing.T) {
 	if repo.transferCalled {
 		t.Fatal("a non-activated purchase must not touch any wallet")
 	}
+}
+
+func TestCreditSandboxWorksWithoutActivation(t *testing.T) {
+	repo := newStubRepo()
+	repo.notActivated = true
+	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+
+	entry, err := svc.CreditSandbox(context.Background(), "u1", 500, "idem-1", "daily-reward")
+	if err != nil {
+		t.Fatalf("CreditSandbox without activation = %v, want success", err)
+	}
+	if entry.WalletID != "w-sand" || entry.Amount != 500 {
+		t.Errorf("entry = %+v, want wallet w-sand amount 500", entry)
+	}
+	if !repo.sandboxCreated {
+		t.Fatal("expected sandbox wallet to be lazily created")
+	}
+}
+
+func TestDebitSandboxWorksWithoutActivation(t *testing.T) {
+	repo := newStubRepo()
+	repo.notActivated = true
+	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+
+	entry, err := svc.DebitSandbox(context.Background(), "u1", 200, "idem-2", "bet")
+	if err != nil {
+		t.Fatalf("DebitSandbox without activation = %v, want success", err)
+	}
+	if entry.WalletID != "w-sand" || entry.Amount != -200 {
+		t.Errorf("entry = %+v, want wallet w-sand amount -200 (debit)", entry)
+	}
+}
+
+// FundGame/ReturnFromGame/PurchaseSandbox/HoldGame remain gated — this change
+// must not weaken the game wallet's KYC/consent gate.
+func TestFundGameStillRequiresActivation(t *testing.T) {
+	repo := newStubRepo()
+	repo.notActivated = true
+	users := &stubUserRepo{user: &wallet.User{GameLimits: &wallet.GameLimits{Daily: 10000, Weekly: 10000, Monthly: 10000}}}
+	svc := NewWalletService(repo, users, &stubAudit{}, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+
+	_, _, err := svc.FundGame(context.Background(), "u1", 3000, "idem-3")
+	isProblem(t, err, problem.TypeGamblingNotActivated)
+}
+
+func TestReturnFromGameStillRequiresActivation(t *testing.T) {
+	repo := newStubRepo()
+	repo.notActivated = true
+	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+
+	_, _, err := svc.ReturnFromGame(context.Background(), "u1", 3000, "idem-4")
+	isProblem(t, err, problem.TypeGamblingNotActivated)
 }
 
 func TestFundGameMovesRealIntoGame(t *testing.T) {

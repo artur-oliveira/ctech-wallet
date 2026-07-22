@@ -50,6 +50,7 @@ func interIdemKey(withdrawalID string) string {
 type Repo interface {
 	GetWallet(ctx context.Context, walletID string) (*wallet.Wallet, error)
 	EnsureRealWallet(ctx context.Context, userID string) (*wallet.Wallet, error)
+	EnsureSandboxWallet(ctx context.Context, userID string) (*wallet.Wallet, error)
 	EnsureGamblingWallets(ctx context.Context, userID string) (game, sandbox *wallet.Wallet, err error)
 	LoadWallets(ctx context.Context, userID string) (real, game, sandbox *wallet.Wallet, err error)
 	Credit(ctx context.Context, m repositories.Mutation) (*wallet.LedgerEntry, bool, error)
@@ -775,7 +776,7 @@ func (s *WalletService) DebitSandbox(ctx context.Context, userID string, amount 
 }
 
 func (s *WalletService) sandboxOp(ctx context.Context, userID string, amount int64, idemKey, reason, entryType string, credit bool) (*wallet.LedgerEntry, error) {
-	_, _, sandbox, err := s.requireActivated(ctx, userID)
+	sandbox, err := s.repo.EnsureSandboxWallet(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
