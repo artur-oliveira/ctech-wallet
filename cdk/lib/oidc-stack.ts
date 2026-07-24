@@ -35,6 +35,7 @@ export class OidcStack extends cdk.Stack {
         );
 
         const subject = `repo:${githubRepo}:*`;
+        const [owner, repoName] = githubRepo.split('/');
 
         const trust = new iam.WebIdentityPrincipal(provider.openIdConnectProviderArn, {
             StringLike: {
