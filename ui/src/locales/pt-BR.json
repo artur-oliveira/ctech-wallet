@@ -1,0 +1,347 @@
+{
+  "app": {
+    "name": "CTech Wallet"
+  },
+  "common": {
+    "cancel": "Cancelar",
+    "continue": "Continuar",
+    "loading": "Carregando…",
+    "tryAgain": "Tentar novamente",
+    "retrying": "Tentando novamente…",
+    "genericError": "Algo deu errado. Tente de novo.",
+    "close": "Fechar",
+    "changeLanguage": "Mudar idioma para {{language}}"
+  },
+  "login": {
+    "title": "CTech Wallet",
+    "subtitle": "Seu saldo real para PIX e serviços CTech.",
+    "button": "Entrar com a conta CTech"
+  },
+  "callback": {
+    "authenticating": "Autenticando…",
+    "returnToLogin": "Voltar para entrar",
+    "error": {
+      "accessDenied": {
+        "title": "A entrada foi cancelada",
+        "description": "Você não autorizou o acesso à CTech Wallet. Nenhuma movimentação da carteira foi alterada. Volte quando quiser tentar novamente."
+      },
+      "sessionExpired": {
+        "title": "Sua sessão de entrada expirou",
+        "description": "Para sua segurança, esta tentativa não pode mais ser usada. Comece novamente para criar uma sessão válida."
+      },
+      "unavailable": {
+        "title": "A entrada está temporariamente indisponível",
+        "description": "A Conta CTech não conseguiu concluir esta tentativa. Aguarde um momento e tente entrar novamente."
+      },
+      "invalidRequest": {
+        "title": "Este link de entrada não pode ser usado",
+        "description": "O link é inválido ou já foi utilizado. Volte para entrar e crie um novo."
+      },
+      "invalidCallback": {
+        "title": "A resposta de entrada está incompleta",
+        "description": "Não foi possível verificar a resposta da Conta CTech. Volte para entrar e comece novamente."
+      },
+      "generic": {
+        "title": "Não foi possível concluir a entrada",
+        "description": "Nenhuma movimentação da carteira foi alterada. Volte para entrar e tente novamente."
+      }
+    }
+  },
+  "dashboard": {
+    "loadingBalances": "Carregando saldos",
+    "loadError": "Não foi possível carregar seus saldos. Atualize a página para tentar de novo.",
+    "logout": "Sair",
+    "live": "Ao vivo",
+    "connecting": "Conectando…",
+    "offline": "Offline",
+    "ledger": {
+      "label": "Extratos das carteiras",
+      "tab": {
+        "real": "Extrato real",
+        "game": "Extrato de jogo",
+        "sandbox": "Extrato sandbox"
+      },
+      "loading": "Carregando extrato…",
+      "error": "Não foi possível carregar o extrato. Atualize a página para tentar de novo.",
+      "loadMore": "Carregar movimentações anteriores",
+      "loadingMore": "Carregando movimentações anteriores…",
+      "loadMoreError": "Não foi possível carregar movimentações anteriores. Tente de novo.",
+      "empty": {
+        "real": "Nenhuma movimentação no saldo real. Faça um depósito PIX para começar.",
+        "game": "Nenhuma movimentação no saldo de jogo. Envie dinheiro do saldo real quando quiser usá-lo em jogos.",
+        "sandbox": "Nenhuma movimentação de créditos sandbox. Compre créditos com o saldo de jogo quando quiser usá-los."
+      }
+    }
+  },
+  "balance": {
+    "real": {
+      "label": "Saldo real",
+      "subtitle": "Depósito e saque via PIX"
+    },
+    "deposit": "Depositar",
+    "withdraw": "Sacar",
+    "fundGame": "Enviar para jogos",
+    "game": {
+      "label": "Saldo de jogo",
+      "badge": "Não saca direto",
+      "subtitle": "Dinheiro real reservado para jogos. Para sacar, devolva ao saldo real primeiro — pode fazer isso quando quiser, sem taxa."
+    },
+    "return": "Devolver",
+    "credits": "Créditos",
+    "sandbox": {
+      "label": "Créditos sandbox",
+      "subtitle": "Moeda virtual para partidas, comprada com o saldo de jogo. Não tem valor em dinheiro e não pode ser sacada nem convertida de volta."
+    },
+    "activateLink": "Vai usar a carteira para jogos? Ative a carteira de jogo.",
+    "responsibleLink": "Jogo responsável e limites"
+  },
+  "dialog": {
+    "deposit": {
+      "title": "Depositar via PIX",
+      "description": "Geramos um código PIX para você pagar no app do seu banco.",
+      "submit": "Gerar código"
+    },
+    "withdraw": {
+      "title": "Sacar para o PIX",
+      "description": "A taxa de saque é descontada do seu saldo junto com o valor.",
+      "submit": "Sacar",
+      "pixDestination": "O PIX será enviado para o CPF cadastrado na sua conta. Você precisa já ter uma chave PIX registrada para ele no seu banco."
+    },
+    "credits": {
+      "title": "Comprar créditos sandbox",
+      "description": "Debita do seu saldo de jogo. Créditos sandbox não voltam a virar dinheiro.",
+      "submit": "Comprar"
+    },
+    "fundGame": {
+      "title": "Enviar para a carteira de jogo",
+      "description": "Continua sendo seu dinheiro: você pode devolvê-lo ao saldo real quando quiser. Seus limites de jogo valem aqui.",
+      "submit": "Enviar"
+    },
+    "returnGame": {
+      "title": "Devolver ao saldo real",
+      "description": "Sem taxa e sem limite — devolver dinheiro para fora da carteira de jogo é sempre permitido.",
+      "submit": "Devolver"
+    },
+    "amount": {
+      "label": "Valor",
+      "placeholder": "0,00",
+      "feePreview": "Inclui uma taxa de saque de {{fee}}.",
+      "maxButton": "Máx {{max}}",
+      "creditsPreview": "Corresponde a {{credits}} créditos."
+    },
+    "max": "Máximo {{max}}",
+    "available": "Disponível {{amount}}",
+    "error": {
+      "required": "Informe um valor.",
+      "invalid": "Informe um valor válido.",
+      "maxExceeded": "O valor máximo é {{max}}.",
+      "overBalance": "Acima do disponível ({{amount}}).",
+      "overWithdrawable": "Com a taxa, o máximo disponível para saque é {{amount}}."
+    }
+  },
+  "confirm": {
+    "withdraw": {
+      "title": "Confirmar saque",
+      "description": "Revise o valor e a taxa antes do dinheiro sair do seu saldo."
+    },
+    "fundGame": {
+      "title": "Confirmar envio para o jogo",
+      "description": "Este envio conta para o seu limite de jogo. Devolver depois não libera limite de novo."
+    },
+    "returnGame": {
+      "title": "Confirmar devolução ao saldo real",
+      "description": "Sem taxa e sem limite — dinheiro saindo da carteira de jogo é sempre permitido."
+    },
+    "stepUp": {
+      "title": "Verificação de identidade necessária",
+      "description": "Por sua segurança, saques exigem uma verificação MFA recente. Verifique sua identidade para continuar.",
+      "reverify": "Verificar identidade"
+    },
+    "amount": "Valor",
+    "fee": "Taxa de saque",
+    "total": "Total debitado",
+    "resulting": "Saldo resultante",
+    "confirm": "Confirmar"
+  },
+  "pix": {
+    "title": "Pague {{amount}} no PIX",
+    "description": "Copie o código e pague no app do seu banco. O saldo entra assim que o banco confirmar o pagamento.",
+    "copy": "Copiar código PIX",
+    "copied": "Copiado",
+    "expiresIn": "Expira em {{time}}",
+    "expired": "Este código PIX expirou. Feche esta janela e inicie um novo depósito.",
+    "qrAlt": "QR Code do pagamento PIX",
+    "close": "Fechar",
+    "confirmedToast": "Depósito confirmado"
+  },
+  "transactions": {
+    "statusAnnouncement": "O status de {{kind}} mudou para {{status}}.",
+    "title": "Status das transações",
+    "description": "As atualizações usam a referência abaixo e continuam visíveis após atualizar a página.",
+    "kind": {
+      "deposit": "Depósito PIX",
+      "withdrawal": "Saque PIX"
+    },
+    "status": {
+      "pending": "Aguardando pagamento",
+      "processing": "Em processamento",
+      "confirmed": "Confirmado",
+      "completed": "Enviado",
+      "expired": "Expirado",
+      "reversed": "Estornado",
+      "refund_failed": "Estorno pendente"
+    },
+    "reference": "Referência {{id}}",
+    "fee": "Taxa {{fee}}",
+    "resumeDeposit": "Ver código PIX",
+    "guidance": {
+      "processing": "O débito já aparece no seu saldo enquanto o banco confirma o PIX. Se ele não puder ser concluído, o valor e a taxa serão devolvidos automaticamente. Você pode fechar esta página com segurança.",
+      "refund_failed": "O PIX não foi concluído e o estorno automático ainda precisa de conciliação. Nossa equipe já foi avisada; guarde a referência acima se falar com o suporte."
+    }
+  },
+  "toast": {
+    "depositConfirmed": "Depósito confirmado",
+    "realtimeDeposit": "Depósito de {{amount}} confirmado",
+    "withdrawProcessing": "Saque enviado e aguardando confirmação do banco.",
+    "withdrawSent": "Saque enviado.",
+    "withdrawReversed": "Não foi possível concluir o saque — o valor foi estornado para o seu saldo.",
+    "withdrawRefundFailed": "O saque falhou e o estorno está pendente. Nossa equipe já foi avisada.",
+    "creditsAdded": "Créditos adicionados.",
+    "fundGameSent": "Saldo enviado para a carteira de jogo.",
+    "returned": "Saldo devolvido ao saldo real.",
+    "pixCopied": "Código PIX copiado",
+    "gamblingActivated": "Carteira de jogo ativada."
+  },
+  "terms": {
+    "title": "Só mais um passo",
+    "description": "Antes de acessar seu saldo real e movimentá-lo via PIX, leia e aceite os Termos Adicionais da CTech Wallet.",
+    "error": "Não foi possível confirmar. Tente de novo.",
+    "checkboxPrefix": "Li e concordo com os",
+    "termsLink": "Termos Adicionais da CTech Wallet",
+    "decline": "Recusar e sair",
+    "continue": "Continuar",
+    "confirming": "Confirmando…",
+    "lookupErrorTitle": "Não foi possível verificar os termos",
+    "lookupErrorDescription": "Para sua proteção, a carteira fica indisponível até confirmarmos que você aceitou os Termos Adicionais atuais. Seus saldos e seu dinheiro não foram alterados.",
+    "lookupSignOut": "Sair",
+    "lookupRetrying": "Verificando novamente…"
+  },
+  "gambling": {
+    "title": "Ativar a carteira de jogo",
+    "description": "Criamos uma carteira separada para jogos. O dinheiro nela continua sendo seu e volta para o saldo real quando você quiser — sem taxa e sem limite.",
+    "bullet1": "É a única porta para jogos: não dá para jogar direto do saldo real.",
+    "bullet2": "Seus limites valem no envio para a carteira de jogo. Devolver dinheiro não libera limite de volta.",
+    "bullet3": "Créditos sandbox não têm valor em dinheiro e nunca voltam a virar dinheiro.",
+    "checkboxPrefix": "Li e concordo com o",
+    "termsLink": "Termo de Jogo Responsável",
+    "later": "Agora não",
+    "activate": "Ativar",
+    "activating": "Ativando…",
+    "limitsTitle": "Defina seus limites",
+    "limitsDescription": "Informe quanto pode enviar para jogos por dia, semana e mês.",
+    "error": {
+      "kycNotVerified": "Verifique sua identidade na sua conta CTech antes de ativar a carteira de jogo.",
+      "termsRequired": "Aceite o termo de jogo responsável para continuar.",
+      "generic": "Não foi possível ativar. Tente de novo."
+    }
+  },
+  "responsible": {
+    "back": "Voltar para a carteira",
+    "title": "Jogo responsável",
+    "description": "Acompanhe e ajuste seus limites ou faça uma pausa do jogo com dinheiro real.",
+    "limits": {
+      "title": "Limites de depósito em jogos",
+      "description": "Eles contam todo valor enviado do saldo real para o saldo de jogo. Devoluções não liberam limite.",
+      "daily": "Diário",
+      "weekly": "Semanal",
+      "monthly": "Mensal",
+      "coherence": "Use valores maiores que zero, com diário menor ou igual ao semanal e semanal menor ou igual ao mensal.",
+      "cooldown": "Aumentos entram em vigor em 7 dias; aumentos no limite mensal entram em vigor em 14 dias. Reduções valem imediatamente.",
+      "pending": "Há um aumento agendado para {{date}}.",
+      "cancelPending": "Cancelar aumento",
+      "pendingCancelled": "Aumento cancelado.",
+      "save": "Salvar limites",
+      "saved": "Limites atualizados."
+    },
+    "exclusion": {
+      "title": "Autoexclusão",
+      "description": "Bloqueia novos depósitos e partidas com dinheiro real. Você ainda poderá devolver seu saldo de jogo e usar o sandbox.",
+      "periodLabel": "Escolha por quanto tempo bloquear jogos com dinheiro real",
+      "period": {
+        "30d": "30 dias",
+        "90d": "90 dias",
+        "indefinite": "Por tempo indeterminado"
+      },
+      "action": "Iniciar autoexclusão",
+      "confirm": "Prazo escolhido: {{period}}. A autoexclusão começa imediatamente e não pode terminar antes. Digite {{phrase}} para confirmar.",
+      "confirmationPhrase": "EXCLUIR",
+      "confirmationLabel": "Frase de confirmação",
+      "confirmationHint": "Digite {{phrase}}. Letras maiúsculas e minúsculas são aceitas.",
+      "confirmationMismatch": "A frase não corresponde a {{phrase}}.",
+      "confirming": "Ativando autoexclusão…",
+      "error": "Não foi possível ativar a autoexclusão. Suas configurações não mudaram. Tente de novo.",
+      "confirmAction": "Confirmar autoexclusão",
+      "success": "Autoexclusão ativada.",
+      "activeTitle": "Autoexclusão ativa",
+      "until": "Depósitos e partidas com dinheiro real estão bloqueados até {{date}}.",
+      "indefinite": "Depósitos e partidas com dinheiro real estão bloqueados por tempo indeterminado.",
+      "helpTitle": "Precisa de ajuda agora?",
+      "helpDescription": "Estes serviços independentes de apoio estão disponíveis antes ou depois de iniciar a autoexclusão.",
+      "cvvPhone": "Ligar para o CVV no 188 (24 horas)",
+      "cvvWebsite": "Acessar o site do CVV",
+      "gamblersAnonymous": "Acessar Jogadores Anônimos"
+    }
+  },
+  "errors": {
+    "insufficientBalance": "Saldo insuficiente para essa operação.",
+    "walletBusy": "Já existe uma operação em andamento. Aguarde alguns segundos.",
+    "withdrawCpfMismatch": "A chave PIX pertence a outro CPF. Use uma chave no seu nome.",
+    "pixKeyNotFound": "Chave PIX não encontrada. Confira e tente de novo.",
+    "kycNotVerified": "Verifique sua identidade na sua conta antes de continuar.",
+    "stepUpRequired": "Confirme sua identidade com MFA e tente o saque de novo.",
+    "idempotencyConflict": "Essa operação já foi enviada com outros dados. Recarregue a página.",
+    "gamblingNotActivated": "Ative a carteira de jogo para usar essa operação.",
+    "gamblingTermsRequired": "Aceite o termo de jogo responsável para continuar.",
+    "depositOutOfRange": "O depósito precisa ser entre {{min}} e {{max}}.",
+    "amountAboveLimit": "O valor máximo por operação é {{max}}.",
+    "selfExcluded": "Sua autoexclusão bloqueia depósitos na carteira de jogo.",
+    "limitsNotConfigured": "Defina seus limites de jogo antes de continuar.",
+    "depositLimitExceeded": "Esse envio ultrapassa um dos seus limites de jogo.",
+    "generic": "Algo deu errado. Tente de novo."
+  },
+  "ledger": {
+    "type": {
+      "deposit": "Depósito",
+      "withdraw": "Saque",
+      "fee": "Taxa de saque",
+      "game_debit": "Jogada",
+      "game_credit": "Prêmio",
+      "sandbox_purchase": "Compra de créditos",
+      "sandbox_credit": "Créditos recebidos",
+      "reversal": "Estorno de saque",
+      "game_fund_debit": "Envio para o jogo",
+      "game_fund_credit": "Recebido do saldo real",
+      "game_return_debit": "Devolução ao saldo real",
+      "game_return_credit": "Recebido do jogo"
+    }
+  },
+  "notFound": {
+    "header": "Página não encontrada",
+    "description": "A página que você acessou não existe ou foi removida.",
+    "backToAccount": "Ir para o painel",
+    "backToLogin": "Voltar para o login"
+  },
+  "home": {
+    "cta": {
+      "login": "Entrar com a conta CTech",
+      "dashboard": "Ir para o painel"
+    },
+    "title": "Seu saldo CTech",
+    "description": "Consulte seu dinheiro, deposite ou saque via PIX e acompanhe cada movimentação.",
+    "footer": {
+      "terms": "Termos de Uso",
+      "privacy": "Privacidade",
+      "legalCenter": "Central Jurídica"
+    }
+  }
+}

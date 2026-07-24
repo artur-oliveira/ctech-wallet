@@ -1,0 +1,503 @@
+import * as cdk from 'aws-cdk-lib';
+import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
+import * as logs from 'aws-cdk-lib/aws-logs';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
+import {Construct} from 'constructs';
+import {
+  addCloudWatchAgentDualStackOverride,
+  addDualStackSsmAgentCommands,
+  addRealipRefreshCommands,
+  addSwapCommands,
+  PrivateIpv4Ec2Service,
+} from '@aoctech/cdk';
+import {Environment} from './types';
+import {
+  ALB_LISTENER_PRIORITY,
+  API_CURRENT_ARTIFACT_KEY,
+  APP_PORT,
+  asgName,
+  HEALTH_CHECK_PATH,
+  NGINX_PORT,
+  S3_PREFIX,
+  SERVICE,
+  SSM_ACCOUNT,
+  SSM_SHARED,
+  SSM_WALLET,
+  tablePrefix,
+  VALKEY_DB,
+} from './constants';
+
+interface ApiStackProps extends cdk.StackProps {
+  environment: Environment;
+  // Must be a concrete string (not a token): ec2.Vpc.fromLookup resolves
+  // subnet/AZ metadata at synthesis time. CI reads /ctech/{env}/network/vpc-id
+  // from SSM into CTECH_VPC_ID before running cdk deploy.
+  vpcId: string;
+  /** ALB host header, e.g. wallet-api-dev.aoctech.app */
+  domainName: string;
+  /** CloudFront host, e.g. wallet-dev.aoctech.app — used for CORS. */
+  appDomainName: string;
+  instanceProfileName: string;
+  deploymentsBucketName: string;
+  logsBucketName: string;
+  /**
+   * pix-gateway's outbound Lambda function name — api invokes it for every
+   * PixClient call (LambdaPixClient). api no longer talks to Inter directly;
+   * see docs/specs/2026-07-13-pix-gateway-lambda-design.md.
+   */
+  pixGatewayFunctionName: string;
+}
+
+export class ApiStack extends cdk.Stack {
+  public readonly asgName: string;
+
+  constructor(scope: Construct, id: string, props: ApiStackProps) {
+    super(scope, id, props);
+
+    const {
+      environment,
+      vpcId,
+      domainName,
+      appDomainName,
+      instanceProfileName,
+      deploymentsBucketName,
+      logsBucketName,
+      pixGatewayFunctionName,
+    } = props;
+
+    const shared = SSM_SHARED(environment);
+    const wallet = SSM_WALLET(environment);
+    const account = SSM_ACCOUNT(environment);
+
+    // ── Shared infrastructure from ctech-cdk ──────────────────────────────────
+    const vpc = ec2.Vpc.fromLookup(this, 'Vpc', {vpcId});
+
+    const albSgId = ssm.StringParameter.valueForStringParameter(this, shared.albSgId);
+    const albSg = ec2.SecurityGroup.fromSecurityGroupId(this, 'AlbSg', albSgId);
+
+    const httpsListenerArn = ssm.StringParameter.valueForStringParameter(
+      this, shared.httpsListenerArn,
+    );
+    const httpsListener = elbv2.ApplicationListener.fromApplicationListenerAttributes(
+      this, 'HttpsListener',
+      {listenerArn: httpsListenerArn, securityGroup: albSg},
+    );
+
+    const isProd = environment === 'prod';
+    const svcName = `${SERVICE}-v2`
+    this.asgName = asgName(environment);
+    const logRetention: logs.RetentionDays = isProd ? logs.RetentionDays.ONE_MONTH : logs.RetentionDays.ONE_WEEK;
+    const logGroupApp = `/${svcName}/${environment}/app`;
+    const logGroupNginx = `/${svcName}/${environment}/nginx`;
+
+    // ── User Data ─────────────────────────────────────────────────────────────
+    const userData = ec2.UserData.forLinux();
+
+    userData.addCommands(
+      // ── Packages + directories ───────────────────────────────────────────────
+      'dnf install -y nginx amazon-cloudwatch-agent amazon-ssm-agent unzip jq',
+      'useradd --system --no-create-home --shell /sbin/nologin webapp',
+      'mkdir -p /opt/app/releases /var/log/app /etc/nginx/conf.d',
+      'chown -R webapp:webapp /opt/app /var/log/app',
+    );
+
+    addSwapCommands(userData);
+    addDualStackSsmAgentCommands(userData);
+
+    userData.addCommands(
+      // ── nginx: listens :8080, proxies to app :8000 ───────────────────────────
+      // Quoted delimiter prevents bash from expanding nginx $variables.
+      // Unlike ctech-dfe the wallet is not multi-tenant (no organization header),
+      // so rate limiting is keyed by IP only.
+      `cat > /etc/nginx/nginx.conf << 'NGINX'`,
+      `user nginx;`,
+      `pid /run/nginx.pid;`,
+      `worker_processes auto;`,
+      `worker_rlimit_nofile 65535;`,
+      `error_log /var/log/nginx/error.log warn;`,
+      ``,
+      `events {`,
+      `    worker_connections 8192;`,
+      `    use epoll;`,
+      `    multi_accept on;`,
+      `}`,
+      ``,
+      `http {`,
+      `    include /etc/nginx/mime.types;`,
+      `    default_type application/octet-stream;`,
+      ``,
+      `    # Written by /opt/app/update-realip.sh: set_real_ip_from for the ALB and for`,
+      `    # CloudFront's origin-facing ranges, so $remote_addr below is the real viewer`,
+      `    # IP and not the proxy's. The glob keeps nginx bootable if the file is absent.`,
+      `    include /etc/nginx/conf.d/realip*.conf;`,
+      ``,
+      `    log_format json_log escape=json '{"remote_addr":"$remote_addr","status":$status,"request":"$request","body_bytes_sent":$body_bytes_sent,"request_time":$request_time,"upstream_response_time":"$upstream_response_time"}';`,
+      ``,
+      `    include /usr/share/nginx/modules/*.conf;`,
+      ``,
+      `    sendfile on;`,
+      `    tcp_nopush on;`,
+      `    tcp_nodelay on;`,
+      `    keepalive_timeout 30;`,
+      `    keepalive_requests 10000;`,
+      `    reset_timedout_connection on;`,
+      `    open_file_cache max=1000 inactive=20s;`,
+      `    open_file_cache_valid 30s;`,
+      `    open_file_cache_min_uses 2;`,
+      `    open_file_cache_errors on;`,
+      ``,
+      `    types_hash_max_size 2048;`,
+      `    types_hash_bucket_size 128;`,
+      ``,
+      `    client_header_timeout 15s;`,
+      `    client_body_timeout 30s;`,
+      `    send_timeout 30s;`,
+      ``,
+      `    client_max_body_size 1m;`,
+      `    client_body_buffer_size 128k;`,
+      `    client_header_buffer_size 1k;`,
+      `    large_client_header_buffers 4 8k;`,
+      ``,
+      `    gzip on;`,
+      `    gzip_vary on;`,
+      `    gzip_proxied any;`,
+      `    gzip_comp_level 5;`,
+      `    gzip_min_length 1024;`,
+      `    gzip_buffers 16 8k;`,
+      `    gzip_http_version 1.1;`,
+      `    gzip_types application/json application/problem+json application/javascript text/plain text/css;`,
+      ``,
+      `    server_tokens off;`,
+      `    proxy_hide_header X-Powered-By;`,
+      `    add_header X-Content-Type-Options nosniff always;`,
+      `    add_header X-Frame-Options DENY always;`,
+      `    add_header Referrer-Policy strict-origin-when-cross-origin always;`,
+      ``,
+      `    # $binary_remote_addr is the viewer's IP, not the ALB's, only because the`,
+      `    # realip module rewrote it (see the include above). Without that the whole`,
+      `    # req_by_ip zone collapses onto the ALB's private IP and the rate becomes a`,
+      `    # shared ceiling for every client at once.`,
+      `    limit_req_zone $binary_remote_addr zone=req_by_ip:10m rate=100r/s;`,
+      `    limit_conn_zone $binary_remote_addr zone=conn_by_ip:10m;`,
+      `    limit_req_status  429;`,
+      `    limit_conn_status 429;`,
+      ``,
+      `    map $http_upgrade $connection_upgrade {`,
+      `        default upgrade;`,
+      `        ''      "";`,
+      `    }`,
+      ``,
+      `    upstream app {`,
+      `        server 127.0.0.1:${APP_PORT};`,
+      `        keepalive 256;`,
+      `        keepalive_requests 10000;`,
+      `        keepalive_timeout 60s;`,
+      `    }`,
+      ``,
+      `    server {`,
+      `        listen ${NGINX_PORT} default_server reuseport;`,
+      `        server_name _;`,
+      `        access_log /var/log/nginx/access.log json_log;`,
+      `        error_log /var/log/nginx/error.log;`,
+      ``,
+      `        location = ${HEALTH_CHECK_PATH} {`,
+      `            proxy_pass http://app;`,
+      `            proxy_http_version 1.1;`,
+      `            proxy_set_header Connection "";`,
+      `            proxy_set_header Host $host;`,
+      `            proxy_set_header X-Real-IP $remote_addr;`,
+      // Overwrite rather than append: $proxy_add_x_forwarded_for would carry through
+      // whatever X-Forwarded-For the client sent, and the Go app trusts the leftmost
+      // entry. $remote_addr is the realip-resolved viewer IP, which a client cannot forge.
+      `            proxy_set_header X-Forwarded-For $remote_addr;`,
+      `            proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;`,
+      `            proxy_connect_timeout 5s;`,
+      `            proxy_read_timeout 5s;`,
+      `            access_log off;`,
+      `        }`,
+      ``,
+      `        # WebSocket upgrade endpoint: forward Upgrade/Connection or the`,
+      `        # app's upgrader rejects the request ("not using the websocket protocol").`,
+      `        location = /v1.0/ws {`,
+      `            proxy_pass http://app;`,
+      `            proxy_http_version 1.1;`,
+      `            proxy_set_header Upgrade $http_upgrade;`,
+      `            proxy_set_header Connection $connection_upgrade;`,
+      `            proxy_set_header Host $host;`,
+      `            proxy_set_header X-Real-IP $remote_addr;`,
+      `            proxy_set_header X-Forwarded-For $remote_addr;`,
+      `            proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;`,
+      `            proxy_read_timeout 3600s;`,
+      `            proxy_send_timeout 3600s;`,
+      `            proxy_buffering off;`,
+      `        }`,
+      `        location / {`,
+      `            limit_req zone=req_by_ip burst=200 nodelay;`,
+      `            limit_conn conn_by_ip 100;`,
+      ``,
+      `            proxy_pass http://app;`,
+      `            proxy_http_version 1.1;`,
+      `            proxy_set_header Connection "";`,
+      `            proxy_set_header Host $host;`,
+      `            proxy_set_header X-Real-IP $remote_addr;`,
+      // Overwrite rather than append: $proxy_add_x_forwarded_for would carry through
+      // whatever X-Forwarded-For the client sent, and the Go app trusts the leftmost
+      // entry. $remote_addr is the realip-resolved viewer IP, which a client cannot forge.
+      `            proxy_set_header X-Forwarded-For $remote_addr;`,
+      `            proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;`,
+      `            proxy_connect_timeout 10s;`,
+      `            proxy_send_timeout 60s;`,
+      `            proxy_read_timeout 60s;`,
+      `            proxy_buffering on;`,
+      `            proxy_buffer_size 8k;`,
+      `            proxy_buffers 16 16k;`,
+      `            proxy_busy_buffers_size 32k;`,
+      `        }`,
+      `    }`,
+      `}`,
+      `NGINX`,
+    );
+
+    addRealipRefreshCommands(userData, vpc.vpcCidrBlock);
+
+    userData.addCommands(
+      'systemctl enable nginx',
+      'systemctl start nginx',
+    );
+
+    addCloudWatchAgentDualStackOverride(userData);
+
+    userData.addCommands(
+      // {instance_id} is resolved by the CW agent at runtime, not by bash.
+      `cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << 'CWA'`,
+      `{`,
+      `  "logs": {`,
+      `    "logs_collected": {`,
+      `      "files": {`,
+      `        "collect_list": [`,
+      `          {"file_path":"/var/log/app/app.log","log_group_name":"${logGroupApp}","log_stream_name":"{instance_id}"},`,
+      `          {"file_path":"/var/log/nginx/access.log","log_group_name":"${logGroupNginx}","log_stream_name":"{instance_id}/access"},`,
+      `          {"file_path":"/var/log/nginx/error.log","log_group_name":"${logGroupNginx}","log_stream_name":"{instance_id}/error"}`,
+      `        ]`,
+      `      }`,
+      `    }`,
+      `  }`,
+      `}`,
+      `CWA`,
+      `/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json -s`,
+
+      // ── Static env file (loaded by systemd EnvironmentFile=) ─────────────────
+      // CDK tokens are substituted at synthesis time; bash does not expand them.
+      // Only non-secret values live here. Secrets come from SSM in start.sh.
+      `cat > /etc/app-static.env << 'ENV'`,
+      `ENVIRONMENT=${environment}`,
+      // repositories.NewBase joins prefix + "_" + table → "${environment}_wallets".
+      `TABLE_PREFIX=${tablePrefix(environment)}`,
+      `AWS_REGION=${this.region}`,
+      `AWS_USE_DUALSTACK_ENDPOINT=true`,
+      `PORT=${APP_PORT}`,
+      `GAMBLING_ENABLED=true`,
+      `SERVICE_AUDIENCE=https://${domainName}`,
+      `PIX_GATEWAY_FUNCTION_NAME=${pixGatewayFunctionName}`,
+      `TRUSTED_PROXIES=127.0.0.1`,
+      `CORS_ALLOWED_ORIGINS=https://${appDomainName}`,
+      `ENV`,
+
+      // ── start.sh: fetches secrets from SSM then exec-replaces into the binary
+      // $ENVIRONMENT comes from systemd EnvironmentFile at runtime.
+      //
+      // api no longer reads any Inter secret or the mTLS keypair — all Inter
+      // contact moved to pix-gateway (docs/specs/2026-07-13-pix-gateway-lambda-design.md).
+      `cat > /opt/app/start.sh << 'START'`,
+      `#!/bin/bash`,
+      // APP_VERSION ships inside the release artifact (release.env), written by CI.
+      `if [ -f /opt/app/current/release.env ]; then set -a; . /opt/app/current/release.env; set +a; fi`,
+      // Valkey base URL is written by the shared Valkey instance at boot and carries
+      // no DB number. Each service appends the DB it owns: /0 and /1 are already
+      // taken by ctech-dfe and ctech-account, so the wallet uses /2. Its per-wallet
+      // SETNX locks must never share a keyspace with another service.
+      `VALKEY_BASE=$(aws ssm get-parameter --name "${shared.valkeyUrl}" --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
+      // Falls back to empty → the app uses the in-memory cache backend instead of crashing.
+      `if [ -n "$VALKEY_BASE" ]; then VALKEY_URL="\${VALKEY_BASE%/}/${VALKEY_DB}"; else VALKEY_URL=""; fi`,
+      `CTECH_URL=$(aws ssm get-parameter --name "${account.baseUrl}" --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
+      `CTECH_JWKS_URL=$(aws ssm get-parameter --name "${account.jwksUrl}" --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
+      // Wallet's own M2M client — used to call ctech-account internal:kyc.
+      `WALLET_CLIENT_ID=$(aws ssm get-parameter --name "${wallet.walletClientId}" --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
+      `WALLET_CLIENT_SECRET=$(aws ssm get-parameter --name "${wallet.walletClientSecret}" --with-decryption --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
+      `export VALKEY_URL CTECH_URL CTECH_JWKS_URL`,
+      `export WALLET_CLIENT_ID WALLET_CLIENT_SECRET`,
+      `exec /opt/app/current/app`,
+      `START`,
+      `chmod +x /opt/app/start.sh`,
+
+      // ── systemd app.service ──────────────────────────────────────────────────
+      `cat > /etc/systemd/system/app.service << 'SVC'`,
+      `[Unit]`,
+      `Description=CTech Wallet API`,
+      `After=network.target nginx.service`,
+      `StartLimitIntervalSec=300`,
+      `StartLimitBurst=5`,
+      ``,
+      `[Service]`,
+      `User=webapp`,
+      `Group=webapp`,
+      `WorkingDirectory=/opt/app/current`,
+      `Environment=HOME=/opt/app`,
+      `EnvironmentFile=/etc/app-static.env`,
+      `ExecStartPre=/bin/test -x /opt/app/current/app`,
+      `ExecStart=/opt/app/start.sh`,
+      `StandardOutput=append:/var/log/app/app.log`,
+      `StandardError=append:/var/log/app/app.log`,
+      `Restart=on-failure`,
+      `RestartSec=30`,
+      ``,
+      `[Install]`,
+      `WantedBy=multi-user.target`,
+      `SVC`,
+      `systemctl daemon-reload`,
+      `systemctl enable app`,
+
+      // ── deploy.sh: called by SSM RunCommand from GitHub Actions ──────────────
+      // Expects a zip containing a pre-built `app` binary (linux/arm64).
+      // __BUCKET__ is replaced by sed so bash $variables are not expanded at write
+      // time (quoted 'DEPLOY' delimiter).
+      `cat > /opt/app/deploy.sh << 'DEPLOY'`,
+      `#!/bin/bash`,
+      `set -euo pipefail`,
+      `S3_KEY="$1"`,
+      `RELEASE_DIR="/opt/app/releases/$(date +%Y%m%d_%H%M%S)"`,
+      `mkdir -p "$RELEASE_DIR"`,
+      `echo "Downloading release: $S3_KEY"`,
+      `aws s3 cp "s3://__BUCKET__/$S3_KEY" /tmp/release.zip`,
+      `unzip -o /tmp/release.zip -d "$RELEASE_DIR"`,
+      `chmod +x "$RELEASE_DIR/app"`,
+      `chown -R webapp:webapp "$RELEASE_DIR"`,
+      `ln -sfT "$RELEASE_DIR" /opt/app/current`,
+      `systemctl restart app 2>/dev/null || systemctl start app`,
+      `for i in {1..60}; do`,
+      `  if curl -sf http://127.0.0.1:${NGINX_PORT}${HEALTH_CHECK_PATH} >/dev/null; then`,
+      `    echo "Health check passed"`,
+      `    break`,
+      `  fi`,
+      `  if systemctl is-failed --quiet app; then`,
+      `    echo "Application failed to start"`,
+      `    journalctl -u app --no-pager -n 100 || true`,
+      `    exit 1`,
+      `  fi`,
+      `  sleep 2`,
+      `done`,
+      `curl -sf http://127.0.0.1:${NGINX_PORT}${HEALTH_CHECK_PATH} >/dev/null || {`,
+      `  echo "Timed out waiting for health check"`,
+      `  exit 1`,
+      `}`,
+      `ls -dt /opt/app/releases/*/ 2>/dev/null | tail -n +2 | xargs rm -rf 2>/dev/null || true`,
+      `echo "Deployment successful"`,
+      `DEPLOY`,
+      `sed -i 's|__BUCKET__|${deploymentsBucketName}|g' /opt/app/deploy.sh`,
+      `chmod +x /opt/app/deploy.sh`,
+
+      // ── upload-logs.sh: bundles rotated logs and ships to S3 ─────────────────
+      // IMDSv2 token required (requireImdsv2 is enforced on this instance).
+      `cat > /opt/app/upload-logs.sh << 'UPLOAD'`,
+      `#!/bin/bash`,
+      `TOKEN=$(curl -sf -X PUT "http://169.254.169.254/latest/api/token" \\`,
+      `    -H "X-aws-ec2-metadata-token-ttl-seconds: 60")`,
+      `INSTANCE_ID=$(curl -sf -H "X-aws-ec2-metadata-token: $TOKEN" \\`,
+      `    "http://169.254.169.254/latest/meta-data/instance-id" || echo "unknown")`,
+      `DATE=$(date +%Y%m%d)`,
+      `BUCKET="__LOG_BUCKET__"`,
+      `ARCHIVE="/tmp/\${DATE}-\${INSTANCE_ID}.tar.gz"`,
+      `ROTATED=$(find /var/log/app /var/log/nginx -name "*-\${DATE}.gz" 2>/dev/null)`,
+      `[ -z "$ROTATED" ] && exit 0`,
+      `tar czf "$ARCHIVE" $ROTATED 2>/dev/null || exit 0`,
+      `aws s3 cp "$ARCHIVE" "s3://\${BUCKET}/${S3_PREFIX}/\${DATE}-\${INSTANCE_ID}.tar.gz" --region ${this.region} || exit 0`,
+      `find /var/log/app /var/log/nginx -name "*-\${DATE}.gz" -delete`,
+      `rm -f "$ARCHIVE"`,
+      `UPLOAD`,
+      `sed -i 's|__LOG_BUCKET__|${logsBucketName}|g' /opt/app/upload-logs.sh`,
+      `chmod +x /opt/app/upload-logs.sh`,
+
+      // ── logrotate: daily, gzip, copytruncate, ship to S3 ─────────────────────
+      `cat > /etc/logrotate.d/${SERVICE} << 'LOGROTATE'`,
+      `/var/log/app/app.log`,
+      `/var/log/nginx/access.log`,
+      `/var/log/nginx/error.log {`,
+      `    daily`,
+      `    compress`,
+      `    copytruncate`,
+      `    missingok`,
+      `    notifempty`,
+      `    dateext`,
+      `    dateformat -%Y%m%d`,
+      `    rotate 1`,
+      `    sharedscripts`,
+      `    postrotate`,
+      `        /opt/app/upload-logs.sh`,
+      `    endscript`,
+      `}`,
+      `LOGROTATE`,
+
+      // ── Bootstrap: deploy current.zip if it already exists in S3 ─────────────
+      `aws s3api head-object --bucket "${deploymentsBucketName}" --key "${API_CURRENT_ARTIFACT_KEY}" 2>/dev/null && /opt/app/deploy.sh ${API_CURRENT_ARTIFACT_KEY} || echo "No bootstrap artifact, waiting for first deploy"`,
+    );
+
+    // ── Shared no-NAT-Gateway EC2/ASG pattern (@aoctech/cdk) ───────────────────
+    // Priority must be unique across services: 10=dfe, 20=accounts, 30=wallet.
+    const service = new PrivateIpv4Ec2Service(this, 'ApiService', {
+      vpc,
+      albSg,
+      httpsListener,
+      securityGroupName: `${environment}-${svcName}-api-sg`,
+      securityGroupDescription: 'ctech-wallet API instances',
+      appPort: NGINX_PORT,
+      instanceProfileName,
+      userData,
+      logGroupAppName: logGroupApp,
+      logGroupNginxName: logGroupNginx,
+      logRetention,
+      logRemovalPolicy: isProd ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
+      metricNamespace: `CtechWallet/${environment}`,
+      targetGroupName: `${this.asgName}-tg`,
+      healthCheckPath: HEALTH_CHECK_PATH,
+      healthyHttpCodes: '200,207',
+      asgName: this.asgName,
+      minCapacity: 1,
+      maxCapacity: isProd ? 3 : 1,
+      domainName,
+      listenerRulePriority: ALB_LISTENER_PRIORITY,
+    });
+
+    // ── Outputs ───────────────────────────────────────────────────────────────
+    new cdk.CfnOutput(this, 'AsgName', {value: service.asgName, exportName: `${id}-asg-name`});
+    new cdk.CfnOutput(this, 'AppLogGroupName', {
+      value: service.appLogGroup.logGroupName,
+      exportName: `${id}-app-log-group`,
+    });
+    new cdk.CfnOutput(this, 'NginxLogGroupName', {
+      value: service.nginxLogGroup.logGroupName,
+      exportName: `${id}-nginx-log-group`,
+    });
+
+    // slog ALARM lines (refund/reversal failures, deposit amount mismatches,
+    // excess-payment refund failures) previously paged nobody — this fires a
+    // CloudWatch alarm the moment one is emitted.
+    const alarmMetricFilter = service.appLogGroup.addMetricFilter('AlarmLogFilter', {
+      filterPattern: logs.FilterPattern.literal('"ALARM"'),
+      metricNamespace: `CtechWallet/${environment}`,
+      metricName: 'AlarmLogLines',
+      metricValue: '1',
+      defaultValue: 0,
+    });
+    new cloudwatch.Alarm(this, 'AlarmLogAlarm', {
+      alarmName: `${environment}-${SERVICE}-alarm-log-lines`,
+      alarmDescription: 'A wallet ALARM log line was emitted (refund/reversal failure, deposit amount mismatch, or statement drift) — needs manual reconciliation.',
+      metric: alarmMetricFilter.metric({statistic: 'Sum', period: cdk.Duration.minutes(5)}),
+      threshold: 1,
+      evaluationPeriods: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+  }
+}

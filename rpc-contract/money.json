@@ -1,0 +1,8 @@
+{
+  "fee_bps": 200,
+  "fee_min": 100,
+  "fee_max": 1000,
+  "fee_absolute_min": 100,
+  "sandbox_credits_per_centavo": 10,
+  "max_amount_cents": 100000000
+}
