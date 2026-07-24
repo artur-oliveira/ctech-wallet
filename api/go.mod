@@ -17,7 +17,7 @@ require (
 	github.com/gofiber/fiber/v3 v3.4.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
-	github.com/oklog/ulid/v2 v2.1.1
+	github.com/oklog/ulid/v2 v2.1.2
 	github.com/valyala/fasthttp v1.72.0
 	go.uber.org/fx v1.24.0
 	gopkg.aoctech.app/api-commons v1.2.0
