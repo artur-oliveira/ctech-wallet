@@ -36,11 +36,17 @@ export class OidcStack extends cdk.Stack {
 
         const subject = `repo:${githubRepo}:*`;
 
-        const trust = new iam.FederatedPrincipal(
-            provider.openIdConnectProviderArn,
-            {StringLike: {'token.actions.githubusercontent.com:sub': subject}},
-            'sts:AssumeRoleWithWebIdentity',
-        );
+        const trust = new iam.WebIdentityPrincipal(provider.openIdConnectProviderArn, {
+            StringLike: {
+                'token.actions.githubusercontent.com:sub': [
+                    `repo:${githubRepo}:*`,
+                    `repo:${owner}@*/${repoName}@*:*`,
+                ],
+            },
+            StringEquals: {
+                'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com',
+            },
+        });
 
         const deploymentsPrefixArns = [
             `arn:aws:s3:::${deploymentsBucket}/${S3_PREFIX}`,
