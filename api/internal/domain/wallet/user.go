@@ -6,7 +6,7 @@ package wallet
 // against this constant, never a stored boolean, so a bump takes effect at once.
 //
 // The UI page renders this same version — keep the two in sync when bumping.
-const CurrentTermsAddendumVersion = "1.0"
+const CurrentTermsAddendumVersion = "2.1"
 
 // KYC levels, mirrored from ctech-account's `kyc_level` claim. They live in the
 // domain (not the middleware) because services gate on them too: activation
@@ -25,7 +25,7 @@ const (
 // Bumping it re-gates gambling for every user on their next call. A re-gated user
 // keeps their game/sandbox balances and may still RETURN money to `real` — only
 // funding and play are blocked. Money is never trapped by a terms change.
-const CurrentGamblingAddendumVersion = "1.0"
+const CurrentGamblingAddendumVersion = "2.1"
 
 // User holds the wallet-side per-user state. Identity itself lives in
 // ctech-account; this row exists only to record which consent documents the user
