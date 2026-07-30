@@ -36,6 +36,14 @@ func TestM2MListSandboxSKUsRouteRegistered(t *testing.T) {
 	}
 }
 
+func TestExpiresAtRFC3339(t *testing.T) {
+	got := expiresAtRFC3339(1735689600) // 2025-01-01T00:00:00Z
+	want := "2025-01-01T00:00:00Z"
+	if got != want {
+		t.Fatalf("expiresAtRFC3339(1735689600) = %q, want %q", got, want)
+	}
+}
+
 func newSandboxPurchaseTestApp(t *testing.T) *fiber.App {
 	t.Helper()
 	app := fiber.New()

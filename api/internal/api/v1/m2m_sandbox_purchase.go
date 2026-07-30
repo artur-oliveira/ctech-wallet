@@ -1,10 +1,31 @@
 package v1
 
 import (
+	"time"
+
 	"github.com/gofiber/fiber/v3"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/middleware"
 )
+
+// expiresAtRFC3339 converts a SandboxPurchase's TTL (unix seconds, already
+// the purchase's real expiry — see sandboxPurchaseTTLMinutes) into an
+// RFC3339 string for the frontend countdown.
+func expiresAtRFC3339(ttl int64) string {
+	return time.Unix(ttl, 0).UTC().Format(time.RFC3339)
+}
+
+// sandboxPurchaseWithExpiry adds the computed expires_at to a SandboxPurchase's
+// JSON output without adding a stored field to the domain model — TTL is
+// already the real expiry, this just formats it (see expiresAtRFC3339).
+type sandboxPurchaseWithExpiry struct {
+	*wallet.SandboxPurchase
+	ExpiresAt string `json:"expires_at"`
+}
+
+func withExpiry(p *wallet.SandboxPurchase) sandboxPurchaseWithExpiry {
+	return sandboxPurchaseWithExpiry{SandboxPurchase: p, ExpiresAt: expiresAtRFC3339(p.TTL)}
+}
 
 // m2mListSandboxSKUs is the M2M counterpart of the internal ListSKUs() —
 // callers like ctech-poker need the catalog to render purchase options
@@ -46,6 +67,7 @@ func (h *handlers) m2mPurchaseSandbox(c fiber.Ctx) error {
 		"status":           purchase.Status,
 		"pix_copia_e_cola": charge.QRCode,
 		"qr_code_base64":   charge.QRCodeB64,
+		"expires_at":       expiresAtRFC3339(purchase.TTL),
 	})
 }
 
@@ -59,7 +81,7 @@ func (h *handlers) m2mGetSandboxPurchase(c fiber.Ctx) error {
 	if err != nil {
 		return sendProblem(c, err)
 	}
-	return c.JSON(purchase)
+	return c.JSON(withExpiry(purchase))
 }
 
 // m2mRefundSandboxPurchase is the M2M counterpart to refundSandboxPurchase.
@@ -73,5 +95,5 @@ func (h *handlers) m2mRefundSandboxPurchase(c fiber.Ctx) error {
 	if err != nil {
 		return sendProblem(c, err)
 	}
-	return c.JSON(purchase)
+	return c.JSON(withExpiry(purchase))
 }
