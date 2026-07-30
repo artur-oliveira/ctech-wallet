@@ -14,12 +14,12 @@ func TestMoneyConstantsMatchJSON(t *testing.T) {
 		t.Fatalf("reading money.json: %v", err)
 	}
 	var m struct {
-		FeeBps                   int64 `json:"fee_bps"`
-		FeeMin                   int64 `json:"fee_min"`
-		FeeMax                   int64 `json:"fee_max"`
-		FeeAbsoluteMin           int64 `json:"fee_absolute_min"`
-		SandboxCreditsPerCentavo int64 `json:"sandbox_credits_per_centavo"`
-		MaxAmountCents           int64 `json:"max_amount_cents"`
+		FeeBps                int64 `json:"fee_bps"`
+		FeeMin                int64 `json:"fee_min"`
+		FeeMax                int64 `json:"fee_max"`
+		FeeAbsoluteMin        int64 `json:"fee_absolute_min"`
+		SandboxCreditsPerCent int64 `json:"sandbox_credits_per_centavo"`
+		MaxAmountCents        int64 `json:"max_amount_cents"`
 	}
 	if err := json.Unmarshal(raw, &m); err != nil {
 		t.Fatalf("parsing money.json: %v", err)
@@ -34,7 +34,7 @@ func TestMoneyConstantsMatchJSON(t *testing.T) {
 		{"fee_min", DefaultFeeMin, m.FeeMin},
 		{"fee_max", DefaultFeeMax, m.FeeMax},
 		{"fee_absolute_min", AbsoluteFeeMin, m.FeeAbsoluteMin},
-		{"sandbox_credits_per_centavo", SandboxCreditsPerCentavo, m.SandboxCreditsPerCentavo},
+		{"sandbox_credits_per_centavo", SandboxCreditsPerCent, m.SandboxCreditsPerCent},
 		{"max_amount_cents", MaxAmountCents, m.MaxAmountCents},
 	}
 	for _, c := range checks {

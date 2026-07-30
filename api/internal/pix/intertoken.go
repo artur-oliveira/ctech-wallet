@@ -69,8 +69,8 @@ type InterTokenManager struct {
 	token      string
 	expiry     time.Time
 	setAt      time.Time // when the local hot cache was last populated (SEC-06)
-	refreshing bool  // an in-process refresh is in flight
-	lastErr    error // error from the most recent refresh (shared with waiters)
+	refreshing bool      // an in-process refresh is in flight
+	lastErr    error     // error from the most recent refresh (shared with waiters)
 }
 
 // NewInterTokenManager builds the manager. functionName is pix-gateway's

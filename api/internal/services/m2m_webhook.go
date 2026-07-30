@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"time"
@@ -92,7 +93,12 @@ func (s *WalletService) dispatchM2MWebhook(ctx context.Context, p *wallet.Sandbo
 		s.markM2MWebhook(ctx, p.PurchaseID, wallet.WebhookFailed)
 		return
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+
+		}
+	}(resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		slog.WarnContext(ctx, "m2m webhook: non-2xx response, will retry via reconcile sweep", "purchase_id", p.PurchaseID, "client", p.RequestingClient, "status", resp.StatusCode)
 		s.markM2MWebhook(ctx, p.PurchaseID, wallet.WebhookFailed)

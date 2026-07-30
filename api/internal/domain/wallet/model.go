@@ -153,23 +153,23 @@ const (
 	MaxInboundReais  = MaxInboundAmount / 100
 )
 
-// SandboxCreditsPerCentavo is the fixed conversion applied when real money is
+// SandboxCreditsPerCent is the fixed conversion applied when real money is
 // turned into sandbox credits (game → sandbox). R$ 1,00 (100 centavos) becomes
 // 1000 credits, so this is 10 credits per centavo. The rate is a backend
 // constant — never client-supplied — and is applied to the full real amount
 // debited from `game`. Defined once in rpc-contract (money.json, shared with
 // the ui — B18).
-const SandboxCreditsPerCentavo = rpccontract.SandboxCreditsPerCentavo
+const SandboxCreditsPerCent = rpccontract.SandboxCreditsPerCent
 
 // ToSandboxCredits converts a real-money amount in centavos into the number of
 // sandbox credits it buys at the fixed rate.
 func ToSandboxCredits(centavos int64) int64 {
-	return centavos * SandboxCreditsPerCentavo
+	return centavos * SandboxCreditsPerCent
 }
 
 // Wallet is the authoritative balance record. Balance is integer centavos for
 // `real` and `game`; for `sandbox` it is integer CREDITS (a virtual unit with no
-// monetary value, converted from real money at SandboxCreditsPerCentavo). The two
+// monetary value, converted from real money at SandboxCreditsPerCent). The two
 // units never mix within one wallet.
 //
 // FeeBps/FeeMin/FeeMax are OPTIONAL per-wallet withdrawal-fee overrides, and

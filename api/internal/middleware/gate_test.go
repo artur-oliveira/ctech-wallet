@@ -41,7 +41,7 @@ func TestRequireScope(t *testing.T) {
 }
 
 func TestRequireKYC(t *testing.T) {
-	if got := gateApp(t, &Claims{KYCLevel: "verified"}, RequireKYC(KYCVerified)); got != 200 {
+	if got := gateApp(t, &Claims{KYCLevel: "enhanced"}, RequireKYC(KYCVerified)); got != 200 {
 		t.Errorf("verified: got %d want 200", got)
 	}
 	if got := gateApp(t, &Claims{KYCLevel: "basic"}, RequireKYC(KYCVerified)); got != 403 {

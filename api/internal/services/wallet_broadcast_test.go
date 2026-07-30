@@ -31,7 +31,7 @@ func TestConfirmDepositBroadcastsOnCredit(t *testing.T) {
 	repo.deposit = &wallet.PixDeposit{Txid: "tx-broadcast", WalletID: "w-real", UserID: "u1", AmountExpected: 500, Status: wallet.DepositPending}
 	fake := pix.NewFake()
 	fake.StageCharge("tx-broadcast", 500, pix.ChargeCompleted, "12345678901", "E2E-1")
-	kyc := &stubKYC{rec: &kycclient.KYC{Level: "verified", CPF: "12345678901"}}
+	kyc := &stubKYC{rec: &kycclient.KYC{Level: "enhanced", CPF: "12345678901"}}
 
 	svc := newSvc(repo, &stubLocker{}, fake, kyc)
 	fb := &fakeBroadcaster{}
@@ -60,12 +60,12 @@ func TestConfirmDepositBroadcastsOnCredit(t *testing.T) {
 func TestWithdrawBroadcastsOnComplete(t *testing.T) {
 	repo := newStubRepo()
 	fake := pix.NewFake()
-	kyc := &stubKYC{rec: &kycclient.KYC{Level: "verified", CPF: "12345678901"}}
+	kyc := &stubKYC{rec: &kycclient.KYC{Level: "enhanced", CPF: "12345678901"}}
 	svc := newSvc(repo, &stubLocker{}, fake, kyc)
 	fb := &fakeBroadcaster{}
 	svc.SetBroadcaster(fb)
 
-	if _, err := svc.Withdraw(context.Background(), "u1", "verified", 5000, "idem-broadcast"); err != nil {
+	if _, err := svc.Withdraw(context.Background(), "u1", "enhanced", 5000, "idem-broadcast"); err != nil {
 		t.Fatalf("Withdraw: %v", err)
 	}
 	if fb.calls != 1 || fb.userID != "u1" {
@@ -87,12 +87,12 @@ func TestWithdrawBroadcastsOnKeyNotFound(t *testing.T) {
 	repo := newStubRepo()
 	fake := pix.NewFake()
 	fake.TransferErr = pix.ErrKeyNotFound
-	kyc := &stubKYC{rec: &kycclient.KYC{Level: "verified", CPF: "12345678901"}}
+	kyc := &stubKYC{rec: &kycclient.KYC{Level: "enhanced", CPF: "12345678901"}}
 	svc := newSvc(repo, &stubLocker{}, fake, kyc)
 	fb := &fakeBroadcaster{}
 	svc.SetBroadcaster(fb)
 
-	if _, err := svc.Withdraw(context.Background(), "u1", "verified", 5000, "idem-broadcast2"); err == nil {
+	if _, err := svc.Withdraw(context.Background(), "u1", "enhanced", 5000, "idem-broadcast2"); err == nil {
 		t.Fatal("expected pix-key-not-found error")
 	}
 	if fb.calls != 1 || fb.userID != "u1" {
@@ -116,7 +116,7 @@ func TestConfirmDepositNilBroadcasterIsNoOp(t *testing.T) {
 	repo.deposit = &wallet.PixDeposit{Txid: "tx-nobroadcast", WalletID: "w-real", UserID: "u1", AmountExpected: 500, Status: wallet.DepositPending}
 	fake := pix.NewFake()
 	fake.StageCharge("tx-nobroadcast", 500, pix.ChargeCompleted, "12345678901", "E2E-1")
-	kyc := &stubKYC{rec: &kycclient.KYC{Level: "verified", CPF: "12345678901"}}
+	kyc := &stubKYC{rec: &kycclient.KYC{Level: "enhanced", CPF: "12345678901"}}
 
 	svc := newSvc(repo, &stubLocker{}, fake, kyc)
 	if err := svc.ConfirmDeposit(context.Background(), "tx-nobroadcast", "12345678901", "Someone", false); err != nil {

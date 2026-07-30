@@ -66,16 +66,16 @@ account KYC). `GAMBLING_ENABLED` (default `false`) gates the entire
 
 ## Data model (single DynamoDB table per concern, env‑prefixed)
 
-| Table (logical) | Constant | Notes |
-|-----------------|----------|-------|
-| `wallets` | `TableWallets` (`model.go:74`) | authoritative balance (centavos for real/game, credits for sandbox) |
-| `wallet_ledger_entries` | `TableLedger` (`:75`) | append‑only audit; GSI `gsi_idem` for replay |
-| `wallet_idempotency` | `TableIdempotency` (`:76`) | `IDEM#{key}` guard rows (TTL 7d) |
-| `wallet_pix_deposits` | `TablePixDeposits` (`:77`) | pending charges; GSI `gsi_status` for sweep |
-| `wallet_withdrawals` | `TableWithdrawals` (`:78`) | `processing`/`completed`/`reversed`/`refund_failed`; GSI `gsi_status` |
-| `wallet_users` | `TableUsers` (`:79`) | consent + responsible‑gambling state |
-| `wallet_audit` | `TableAudit` (`:80`) | append‑only non‑money events |
-| `wallet_holds` | `TableHolds` (`:81`) | game buy‑in holds; GSI `gsi_hold_status` |
+| Table (logical)         | Constant                       | Notes                                                                 |
+|-------------------------|--------------------------------|-----------------------------------------------------------------------|
+| `wallets`               | `TableWallets` (`model.go:74`) | authoritative balance (centavos for real/game, credits for sandbox)   |
+| `wallet_ledger_entries` | `TableLedger` (`:75`)          | append‑only audit; GSI `gsi_idem` for replay                          |
+| `wallet_idempotency`    | `TableIdempotency` (`:76`)     | `IDEM#{key}` guard rows (TTL 7d)                                      |
+| `wallet_pix_deposits`   | `TablePixDeposits` (`:77`)     | pending charges; GSI `gsi_status` for sweep                           |
+| `wallet_withdrawals`    | `TableWithdrawals` (`:78`)     | `processing`/`completed`/`reversed`/`refund_failed`; GSI `gsi_status` |
+| `wallet_users`          | `TableUsers` (`:79`)           | consent + responsible‑gambling state                                  |
+| `wallet_audit`          | `TableAudit` (`:80`)           | append‑only non‑money events                                          |
+| `wallet_holds`          | `TableHolds` (`:81`)           | game buy‑in holds; GSI `gsi_hold_status`                              |
 
 Every balance mutation is a conditional `TransactWriteItems`
 (`balance >= :amount` on debits); the ledger entry + idempotency guard are

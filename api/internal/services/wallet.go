@@ -226,10 +226,10 @@ type WalletService struct {
 	lock             Locker
 	pix              pix.PixClient
 	kyc              KYCClient
-	broadcaster      Broadcaster         // optional; see SetBroadcaster
-	baas             BaasProvider        // defaults to noopBaasProvider; see SetBaas
-	custodyEnabled   bool                // defaults false; see SetCustodyEnabled — matches config.AsaasCustodyEnabled's own default
-	sandboxPurchases SandboxPurchaseRepo // required for PurchaseSandboxDirect/RefundSandboxPurchase/ConfirmSandboxPurchase; see SetSandboxPurchases
+	broadcaster      Broadcaster          // optional; see SetBroadcaster
+	baas             BaasProvider         // defaults to noopBaasProvider; see SetBaas
+	custodyEnabled   bool                 // defaults false; see SetCustodyEnabled — matches config.AsaasCustodyEnabled's own default
+	sandboxPurchases SandboxPurchaseRepo  // required for PurchaseSandboxDirect/RefundSandboxPurchase/ConfirmSandboxPurchase; see SetSandboxPurchases
 	m2mClients       map[string]M2MClient // AZP → webhook config; nil/missing entry means "don't notify"; see SetM2MClients
 }
 

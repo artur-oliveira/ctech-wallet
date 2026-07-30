@@ -47,7 +47,7 @@ func New(cfg *config.Config, clientSecret string) *Client {
 	return &Client{
 		base:   strings.TrimRight(cfg.WalletAPIURL, "/"),
 		http:   httpClient,
-		tokens: oauth2client.New(httpClient, tokenURL, cfg.PixGatewayClientID, clientSecret, scopeConfirmDeposit),
+		tokens: oauth2client.New(httpClient, nil, tokenURL, cfg.PixGatewayClientID, clientSecret, scopeConfirmDeposit),
 	}
 }
 

@@ -337,7 +337,7 @@ func TestConfirmDepositCreditsOnCPFMatch(t *testing.T) {
 	repo.deposit = &wallet.PixDeposit{Txid: "tx1", WalletID: "w-real", UserID: "u1", AmountExpected: 5000, Status: wallet.DepositPending}
 	fake := pix.NewFake()
 	fake.StageCharge("tx1", 5000, pix.ChargeCompleted, "", "E2E-1")
-	kyc := &stubKYC{rec: &kycclient.KYC{Level: "verified", CPF: "12345678901"}}
+	kyc := &stubKYC{rec: &kycclient.KYC{Level: "enhanced", CPF: "12345678901"}}
 	svc := newSvc(repo, &stubLocker{}, fake, kyc)
 
 	if err := svc.ConfirmDeposit(context.Background(), "tx1", "***456789**", "Someone", false); err != nil {
@@ -362,7 +362,7 @@ func TestConfirmDepositRejectsAndRefundsOnCPFMismatch(t *testing.T) {
 	repo.deposit = &wallet.PixDeposit{Txid: "tx1", WalletID: "w-real", UserID: "u1", AmountExpected: 5000, Status: wallet.DepositPending}
 	fake := pix.NewFake()
 	fake.StageCharge("tx1", 5000, pix.ChargeCompleted, "", "E2E-9")
-	kyc := &stubKYC{rec: &kycclient.KYC{Level: "verified", CPF: "12345678901"}}
+	kyc := &stubKYC{rec: &kycclient.KYC{Level: "enhanced", CPF: "12345678901"}}
 	svc := newSvc(repo, &stubLocker{}, fake, kyc)
 
 	if err := svc.ConfirmDeposit(context.Background(), "tx1", "99999999999", "Other Guy", false); err != nil {
@@ -404,7 +404,7 @@ func TestConfirmDepositRefundsExcessPayment(t *testing.T) {
 	fake := pix.NewFake()
 	fake.StageCharge("tx1", 5000, pix.ChargeCompleted, "12345678901", "E2E-1")
 	fake.StageChargePayment("tx1", "E2E-2", 5000, "99999999999")
-	kyc := &stubKYC{rec: &kycclient.KYC{Level: "verified", CPF: "12345678901"}}
+	kyc := &stubKYC{rec: &kycclient.KYC{Level: "enhanced", CPF: "12345678901"}}
 	svc := newSvc(repo, &stubLocker{}, fake, kyc)
 
 	if err := svc.ConfirmDeposit(context.Background(), "tx1", "12345678901", "Someone", false); err != nil {
@@ -463,7 +463,7 @@ func TestConfirmDepositRefundedBeforeConfirmNeverCredits(t *testing.T) {
 	fake := pix.NewFake()
 	fake.StageCharge("tx1", 5000, pix.ChargeCompleted, "", "E2E-1")
 	fake.StageChargeRefund("tx1", "RTR1", 5000, pix.RefundCompleted)
-	kyc := &stubKYC{rec: &kycclient.KYC{Level: "verified", CPF: "12345678901"}}
+	kyc := &stubKYC{rec: &kycclient.KYC{Level: "enhanced", CPF: "12345678901"}}
 	svc := newSvc(repo, &stubLocker{}, fake, kyc)
 
 	if err := svc.ConfirmDeposit(context.Background(), "tx1", "12345678901", "Someone", false); err != nil {
@@ -529,10 +529,10 @@ func TestConfirmDepositRefundReversalFailureFlagsRefundFailed(t *testing.T) {
 func TestWithdrawUsesKYCCPFNotClientKey(t *testing.T) {
 	repo := newStubRepo()
 	fake := pix.NewFake()
-	kyc := &stubKYC{rec: &kycclient.KYC{Level: "verified", CPF: "12345678901"}}
+	kyc := &stubKYC{rec: &kycclient.KYC{Level: "enhanced", CPF: "12345678901"}}
 	svc := newSvc(repo, &stubLocker{}, fake, kyc)
 
-	w, err := svc.Withdraw(context.Background(), "u1", "verified", 5000, "idem-1")
+	w, err := svc.Withdraw(context.Background(), "u1", "enhanced", 5000, "idem-1")
 	if err != nil {
 		t.Fatalf("Withdraw: %v", err)
 	}
@@ -551,10 +551,10 @@ func TestWithdrawKeyNotFoundRefundsImmediately(t *testing.T) {
 	repo := newStubRepo()
 	fake := pix.NewFake()
 	fake.TransferErr = pix.ErrKeyNotFound
-	kyc := &stubKYC{rec: &kycclient.KYC{Level: "verified", CPF: "12345678901"}}
+	kyc := &stubKYC{rec: &kycclient.KYC{Level: "enhanced", CPF: "12345678901"}}
 	svc := newSvc(repo, &stubLocker{}, fake, kyc)
 
-	_, err := svc.Withdraw(context.Background(), "u1", "verified", 5000, "idem-1")
+	_, err := svc.Withdraw(context.Background(), "u1", "enhanced", 5000, "idem-1")
 	isProblem(t, err, problem.TypePixKeyNotFound)
 
 	p, _ := err.(*problem.Problem)
@@ -576,17 +576,17 @@ func TestWithdrawKeyNotFoundRefundsImmediately(t *testing.T) {
 
 func TestWithdrawBusy(t *testing.T) {
 	svc := newSvc(newStubRepo(), &stubLocker{busy: true}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{CPF: "1"}})
-	_, err := svc.Withdraw(context.Background(), "u1", "verified", 5000, "idem-1")
+	_, err := svc.Withdraw(context.Background(), "u1", "enhanced", 5000, "idem-1")
 	isProblem(t, err, problem.TypeWalletBusy)
 }
 
 func TestWithdrawHappyPath(t *testing.T) {
 	repo := newStubRepo()
 	fake := pix.NewFake()
-	kyc := &stubKYC{rec: &kycclient.KYC{Level: "verified", CPF: "12345678901"}}
+	kyc := &stubKYC{rec: &kycclient.KYC{Level: "enhanced", CPF: "12345678901"}}
 	svc := newSvc(repo, &stubLocker{}, fake, kyc)
 
-	w, err := svc.Withdraw(context.Background(), "u1", "verified", 5000, "idem-1")
+	w, err := svc.Withdraw(context.Background(), "u1", "enhanced", 5000, "idem-1")
 	if err != nil {
 		t.Fatalf("Withdraw: %v", err)
 	}
@@ -608,10 +608,10 @@ func TestWithdrawTransferFailureLeavesProcessing(t *testing.T) {
 	repo := newStubRepo()
 	fake := pix.NewFake()
 	fake.TransferErr = errors.New("inter down")
-	kyc := &stubKYC{rec: &kycclient.KYC{Level: "verified", CPF: "12345678901"}}
+	kyc := &stubKYC{rec: &kycclient.KYC{Level: "enhanced", CPF: "12345678901"}}
 	svc := newSvc(repo, &stubLocker{}, fake, kyc)
 
-	w, err := svc.Withdraw(context.Background(), "u1", "verified", 5000, "idem-1")
+	w, err := svc.Withdraw(context.Background(), "u1", "enhanced", 5000, "idem-1")
 	if err != nil {
 		t.Fatalf("Withdraw should not error on transfer failure: %v", err)
 	}
@@ -625,7 +625,7 @@ func TestWithdrawIdempotentReplay(t *testing.T) {
 	repo.withdrawals["withdraw#u1#idem-1"] = &wallet.Withdrawal{WithdrawalID: "withdraw#u1#idem-1", Status: wallet.WithdrawCompleted, Amount: 5000}
 	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{CPF: "1"}})
 
-	w, err := svc.Withdraw(context.Background(), "u1", "verified", 5000, "idem-1")
+	w, err := svc.Withdraw(context.Background(), "u1", "enhanced", 5000, "idem-1")
 	if err != nil {
 		t.Fatalf("Withdraw replay: %v", err)
 	}

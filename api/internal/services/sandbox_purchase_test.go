@@ -94,7 +94,7 @@ func TestPurchaseSandboxDirectOpensChargeForValidSKU(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PurchaseSandboxDirect: %v", err)
 	}
-	if p.AmountExpected != 100 || p.CreditsGranted != 100*wallet.SandboxCreditsPerCentavo {
+	if p.AmountExpected != 100 || p.CreditsGranted != 100*wallet.SandboxCreditsPerCent {
 		t.Fatalf("unexpected purchase: %+v", p)
 	}
 	if charge.Amount != 100 {
@@ -157,7 +157,7 @@ func TestConfirmSandboxPurchaseCreditsSandboxWallet(t *testing.T) {
 	if len(repo.creditCalls) != 1 {
 		t.Fatalf("expected 1 credit call, got %d", len(repo.creditCalls))
 	}
-	if repo.creditCalls[0].Amount != 100*wallet.SandboxCreditsPerCentavo {
+	if repo.creditCalls[0].Amount != 100*wallet.SandboxCreditsPerCent {
 		t.Fatalf("unexpected credited amount: %d", repo.creditCalls[0].Amount)
 	}
 	updated, err := purchases.Get(context.Background(), p.PurchaseID)

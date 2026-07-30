@@ -201,7 +201,7 @@ PIX in ──► real ◄── PIX out              real→game  = FundGame    
 ```
 
 `real`, `game`, `sandbox` are three rows in `wallets`. `real + game` are claims on real money; `sandbox` is
-virtual credits (`SandboxCreditsPerCentavo = 10`).
+virtual credits (`SandboxCreditsPerCent = 10`).
 
 ---
 

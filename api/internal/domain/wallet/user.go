@@ -14,7 +14,7 @@ const CurrentTermsAddendumVersion = "2.1"
 // what these strings mean.
 const (
 	KYCBasic    = "basic"
-	KYCVerified = "verified"
+	KYCVerified = "enhanced"
 )
 
 // CurrentGamblingAddendumVersion is the responsible-gambling addendum version
