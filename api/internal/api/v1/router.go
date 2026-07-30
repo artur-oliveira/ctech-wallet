@@ -123,6 +123,7 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 	// M2M direct PIX→sandbox-credits sale, opened on a user's behalf (e.g.
 	// ctech-poker) — mirrors /wallet/sandbox/purchases above, caller-initiated.
 	sp := internal.Group("/wallet/sandbox-purchase", middleware.RequireScope(middleware.ScopeWalletSandboxPurchase))
+	sp.Get("/skus", h.m2mListSandboxSKUs) // before /:id so "skus" never matches as a purchase id
 	sp.Post("/", h.m2mPurchaseSandbox)
 	sp.Get("/:id", h.m2mGetSandboxPurchase)
 	sp.Post("/:id/refund", h.m2mRefundSandboxPurchase)

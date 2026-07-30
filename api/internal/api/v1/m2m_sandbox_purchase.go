@@ -2,8 +2,24 @@ package v1
 
 import (
 	"github.com/gofiber/fiber/v3"
+	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/middleware"
 )
+
+// m2mListSandboxSKUs is the M2M counterpart of the internal ListSKUs() —
+// callers like ctech-poker need the catalog to render purchase options
+// before opening a purchase.
+func (h *handlers) m2mListSandboxSKUs(c fiber.Ctx) error {
+	skus := wallet.ListSKUs()
+	out := make([]fiber.Map, len(skus))
+	for i, s := range skus {
+		out[i] = fiber.Map{
+			"id": s.ID, "price_cents": s.PriceCents, "base_credits": s.BaseCredits,
+			"bonus_percent": s.BonusPercent, "total_credits": s.TotalCredits(),
+		}
+	}
+	return c.JSON(out)
+}
 
 // m2mPurchaseSandbox is the M2M counterpart to purchaseSandboxDirect (scope
 // internal:wallet:sandbox-purchase) — a caller like ctech-poker opens a

@@ -11,10 +11,10 @@ package wallet
 // decision outside this engineering scope; update this table, never the
 // purchase flow itself, once real SKUs are decided.
 type SandboxSKU struct {
-	ID           string
-	PriceCents   int64 // preço em centavos
-	BaseCredits  int64 // créditos sem bônus
-	BonusPercent int64 // percentual de bônus
+	ID           string `json:"id"`
+	PriceCents   int64  `json:"price_cents"`   // preço em centavos
+	BaseCredits  int64  `json:"base_credits"`  // créditos sem bônus
+	BonusPercent int64  `json:"bonus_percent"` // percentual de bônus
 }
 
 func (s SandboxSKU) TotalCredits() int64 {
