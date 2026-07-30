@@ -12,14 +12,14 @@ package wallet
 // purchase flow itself, once real SKUs are decided.
 type SandboxSKU struct {
 	ID             string
-	PriceCentavos  int64
+	PriceCents     int64
 	CreditsGranted int64
 }
 
 var sandboxSKUCatalog = map[string]SandboxSKU{
-	"pack_100":  {ID: "pack_100", PriceCentavos: 100, CreditsGranted: 100 * SandboxCreditsPerCentavo},
-	"pack_500":  {ID: "pack_500", PriceCentavos: 500, CreditsGranted: 500 * SandboxCreditsPerCentavo},
-	"pack_1000": {ID: "pack_1000", PriceCentavos: 1000, CreditsGranted: 1000 * SandboxCreditsPerCentavo},
+	"pack_100":  {ID: "pack_100", PriceCents: 100, CreditsGranted: 100 * SandboxCreditsPerCentavo},
+	"pack_500":  {ID: "pack_500", PriceCents: 500, CreditsGranted: 500 * SandboxCreditsPerCentavo},
+	"pack_1000": {ID: "pack_1000", PriceCents: 1000, CreditsGranted: 1000 * SandboxCreditsPerCentavo},
 }
 
 // SandboxSKUByID looks up a SKU by its ID, or ok=false if unknown.

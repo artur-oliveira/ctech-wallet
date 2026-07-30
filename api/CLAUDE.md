@@ -191,6 +191,7 @@ for the `file:line` map.
 | `internal:wallet:game-cashout` | `POST .../game/cashout` | |
 | `internal:wallet:game-status` | `GET .../game/status/:user_id` | |
 | `internal:wallet:balance` | `GET .../wallet/balance/:user_id` | read-only, game+sandbox only |
+| `internal:wallet:sandbox-purchase` | `POST .../wallet/sandbox-purchase/`, `GET .../:id`, `POST .../:id/refund` | M2M-opened direct PIX→sandbox sale (e.g. ctech-poker); see `docs/specs/2026-07-30-m2m-sandbox-purchase-integration-design.md` |
 
 The wallet's **own** M2M client requests `internal:account:kyc` from
 `ctech-account` to read the verified CPF (`kycclient/kycclient.go:24`) — a

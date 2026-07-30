@@ -65,7 +65,7 @@ func New(cfg *config.Config) *Client {
 	return &Client{
 		base:   base,
 		http:   httpClient,
-		tokens: oauth2client.New(httpClient, base+pathToken, cfg.WalletClientID, cfg.WalletClientSecret, scopeKYC),
+		tokens: oauth2client.New(httpClient, nil, base+pathToken, cfg.WalletClientID, cfg.WalletClientSecret, scopeKYC),
 	}
 }
 

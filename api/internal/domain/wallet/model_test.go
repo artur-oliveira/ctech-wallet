@@ -9,10 +9,10 @@ func TestToSandboxCredits(t *testing.T) {
 		want     int64
 	}{
 		{0, 0},
-		{1, 10},
-		{100, 1000},       // R$ 1,00
-		{250, 2500},       // R$ 2,50
-		{10000, 100_000},  // R$ 100,00
+		{1, 100},
+		{100, 10000},       // R$ 1,00
+		{250, 25000},       // R$ 2,50
+		{10000, 1_000_000}, // R$ 100,00
 	}
 	for _, c := range cases {
 		if got := ToSandboxCredits(c.centavos); got != c.want {

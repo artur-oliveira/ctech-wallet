@@ -137,6 +137,12 @@ export const SSM_WALLET = (env: Environment) => ({
     asaasApiKeyMaster: `/${SERVICE}/${env}/asaas/api-key-master`, // SecureString — hex-encoded AES-256 key
     asaasWebhookToken: `/${SERVICE}/${env}/asaas/webhook-token`, // SecureString
     asaasParentApiKey: `/${SERVICE}/${env}/asaas/parent-api-key`, // SecureString — plan §9.1a reversal leg
+    // M2M sandbox-purchase client registry (client_id → {webhook_url,
+    // hmac_secret} JSON) — admin-provisioned, no API write path, same posture
+    // as the wallets table's fee/deposit-range overrides. Read by both api
+    // and the reconcile Lambda (the latter retries failed notify-back
+    // deliveries). Optional: unset means no M2M client is registered yet.
+    m2mClients: `/${SERVICE}/${env}/m2m-clients`, // SecureString
 });
 
 /** ctech-account namespace — read-only for the wallet. */

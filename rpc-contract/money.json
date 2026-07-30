@@ -3,6 +3,6 @@
   "fee_min": 100,
   "fee_max": 1000,
   "fee_absolute_min": 100,
-  "sandbox_credits_per_centavo": 10,
+  "sandbox_credits_per_centavo": 100,
   "max_amount_cents": 100000000
 }

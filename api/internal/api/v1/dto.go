@@ -23,6 +23,24 @@ type SandboxPurchaseDirectRequest struct {
 	SKU string `json:"sku" validate:"required"`
 }
 
+// M2MSandboxPurchaseRequest opens a direct PIX→sandbox-credits sale on a
+// user's behalf (M2M, scope internal:wallet:sandbox-purchase) — same fixed
+// server-side SKU catalog as the user-facing route, just caller-initiated
+// (e.g. ctech-poker). The idempotency key travels in the body, not the
+// Idempotency-Key header, matching every other M2M request body in this file.
+type M2MSandboxPurchaseRequest struct {
+	UserID         string `json:"user_id" validate:"required"`
+	SKU            string `json:"sku" validate:"required"`
+	IdempotencyKey string `json:"idempotency_key" validate:"required"`
+}
+
+// M2MRefundSandboxPurchaseRequest mirrors M2MSandboxPurchaseRequest's shape
+// for the refund leg — the purchase id travels in the route path.
+type M2MRefundSandboxPurchaseRequest struct {
+	UserID         string `json:"user_id" validate:"required"`
+	IdempotencyKey string `json:"idempotency_key" validate:"required"`
+}
+
 // ConfirmSandboxPurchaseRequest is pix-gateway's webhook-Lambda call for the
 // direct-purchase rail (plan §9.3) — mirrors ConfirmDepositRequest's shape
 // but with no payer CPF/name: this flow has no KYC/CPF gate to feed (§9.1).

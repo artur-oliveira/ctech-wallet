@@ -139,6 +139,9 @@ export class IAMStack extends cdk.Stack {
                         `arn:aws:ssm:*:*:parameter${walletSsm.asaasApiKeyMaster}`,
                         `arn:aws:ssm:*:*:parameter${walletSsm.asaasWebhookToken}`,
                         `arn:aws:ssm:*:*:parameter${walletSsm.asaasParentApiKey}`,
+                        // M2M sandbox-purchase client registry (webhook notify-back
+                        // config) — optional; unset means no M2M client is registered yet.
+                        `arn:aws:ssm:*:*:parameter${walletSsm.m2mClients}`,
                     ],
                 }),
             ],

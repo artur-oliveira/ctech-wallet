@@ -11,7 +11,7 @@ export const MAX_AMOUNT_CENTS = 100_000_000
 export const MAX_AMOUNT_DIGITS = 9
 
 /**
- * Fixed sandbox conversion rate: R$ 1,00 (100 centavos) = 1000 credits.
+ * Fixed sandbox conversion rate: R$ 1,00 (100 centavos) = 10000 credits.
  * The rate is a backend constant, never client-supplied.
  */
-export const SANDBOX_CREDITS_PER_CENTAVO = 10
+export const SANDBOX_CREDITS_PER_CENTAVO = 100

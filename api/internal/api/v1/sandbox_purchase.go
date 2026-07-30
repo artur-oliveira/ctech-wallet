@@ -24,7 +24,7 @@ func (h *handlers) purchaseSandboxDirect(c fiber.Ctx) error {
 		return sendProblem(c, p)
 	}
 	userID := middleware.GetUserID(c)
-	purchase, charge, err := h.svc.PurchaseSandboxDirect(c.Context(), userID, body.SKU, idemKey)
+	purchase, charge, err := h.svc.PurchaseSandboxDirect(c.Context(), userID, body.SKU, idemKey, "")
 	if err != nil {
 		return sendProblem(c, err)
 	}
@@ -46,7 +46,7 @@ func (h *handlers) refundSandboxPurchase(c fiber.Ctx) error {
 		return sendProblem(c, p)
 	}
 	userID := middleware.GetUserID(c)
-	purchase, err := h.svc.RefundSandboxPurchase(c.Context(), userID, c.Params("id"), idemKey)
+	purchase, err := h.svc.RefundSandboxPurchase(c.Context(), userID, c.Params("id"), idemKey, "")
 	if err != nil {
 		return sendProblem(c, err)
 	}

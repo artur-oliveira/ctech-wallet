@@ -8,6 +8,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -37,6 +38,7 @@ type Result struct {
 	Alarmed               int `json:"alarmed"`
 	SweptDeposits         int `json:"swept_deposits"`
 	SweptSandboxPurchases int `json:"swept_sandbox_purchases"`
+	RetriedM2MWebhooks    int `json:"retried_m2m_webhooks"`
 	StaleHolds            int `json:"stale_holds_alarmed"`
 	TransfersResolved     int `json:"asaas_transfers_resolved"`
 	TransfersRetried      int `json:"asaas_transfers_retried"`
@@ -60,7 +62,7 @@ func main() {
 		os.Exit(1)
 	}
 	slog.Info("reconcile complete", "resolved", res.Resolved, "reversed", res.Reversed, "alarmed", res.Alarmed,
-		"swept_deposits", res.SweptDeposits, "stale_holds_alarmed", res.StaleHolds,
+		"swept_deposits", res.SweptDeposits, "retried_m2m_webhooks", res.RetriedM2MWebhooks, "stale_holds_alarmed", res.StaleHolds,
 		"asaas_transfers_resolved", res.TransfersResolved, "asaas_transfers_retried", res.TransfersRetried,
 		"asaas_transfers_alarmed", res.TransfersAlarmed, "conservation_checked", res.ConservationChecked,
 		"conservation_drifted", res.ConservationDrifted)
@@ -105,6 +107,11 @@ func run(ctx context.Context) (*Result, error) {
 	svc := services.NewWalletService(repo, users, audit, lock.NewLocker(cache.NewMemoryBackend(16)), pixClient, kycclient.New(cfg))
 	svc.SetBroadcaster(newBroadcaster(cfg))
 	svc.SetSandboxPurchases(repositories.NewSandboxPurchaseRepository(clients.DynamoDB, cfg))
+	m2mClients, err := newM2MClients(ctx, cfg, clients)
+	if err != nil {
+		return nil, err
+	}
+	svc.SetM2MClients(m2mClients)
 
 	resolved, reversed, alarmed, err := svc.ReconcileWithdrawals(ctx)
 	if err != nil {
@@ -118,6 +125,10 @@ func run(ctx context.Context) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	retriedWebhooks, err := svc.RetryFailedM2MWebhooks(ctx)
+	if err != nil {
+		return nil, err
+	}
 	staleHolds, err := svc.SweepStaleHolds(ctx)
 	if err != nil {
 		return nil, err
@@ -125,7 +136,7 @@ func run(ctx context.Context) (*Result, error) {
 
 	res := &Result{
 		Resolved: resolved, Reversed: reversed, Alarmed: alarmed, SweptDeposits: swept,
-		SweptSandboxPurchases: sweptSandbox, StaleHolds: staleHolds,
+		SweptSandboxPurchases: sweptSandbox, RetriedM2MWebhooks: retriedWebhooks, StaleHolds: staleHolds,
 	}
 	if cfg.AsaasCustodyEnabled {
 		baasSvc, err := newBaasService(ctx, cfg, clients, repo, audit, kycclient.New(cfg))
@@ -144,6 +155,26 @@ func run(ctx context.Context) (*Result, error) {
 		res.ConservationChecked, res.ConservationDrifted = checked, drifted
 	}
 	return res, nil
+}
+
+// newM2MClients loads the M2M sandbox-purchase client registry the same way
+// api's own app.go does (see app.newM2MClients) — reconcile is not wired
+// through fx, so this is a plain function instead of an fx.Provide entry. An
+// unset SSM parameter is a valid "no M2M client registered" state, not an error.
+func newM2MClients(ctx context.Context, cfg *config.Config, clients *awsclient.Clients) (map[string]services.M2MClient, error) {
+	store := secrets.NewStore(clients.SSM, cfg.Env)
+	raw, err := store.LoadM2MClients(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("m2m clients: %w", err)
+	}
+	m := map[string]services.M2MClient{}
+	if raw == "" {
+		return m, nil
+	}
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		return nil, fmt.Errorf("m2m clients: invalid json: %w", err)
+	}
+	return m, nil
 }
 
 // newBaasService wires the Asaas custody service for the reconcile job — same

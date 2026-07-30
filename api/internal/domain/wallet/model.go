@@ -126,6 +126,13 @@ const (
 	GSIBatchStatus           = "gsi_batch_status"            // wallet_settlement_legs.status → drift/convergence scan
 	GSIMedStatus             = "gsi_med_status"              // wallet_med_receivables.status → open-debt scan, blocks withdrawal
 	GSISandboxPurchaseStatus = "gsi_sandbox_purchase_status" // wallet_sandbox_purchases.status → pending sweep
+
+	// GSISandboxPurchaseWebhookStatus backs the M2M webhook-notify-back retry
+	// sweep (plan: M2M sandbox-purchase integration) — deliberately a second
+	// GSI on the same table rather than overloading GSISandboxPurchaseStatus,
+	// since "confirmed but webhook not yet delivered" and "pending payment"
+	// are unrelated work queues.
+	GSISandboxPurchaseWebhookStatus = "gsi_sandbox_purchase_webhook_status"
 )
 
 // IdemPrefix namespaces idempotency guard items in the idempotency table.
@@ -339,6 +346,15 @@ const (
 	SandboxPurchaseExpired   = "expired"
 )
 
+// M2M webhook notify-back delivery status (RequestingClient-owned purchases
+// only — empty/unset for purchases the user opened directly, since there is
+// no webhook to deliver). WebhookFailed is what GSISandboxPurchaseWebhookStatus
+// scans for the retry sweep; delivered/never-applicable rows fall out of it.
+const (
+	WebhookDelivered = "delivered"
+	WebhookFailed    = "failed"
+)
+
 // SandboxPurchase tracks a direct PIX→sandbox-credits sale (plan §9.1/§9.3) —
 // its own table (TableSandboxPurchases), deliberately separate from
 // wallet_pix_deposits: a deposit is custody (money becomes the user's, held
@@ -357,9 +373,20 @@ type SandboxPurchase struct {
 	Status         string `dynamodbav:"status" json:"status"`
 	CreditSK       string `dynamodbav:"credit_sk,omitempty" json:"-"`
 	E2EID          string `dynamodbav:"e2e_id,omitempty" json:"e2e_id,omitempty"`
-	CreatedAt      string `dynamodbav:"created_at" json:"created_at"`
-	UpdatedAt      string `dynamodbav:"updated_at" json:"updated_at"`
-	TTL            int64  `dynamodbav:"ttl,omitempty" json:"-"` // swept if never confirmed
+	// RequestingClient is the AZP (M2M client_id) of the caller that opened
+	// this purchase on a user's behalf via the M2M route — empty when the
+	// user opened it directly. Owns two things: webhook notify-back routing
+	// (looked up in the M2M client registry by this value) and cross-client
+	// isolation (a client may only read/refund purchases it created).
+	RequestingClient string `dynamodbav:"requesting_client,omitempty" json:"-"`
+	// WebhookStatus tracks delivery of the async notify-back to
+	// RequestingClient's registered webhook URL — empty until first attempted,
+	// WebhookFailed/WebhookDelivered after. Always empty for user-direct
+	// purchases (RequestingClient empty), since there is nothing to notify.
+	WebhookStatus string `dynamodbav:"webhook_status,omitempty" json:"-"`
+	CreatedAt     string `dynamodbav:"created_at" json:"created_at"`
+	UpdatedAt     string `dynamodbav:"updated_at" json:"updated_at"`
+	TTL           int64  `dynamodbav:"ttl,omitempty" json:"-"` // swept if never confirmed
 }
 
 // MED receivable statuses (plan §7.3).

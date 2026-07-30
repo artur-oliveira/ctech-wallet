@@ -97,6 +97,29 @@ the first to call a **third-party API (Inter)**. If Inter's API is IPv4-only, th
 outbound PIX calls will not leave the instance. Confirm Inter's connectivity before
 relying on this network design.
 
+## 4a. M2M sandbox-purchase client registry (e.g. ctech-poker) — SSM SecureString
+
+Optional. Only needed once an M2M client is granted `internal:wallet:sandbox-purchase` and needs its purchase
+confirm/refund notify-back delivered (see
+`docs/specs/2026-07-30-m2m-sandbox-purchase-integration-design.md`). Unset is a valid "no M2M client registered
+yet" state — `api` and `cmd/reconcile` both boot fine without it.
+
+| Parameter                          | Type             | Read by                     |
+|-------------------------------------|------------------|------------------------------|
+| `/ctech-wallet/{env}/m2m-clients`  | **SecureString** | `api`, `cmd/reconcile` (SDK) |
+
+Value is a JSON object keyed by the client's OAuth `client_id` (the JWT's `azp` claim):
+
+```bash
+aws ssm put-parameter --type SecureString --overwrite \
+  --name "/ctech-wallet/prod/m2m-clients" \
+  --value '{"poker": {"WebhookURL": "https://poker.aoctech.app/internal/wallet-webhook", "HMACSecret": "<random-32-byte-hex>"}}'
+```
+
+`HMACSecret` is whatever random value you hand to the receiving service too — the wallet signs every notify-back
+POST with `X-Wallet-Signature: sha256=hex(HMAC-SHA256(body, HMACSecret))` and the receiver must verify it with the
+same secret. Rotate by updating both sides together; there is no versioning/overlap window.
+
 ## 5. Withdrawal reconciliation schedule
 
 Run `cmd/reconcile` on a schedule (e.g. EventBridge every 5 min). It resolves

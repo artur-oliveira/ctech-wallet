@@ -120,4 +120,10 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 	// Balance read for skill games (ctech-poker). Read-only, game+sandbox only.
 	bg := internal.Group("/wallet/balance")
 	bg.Get("/:user_id", middleware.RequireScope(middleware.ScopeWalletBalance), h.walletBalance)
+	// M2M direct PIX→sandbox-credits sale, opened on a user's behalf (e.g.
+	// ctech-poker) — mirrors /wallet/sandbox/purchases above, caller-initiated.
+	sp := internal.Group("/wallet/sandbox-purchase", middleware.RequireScope(middleware.ScopeWalletSandboxPurchase))
+	sp.Post("/", h.m2mPurchaseSandbox)
+	sp.Get("/:id", h.m2mGetSandboxPurchase)
+	sp.Post("/:id/refund", h.m2mRefundSandboxPurchase)
 }

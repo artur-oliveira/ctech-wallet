@@ -30,6 +30,14 @@ const (
 	// consumed by skill games to show the user how much they hold. Read-only,
 	// deliberately separate from ScopeWalletGameStatus (eligibility, not balance).
 	ScopeWalletBalance = "internal:wallet:balance"
+
+	// ScopeWalletSandboxPurchase lets an M2M client (e.g. ctech-poker) open,
+	// poll, and refund a direct PIX→sandbox-credits sale on a user's behalf —
+	// same underlying flow as the user-facing /wallet/sandbox/purchases
+	// routes, just caller-initiated. Deliberately its own scope, not reused
+	// from ScopeWalletCredit: this creates a PIX charge and a purchase
+	// record, not a bare ledger credit.
+	ScopeWalletSandboxPurchase = "internal:wallet:sandbox-purchase"
 )
 
 // KYC levels are defined once, in the domain — services gate on them too.

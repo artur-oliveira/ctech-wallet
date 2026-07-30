@@ -25,23 +25,42 @@ const sandboxPurchaseTTLMinutes = depositTTLMinutes
 // client-supplied, same "never trust the client with a money-shaped number"
 // posture as every other amount in this codebase.
 //
-// purchaseID is deterministic ("sbxp#"+userID+"#"+idemKey) and doubles as
-// both the idempotency guard and the Inter txid — reserved via a conditional
-// write BEFORE any charge is opened (SEC-08-style: a retried request can
-// never open a second charge), same precondition ReserveDepositIdem enforces
-// for deposits via a separate guard table; here the deterministic ID makes a
-// second table unnecessary.
-func (s *WalletService) PurchaseSandboxDirect(ctx context.Context, userID, sku, idemKey string) (*wallet.SandboxPurchase, *pix.Charge, error) {
+// purchaseID is deterministic ("sbxp#"+userID+"#"+idemKey, or
+// "sbxp#"+requestingClient+"#"+userID+"#"+idemKey for an M2M-opened
+// purchase) and doubles as both the idempotency guard and the Inter txid —
+// reserved via a conditional write BEFORE any charge is opened (SEC-08-style:
+// a retried request can never open a second charge), same precondition
+// ReserveDepositIdem enforces for deposits via a separate guard table; here
+// the deterministic ID makes a second table unnecessary. The requestingClient
+// prefix keeps the M2M namespace disjoint from the user-direct one and from
+// other M2M clients, so two different callers can never collide on the same
+// (userID, idemKey) pair.
+//
+// requestingClient is the caller's AZP for an M2M-opened purchase (plan: M2M
+// sandbox-purchase integration), or "" for the user-facing route. Threaded
+// through to ConfirmSandboxPurchase's notify-back and to
+// RefundSandboxPurchase/GetSandboxPurchase's ownership check.
+func (s *WalletService) PurchaseSandboxDirect(ctx context.Context, userID, sku, idemKey, requestingClient string) (*wallet.SandboxPurchase, *pix.Charge, error) {
 	skuDef, ok := wallet.SandboxSKUByID(sku)
 	if !ok {
 		return nil, nil, problem.BadRequest("sku inválido")
 	}
 	purchaseID := "sbxp#" + userID + "#" + idemKey
+	if requestingClient != "" {
+		purchaseID = "sbxp#" + requestingClient + "#" + userID + "#" + idemKey
+	}
 	now := repositories.NowStr()
 	p := &wallet.SandboxPurchase{
-		PurchaseID: purchaseID, UserID: userID, SKU: sku, AmountExpected: skuDef.PriceCentavos,
-		CreditsGranted: skuDef.CreditsGranted, Status: wallet.SandboxPurchasePending,
-		CreatedAt: now, UpdatedAt: now, TTL: time.Now().Add(sandboxPurchaseTTLMinutes * time.Minute).Unix(),
+		PurchaseID:       purchaseID,
+		UserID:           userID,
+		SKU:              sku,
+		AmountExpected:   skuDef.PriceCents,
+		CreditsGranted:   skuDef.CreditsGranted,
+		Status:           wallet.SandboxPurchasePending,
+		RequestingClient: requestingClient,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+		TTL:              time.Now().Add(sandboxPurchaseTTLMinutes * time.Minute).Unix(),
 	}
 	if err := s.sandboxPurchases.PutIfAbsent(ctx, p); err != nil {
 		if !errors.Is(err, repositories.ErrSandboxPurchaseExists) {
@@ -59,7 +78,7 @@ func (s *WalletService) PurchaseSandboxDirect(ctx context.Context, userID, sku, 
 		return existing, charge, nil
 	}
 
-	charge, err := s.pix.CreateCharge(ctx, purchaseID, skuDef.PriceCentavos, "")
+	charge, err := s.pix.CreateCharge(ctx, purchaseID, skuDef.PriceCents, "")
 	if err != nil {
 		return nil, nil, problem.InternalServer("falha ao criar cobrança PIX: " + err.Error())
 	}
@@ -119,9 +138,14 @@ func (s *WalletService) ConfirmSandboxPurchase(ctx context.Context, txid string,
 	if err != nil {
 		return err
 	}
-	return s.sandboxPurchases.Update(ctx, txid, map[string]any{
+	if err := s.sandboxPurchases.Update(ctx, txid, map[string]any{
 		"status": wallet.SandboxPurchaseConfirmed, "e2e_id": charge.E2EID, "credit_sk": entry.SK,
-	})
+	}); err != nil {
+		return err
+	}
+	p.Status = wallet.SandboxPurchaseConfirmed
+	s.dispatchM2MWebhook(ctx, p)
+	return nil
 }
 
 // RefundSandboxPurchase reverses an unused sandbox purchase per §9.2:
@@ -131,12 +155,16 @@ func (s *WalletService) ConfirmSandboxPurchase(ctx context.Context, txid string,
 // #6 untouched): this is a debit that zeroes out the entitlement, not a
 // conversion — the credits are simply revoked, they never become game or
 // real money.
-func (s *WalletService) RefundSandboxPurchase(ctx context.Context, userID, purchaseID, idemKey string) (*wallet.SandboxPurchase, error) {
+// requestingClient mirrors PurchaseSandboxDirect's own parameter: "" for the
+// user-facing route, or the caller's AZP for the M2M route — in which case a
+// purchase opened by a DIFFERENT client (or opened directly by the user) is
+// reported as not-found rather than leaking whose it is.
+func (s *WalletService) RefundSandboxPurchase(ctx context.Context, userID, purchaseID, idemKey, requestingClient string) (*wallet.SandboxPurchase, error) {
 	p, err := s.sandboxPurchases.Get(ctx, purchaseID)
 	if err != nil {
 		return nil, err
 	}
-	if p == nil || p.UserID != userID {
+	if p == nil || p.UserID != userID || (requestingClient != "" && p.RequestingClient != requestingClient) {
 		return nil, problem.NotFound("compra não encontrada")
 	}
 	if p.Status == wallet.SandboxPurchaseRefunded {
@@ -189,6 +217,24 @@ func (s *WalletService) RefundSandboxPurchase(ctx context.Context, userID, purch
 		return nil, err
 	}
 	p.Status = wallet.SandboxPurchaseRefunded
+	s.dispatchM2MWebhook(ctx, p)
+	return p, nil
+}
+
+// GetSandboxPurchase is the M2M poll endpoint's read path (plan: M2M
+// sandbox-purchase integration) — the receiver's mandated way to confirm a
+// purchase before crediting anything itself, never the webhook body alone
+// (Invariant #11's own posture, mirrored for the M2M integration). Ownership
+// is enforced the same way as RefundSandboxPurchase: a purchase this client
+// did not open is reported as not-found, never leaked.
+func (s *WalletService) GetSandboxPurchase(ctx context.Context, purchaseID, requestingClient string) (*wallet.SandboxPurchase, error) {
+	p, err := s.sandboxPurchases.Get(ctx, purchaseID)
+	if err != nil {
+		return nil, err
+	}
+	if p == nil || p.RequestingClient != requestingClient {
+		return nil, problem.NotFound("compra não encontrada")
+	}
 	return p, nil
 }
 

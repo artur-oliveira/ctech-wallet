@@ -16,7 +16,7 @@ const (
 	AbsoluteFeeMin = 100 // R$ 1,00 in centavos
 
 	// SandboxCreditsPerCentavo is the fixed real→sandbox conversion rate.
-	SandboxCreditsPerCentavo = 10
+	SandboxCreditsPerCentavo = 100
 
 	// MaxAmountCents caps any single inbound amount (R$ 1.000.000,00).
 	MaxAmountCents = 100_000_000

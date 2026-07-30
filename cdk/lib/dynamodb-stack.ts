@@ -46,6 +46,7 @@ const GSI_INTENT_STATUS = 'gsi_intent_status';
 const GSI_BATCH_STATUS = 'gsi_batch_status';
 const GSI_MED_STATUS = 'gsi_med_status';
 const GSI_SANDBOX_PURCHASE_STATUS = 'gsi_sandbox_purchase_status';
+const GSI_SANDBOX_PURCHASE_WEBHOOK_STATUS = 'gsi_sandbox_purchase_webhook_status';
 
 // DynamoDB attribute names (single source of truth).
 const ATTR_PK = 'pk';
@@ -56,6 +57,7 @@ const ATTR_STATUS = 'status';
 const ATTR_TTL = 'ttl';
 const ATTR_PROVIDER_ACCOUNT_ID = 'provider_account_id';
 const ATTR_PROVIDER_QR_CODE_ID = 'provider_qr_code_id';
+const ATTR_WEBHOOK_STATUS = 'webhook_status';
 
 interface DynamoDBStackProps extends cdk.StackProps {
     tablePrefix: string;
@@ -200,6 +202,10 @@ export class DynamoDBStack extends cdk.Stack {
         // backs the pending-purchase sweep.
         const sandboxPurchasesTable = table('wallet_sandbox_purchases', {ttl: true});
         gsi(sandboxPurchasesTable, GSI_SANDBOX_PURCHASE_STATUS, ATTR_STATUS);
+        // Backs the M2M webhook notify-back retry sweep (RetryFailedM2MWebhooks) —
+        // a purchase opened by an M2M client (e.g. ctech-poker) whose last
+        // notify-back attempt failed. Empty/unset for user-direct purchases.
+        gsi(sandboxPurchasesTable, GSI_SANDBOX_PURCHASE_WEBHOOK_STATUS, ATTR_WEBHOOK_STATUS);
 
         // ── Outputs ───────────────────────────────────────────────────────────────
         new cdk.CfnOutput(this, 'WalletsTableName', {

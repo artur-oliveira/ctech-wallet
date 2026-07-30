@@ -169,6 +169,9 @@ export class ReconcileStack extends cdk.Stack {
                 `arn:aws:ssm:*:*:parameter${SSM_WALLET(environment).asaasApiKeyMaster}`,
                 `arn:aws:ssm:*:*:parameter${SSM_WALLET(environment).asaasWebhookToken}`,
                 `arn:aws:ssm:*:*:parameter${SSM_WALLET(environment).asaasParentApiKey}`,
+                // M2M sandbox-purchase client registry — reconcile reads this to
+                // retry failed webhook notify-back deliveries (RetryFailedM2MWebhooks).
+                `arn:aws:ssm:*:*:parameter${SSM_WALLET(environment).m2mClients}`,
             ],
         }));
 

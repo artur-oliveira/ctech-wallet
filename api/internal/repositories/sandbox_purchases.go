@@ -63,9 +63,19 @@ func (r *SandboxPurchaseRepository) Update(ctx context.Context, purchaseID strin
 
 // ListPendingOlderThan is the sweep's work queue — the same shape as
 // ListPendingDepositsOlderThan, kept as a separate method (not a shared
-// helper) because the two tables are deliberately decoupled.
+// helper across tables) because the two tables are deliberately decoupled.
 func (r *SandboxPurchaseRepository) ListPendingOlderThan(ctx context.Context, cutoff time.Time, limit int) ([]wallet.SandboxPurchase, error) {
-	res, err := r.purchases.QueryGSI(ctx, wallet.GSISandboxPurchaseStatus, "status", wallet.SandboxPurchasePending, limit, nil)
+	return r.listByGSIOlderThan(ctx, wallet.GSISandboxPurchaseStatus, "status", wallet.SandboxPurchasePending, cutoff, limit)
+}
+
+// ListWebhookFailedOlderThan is the M2M webhook notify-back retry sweep's
+// work queue — same shape as ListPendingOlderThan, different GSI/value.
+func (r *SandboxPurchaseRepository) ListWebhookFailedOlderThan(ctx context.Context, cutoff time.Time, limit int) ([]wallet.SandboxPurchase, error) {
+	return r.listByGSIOlderThan(ctx, wallet.GSISandboxPurchaseWebhookStatus, "webhook_status", wallet.WebhookFailed, cutoff, limit)
+}
+
+func (r *SandboxPurchaseRepository) listByGSIOlderThan(ctx context.Context, gsiName, attr, value string, cutoff time.Time, limit int) ([]wallet.SandboxPurchase, error) {
+	res, err := r.purchases.QueryGSI(ctx, gsiName, attr, value, limit, nil)
 	if err != nil {
 		return nil, err
 	}

@@ -112,6 +112,20 @@ type SandboxPurchaseRepo interface {
 	Get(ctx context.Context, purchaseID string) (*wallet.SandboxPurchase, error)
 	Update(ctx context.Context, purchaseID string, updates map[string]any) error
 	ListPendingOlderThan(ctx context.Context, cutoff time.Time, limit int) ([]wallet.SandboxPurchase, error)
+	ListWebhookFailedOlderThan(ctx context.Context, cutoff time.Time, limit int) ([]wallet.SandboxPurchase, error)
+}
+
+// M2MClient is one registered M2M caller's notify-back configuration (e.g.
+// ctech-poker) — loaded once at startup from a single SSM SecureString JSON
+// blob (client_id → {webhook_url, hmac_secret}), the same "admin sets it,
+// there is no API write path" posture as the wallets table's fee/deposit-range
+// overrides. Keyed by the JWT's AZP claim, never client-supplied per-request:
+// a caller-supplied callback URL would let any M2M token point the wallet's
+// outbound call at an arbitrary host (SSRF), same reasoning as why the PIX
+// deposit destination is always the caller's own KYC CPF, never a request body.
+type M2MClient struct {
+	WebhookURL string
+	HMACSecret string
 }
 
 // BaasProvider is the per-user Asaas custody gate WalletService reads before
@@ -216,6 +230,7 @@ type WalletService struct {
 	baas             BaasProvider        // defaults to noopBaasProvider; see SetBaas
 	custodyEnabled   bool                // defaults false; see SetCustodyEnabled — matches config.AsaasCustodyEnabled's own default
 	sandboxPurchases SandboxPurchaseRepo // required for PurchaseSandboxDirect/RefundSandboxPurchase/ConfirmSandboxPurchase; see SetSandboxPurchases
+	m2mClients       map[string]M2MClient // AZP → webhook config; nil/missing entry means "don't notify"; see SetM2MClients
 }
 
 func NewWalletService(repo Repo, users UserRepo, audit Auditor, lock Locker, pixClient pix.PixClient, kyc KYCClient) *WalletService {
@@ -255,6 +270,15 @@ func (s *WalletService) SetCustodyEnabled(v bool) {
 // flag, so cmd/server and cmd/reconcile must always call this.
 func (s *WalletService) SetSandboxPurchases(r SandboxPurchaseRepo) {
 	s.sandboxPurchases = r
+}
+
+// SetM2MClients wires the registered M2M client → webhook-config map after
+// construction — same setter pattern as SetSandboxPurchases. Unset (nil map),
+// dispatchM2MWebhook finds no entry for any client and skips notification
+// silently — correct for every deployment that has no M2M sandbox-purchase
+// integration configured yet.
+func (s *WalletService) SetM2MClients(m map[string]M2MClient) {
+	s.m2mClients = m
 }
 
 // ActivateGambling opens the caller's game + sandbox wallets. Gates: KYC

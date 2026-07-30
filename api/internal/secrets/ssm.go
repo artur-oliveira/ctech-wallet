@@ -6,10 +6,12 @@ package secrets
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	ssmtypes "github.com/aws/aws-sdk-go-v2/service/ssm/types"
 )
 
 // Parameter paths. %s is the deployment environment (dev/stage/prod).
@@ -22,6 +24,13 @@ const (
 	// parent, the mirror image of every other Asaas call in this codebase
 	// (which authenticates as the subaccount).
 	asaasParentAPIKeyParamFmt = "/ctech-wallet/%s/asaas/parent-api-key"
+	// m2mClientsParamFmt holds a JSON object (client_id → {webhook_url,
+	// hmac_secret}) for every M2M caller registered for the sandbox-purchase
+	// notify-back (e.g. ctech-poker) — admin-provisioned directly in SSM, the
+	// same "no API write path" posture as the wallets table's fee/deposit-range
+	// overrides (see services.M2MClient). Tolerant of being unset entirely:
+	// most environments never configure an M2M sandbox-purchase client.
+	m2mClientsParamFmt = "/ctech-wallet/%s/m2m-clients"
 )
 
 // SSMAPI is the subset of *ssm.Client this package needs (mockable in tests).
@@ -55,6 +64,30 @@ func (s *Store) LoadAsaasWebhookToken(ctx context.Context) (string, error) {
 // (plan §9.1a reversal leg).
 func (s *Store) LoadAsaasParentAPIKey(ctx context.Context) (string, error) {
 	return s.get(ctx, fmt.Sprintf(asaasParentAPIKeyParamFmt, s.env))
+}
+
+// LoadM2MClients fetches the raw M2M client registry JSON (plan: M2M
+// sandbox-purchase integration). Unlike every other Load* here, a missing
+// parameter is NOT an error — it means no M2M sandbox-purchase client is
+// registered in this environment yet, and callers should treat that as an
+// empty registry, not fail startup.
+func (s *Store) LoadM2MClients(ctx context.Context) (string, error) {
+	name := fmt.Sprintf(m2mClientsParamFmt, s.env)
+	out, err := s.client.GetParameter(ctx, &ssm.GetParameterInput{
+		Name:           aws.String(name),
+		WithDecryption: aws.Bool(true),
+	})
+	if err != nil {
+		var notFound *ssmtypes.ParameterNotFound
+		if errors.As(err, &notFound) {
+			return "", nil
+		}
+		return "", fmt.Errorf("ssm: get %s: %w", name, err)
+	}
+	if out.Parameter == nil || out.Parameter.Value == nil {
+		return "", nil
+	}
+	return *out.Parameter.Value, nil
 }
 
 func (s *Store) get(ctx context.Context, name string) (string, error) {

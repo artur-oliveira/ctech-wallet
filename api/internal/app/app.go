@@ -3,6 +3,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -53,6 +54,7 @@ var Module = fx.Options(
 		newAsaasSecrets,
 		newAsaasClient,
 		newBaasService,
+		newM2MClients,
 		newWalletService,
 		newUserService,
 		newFiberApp,
@@ -211,12 +213,34 @@ func newBaasService(repo *repositories.BaasRepository, walletRepo *repositories.
 	return services.NewBaasService(repo, walletRepo, asaasClient, audit, kyc, s.MasterKey, cfg.AsaasParentWalletID, s.ParentAPIKey)
 }
 
-func newWalletService(repo *repositories.WalletRepository, users *repositories.UserRepository, audit *repositories.AuditRepository, l *lock.Locker, p pix.PixClient, k services.KYCClient, baas *services.BaasService, sandboxPurchases *repositories.SandboxPurchaseRepository, cfg *config.Config) *services.WalletService {
+func newWalletService(repo *repositories.WalletRepository, users *repositories.UserRepository, audit *repositories.AuditRepository, l *lock.Locker, p pix.PixClient, k services.KYCClient, baas *services.BaasService, sandboxPurchases *repositories.SandboxPurchaseRepository, m2mClients map[string]services.M2MClient, cfg *config.Config) *services.WalletService {
 	svc := services.NewWalletService(repo, users, audit, l, p, k)
 	svc.SetBaas(baas)
 	svc.SetCustodyEnabled(cfg.AsaasCustodyEnabled)
 	svc.SetSandboxPurchases(sandboxPurchases)
+	svc.SetM2MClients(m2mClients)
 	return svc
+}
+
+// newM2MClients loads the M2M sandbox-purchase client registry (client_id →
+// webhook config) from a single SSM SecureString JSON blob (plan: M2M
+// sandbox-purchase integration) — admin-provisioned, no API write path, same
+// posture as newAsaasSecrets above. An unset parameter is a valid "no M2M
+// client registered yet" state, not a startup failure.
+func newM2MClients(cfg *config.Config, clients *awsclient.Clients) (map[string]services.M2MClient, error) {
+	store := secrets.NewStore(clients.SSM, cfg.Env)
+	raw, err := store.LoadM2MClients(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("m2m clients: %w", err)
+	}
+	m := map[string]services.M2MClient{}
+	if raw == "" {
+		return m, nil
+	}
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		return nil, fmt.Errorf("m2m clients: invalid json: %w", err)
+	}
+	return m, nil
 }
 
 func newUserService(repo *repositories.UserRepository, audit *repositories.AuditRepository) *services.UserService {
