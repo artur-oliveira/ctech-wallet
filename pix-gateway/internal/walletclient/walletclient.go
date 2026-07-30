@@ -19,9 +19,15 @@ import (
 )
 
 const (
-	pathToken           = "/v1.0/token"
-	pathConfirmDeposit  = "/v1.0/internal/pix/confirm-deposit"
-	scopeConfirmDeposit = "internal:wallet:confirm-deposit"
+	pathToken          = "/v1.0/token"
+	pathConfirmDeposit = "/v1.0/internal/pix/confirm-deposit"
+	// pathConfirmSandboxPurchase is the sibling route for the direct
+	// PIX→sandbox-credits sale (ctech-wallet-api plan
+	// docs/plans/2026-07-30-asaas-baas-implementation-plan.md §9.3) — same M2M
+	// caller/scope as confirm-deposit, dispatched on the "sbxp#" txid prefix
+	// (see cmd/webhook/main.go) instead of a new scope.
+	pathConfirmSandboxPurchase = "/v1.0/internal/pix/confirm-sandbox-purchase"
+	scopeConfirmDeposit        = "internal:wallet:confirm-deposit"
 )
 
 // Client calls api's confirm-deposit endpoint.
@@ -75,6 +81,36 @@ func (c *Client) ConfirmDeposit(ctx context.Context, txid, payerCPF, payerName s
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		raw, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("walletclient: confirm-deposit status %d: %s", resp.StatusCode, string(raw))
+	}
+	return nil
+}
+
+// ConfirmSandboxPurchase calls api's confirm-sandbox-purchase endpoint for
+// txid — the direct PIX→sandbox-credits sale (plan §9.3). No payer CPF/name:
+// unlike ConfirmDeposit, this flow has no CPF/KYC gate to feed (plan §9.1).
+func (c *Client) ConfirmSandboxPurchase(ctx context.Context, txid string) error {
+	body, err := json.Marshal(map[string]string{"txid": txid})
+	if err != nil {
+		return err
+	}
+	token, err := c.tokens.Get(ctx)
+	if err != nil {
+		return fmt.Errorf("walletclient: get token: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+pathConfirmSandboxPurchase, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		raw, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("walletclient: confirm-sandbox-purchase status %d: %s", resp.StatusCode, string(raw))
 	}
 	return nil
 }

@@ -17,6 +17,20 @@ const (
 	OpRefund        Op = "Refund"
 	OpPing          Op = "Ping"
 	OpGetToken      Op = "GetToken"
+
+	// Asaas BaaS custody ops (ctech-wallet-api plan
+	// docs/plans/2026-07-30-asaas-baas-implementation-plan.md §2.2). Each
+	// Asaas *Args struct below carries its own APIKey — unlike the Inter ops
+	// above, there is no fleet-wide bearer: every call authenticates as a
+	// specific subaccount (or the parent account).
+	OpAsaasCreateAccount       Op = "AsaasCreateAccount"
+	OpAsaasUploadDocument      Op = "AsaasUploadDocument"
+	OpAsaasCreateStaticPixKey  Op = "AsaasCreateStaticPixKey"
+	OpAsaasCreatePixQRCode     Op = "AsaasCreatePixQRCode"
+	OpAsaasQueryPayment        Op = "AsaasQueryPayment"
+	OpAsaasCreateTransfer      Op = "AsaasCreateTransfer"
+	OpAsaasQueryTransfer       Op = "AsaasQueryTransfer"
+	OpAsaasQueryAccountBalance Op = "AsaasQueryAccountBalance"
 )
 
 // ErrKeyNotFoundSentinel is the Response.Error value that means
@@ -111,4 +125,105 @@ type RefundArgs struct {
 type TransferResult struct {
 	E2EID  string `json:"e2e_id"`
 	Status string `json:"status"`
+}
+
+// --- Asaas BaaS custody wire types. Money fields are int64 centavos, same
+// convention as every Inter type above — pix-gateway's asaas client converts
+// to/from Asaas's own decimal-reais wire format internally. ---
+
+type AsaasCreateAccountArgs struct {
+	Name          string `json:"name"`
+	CPF           string `json:"cpf"`
+	Email         string `json:"email"`
+	MobilePhone   string `json:"mobile_phone"`
+	BirthDate     string `json:"birth_date"`
+	Address       string `json:"address"`
+	AddressNumber string `json:"address_number"`
+	Complement    string `json:"complement"`
+	Province      string `json:"province"`
+	City          string `json:"city"`
+	State         string `json:"state"`
+	PostalCode    string `json:"postal_code"`
+	IncomeValue   int64  `json:"income_value"`
+}
+
+type AsaasAccountResult struct {
+	ID            string `json:"id"`
+	WalletID      string `json:"wallet_id"`
+	APIKey        string `json:"api_key"`
+	Status        string `json:"status"`
+	OnboardingURL string `json:"onboarding_url"`
+}
+
+type AsaasUploadDocumentArgs struct {
+	APIKey     string `json:"api_key"`
+	DocumentID string `json:"document_id"`
+	File       []byte `json:"file"`
+}
+
+type AsaasCreateStaticPixKeyArgs struct {
+	APIKey string `json:"api_key"`
+}
+
+type AsaasPixAddressKeyResult struct {
+	Key    string `json:"key"`
+	Status string `json:"status"`
+}
+
+type AsaasCreatePixQRCodeArgs struct {
+	APIKey                 string `json:"api_key"`
+	AddressKey             string `json:"address_key"`
+	Value                  int64  `json:"value"`
+	Format                 string `json:"format"`
+	ExpirationSeconds      int    `json:"expiration_seconds"`
+	AllowsMultiplePayments bool   `json:"allows_multiple_payments"`
+	ExternalReference      string `json:"external_reference"`
+}
+
+type AsaasQRCodeResult struct {
+	PixQRCodeID    string `json:"pix_qr_code_id"`
+	Payload        string `json:"payload"`
+	EncodedImage   string `json:"encoded_image"`
+	ExpirationDate string `json:"expiration_date"`
+}
+
+type AsaasQueryPaymentArgs struct {
+	APIKey    string `json:"api_key"`
+	PaymentID string `json:"payment_id"`
+}
+
+type AsaasPaymentResult struct {
+	ID                string `json:"id"`
+	Value             int64  `json:"value"`
+	Status            string `json:"status"`
+	ExternalReference string `json:"external_reference"`
+}
+
+type AsaasCreateTransferArgs struct {
+	APIKey            string `json:"api_key"`
+	Value             int64  `json:"value"`
+	PixAddressKey     string `json:"pix_address_key"`
+	PixAddressKeyType string `json:"pix_address_key_type"`
+	WalletID          string `json:"wallet_id"`
+	ExternalReference string `json:"external_reference"`
+}
+
+type AsaasTransferResult struct {
+	ID                string `json:"id"`
+	Status            string `json:"status"`
+	TransferFee       int64  `json:"transfer_fee"`
+	ExternalReference string `json:"external_reference"`
+}
+
+type AsaasQueryTransferArgs struct {
+	APIKey            string `json:"api_key"`
+	ExternalReference string `json:"external_reference"`
+}
+
+type AsaasQueryAccountBalanceArgs struct {
+	APIKey string `json:"api_key"`
+}
+
+type AsaasBalanceResult struct {
+	Balance int64 `json:"balance"`
 }

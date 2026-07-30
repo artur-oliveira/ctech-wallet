@@ -16,11 +16,20 @@ import (
 // sees one.
 func (h *handlers) getWallet(c fiber.Ctx) error {
 	userID := middleware.GetUserID(c)
-	realw, gamew, sandboxw, err := h.svc.GetBalances(c.Context(), userID)
+	realw, gamew, sandboxw, custodyStatus, err := h.svc.GetBalances(c.Context(), userID)
 	if err != nil {
 		return sendProblem(c, err)
 	}
+	// custodyStatus is only ever non-empty when AsaasCustodyEnabled — the UI
+	// reads it to show the right onboarding step instead of a balance card
+	// (plan §4.1). Omitted entirely otherwise, matching today's response shape.
+	if custodyStatus != "" && custodyStatus != wallet.BaasApproved {
+		return c.JSON(fiber.Map{"custody_status": custodyStatus, "activated": false})
+	}
 	out := fiber.Map{"real": realw, "activated": gamew != nil}
+	if custodyStatus == wallet.BaasApproved {
+		out["custody_status"] = custodyStatus
+	}
 	if gamew != nil {
 		out["game"] = gamew
 		out["sandbox"] = sandboxw
@@ -152,7 +161,7 @@ func (h *handlers) walletTransfer(c fiber.Ctx, op transferOp, amount int64) erro
 func (h *handlers) getLedger(c fiber.Ctx) error {
 	walletType := c.Params("type")
 	userID := middleware.GetUserID(c)
-	realw, gamew, sandboxw, err := h.svc.GetBalances(c.Context(), userID)
+	realw, gamew, sandboxw, _, err := h.svc.GetBalances(c.Context(), userID)
 	if err != nil {
 		return sendProblem(c, err)
 	}

@@ -118,6 +118,28 @@ func (r *WalletRepository) UpdateHoldStatus(ctx context.Context, holdID, fromSta
 	return true, nil
 }
 
+// ListOpenHoldsForWallet returns every currently-`held` hold on walletID, via
+// gsi_hold_status filtered in memory (mirrors ScanStaleHolds' filter-after-GSI-
+// query shape — no table scan). Used by the Invariant #13 conservation check
+// (plan §6) to sum a user's open exposure alongside real.Balance+game.Balance.
+func (r *WalletRepository) ListOpenHoldsForWallet(ctx context.Context, walletID string, limit int) ([]wallet.Hold, error) {
+	res, err := r.holds.QueryGSI(ctx, wallet.GSIHoldStatus, "status", wallet.HoldHeld, limit, nil)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]wallet.Hold, 0, len(res.Items))
+	for _, it := range res.Items {
+		h, err := Decode[wallet.Hold](it)
+		if err != nil {
+			return nil, err
+		}
+		if h.WalletID == walletID {
+			out = append(out, *h)
+		}
+	}
+	return out, nil
+}
+
 // ScanStaleHolds returns holds still `held` and created before cutoff, via
 // gsi_hold_status — the stale-hold reconciliation sweep's work queue
 // (Invariant #12 analog: a hold stuck open past the ceiling is money left in

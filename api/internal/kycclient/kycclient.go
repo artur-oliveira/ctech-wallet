@@ -24,12 +24,31 @@ const (
 	scopeKYC   = "internal:account:kyc"
 )
 
+// KYCAddress mirrors ctech-account's existing user.Address struct exactly —
+// it was already a structured object on the wire (nested under "address"),
+// not a flat string; this client previously assumed the wrong shape.
+type KYCAddress struct {
+	ZipCode    string `json:"zip_code"`
+	Street     string `json:"street"`
+	Number     string `json:"number"`
+	Complement string `json:"complement"`
+	District   string `json:"district"`
+	City       string `json:"city"`
+	State      string `json:"state"`
+}
+
 // KYC is the unmasked identity record account returns to internal callers.
+// Email/Phone/Address are consumed by Asaas subaccount onboarding (plan
+// §3.1) — all three are confirmed present on ctech-account's internal KYC
+// endpoint (phone as "phone_number", E.164, collected at Basic KYC).
 type KYC struct {
-	Level     string `json:"level"`
-	CPF       string `json:"cpf"`
-	LegalName string `json:"legal_name"`
-	BirthDate string `json:"birth_date"`
+	Level     string     `json:"level"`
+	CPF       string     `json:"cpf"`
+	LegalName string     `json:"legal_name"`
+	BirthDate string     `json:"birth_date"`
+	Email     string     `json:"email"`
+	Phone     string     `json:"phone_number"`
+	Address   KYCAddress `json:"address"`
 }
 
 // Client talks to ctech-account's internal KYC endpoints.

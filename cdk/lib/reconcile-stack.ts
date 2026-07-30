@@ -21,8 +21,24 @@ import {
 
 const API_DIR = path.join(__dirname, '../../api');
 
-/** Tables the reconciliation job touches (wallet_-prefixed names). */
-const RECONCILE_TABLES = ['wallets', 'wallet_ledger_entries', 'wallet_idempotency', 'wallet_withdrawals'];
+/**
+ * Tables the reconciliation job touches unconditionally (wallet_-prefixed
+ * names). wallet_sandbox_purchases is here because SweepPendingSandboxPurchases
+ * runs on every invocation regardless of AsaasCustodyEnabled (implementation
+ * plan §9 ships with no flag) — omitting it would AccessDenied every run.
+ */
+const RECONCILE_TABLES = ['wallets', 'wallet_ledger_entries', 'wallet_idempotency', 'wallet_withdrawals', 'wallet_sandbox_purchases'];
+
+/**
+ * Asaas BaaS custody tables the reconcile job touches ONLY inside its
+ * `if cfg.AsaasCustodyEnabled` branch (ReconcileTransferIntents,
+ * RunConservationCheck — implementation plan §6). Granted now, inert until the
+ * flag flips, same "flip = ops decision, not a CDK redeploy" posture as the
+ * SSM grants below. wallet_settlement_legs is deliberately excluded: no
+ * application code reads/writes it yet (no settlement caller exists —
+ * dynamodb-stack.ts's own note on that table).
+ */
+const RECONCILE_ASAAS_TABLES = ['wallet_baas_accounts', 'wallet_transfer_intents', 'wallet_med_receivables'];
 
 // How often the reconcile job runs (withdrawal reconciliation + pending-deposit
 // sweep). SEC-02 invariant: this MUST stay well below `sweepAgeThreshold` (10m,
@@ -119,15 +135,40 @@ export class ReconcileStack extends cdk.Stack {
             resources: [ledgerArn, `${ledgerArn}/index/*`],
         }));
 
-        // ── SSM: only wallet-client-id/secret (for the internal:kyc M2M call) and
-        // the account base URL — reconcile no longer talks to Inter directly, so it
-        // needs none of the inter/* secrets (see pixGatewayOutboundFunctionArn above).
+        // ── Asaas BaaS custody tables (implementation plan §6) — read/write, no
+        // DeleteItem: nothing in cmd/reconcile deletes from any of these.
+        const asaasArns = RECONCILE_ASAAS_TABLES.flatMap(name => {
+            const t = dynamoDBTables.get(name);
+            if (!t) throw new Error(`reconcile-stack: table ${name} not found in DynamoDBStack`);
+            return [t.tableArn, `${t.tableArn}/index/*`];
+        });
+        role.addToPolicy(new iam.PolicyStatement({
+            actions: [
+                'dynamodb:GetItem',
+                'dynamodb:PutItem',
+                'dynamodb:UpdateItem',
+                'dynamodb:Query',
+                'dynamodb:BatchGetItem',
+                'dynamodb:ConditionCheckItem',
+            ],
+            resources: asaasArns,
+        }));
+
+        // ── SSM: wallet-client-id/secret (for the internal:kyc M2M call) and the
+        // account base URL — reconcile no longer talks to Inter directly, so it
+        // needs none of the inter/* secrets (see pixGatewayOutboundFunctionArn
+        // above). The asaas/* leaves are read only inside cmd/reconcile's
+        // `if cfg.AsaasCustodyEnabled` branch (newBaasService) — inert until the
+        // flag flips, same posture as the DynamoDB grant above.
         role.addToPolicy(new iam.PolicyStatement({
             actions: ['ssm:GetParameter'],
             resources: [
                 `arn:aws:ssm:*:*:parameter${SSM_WALLET(environment).walletClientId}`,
                 `arn:aws:ssm:*:*:parameter${SSM_WALLET(environment).walletClientSecret}`,
                 `arn:aws:ssm:*:*:parameter${SSM_ACCOUNT(environment).namespace}/*`,
+                `arn:aws:ssm:*:*:parameter${SSM_WALLET(environment).asaasApiKeyMaster}`,
+                `arn:aws:ssm:*:*:parameter${SSM_WALLET(environment).asaasWebhookToken}`,
+                `arn:aws:ssm:*:*:parameter${SSM_WALLET(environment).asaasParentApiKey}`,
             ],
         }));
 

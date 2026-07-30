@@ -131,6 +131,14 @@ export class IAMStack extends cdk.Stack {
                         `arn:aws:ssm:*:*:parameter${walletSsm.walletClientSecret}`,
                         `arn:aws:ssm:*:*:parameter${accountSsm.namespace}/*`,
                         `arn:aws:ssm:*:*:parameter/ctech/${environment}/*`,
+                        // Asaas BaaS custody — read in-process by api itself (unlike the
+                        // inter/* SecureStrings above, which pix-gateway's own role reads).
+                        // Inert until ASAAS_CUSTODY_ENABLED is flipped (an ops decision,
+                        // not a CDK one — plan §0), but the permission must already exist
+                        // so flipping it later needs no redeploy of this stack.
+                        `arn:aws:ssm:*:*:parameter${walletSsm.asaasApiKeyMaster}`,
+                        `arn:aws:ssm:*:*:parameter${walletSsm.asaasWebhookToken}`,
+                        `arn:aws:ssm:*:*:parameter${walletSsm.asaasParentApiKey}`,
                     ],
                 }),
             ],

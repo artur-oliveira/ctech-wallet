@@ -17,11 +17,12 @@ import (
 type handlers struct {
 	svc     *services.WalletService
 	userSvc *services.UserService
+	baas    *services.BaasService
 }
 
 // Register mounts all wallet routes under /v1.0.
-func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsclient.Clients, pixClient pix.PixClient, svc *services.WalletService, userSvc *services.UserService, wsRegistry ws.Registry) {
-	h := &handlers{svc: svc, userSvc: userSvc}
+func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsclient.Clients, pixClient pix.PixClient, svc *services.WalletService, userSvc *services.UserService, baasSvc *services.BaasService, asaasWebhookToken string, wsRegistry ws.Registry) {
+	h := &handlers{svc: svc, userSvc: userSvc, baas: baasSvc}
 	verifier := middleware.NewVerifier(cfg.CtechJWKSURL, cfg.ServiceAudience, cfg.CtechURL, c)
 	auth := verifier.Middleware()
 
@@ -44,6 +45,12 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 	w.Post("/deposits", middleware.RequireKYC(middleware.KYCVerified), h.createDeposit)
 	w.Post("/withdrawals", middleware.RequireKYC(middleware.KYCVerified), middleware.RequireRecentMFA(middleware.StepUpMaxAge), h.createWithdrawal)
 	w.Post("/sandbox/purchase", h.purchaseSandbox)
+	// Direct PIX→sandbox-credits sale (plan §9.1/§9.3) — decoupled from the
+	// ring-fence entirely, no KYC gate, no feature flag: ships live. Plural
+	// path to avoid colliding with /sandbox/purchase above (see
+	// purchaseSandboxDirect's own comment).
+	w.Post("/sandbox/purchases", h.purchaseSandboxDirect)
+	w.Post("/sandbox/purchases/:id/refund", h.refundSandboxPurchase)
 	w.Get("/:type/ledger", h.getLedger)
 
 	// Returning money OUT of the ring-fence is ALWAYS available — never behind the
@@ -74,10 +81,29 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 		w.Post("/game/deposit", middleware.RequireKYC(middleware.KYCVerified), h.gameDeposit)
 	}
 
+	// Asaas webhooks — gated on the static asaas-access-token header (plan §2.3),
+	// never the JWT/M2M auth used by every other route below: Asaas is not an
+	// account-issued client. Registered whenever AsaasCustodyEnabled is true; the
+	// token check itself already fails closed on an empty configured token, but
+	// there is no reason to expose the route at all pre-migration.
+	if cfg.AsaasCustodyEnabled {
+		asaasGroup := v1.Group("/internal/asaas", middleware.RequireAsaasWebhookToken(asaasWebhookToken))
+		asaasGroup.Post("/transfer-authorization", h.asaasTransferAuthorization)
+		asaasGroup.Post("/webhook", h.asaasWebhook)
+
+		w.Post("/onboarding", middleware.RequireKYC(middleware.KYCVerified), h.initiateOnboarding)
+		w.Post("/closure", middleware.RequireRecentMFA(middleware.StepUpMaxAge), h.initiateClosure)
+	}
+
 	// Internal routes — all M2M client_credentials + scope, gated after auth.
 	internal := v1.Group("/internal", auth)
 	// pix-gateway's webhook Lambda, after it has already re-queried Inter.
 	internal.Post("/pix/confirm-deposit", middleware.RequireScope(middleware.ScopePixConfirmDeposit), h.confirmDeposit)
+	// Sibling route for the direct sandbox-purchase rail (plan §9.3) — same
+	// M2M caller (pix-gateway), same scope: confirm-deposit's scope already
+	// covers "pix-gateway telling api a PIX charge resolved," which is
+	// exactly what this is too, just for a sale instead of a deposit.
+	internal.Post("/pix/confirm-sandbox-purchase", middleware.RequireScope(middleware.ScopePixConfirmDeposit), h.confirmSandboxPurchase)
 	sb := internal.Group("/wallet/sandbox")
 	sb.Post("/credit", middleware.RequireScope(middleware.ScopeWalletCredit), h.sandboxCredit)
 	sb.Post("/debit", middleware.RequireScope(middleware.ScopeWalletDebit), h.sandboxDebit)

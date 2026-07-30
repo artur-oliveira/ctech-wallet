@@ -12,13 +12,20 @@ type confirmCall struct {
 }
 
 type fakeConfirmer struct {
-	calls []confirmCall
-	err   error
+	calls        []confirmCall
+	sandboxCalls []string
+	err          error
+	sandboxErr   error
 }
 
 func (f *fakeConfirmer) ConfirmDeposit(_ context.Context, txid, payerCPF, payerName string) error {
 	f.calls = append(f.calls, confirmCall{txid, payerCPF, payerName})
 	return f.err
+}
+
+func (f *fakeConfirmer) ConfirmSandboxPurchase(_ context.Context, txid string) error {
+	f.sandboxCalls = append(f.sandboxCalls, txid)
+	return f.sandboxErr
 }
 
 func TestHandleWebhookForwardsEveryTxid(t *testing.T) {
@@ -137,5 +144,63 @@ func TestHandleWebhookConfirmFailureReturns500(t *testing.T) {
 	// partial failure is always safe.
 	if resp.StatusCode != 500 {
 		t.Fatalf("expected 500, got %d", resp.StatusCode)
+	}
+}
+
+// TestHandleRoutesSandboxPurchaseTxidToConfirmSandboxPurchase covers the
+// ctech-wallet-api plan's §9.3 dispatch fix: a "sbxp#"-prefixed txid must go
+// to ConfirmSandboxPurchase, never ConfirmDeposit, and payer CPF/name (which
+// this flow has no use for) must never even be looked at.
+func TestHandleRoutesSandboxPurchaseTxidToConfirmSandboxPurchase(t *testing.T) {
+	f := &fakeConfirmer{}
+	h := &handler{confirmer: f}
+	body := `{"txid":"sbxp#user1#idem1"}`
+	resp, err := h.handle(context.Background(), events.APIGatewayV2HTTPRequest{Body: body})
+	if err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if len(f.calls) != 0 {
+		t.Fatalf("ConfirmDeposit must never be called for a sandbox-purchase txid, got %v", f.calls)
+	}
+	if len(f.sandboxCalls) != 1 || f.sandboxCalls[0] != "sbxp#user1#idem1" {
+		t.Fatalf("expected 1 ConfirmSandboxPurchase call for the sbxp# txid, got %v", f.sandboxCalls)
+	}
+}
+
+func TestHandleSandboxPurchaseConfirmFailureReturns500(t *testing.T) {
+	f := &fakeConfirmer{sandboxErr: context.DeadlineExceeded}
+	h := &handler{confirmer: f}
+	body := `{"txid":"sbxp#user1#idem2"}`
+	resp, err := h.handle(context.Background(), events.APIGatewayV2HTTPRequest{Body: body})
+	if err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+	if resp.StatusCode != 500 {
+		t.Fatalf("expected 500, got %d", resp.StatusCode)
+	}
+}
+
+// TestHandleMixedTxidsRouteIndependently covers a payload with both a real
+// deposit txid and a sandbox-purchase txid, confirming each dispatches to its
+// own confirmer method.
+func TestHandleMixedTxidsRouteIndependently(t *testing.T) {
+	f := &fakeConfirmer{}
+	h := &handler{confirmer: f}
+	body := `{"pix":[{"txid":"deposit-1"},{"txid":"sbxp#user1#idem3"}]}`
+	resp, err := h.handle(context.Background(), events.APIGatewayV2HTTPRequest{Body: body})
+	if err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if len(f.calls) != 1 || f.calls[0].txid != "deposit-1" {
+		t.Fatalf("expected 1 ConfirmDeposit call for deposit-1, got %v", f.calls)
+	}
+	if len(f.sandboxCalls) != 1 || f.sandboxCalls[0] != "sbxp#user1#idem3" {
+		t.Fatalf("expected 1 ConfirmSandboxPurchase call for the sbxp# txid, got %v", f.sandboxCalls)
 	}
 }

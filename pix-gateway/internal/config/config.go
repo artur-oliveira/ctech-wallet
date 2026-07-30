@@ -22,6 +22,12 @@ type Config struct {
 	InterClientSecret string `env:"INTER_CLIENT_SECRET"`
 	InterPixKey       string `env:"INTER_PIX_KEY"`
 
+	// Asaas BaaS custody (ctech-wallet-api plan
+	// docs/plans/2026-07-30-asaas-baas-implementation-plan.md §2.2). Defaults
+	// to the sandbox host; cdk sets this explicitly per environment, same
+	// pattern as INTER_BASE_URL.
+	AsaasBaseURL string `env:"ASAAS_BASE_URL" envDefault:"https://api-sandbox.asaas.com"`
+
 	// ctech-account, for the webhook Lambda's own M2M token (client_credentials,
 	// scope internal:pix:confirm-deposit) — a distinct client from api's own
 	// WALLET_CLIENT_ID (see cross-project contract, root CLAUDE.md).

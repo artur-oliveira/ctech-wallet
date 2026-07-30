@@ -11,6 +11,7 @@ import (
 	"gopkg.aoctech.app/api-commons/cache"
 	"gopkg.aoctech.app/api-commons/ws"
 	apiv1 "gopkg.aoctech.app/wallet/api/internal/api/v1"
+	"gopkg.aoctech.app/wallet/api/internal/asaas"
 	"gopkg.aoctech.app/wallet/api/internal/awsclient"
 	"gopkg.aoctech.app/wallet/api/internal/config"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
@@ -18,6 +19,7 @@ import (
 	"gopkg.aoctech.app/wallet/api/internal/pix"
 	"gopkg.aoctech.app/wallet/api/internal/problem"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
+	"gopkg.aoctech.app/wallet/api/internal/secrets"
 	"gopkg.aoctech.app/wallet/api/internal/services"
 
 	awscfg "github.com/aws/aws-sdk-go-v2/config"
@@ -46,6 +48,11 @@ var Module = fx.Options(
 		repositories.NewWalletRepository,
 		repositories.NewUserRepository,
 		repositories.NewAuditRepository,
+		repositories.NewBaasRepository,
+		repositories.NewSandboxPurchaseRepository,
+		newAsaasSecrets,
+		newAsaasClient,
+		newBaasService,
 		newWalletService,
 		newUserService,
 		newFiberApp,
@@ -155,8 +162,61 @@ func newKYCClient(cfg *config.Config) services.KYCClient {
 	return kycclient.New(cfg)
 }
 
-func newWalletService(repo *repositories.WalletRepository, users *repositories.UserRepository, audit *repositories.AuditRepository, l *lock.Locker, p pix.PixClient, k services.KYCClient) *services.WalletService {
-	return services.NewWalletService(repo, users, audit, l, p, k)
+// asaasSecrets bundles the two SSM SecureString values api fetches once at
+// startup and caches for the process lifetime (plan §3.3, §2.3): the AES-256
+// master key encrypting every subaccount's Asaas API key at rest, and the
+// static token Asaas echoes back on every inbound webhook. Both are the zero
+// value when AsaasCustodyEnabled is false — no environment that never touches
+// Asaas custody needs these SSM parameters provisioned at all.
+type asaasSecrets struct {
+	MasterKey    []byte
+	WebhookToken string
+	ParentAPIKey string
+}
+
+func newAsaasSecrets(cfg *config.Config, clients *awsclient.Clients) (*asaasSecrets, error) {
+	if !cfg.AsaasCustodyEnabled {
+		return &asaasSecrets{}, nil
+	}
+	store := secrets.NewStore(clients.SSM, cfg.Env)
+	ctx := context.Background()
+	hexKey, err := store.LoadAsaasMasterKey(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("asaas master key: %w", err)
+	}
+	masterKey, err := asaas.MasterKeyFromHex(hexKey)
+	if err != nil {
+		return nil, err
+	}
+	token, err := store.LoadAsaasWebhookToken(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("asaas webhook token: %w", err)
+	}
+	parentAPIKey, err := store.LoadAsaasParentAPIKey(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("asaas parent api key: %w", err)
+	}
+	return &asaasSecrets{MasterKey: masterKey, WebhookToken: token, ParentAPIKey: parentAPIKey}, nil
+}
+
+// newAsaasClient wires the real Lambda-backed AsaasClient — api never talks
+// to Asaas directly, same posture as Inter (plan §2.2). Reuses the same
+// pix-gateway outbound Lambda and *lambda.Client Inter already invokes; only
+// the Op discriminator in the wire payload differs.
+func newAsaasClient(client *lambda.Client, cfg *config.Config) asaas.AsaasClient {
+	return asaas.NewLambdaAsaasClient(client, cfg.PixGatewayFunctionName)
+}
+
+func newBaasService(repo *repositories.BaasRepository, walletRepo *repositories.WalletRepository, asaasClient asaas.AsaasClient, audit *repositories.AuditRepository, kyc services.KYCClient, s *asaasSecrets, cfg *config.Config) *services.BaasService {
+	return services.NewBaasService(repo, walletRepo, asaasClient, audit, kyc, s.MasterKey, cfg.AsaasParentWalletID, s.ParentAPIKey)
+}
+
+func newWalletService(repo *repositories.WalletRepository, users *repositories.UserRepository, audit *repositories.AuditRepository, l *lock.Locker, p pix.PixClient, k services.KYCClient, baas *services.BaasService, sandboxPurchases *repositories.SandboxPurchaseRepository, cfg *config.Config) *services.WalletService {
+	svc := services.NewWalletService(repo, users, audit, l, p, k)
+	svc.SetBaas(baas)
+	svc.SetCustodyEnabled(cfg.AsaasCustodyEnabled)
+	svc.SetSandboxPurchases(sandboxPurchases)
+	return svc
 }
 
 func newUserService(repo *repositories.UserRepository, audit *repositories.AuditRepository) *services.UserService {
@@ -195,9 +255,9 @@ func newFiberApp(cfg *config.Config) *fiber.App {
 	return app
 }
 
-func registerRoutes(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsclient.Clients, pixClient pix.PixClient, svc *services.WalletService, userSvc *services.UserService, wsRegistry ws.Registry) {
+func registerRoutes(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsclient.Clients, pixClient pix.PixClient, svc *services.WalletService, userSvc *services.UserService, baasSvc *services.BaasService, s *asaasSecrets, wsRegistry ws.Registry) {
 	svc.SetBroadcaster(wsRegistry)
-	apiv1.Register(app, c, cfg, clients, pixClient, svc, userSvc, wsRegistry)
+	apiv1.Register(app, c, cfg, clients, pixClient, svc, userSvc, baasSvc, s.WebhookToken, wsRegistry)
 }
 
 func startServer(lc fx.Lifecycle, app *fiber.App, cfg *config.Config) {

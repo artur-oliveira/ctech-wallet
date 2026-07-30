@@ -47,6 +47,12 @@ const (
 	TypeLimitsNotConfigured     = "/problems/limits-not-configured"
 	TypeDepositLimitExceeded    = "/problems/deposit-limit-exceeded"
 	TypeExclusionChangeRejected = "/problems/exclusion-change-rejected"
+
+	// Asaas BaaS custody (docs/plans/2026-07-30-asaas-baas-implementation-plan.md §8)
+	TypeWalletOnboarding    = "/problems/wallet-onboarding"
+	TypeAccountBlocked      = "/problems/account-blocked"
+	TypeMedReceivableOpen   = "/problems/med-receivable-open"
+	TypeSandboxPurchaseUsed = "/problems/sandbox-purchase-used"
 )
 
 // FieldError is a single field-level validation failure. It mirrors the shape
@@ -242,4 +248,36 @@ func DepositLimitExceeded(window string, limit, used int64, resetsAt time.Time) 
 // ExclusionChangeRejected: revoke too early, or a shortening re-exclusion.
 func ExclusionChangeRejected(detail string) *Problem {
 	return New(http.StatusConflict, TypeExclusionChangeRejected, "Exclusion Change Rejected", detail)
+}
+
+// WalletOnboarding: the caller's Asaas subaccount is not yet approved — status
+// carries the current custody lifecycle state (plan §4.1) so the UI can show
+// the right onboarding step instead of a balance card.
+func WalletOnboarding(status string) *Problem {
+	return New(http.StatusConflict, TypeWalletOnboarding, "Wallet Onboarding",
+		"a carteira ainda não está pronta para esta operação; status atual: "+status)
+}
+
+// AccountBlocked: the caller's Asaas subaccount is frozen (balance-block
+// webhook, possibly a regulatory freeze per Lei 15.358/2026 art. 21-A — plan
+// §7.1). Every money-out path must check this before acting.
+func AccountBlocked() *Problem {
+	return New(http.StatusConflict, TypeAccountBlocked, "Account Blocked",
+		"conta bloqueada; entre em contato com o suporte")
+}
+
+// MedReceivableOpen: a MED clawback (plan §7.3) left an open receivable on
+// this wallet — funding/withdrawal stays blocked until it settles from the
+// next inflow.
+func MedReceivableOpen() *Problem {
+	return New(http.StatusConflict, TypeMedReceivableOpen, "MED Receivable Open",
+		"há um débito pendente nesta carteira; aguarde a próxima entrada para quitação automática")
+}
+
+// SandboxPurchaseUsed: the §9.2/§9.1a eligibility check failed — the sandbox
+// wallet has had at least one debit since the purchase's credit landed, so it
+// is no longer refundable/reversible.
+func SandboxPurchaseUsed() *Problem {
+	return New(http.StatusConflict, TypeSandboxPurchaseUsed, "Sandbox Purchase Used",
+		"os créditos desta compra já foram utilizados; não é mais possível reverter")
 }

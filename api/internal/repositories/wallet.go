@@ -409,6 +409,61 @@ func (r *WalletRepository) Statement(ctx context.Context, walletID string, limit
 	})
 }
 
+// anyDebitSincePageSize bounds each page AnyDebitSince walks forward — a
+// bounded page like every other query in this repository, never an
+// unbounded scan.
+const anyDebitSincePageSize = 100
+
+// AnyDebitSince reports whether any debit (negative Amount) landed on
+// walletID's ledger strictly after sinceSK — the entire eligibility check
+// behind §9.2's refund rule and §9.1a's reversal rule: "refundable iff the
+// sandbox wallet has had zero outgoing entries since this purchase's credit
+// landed." Paginates forward from sinceSK (exclusive), short-circuiting on
+// the first debit found. No new table, no per-purchase balance tracking —
+// reuses the append-only ledger that already exists for every other
+// invariant in this codebase.
+func (r *WalletRepository) AnyDebitSince(ctx context.Context, walletID, sinceSK string) (bool, error) {
+	startKey := map[string]types.AttributeValue{
+		"pk": &types.AttributeValueMemberS{Value: walletID},
+		"sk": &types.AttributeValueMemberS{Value: sinceSK},
+	}
+	for {
+		res, err := r.ledger.Query(ctx, QueryOpts{
+			PK: walletID, ScanIndexForward: true, Limit: anyDebitSincePageSize, ExclusiveStartKey: startKey,
+		})
+		if err != nil {
+			return false, err
+		}
+		for _, it := range res.Items {
+			e, err := Decode[wallet.LedgerEntry](it)
+			if err != nil {
+				return false, err
+			}
+			if e.Amount < 0 {
+				return true, nil
+			}
+		}
+		if len(res.LastEvaluatedKey) == 0 {
+			return false, nil
+		}
+		startKey = res.LastEvaluatedKey
+	}
+}
+
+// AmountAtSK returns the ledger entry's Amount at (walletID, sk) — the
+// read-side counterpart to AnyDebitSince, used to recover a purchase's
+// original credited amount for reversal (plan §9.1a).
+func (r *WalletRepository) AmountAtSK(ctx context.Context, walletID, sk string) (int64, error) {
+	e, err := r.loadEntry(ctx, walletID, sk)
+	if err != nil {
+		return 0, err
+	}
+	if e == nil {
+		return 0, problem.NotFound("lançamento não encontrado")
+	}
+	return e.Amount, nil
+}
+
 // --- PIX deposit persistence ---
 
 func (r *WalletRepository) PutDeposit(ctx context.Context, d *wallet.PixDeposit) error {
@@ -425,6 +480,22 @@ func (r *WalletRepository) GetDeposit(ctx context.Context, txid string) (*wallet
 		return nil, err
 	}
 	return Decode[wallet.PixDeposit](item)
+}
+
+// GetDepositByProviderQRCodeID resolves an Asaas payment webhook's
+// pixQrCodeId back to the deposit it belongs to (plan §4.3: "the webhook
+// resolves payment.pixQrCodeId → txid, not the other way round"). Returns nil
+// if unknown — the caller (ConfirmAsaasDeposit) treats that as an idempotent
+// no-op, same as ConfirmDeposit's unknown-txid handling.
+func (r *WalletRepository) GetDepositByProviderQRCodeID(ctx context.Context, providerQRCodeID string) (*wallet.PixDeposit, error) {
+	res, err := r.deposits.QueryGSI(ctx, wallet.GSIDepositProviderQR, "provider_qr_code_id", providerQRCodeID, 1, nil)
+	if err != nil {
+		return nil, err
+	}
+	if len(res.Items) == 0 {
+		return nil, nil
+	}
+	return Decode[wallet.PixDeposit](res.Items[0])
 }
 
 // ReserveDepositIdem registers an idempotency key for deposit initiation BEFORE

@@ -10,6 +10,14 @@ const (
 	EventGameLimitsChanged        = "game_limits_changed"
 	EventGamblingAddendumAccepted = "gambling_addendum_accepted"
 	EventTermsAddendumAccepted    = "terms_addendum_accepted"
+
+	// Asaas BaaS custody lifecycle (plan §3.2, §7.2).
+	EventBaasSubaccountCreated = "baas_subaccount_created"
+	EventWalletActivated       = "wallet_activated" // real wallet created after subaccount reaches ACCOUNT_STATUS_APPROVED
+	EventBaasAccountFrozen     = "baas_account_frozen"
+	EventBaasAccountUnfrozen   = "baas_account_unfrozen"
+	EventBaasClosureRequested  = "baas_closure_requested"
+	EventBaasClosed            = "baas_closed"
 )
 
 // AuditEvent is an immutable record of a non-money action. Like LedgerEntry it is

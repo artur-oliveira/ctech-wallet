@@ -17,10 +17,30 @@ type SandboxPurchaseRequest struct {
 	Amount int64 `json:"amount" validate:"required,gt=0"`
 }
 
+// SandboxPurchaseDirectRequest opens a direct PIX→sandbox-credits sale (plan
+// §9.1/§9.3) — a fixed server-side SKU, never a client-supplied amount.
+type SandboxPurchaseDirectRequest struct {
+	SKU string `json:"sku" validate:"required"`
+}
+
+// ConfirmSandboxPurchaseRequest is pix-gateway's webhook-Lambda call for the
+// direct-purchase rail (plan §9.3) — mirrors ConfirmDepositRequest's shape
+// but with no payer CPF/name: this flow has no KYC/CPF gate to feed (§9.1).
+type ConfirmSandboxPurchaseRequest struct {
+	Txid string `json:"txid" validate:"required"`
+}
+
 // GameTransferRequest is the body for both ring-fence edges (real → game and
 // game → real). The idempotency key travels in the Idempotency-Key header.
 type GameTransferRequest struct {
 	Amount int64 `json:"amount" validate:"required,gt=0"`
+}
+
+// OnboardingRequest opens the caller's Asaas subaccount (plan §3.2).
+// IncomeValue is an Asaas cadastral field, never persisted — see
+// BaasService.InitiateOnboarding.
+type OnboardingRequest struct {
+	IncomeValue int64 `json:"income_value" validate:"required,gt=0"`
 }
 
 // ActivateGamblingRequest carries the explicit consent. AcceptAddendum must be

@@ -20,7 +20,16 @@ const (
 // Per-wallet FeeBps/FeeMin/FeeMax override the defaults when set (>0); the
 // result is clamped to [effectiveMin, effectiveMax] and never below
 // AbsoluteFeeMin. Pass w == nil to use the defaults. Integer math only.
-func WithdrawalFee(amount int64, w *Wallet) int64 {
+//
+// isClosure is the closure-payout carve-out (plan §5.2): a closure payout is
+// ALWAYS fee-free — otherwise dust could trap money and POST /wallet/closure
+// could never terminate. This is a precondition for closure to work at all,
+// not a nice-to-have, so it lives here rather than as a special case the
+// closure flow has to remember to apply.
+func WithdrawalFee(amount int64, w *Wallet, isClosure bool) int64 {
+	if isClosure {
+		return 0
+	}
 	bps, minFee, maxFee := int64(DefaultFeeBps), int64(DefaultFeeMin), int64(DefaultFeeMax)
 	if w != nil {
 		if w.FeeBps > 0 {

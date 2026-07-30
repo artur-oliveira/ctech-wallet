@@ -23,7 +23,15 @@ export type TableName = (
     'wallet_pix_deposits' |
     'wallet_withdrawals' |
     'wallet_users' |
-    'wallet_holds'
+    'wallet_holds' |
+    // Asaas BaaS custody tables (docs/plans/2026-07-30-asaas-baas-implementation-plan.md
+    // §2.4). Names are provider-neutral on purpose — Asaas is today's provider,
+    // not a permanent commitment.
+    'wallet_baas_accounts' |
+    'wallet_transfer_intents' |
+    'wallet_settlement_legs' |
+    'wallet_med_receivables' |
+    'wallet_sandbox_purchases'
     );
 
 // GSI names — must match internal/domain/wallet/model.go.
@@ -31,6 +39,13 @@ const GSI_USER = 'gsi_user';
 const GSI_IDEM = 'gsi_idem';
 const GSI_STATUS = 'gsi_status';
 const GSI_HOLD_STATUS = 'gsi_hold_status';
+const GSI_DEPOSIT_PROVIDER_QR = 'gsi_deposit_provider_qr';
+const GSI_BAAS_ACCOUNT_ID = 'gsi_baas_account_id';
+const GSI_BAAS_STATUS = 'gsi_baas_status';
+const GSI_INTENT_STATUS = 'gsi_intent_status';
+const GSI_BATCH_STATUS = 'gsi_batch_status';
+const GSI_MED_STATUS = 'gsi_med_status';
+const GSI_SANDBOX_PURCHASE_STATUS = 'gsi_sandbox_purchase_status';
 
 // DynamoDB attribute names (single source of truth).
 const ATTR_PK = 'pk';
@@ -39,6 +54,8 @@ const ATTR_USER_ID = 'user_id';
 const ATTR_IDEMPOTENCY_KEY = 'idempotency_key';
 const ATTR_STATUS = 'status';
 const ATTR_TTL = 'ttl';
+const ATTR_PROVIDER_ACCOUNT_ID = 'provider_account_id';
+const ATTR_PROVIDER_QR_CODE_ID = 'provider_qr_code_id';
 
 interface DynamoDBStackProps extends cdk.StackProps {
     tablePrefix: string;
@@ -113,9 +130,14 @@ export class DynamoDBStack extends cdk.Stack {
 
         // ── wallet_pix_deposits: in-flight charges keyed by txid, expire via TTL ───
         // gsi_status backs the pre-TTL sweep (F6): find pending deposits close to
-        // expiry and re-query Inter once before the row is lost.
+        // expiry and re-query Inter once before the row is lost. gsi_deposit_provider_qr
+        // resolves an Asaas payment webhook's pixQrCodeId back to the deposit it
+        // belongs to (plan §4.3: "the webhook resolves payment.pixQrCodeId → txid,
+        // not the other way round") — Asaas-opened deposits only, empty for every
+        // Inter-opened row.
         const depositsTable = table('wallet_pix_deposits', {ttl: true});
         gsi(depositsTable, GSI_STATUS, ATTR_STATUS);
+        gsi(depositsTable, GSI_DEPOSIT_PROVIDER_QR, ATTR_PROVIDER_QR_CODE_ID);
 
         // ── wallet_withdrawals: payouts; gsi_status drives the reconciliation job ──
         const withdrawalsTable = table('wallet_withdrawals');
@@ -136,6 +158,48 @@ export class DynamoDBStack extends cdk.Stack {
         // fact. Never updated, never deleted — same durability posture as the ledger,
         // because it is evidence. Already wallet_-prefixed, so unchanged.
         const auditTable = table('wallet_audit', {sortKey: true});
+
+        // ── Asaas BaaS custody tables (implementation plan §2.4) ───────────────────
+        // Deliberately their own tables, decoupled from the real/game/sandbox
+        // ledger core, which "survives... none of it changes" (design spec §3.1).
+
+        // wallet_baas_accounts: 1 row per user, pk = user_id. gsi_baas_account_id
+        // resolves an Asaas account.id (from any webhook) back to the user;
+        // gsi_baas_status backs the conservation-check sweep (plan §6) and the
+        // account-status webhook's frozen/approved lookups.
+        const baasAccountsTable = table('wallet_baas_accounts');
+        gsi(baasAccountsTable, GSI_BAAS_ACCOUNT_ID, ATTR_PROVIDER_ACCOUNT_ID);
+        gsi(baasAccountsTable, GSI_BAAS_STATUS, ATTR_STATUS);
+
+        // wallet_transfer_intents: pk = external_reference — the transfer-
+        // authorization webhook's single GetItem lookup (plan §2.3), and the
+        // reconcile job's work queue via gsi_intent_status (awaiting_authorization/
+        // processing).
+        const transferIntentsTable = table('wallet_transfer_intents');
+        gsi(transferIntentsTable, GSI_INTENT_STATUS, ATTR_STATUS);
+
+        // wallet_settlement_legs: pk = batch_id (plan §6 netting batches). No
+        // application code reads/writes this table yet — real-money multi-party
+        // settlement (poker/dominó) has no caller anywhere in this codebase
+        // (games gate not started, per plan §0/§10) — provisioned now for schema
+        // completeness per the plan's own §2.4 table list, not because code needs
+        // it today.
+        const settlementLegsTable = table('wallet_settlement_legs');
+        gsi(settlementLegsTable, GSI_BATCH_STATUS, ATTR_STATUS);
+
+        // wallet_med_receivables: pk = receivable_id. A MED clawback shortfall
+        // becomes a receivable here instead of a negative balance (Invariant #1
+        // stays literal). gsi_med_status backs the open-debt scan that blocks
+        // funding/withdrawal on the affected wallet (plan §7.3).
+        const medReceivablesTable = table('wallet_med_receivables');
+        gsi(medReceivablesTable, GSI_MED_STATUS, ATTR_STATUS);
+
+        // wallet_sandbox_purchases: pk = purchase_id, TTL for never-confirmed
+        // purchases. Deliberately its own table, decoupled from wallet_pix_deposits:
+        // a deposit is custody, this is a sale (plan §9.1/§9.3). gsi_sandbox_purchase_status
+        // backs the pending-purchase sweep.
+        const sandboxPurchasesTable = table('wallet_sandbox_purchases', {ttl: true});
+        gsi(sandboxPurchasesTable, GSI_SANDBOX_PURCHASE_STATUS, ATTR_STATUS);
 
         // ── Outputs ───────────────────────────────────────────────────────────────
         new cdk.CfnOutput(this, 'WalletsTableName', {

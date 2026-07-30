@@ -128,6 +128,15 @@ export const SSM_WALLET = (env: Environment) => ({
     // Read by pix-gateway's outbound Lambda at cold start, never exported to env.
     interMtlsCert: `/${SERVICE}/${env}/inter/mtls-cert`, // SecureString
     interMtlsKey: `/${SERVICE}/${env}/inter/mtls-key`, // SecureString
+    // Asaas BaaS custody (implementation plan §3.3, §2.3, §9.1a). Unlike the
+    // inter/* leaves above, these are read by api's OWN IAM role, not
+    // pix-gateway's: api is the direct caller for every Asaas operation, there
+    // is no separate gateway Lambda in front of it (yet — see plan §2.2).
+    // Fetched in-process via the SSM API at api startup (internal/secrets),
+    // never exported through start.sh's env file.
+    asaasApiKeyMaster: `/${SERVICE}/${env}/asaas/api-key-master`, // SecureString — hex-encoded AES-256 key
+    asaasWebhookToken: `/${SERVICE}/${env}/asaas/webhook-token`, // SecureString
+    asaasParentApiKey: `/${SERVICE}/${env}/asaas/parent-api-key`, // SecureString — plan §9.1a reversal leg
 });
 
 /** ctech-account namespace — read-only for the wallet. */

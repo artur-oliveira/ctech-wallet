@@ -38,6 +38,8 @@ type stubRepo struct {
 	createHoldErr       error
 	staleHolds          []wallet.Hold
 	depositIdem         map[string]depositIdemGuard
+	anyDebitSince       bool
+	amountAtSK          int64
 }
 
 type depositIdemGuard struct {
@@ -126,6 +128,9 @@ func (s *stubRepo) PutDeposit(_ context.Context, d *wallet.PixDeposit) error {
 func (s *stubRepo) GetDeposit(_ context.Context, _ string) (*wallet.PixDeposit, error) {
 	return s.deposit, nil
 }
+func (s *stubRepo) GetDepositByProviderQRCodeID(_ context.Context, _ string) (*wallet.PixDeposit, error) {
+	return s.deposit, nil
+}
 func (s *stubRepo) ReserveDepositIdem(_ context.Context, guardPK, txid, _ string, reqHash string) (string, *wallet.PixDeposit, *problem.Problem, error) {
 	if g, ok := s.depositIdem[guardPK]; ok {
 		if g.reqHash != reqHash {
@@ -200,6 +205,21 @@ func (s *stubRepo) UpdateHoldStatus(_ context.Context, holdID, fromStatus, toSta
 func (s *stubRepo) ScanStaleHolds(_ context.Context, _ time.Time, _ int) ([]wallet.Hold, error) {
 	return s.staleHolds, nil
 }
+func (s *stubRepo) ListOpenHoldsForWallet(_ context.Context, walletID string, _ int) ([]wallet.Hold, error) {
+	var out []wallet.Hold
+	for _, h := range s.holds {
+		if h.WalletID == walletID && h.Status == wallet.HoldHeld {
+			out = append(out, *h)
+		}
+	}
+	return out, nil
+}
+func (s *stubRepo) AnyDebitSince(_ context.Context, _, _ string) (bool, error) {
+	return s.anyDebitSince, nil
+}
+func (s *stubRepo) AmountAtSK(_ context.Context, _, _ string) (int64, error) {
+	return s.amountAtSK, nil
+}
 
 type stubLocker struct{ busy bool }
 
@@ -221,6 +241,79 @@ type stubKYC struct {
 }
 
 func (k *stubKYC) Get(_ context.Context, _ string) (*kycclient.KYC, error) { return k.rec, nil }
+
+// fakeDepositBaas is a minimal BaasProvider for InitiateDeposit/ConfirmDeposit
+// custody-branch tests — approved/notApproved toggles GetIfApproved/GetAccount,
+// createCalls records CreateDepositCharge invocations.
+type fakeDepositBaas struct {
+	approved          bool
+	status            string
+	conservationDrift bool
+	createCalls       int
+	createErr         error
+	queryChargeStub   *pix.Charge
+	payoutCalls       int
+	payoutErr         error
+	openMedReceivable bool
+	lastSetStatus     string
+	settlementCalls   int
+	reversalCalls     int
+}
+
+func (f *fakeDepositBaas) GetIfApproved(context.Context, string) (*wallet.BaasAccount, error) {
+	if !f.approved {
+		return nil, nil
+	}
+	return &wallet.BaasAccount{Status: wallet.BaasApproved}, nil
+}
+func (f *fakeDepositBaas) GetAccount(context.Context, string) (*wallet.BaasAccount, error) {
+	if f.status == "" && !f.conservationDrift && !f.approved {
+		return nil, nil
+	}
+	status := f.status
+	if status == "" {
+		status = wallet.BaasApproved
+	}
+	return &wallet.BaasAccount{Status: status, ConservationDrift: f.conservationDrift}, nil
+}
+func (f *fakeDepositBaas) CreateDepositCharge(_ context.Context, _ string, amount int64, txid string) (*pix.Charge, string, error) {
+	f.createCalls++
+	if f.createErr != nil {
+		return nil, "", f.createErr
+	}
+	return &pix.Charge{Txid: txid, Amount: amount, Status: pix.ChargeActive}, "qr_" + txid, nil
+}
+func (f *fakeDepositBaas) QueryDepositPayment(context.Context, string, string) (*pix.Charge, error) {
+	if f.queryChargeStub != nil {
+		return f.queryChargeStub, nil
+	}
+	return &pix.Charge{Status: pix.ChargeActive}, nil
+}
+func (f *fakeDepositBaas) SubmitWithdrawalPayout(context.Context, string, int64, string, string) error {
+	f.payoutCalls++
+	return f.payoutErr
+}
+func (f *fakeDepositBaas) GetAccountByProviderID(context.Context, string) (*wallet.BaasAccount, error) {
+	return nil, nil
+}
+func (f *fakeDepositBaas) PutMedReceivableIfAbsent(context.Context, *wallet.MedReceivable) error {
+	return nil
+}
+func (f *fakeDepositBaas) HasOpenMedReceivable(context.Context, string) (bool, error) {
+	return f.openMedReceivable, nil
+}
+func (f *fakeDepositBaas) SetAccountStatus(_ context.Context, _, status string) error {
+	f.lastSetStatus = status
+	return nil
+}
+func (f *fakeDepositBaas) SubmitGamePurchaseSettlement(context.Context, string, string, int64) error {
+	f.settlementCalls++
+	return nil
+}
+func (f *fakeDepositBaas) SubmitGamePurchaseReversal(context.Context, string, string, int64) error {
+	f.reversalCalls++
+	return nil
+}
 
 func newSvc(repo *stubRepo, locker *stubLocker, pc pix.PixClient, kyc KYCClient) *WalletService {
 	return NewWalletService(repo, &stubUserRepo{}, &stubAudit{}, locker, pc, kyc)
@@ -471,7 +564,7 @@ func TestWithdrawKeyNotFoundRefundsImmediately(t *testing.T) {
 	if !repo.debitFeeCalled {
 		t.Error("the debit still happens up front — it is the reversal that follows")
 	}
-	total := int64(5000) + wallet.WithdrawalFee(5000, nil)
+	total := int64(5000) + wallet.WithdrawalFee(5000, nil, false)
 	if len(repo.creditCalls) != 1 || repo.creditCalls[0].Amount != total || repo.creditCalls[0].EntryType != wallet.EntryReversal {
 		t.Fatalf("expected one reversal credit of %d, got %+v", total, repo.creditCalls)
 	}
@@ -506,8 +599,8 @@ func TestWithdrawHappyPath(t *testing.T) {
 	if w.Status != wallet.WithdrawCompleted {
 		t.Errorf("status = %q, want completed", w.Status)
 	}
-	if w.Fee != wallet.WithdrawalFee(5000, nil) {
-		t.Errorf("fee = %d, want %d", w.Fee, wallet.WithdrawalFee(5000, nil))
+	if w.Fee != wallet.WithdrawalFee(5000, nil, false) {
+		t.Errorf("fee = %d, want %d", w.Fee, wallet.WithdrawalFee(5000, nil, false))
 	}
 }
 
@@ -874,5 +967,325 @@ func TestCashoutGameRetryAfterPartialFailureIsBenign(t *testing.T) {
 
 	if _, err := svc.CashoutGame(context.Background(), "u1", 5000, "table-1", []string{h.HoldID}, "idem-cashout-retry"); err != nil {
 		t.Fatalf("CashoutGame retry must not fail on an already-settled hold: %v", err)
+	}
+}
+
+func TestInitiateDepositRejectsUnapprovedSubaccountWhenCustodyEnabled(t *testing.T) {
+	repo := newStubRepo()
+	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	baas := &fakeDepositBaas{approved: false, status: wallet.BaasPendingDocuments}
+	svc.SetBaas(baas)
+	svc.SetCustodyEnabled(true)
+
+	_, _, err := svc.InitiateDeposit(context.Background(), "u1", wallet.KYCVerified, 1000, "idem-1")
+	p, ok := errors.AsType[*problem.Problem](err)
+	if !ok || p.Type != problem.TypeWalletOnboarding {
+		t.Fatalf("expected wallet-onboarding problem, got %v", err)
+	}
+	if baas.createCalls != 0 {
+		t.Fatalf("must never open a charge before the subaccount is approved, got %d calls", baas.createCalls)
+	}
+}
+
+func TestInitiateDepositUsesAsaasWhenCustodied(t *testing.T) {
+	repo := newStubRepo()
+	fakePix := pix.NewFake()
+	svc := newSvc(repo, &stubLocker{}, fakePix, &stubKYC{rec: &kycclient.KYC{}})
+	baas := &fakeDepositBaas{approved: true}
+	svc.SetBaas(baas)
+	svc.SetCustodyEnabled(true)
+
+	dep, charge, err := svc.InitiateDeposit(context.Background(), "u1", wallet.KYCVerified, 1000, "idem-2")
+	if err != nil {
+		t.Fatalf("InitiateDeposit: %v", err)
+	}
+	if baas.createCalls != 1 {
+		t.Fatalf("expected 1 CreateDepositCharge call, got %d", baas.createCalls)
+	}
+	if len(fakePix.CreatedCharges) != 0 {
+		t.Fatalf("custodied deposit must never call pix.CreateCharge, got %d calls", len(fakePix.CreatedCharges))
+	}
+	if dep.Provider != wallet.ProviderAsaas || dep.ProviderQRCodeID == "" {
+		t.Fatalf("expected deposit tagged with Asaas provider + QR code id, got %+v", dep)
+	}
+	if charge.Amount != 1000 {
+		t.Fatalf("unexpected charge amount %d", charge.Amount)
+	}
+}
+
+func TestInitiateDepositNonCustodiedBehaviorUnchangedWhenFlagOff(t *testing.T) {
+	repo := newStubRepo()
+	fakePix := pix.NewFake()
+	svc := newSvc(repo, &stubLocker{}, fakePix, &stubKYC{rec: &kycclient.KYC{}})
+	// SetCustodyEnabled never called — must default false and behave exactly
+	// as it did before the Asaas branch existed, even with a real BaasProvider
+	// wired (mirrors production wiring order, where SetBaas always runs).
+	svc.SetBaas(&fakeDepositBaas{approved: true})
+
+	dep, _, err := svc.InitiateDeposit(context.Background(), "u1", wallet.KYCVerified, 1000, "idem-3")
+	if err != nil {
+		t.Fatalf("InitiateDeposit: %v", err)
+	}
+	if len(fakePix.CreatedCharges) != 1 {
+		t.Fatalf("expected pix.CreateCharge to be used, got %d calls", len(fakePix.CreatedCharges))
+	}
+	if dep.Provider != "" {
+		t.Fatalf("expected empty (Inter) provider, got %q", dep.Provider)
+	}
+}
+
+func TestPurchaseSandboxFiresSettlementLegWhenCustodied(t *testing.T) {
+	repo := newStubRepo()
+	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	baas := &fakeDepositBaas{approved: true}
+	svc.SetBaas(baas)
+
+	_, credit, err := svc.PurchaseSandbox(context.Background(), "u1", 1000, "idem-psb-1")
+	if err != nil {
+		t.Fatalf("PurchaseSandbox: %v", err)
+	}
+	if baas.settlementCalls != 1 {
+		t.Fatalf("expected 1 settlement call, got %d", baas.settlementCalls)
+	}
+	if credit == nil {
+		t.Fatal("expected a credit entry")
+	}
+}
+
+func TestPurchaseSandboxSkipsSettlementWhenNotCustodied(t *testing.T) {
+	repo := newStubRepo()
+	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	baas := &fakeDepositBaas{approved: false}
+	svc.SetBaas(baas)
+
+	if _, _, err := svc.PurchaseSandbox(context.Background(), "u1", 1000, "idem-psb-2"); err != nil {
+		t.Fatalf("PurchaseSandbox: %v", err)
+	}
+	if baas.settlementCalls != 0 {
+		t.Fatalf("expected 0 settlement calls for a non-custodied user, got %d", baas.settlementCalls)
+	}
+}
+
+func TestReverseSandboxGamePurchaseEligible(t *testing.T) {
+	repo := newStubRepo()
+	repo.amountAtSK = 1000
+	repo.anyDebitSince = false
+	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	baas := &fakeDepositBaas{approved: true}
+	svc.SetBaas(baas)
+
+	debit, credit, err := svc.ReverseSandboxGamePurchase(context.Background(), "u1", "some-credit-sk", "idem-rev-1")
+	if err != nil {
+		t.Fatalf("ReverseSandboxGamePurchase: %v", err)
+	}
+	if debit == nil || credit == nil {
+		t.Fatal("expected debit+credit entries")
+	}
+	if baas.reversalCalls != 1 {
+		t.Fatalf("expected 1 reversal call, got %d", baas.reversalCalls)
+	}
+}
+
+func TestReverseSandboxGamePurchaseIneligibleAfterDebit(t *testing.T) {
+	repo := newStubRepo()
+	repo.anyDebitSince = true
+	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	svc.SetBaas(&fakeDepositBaas{approved: true})
+
+	_, _, err := svc.ReverseSandboxGamePurchase(context.Background(), "u1", "some-credit-sk", "idem-rev-2")
+	p, ok := errors.AsType[*problem.Problem](err)
+	if !ok || p.Type != problem.TypeSandboxPurchaseUsed {
+		t.Fatalf("expected sandbox-purchase-used, got %v", err)
+	}
+}
+
+// TestPurchaseSandboxAndReverseNeverCallAsaasForNonCustodiedUser is the
+// regression test's executable form (same posture as
+// TestSandboxPurchaseNeverDebitsRealWallet) — a non-custodied user must never
+// trigger an Asaas call from either the forward or reverse leg.
+func TestPurchaseSandboxAndReverseNeverCallAsaasForNonCustodiedUser(t *testing.T) {
+	repo := newStubRepo()
+	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	baas := &fakeDepositBaas{approved: false}
+	svc.SetBaas(baas)
+
+	if _, _, err := svc.PurchaseSandbox(context.Background(), "u1", 1000, "idem-psb-3"); err != nil {
+		t.Fatalf("PurchaseSandbox: %v", err)
+	}
+	repo.anyDebitSince = false
+	if _, _, err := svc.ReverseSandboxGamePurchase(context.Background(), "u1", "sk", "idem-rev-3"); err != nil {
+		t.Fatalf("ReverseSandboxGamePurchase: %v", err)
+	}
+	if baas.settlementCalls != 0 || baas.reversalCalls != 0 {
+		t.Fatalf("expected zero Asaas calls, got settlement=%d reversal=%d", baas.settlementCalls, baas.reversalCalls)
+	}
+}
+
+func TestInitiateClosureHappyPathPaysOutFullBalanceFeeFree(t *testing.T) {
+	repo := newStubRepo()
+	repo.real.Balance = 12345
+	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{CPF: "12345678900"}})
+	baas := &fakeDepositBaas{approved: true}
+	svc.SetBaas(baas)
+	svc.SetCustodyEnabled(true)
+
+	acc, err := svc.InitiateClosure(context.Background(), "u1", "idem-close-1")
+	if err != nil {
+		t.Fatalf("InitiateClosure: %v", err)
+	}
+	if acc.Status != wallet.BaasClosing {
+		t.Fatalf("expected status closing, got %q", acc.Status)
+	}
+	if baas.lastSetStatus != wallet.BaasClosing {
+		t.Fatalf("expected SetAccountStatus(closing) to be called, got %q", baas.lastSetStatus)
+	}
+	if baas.payoutCalls != 1 {
+		t.Fatalf("expected 1 SubmitWithdrawalPayout call, got %d", baas.payoutCalls)
+	}
+	if !repo.debitFeeCalled {
+		t.Fatal("expected the closure payout to debit via DebitWithFee")
+	}
+	w, err := repo.GetWithdrawal(context.Background(), "withdraw#u1#idem-close-1")
+	if err != nil || w == nil {
+		t.Fatalf("expected a withdrawal record for the closure payout, got %v, %v", w, err)
+	}
+	if w.Amount != 12345 || w.Fee != 0 {
+		t.Fatalf("expected a fee-free full-balance payout of 12345, got amount=%d fee=%d", w.Amount, w.Fee)
+	}
+}
+
+func TestInitiateClosureZeroBalanceSkipsPayout(t *testing.T) {
+	repo := newStubRepo()
+	repo.real.Balance = 0
+	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{CPF: "12345678900"}})
+	baas := &fakeDepositBaas{approved: true}
+	svc.SetBaas(baas)
+	svc.SetCustodyEnabled(true)
+
+	acc, err := svc.InitiateClosure(context.Background(), "u1", "idem-close-2")
+	if err != nil {
+		t.Fatalf("InitiateClosure: %v", err)
+	}
+	if acc.Status != wallet.BaasClosing {
+		t.Fatalf("expected status closing, got %q", acc.Status)
+	}
+	if baas.payoutCalls != 0 {
+		t.Fatalf("expected zero-balance closure to skip the payout leg, got %d calls", baas.payoutCalls)
+	}
+	if repo.debitFeeCalled {
+		t.Fatal("expected no debit for a zero balance")
+	}
+}
+
+func TestInitiateClosureRefusedWhileHoldOpen(t *testing.T) {
+	repo := newStubRepo()
+	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	baas := &fakeDepositBaas{approved: true}
+	svc.SetBaas(baas)
+	svc.SetCustodyEnabled(true)
+	if _, err := svc.HoldGame(context.Background(), "u1", 1000, "table-1", "idem-hold-open"); err != nil {
+		t.Fatalf("HoldGame: %v", err)
+	}
+
+	_, err := svc.InitiateClosure(context.Background(), "u1", "idem-close-3")
+	p, ok := errors.AsType[*problem.Problem](err)
+	if !ok || p.Status != 409 {
+		t.Fatalf("expected a 409 conflict, got %v", err)
+	}
+	if baas.lastSetStatus != "" {
+		t.Fatalf("must never transition to closing while a hold is open, got %q", baas.lastSetStatus)
+	}
+}
+
+func TestInitiateClosureRefusedByOpenMedReceivable(t *testing.T) {
+	repo := newStubRepo()
+	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	baas := &fakeDepositBaas{approved: true, openMedReceivable: true}
+	svc.SetBaas(baas)
+	svc.SetCustodyEnabled(true)
+
+	_, err := svc.InitiateClosure(context.Background(), "u1", "idem-close-4")
+	p, ok := errors.AsType[*problem.Problem](err)
+	if !ok || p.Type != problem.TypeMedReceivableOpen {
+		t.Fatalf("expected med-receivable-open, got %v", err)
+	}
+}
+
+func TestInitiateClosureIdempotentReplay(t *testing.T) {
+	repo := newStubRepo()
+	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	baas := &fakeDepositBaas{approved: false, status: wallet.BaasClosing}
+	svc.SetBaas(baas)
+	svc.SetCustodyEnabled(true)
+
+	acc, err := svc.InitiateClosure(context.Background(), "u1", "idem-close-5")
+	if err != nil {
+		t.Fatalf("InitiateClosure: %v", err)
+	}
+	if acc.Status != wallet.BaasClosing {
+		t.Fatalf("expected replay to return current status closing, got %q", acc.Status)
+	}
+	if baas.payoutCalls != 0 {
+		t.Fatalf("a replay against an already-closing account must never re-trigger payout, got %d calls", baas.payoutCalls)
+	}
+}
+
+func TestWithdrawCustodiedUsesAsaasPayoutNeverPix(t *testing.T) {
+	repo := newStubRepo()
+	fakePix := pix.NewFake()
+	svc := newSvc(repo, &stubLocker{}, fakePix, &stubKYC{rec: &kycclient.KYC{CPF: "12345678900"}})
+	baas := &fakeDepositBaas{approved: true}
+	svc.SetBaas(baas)
+	svc.SetCustodyEnabled(true)
+
+	w, err := svc.Withdraw(context.Background(), "u1", wallet.KYCVerified, 5000, "idem-w1")
+	if err != nil {
+		t.Fatalf("Withdraw: %v", err)
+	}
+	if baas.payoutCalls != 1 {
+		t.Fatalf("expected 1 SubmitWithdrawalPayout call, got %d", baas.payoutCalls)
+	}
+	if len(fakePix.Transfers) != 0 {
+		t.Fatalf("custodied withdrawal must never call pix.Transfer, got %d calls", len(fakePix.Transfers))
+	}
+	// Asaas transfers never confirm synchronously — always left processing for
+	// the transfer-authorization webhook + reconcile to complete (plan §5.2, §6).
+	if w.Status != wallet.WithdrawProcessing {
+		t.Fatalf("expected status processing, got %q", w.Status)
+	}
+}
+
+func TestWithdrawRejectsUnapprovedSubaccountWhenCustodyEnabled(t *testing.T) {
+	repo := newStubRepo()
+	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{CPF: "12345678900"}})
+	baas := &fakeDepositBaas{approved: false, status: wallet.BaasPendingApproval}
+	svc.SetBaas(baas)
+	svc.SetCustodyEnabled(true)
+
+	_, err := svc.Withdraw(context.Background(), "u1", wallet.KYCVerified, 5000, "idem-w2")
+	p, ok := errors.AsType[*problem.Problem](err)
+	if !ok || p.Type != problem.TypeWalletOnboarding {
+		t.Fatalf("expected wallet-onboarding problem, got %v", err)
+	}
+	if baas.payoutCalls != 0 {
+		t.Fatalf("must never submit a payout before the subaccount is approved, got %d calls", baas.payoutCalls)
+	}
+}
+
+func TestWithdrawNonCustodiedBehaviorUnchangedWhenFlagOff(t *testing.T) {
+	repo := newStubRepo()
+	fakePix := pix.NewFake()
+	svc := newSvc(repo, &stubLocker{}, fakePix, &stubKYC{rec: &kycclient.KYC{CPF: "12345678900"}})
+	svc.SetBaas(&fakeDepositBaas{approved: true}) // wired, but custody disabled — must never be consulted for the payout path
+
+	w, err := svc.Withdraw(context.Background(), "u1", wallet.KYCVerified, 5000, "idem-w3")
+	if err != nil {
+		t.Fatalf("Withdraw: %v", err)
+	}
+	if len(fakePix.Transfers) != 1 {
+		t.Fatalf("expected pix.Transfer to be used, got %d calls", len(fakePix.Transfers))
+	}
+	if w.Status != wallet.WithdrawCompleted {
+		t.Fatalf("expected status completed (today's synchronous Inter path), got %q", w.Status)
 	}
 }

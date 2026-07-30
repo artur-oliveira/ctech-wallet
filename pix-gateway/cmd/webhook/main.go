@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -24,10 +25,19 @@ import (
 	"gopkg.aoctech.app/wallet/pix-gateway/internal/walletclient"
 )
 
+// sandboxPurchaseTxidPrefix marks a txid as belonging to the direct
+// PIX→sandbox-credits sale rather than a real-wallet deposit (ctech-wallet-api
+// plan docs/plans/2026-07-30-asaas-baas-implementation-plan.md §9.3) — the
+// wallet API mints txids with this prefix (PurchaseSandboxDirect) so this
+// Lambda can route the confirmation call correctly without a new inbound
+// integration, just this one dispatch check.
+const sandboxPurchaseTxidPrefix = "sbxp#"
+
 // confirmer is the subset of *walletclient.Client the handler depends on —
 // small enough to fake in tests.
 type confirmer interface {
 	ConfirmDeposit(ctx context.Context, txid, payerCPF, payerName string) error
+	ConfirmSandboxPurchase(ctx context.Context, txid string) error
 }
 
 type handler struct {
@@ -145,6 +155,17 @@ func (h *handler) handle(ctx context.Context, req events.APIGatewayV2HTTPRequest
 	resp := events.APIGatewayV2HTTPResponse{StatusCode: 200}
 	for _, p := range details {
 		if p.Txid == "" {
+			continue
+		}
+		// Dispatch on the txid prefix — a sandbox-purchase txid (minted by
+		// PurchaseSandboxDirect) never carries a payer CPF/name gate, so it
+		// routes to a different confirmation call entirely (plan §9.3), not a
+		// variant of ConfirmDeposit.
+		if strings.HasPrefix(p.Txid, sandboxPurchaseTxidPrefix) {
+			if err := h.confirmer.ConfirmSandboxPurchase(ctx, p.Txid); err != nil {
+				slog.ErrorContext(ctx, "webhook response", "status", 500, "txid", p.Txid, "err", err)
+				return events.APIGatewayV2HTTPResponse{StatusCode: 500, Body: "confirm-sandbox-purchase failed"}, nil
+			}
 			continue
 		}
 		if err := h.confirmer.ConfirmDeposit(ctx, p.Txid, p.Pagador.CpfCnpj, p.Pagador.Nome); err != nil {

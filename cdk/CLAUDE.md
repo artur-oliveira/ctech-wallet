@@ -21,7 +21,7 @@ enforced here wherever they can be (IAM, table shape), and the rest in `api`.
 
 | Stack | File | Provisions |
 |-------|------|-----------|
-| `DynamoDBStack` | `lib/dynamodb-stack.ts` | 8 tables + GSIs (OnDemand) |
+| `DynamoDBStack` | `lib/dynamodb-stack.ts` | 13 tables + GSIs (OnDemand) |
 | `IAMStack` | `lib/iam-stack.ts` | EC2 instance role for the API |
 | `ApiStack` | `lib/api-stack.ts` | EC2 ASG + ALB + nginx + CloudWatch alarm |
 | `ReconcileStack` | `lib/reconcile-stack.ts` | reconcile Lambda + EventBridge Scheduler (5 min) |
@@ -48,6 +48,13 @@ All tables env-prefixed (`TABLE_PREFIX=env` ⇒ `dev_wallets`). **OnDemand**
 | `wallet_users` | — | consent + responsible-gambling state |
 | `wallet_holds` | `gsi_hold_status` | game buy-in holds |
 | `wallet_audit` | — | pk+sk; **append-only** (Invariant #10) |
+| `wallet_baas_accounts` | `gsi_baas_account_id`, `gsi_baas_status` | pk `user_id`; Asaas custody lifecycle (implementation plan §2.4) |
+| `wallet_transfer_intents` | `gsi_intent_status` | pk `external_reference`; transfer-authorization webhook lookup (plan §2.3) |
+| `wallet_settlement_legs` | `gsi_batch_status` | pk `batch_id`; **no application code touches this table yet** — no settlement caller exists (plan §6) |
+| `wallet_med_receivables` | `gsi_med_status` | pk `receivable_id`; MED clawback shortfall debt (plan §7.3) |
+| `wallet_sandbox_purchases` | `gsi_sandbox_purchase_status` | pk `purchase_id`; **TTL**; direct PIX→sandbox sale, decoupled from `wallet_pix_deposits` (plan §9.1/§9.3) |
+
+`wallet_pix_deposits` also gained `gsi_deposit_provider_qr` (Asaas payment-webhook `pixQrCodeId` → txid resolution, plan §4.3).
 
 Names/keys/GSIs mirror `api/internal/domain/wallet/model.go` exactly
 (`dynamodb-stack.ts:8-11`) — a mismatch silently breaks every query.

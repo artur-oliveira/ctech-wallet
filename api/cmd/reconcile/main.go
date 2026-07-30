@@ -19,22 +19,30 @@ import (
 
 	"gopkg.aoctech.app/api-commons/cache"
 	"gopkg.aoctech.app/api-commons/ws"
+	"gopkg.aoctech.app/wallet/api/internal/asaas"
 	"gopkg.aoctech.app/wallet/api/internal/awsclient"
 	"gopkg.aoctech.app/wallet/api/internal/config"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
 	"gopkg.aoctech.app/wallet/api/internal/lock"
 	"gopkg.aoctech.app/wallet/api/internal/pix"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
+	"gopkg.aoctech.app/wallet/api/internal/secrets"
 	"gopkg.aoctech.app/wallet/api/internal/services"
 )
 
 // Result is what the Lambda returns (and what the CLI logs).
 type Result struct {
-	Resolved      int `json:"resolved"`
-	Reversed      int `json:"reversed"`
-	Alarmed       int `json:"alarmed"`
-	SweptDeposits int `json:"swept_deposits"`
-	StaleHolds    int `json:"stale_holds_alarmed"`
+	Resolved              int `json:"resolved"`
+	Reversed              int `json:"reversed"`
+	Alarmed               int `json:"alarmed"`
+	SweptDeposits         int `json:"swept_deposits"`
+	SweptSandboxPurchases int `json:"swept_sandbox_purchases"`
+	StaleHolds            int `json:"stale_holds_alarmed"`
+	TransfersResolved     int `json:"asaas_transfers_resolved"`
+	TransfersRetried      int `json:"asaas_transfers_retried"`
+	TransfersAlarmed      int `json:"asaas_transfers_alarmed"`
+	ConservationChecked   int `json:"conservation_checked"`
+	ConservationDrifted   int `json:"conservation_drifted"`
 }
 
 func main() {
@@ -52,9 +60,12 @@ func main() {
 		os.Exit(1)
 	}
 	slog.Info("reconcile complete", "resolved", res.Resolved, "reversed", res.Reversed, "alarmed", res.Alarmed,
-		"swept_deposits", res.SweptDeposits, "stale_holds_alarmed", res.StaleHolds)
-	if res.Alarmed > 0 || res.StaleHolds > 0 {
-		os.Exit(3) // non-zero so the scheduler/alarm notices unresolved refunds/stale holds
+		"swept_deposits", res.SweptDeposits, "stale_holds_alarmed", res.StaleHolds,
+		"asaas_transfers_resolved", res.TransfersResolved, "asaas_transfers_retried", res.TransfersRetried,
+		"asaas_transfers_alarmed", res.TransfersAlarmed, "conservation_checked", res.ConservationChecked,
+		"conservation_drifted", res.ConservationDrifted)
+	if res.Alarmed > 0 || res.StaleHolds > 0 || res.TransfersAlarmed > 0 || res.ConservationDrifted > 0 {
+		os.Exit(3) // non-zero so the scheduler/alarm notices unresolved refunds/stale holds/drift
 	}
 }
 
@@ -63,11 +74,13 @@ func handler(ctx context.Context) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	if res.Alarmed > 0 || res.StaleHolds > 0 {
+	if res.Alarmed > 0 || res.StaleHolds > 0 || res.TransfersAlarmed > 0 || res.ConservationDrifted > 0 {
 		// Surface as a Lambda error so the schedule's failure alarm fires. The
-		// affected withdrawals are already flagged refund_failed; stale holds are
-		// never auto-resolved (Invariant #12) — both need manual reconciliation.
-		return res, fmt.Errorf("reconcile: %d reversal(s) and %d stale hold(s) need manual reconciliation", res.Alarmed, res.StaleHolds)
+		// affected withdrawals are already flagged refund_failed; stale holds and
+		// conservation drift are never auto-resolved (Invariant #12, #13) — all
+		// need manual reconciliation.
+		return res, fmt.Errorf("reconcile: %d reversal(s), %d stale hold(s), %d asaas transfer alarm(s), %d conservation drift(s) need manual reconciliation",
+			res.Alarmed, res.StaleHolds, res.TransfersAlarmed, res.ConservationDrifted)
 	}
 	return res, nil
 }
@@ -91,6 +104,7 @@ func run(ctx context.Context) (*Result, error) {
 	audit := repositories.NewAuditRepository(clients.DynamoDB, cfg)
 	svc := services.NewWalletService(repo, users, audit, lock.NewLocker(cache.NewMemoryBackend(16)), pixClient, kycclient.New(cfg))
 	svc.SetBroadcaster(newBroadcaster(cfg))
+	svc.SetSandboxPurchases(repositories.NewSandboxPurchaseRepository(clients.DynamoDB, cfg))
 
 	resolved, reversed, alarmed, err := svc.ReconcileWithdrawals(ctx)
 	if err != nil {
@@ -100,11 +114,65 @@ func run(ctx context.Context) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	sweptSandbox, err := svc.SweepPendingSandboxPurchases(ctx)
+	if err != nil {
+		return nil, err
+	}
 	staleHolds, err := svc.SweepStaleHolds(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return &Result{Resolved: resolved, Reversed: reversed, Alarmed: alarmed, SweptDeposits: swept, StaleHolds: staleHolds}, nil
+
+	res := &Result{
+		Resolved: resolved, Reversed: reversed, Alarmed: alarmed, SweptDeposits: swept,
+		SweptSandboxPurchases: sweptSandbox, StaleHolds: staleHolds,
+	}
+	if cfg.AsaasCustodyEnabled {
+		baasSvc, err := newBaasService(ctx, cfg, clients, repo, audit, kycclient.New(cfg))
+		if err != nil {
+			return nil, fmt.Errorf("baas: %w", err)
+		}
+		tResolved, tRetried, tAlarmed, err := baasSvc.ReconcileTransferIntents(ctx)
+		if err != nil {
+			return nil, err
+		}
+		checked, drifted, err := baasSvc.RunConservationCheck(ctx)
+		if err != nil {
+			return nil, err
+		}
+		res.TransfersResolved, res.TransfersRetried, res.TransfersAlarmed = tResolved, tRetried, tAlarmed
+		res.ConservationChecked, res.ConservationDrifted = checked, drifted
+	}
+	return res, nil
+}
+
+// newBaasService wires the Asaas custody service for the reconcile job — same
+// SSM-fetch-once shape as cmd/server's app.go, but constructed directly here
+// since cmd/reconcile does not use the fx DI container. Uses the same real
+// Lambda-backed AsaasClient as cmd/server (invokes pix-gateway's outbound
+// Lambda) — safe to build unconditionally since this whole function is only
+// ever called inside the `if cfg.AsaasCustodyEnabled` branch above.
+func newBaasService(ctx context.Context, cfg *config.Config, clients *awsclient.Clients, repo *repositories.WalletRepository, audit *repositories.AuditRepository, kyc services.KYCClient) (*services.BaasService, error) {
+	store := secrets.NewStore(clients.SSM, cfg.Env)
+	hexKey, err := store.LoadAsaasMasterKey(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("asaas master key: %w", err)
+	}
+	masterKey, err := asaas.MasterKeyFromHex(hexKey)
+	if err != nil {
+		return nil, err
+	}
+	parentAPIKey, err := store.LoadAsaasParentAPIKey(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("asaas parent api key: %w", err)
+	}
+	awsCfg, err := awscfg.LoadDefaultConfig(ctx, awscfg.WithRegion(cfg.AWSRegion))
+	if err != nil {
+		return nil, fmt.Errorf("aws config: %w", err)
+	}
+	asaasClient := asaas.NewLambdaAsaasClient(lambda.NewFromConfig(awsCfg), cfg.PixGatewayFunctionName)
+	baasRepo := repositories.NewBaasRepository(clients.DynamoDB, cfg)
+	return services.NewBaasService(baasRepo, repo, asaasClient, audit, kyc, masterKey, cfg.AsaasParentWalletID, parentAPIKey), nil
 }
 
 // newBroadcaster builds a publish-only WebSocket broadcaster so reconciliation

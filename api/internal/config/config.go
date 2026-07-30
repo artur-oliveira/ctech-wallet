@@ -22,6 +22,25 @@ type Config struct {
 	// With it off, those routes are not registered at all and 404.
 	GamblingEnabled bool `env:"GAMBLING_ENABLED" envDefault:"false"`
 
+	// AsaasCustodyEnabled gates the entire Asaas onboarding/deposit/withdrawal/
+	// settlement surface (docs/plans/2026-07-30-asaas-baas-implementation-plan.md).
+	// With it off, a user's real wallet is created and backed exactly as today
+	// (Inter PJ pooled account) — no behavior change. Turning it on requires the
+	// custody gate (plan §0) to be cleared; nothing in code enforces that legal
+	// precondition, so do not flip it in prod without it.
+	AsaasCustodyEnabled bool `env:"ASAAS_CUSTODY_ENABLED" envDefault:"false"`
+
+	// AsaasWithdrawalFeeEnabled gates charging the 2% withdrawal fee on
+	// Asaas-custodied wallets — a live legal blocker independent of custody
+	// (plan §0, §5.1). Withdrawals stay fee-free while this is false.
+	AsaasWithdrawalFeeEnabled bool `env:"ASAAS_WITHDRAWAL_FEE_ENABLED" envDefault:"false"`
+
+	// AsaasParentWalletID is Asaas's walletId for CTech's own parent/master
+	// account — the settlement destination for every fee sweep and game-funded
+	// sandbox-purchase settlement leg (plan §5.2, §9.1a). Required once
+	// AsaasCustodyEnabled is true.
+	AsaasParentWalletID string `env:"ASAAS_PARENT_WALLET_ID"`
+
 	ReadTimeout        int64    `env:"READ_TIMEOUT" envDefault:"10"`
 	IdleTimeout        int64    `env:"IDLE_TIMEOUT" envDefault:"60"`
 	WriteTimeout       int64    `env:"WRITE_TIMEOUT" envDefault:"10"`
@@ -70,6 +89,12 @@ func Load() (*Config, error) {
 		// provider signs (for any audience) would be accepted here if its aud
 		// happens to match. Never safe in prod — mirror the ServiceAudience guard.
 		return nil, fmt.Errorf("config: CTECH_URL must be set in production so the iss claim is verified")
+	}
+	if cfg.AsaasCustodyEnabled && cfg.AsaasParentWalletID == "" {
+		// Fail closed: with custody on, every settlement/fee-sweep leg needs a
+		// destination — an empty parent wallet ID would either panic deep in a
+		// money-out path or (worse) submit a transfer with an empty WalletID.
+		return nil, fmt.Errorf("config: ASAAS_PARENT_WALLET_ID must be set when ASAAS_CUSTODY_ENABLED is true")
 	}
 	if cfg.RedisURL == "" && cfg.Env == "prod" {
 		// Fail closed: an empty VALKEY_URL in prod means per-wallet locking
