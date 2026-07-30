@@ -1,12 +1,105 @@
 # Asaas BaaS + Per-User Subaccounts — Custody Redesign
 
-**Status:** proposed
+**Status:** **BaaS custody premises confirmed; real-money games remain under LEGAL HOLD**
 **Date:** 2026-07-29
+**Legal review:** 2026-07-30 (preventive engineering review; requires Brazilian counsel's signed opinion)
 **Supersedes:** `docs/specs/2026-07-13-pix-gateway-lambda-design.md` (Inter transport),
 `docs/specs/2026-07-13-inter-token-manager-design.md` (dead once Inter is gone)
 **Amends:** `docs/specs/2026-07-12-three-wallet-topology-design.md` (custody layer only — the three-wallet ledger model
 is unchanged)
-**Blocks:** production launch with real third-party money.
+**Blocks:** production launch of real-money games until the independent games-law blockers in §§0.2 and 14 are
+resolved. Asaas BaaS account/API enablement is no longer an open blocker under the confirmed premises in §0.1.
+
+---
+
+## 0. Legal hold and rules that override the rest of this document
+
+This specification is a technical design, **not a legal opinion**. Statements below that describe a legal
+classification are hypotheses for counsel, not authorization to operate. The Asaas BaaS account/API premises are
+confirmed in §0.1. Fees, user-to-user game settlement and paid games remain subject to the specific unresolved
+blockers identified in this document and to Brazilian counsel experienced in payments, consumer law, PLD/FTP
+and games.
+
+The original draft pre-dated the regulation that now governs this model. The controlling BaaS rule is
+**Resolução Conjunta BCB/CMN nº 16/2025**, in force since 28 November 2025. In particular:
+
+1. The end user must have a direct contractual relationship with the BaaS institution for the financial and
+   payment services, while the user contracts with CTech only for the other services
+   (**Res. Conj. 16/2025, art. 3º, IV**).
+2. The payment account must be held by the end user at the BaaS institution
+   (**art. 4º, §2º**). This must be proven by the executed Asaas contract and account records; calling an API
+   object a `subaccount` is not proof of legal ownership.
+3. CTech may not charge, **in its own name**, a tariff, commission or other remuneration for products or
+   services offered by Asaas (**art. 8º, XI**), and may not receive in its own account values related to those
+   services (**art. 8º, XIV**). Consequently, the proposed 2% withdrawal charge and its sweep to CTech are
+   **disabled launch blockers**. Renaming a withdrawal charge as a “platform service fee” does not change its
+   legal substance. It may be implemented only if the executed BaaS contract, Asaas compliance and counsel all
+   confirm in writing that it pays for a genuinely separate, non-financial CTech service and complies with
+   arts. 8º, XI, and 15. Otherwise Asaas must charge any permitted payment tariff in its own name.
+4. The UI and contracts must identify Asaas visibly as the regulated provider, state that CTech is not an
+   institution authorized by BCB, and must not imply that CTech supplies the financial service
+   (**arts. 8º, §2º, I–II, and 14, I**).
+5. Asaas remains responsible for KYC/risk classification, fraud and PLD/FTP controls, and customer service for
+   the BaaS services; it may assign accessory tasks to CTech without transferring that responsibility
+   (**arts. 9º, 10, 11 and 16**). The implementation and the privacy notice must reflect the operational roles
+   agreed in the BaaS contract.
+
+### 0.1 Confirmed Asaas premises (2026-07-30)
+
+These are no longer open design assumptions:
+
+1. **CTech's CNPJ account has cadastral approval and API access.** This satisfies the provider-side onboarding
+   premise for the design, without waiving per-subaccount onboarding, transaction monitoring or future review.
+2. **The CNPJ restriction applies to the account that creates subaccounts, not to the subaccount holder.** The
+   `POST /v3/accounts` reference says that PF accounts cannot *create* subaccounts, while the same endpoint
+   defines `cpfCnpj` as the CPF or CNPJ of the subaccount owner and `birthDate` for a natural person. Therefore
+   the approved topology is CTech's CNPJ root creating one Asaas payment subaccount in each user's name and CPF.
+3. **Published Asaas Terms recognize user ownership and CTech's authority model.** Clauses 5.1.1–5.1.3 describe
+   subaccounts opened in CTech clients'/partners' own names. Clauses 5.1.6–5.1.7 require the holders' express
+   approval and a specific mandate for CTech to open, move and close those accounts. The versioned mandate and
+   acceptance gates in §9 implement that requirement.
+4. **The user has no direct Asaas panel, login or API-key access in the contracted BaaS journey.** The CTech wallet
+   is the sole technical interface exposed to the user. All subaccount credentials remain server-side secrets,
+   and every movement must pass through the wallet ledger, locks, idempotency and authorization gates.
+5. **The published Asaas Terms do not expressly prohibit poker.** The CTech account is approved and the user has
+   confirmed that its Asaas contract does not prevent the described poker activity. This clears the provider
+   contract question for this design; it does not decide whether the game itself is lawful under Decreto-Lei
+   3.688/1941 or Lei 14.790/2023, which remains the separate blocker in §0.2.
+6. **Conta Escrow is not part of the design.** `HoldGame` is an internal, auditable reservation against the
+   user-held balance. It does not transfer ownership, move money to CTech or depend on Asaas's Conta Escrow.
+
+Provider references: [Asaas create-subaccount API](https://docs.asaas.com/reference/criar-subconta),
+[Asaas subaccount guide](https://docs.asaas.com/docs/duvidas-frequentes-subcontas) and
+[Asaas Terms and Conditions, version updated 27 May 2026](https://central.ajuda.asaas.com/hc/pt-br/articles/32096847160859-Termos-e-Condi%C3%A7%C3%B5es-de-Uso).
+
+### 0.2 Conduct that must not ship
+
+| Prohibited or blocked conduct | Controlling provision | Required correction |
+|---|---|---|
+| CTech charging in its own name for an Asaas account, Pix receipt, Pix transfer or withdrawal | Res. Conj. 16/2025, **art. 8º, XI**, and art. 15 | Disable the 2% charge and fee sweep until written approval; if it is a payment tariff, Asaas charges and discloses it. |
+| User money entering CTech's parent account as part of the BaaS financial service | Res. Conj. 16/2025, **art. 8º, XIV**; Lei 12.865/2013, art. 12 | Keep user balances in client-held payment accounts. Company revenue may enter CTech's account only as payment for a separately valid CTech obligation, with an auditable legal basis. |
+| Describing CTech as the provider, custodian, bank or payment institution | Res. Conj. 16/2025, **arts. 8º, §2º, and 14, I** | Identify Asaas and CTech's unregulated platform role in every relevant UI and contract. |
+| Operating real-money poker or dominó merely because the platform calls them “skill games” | Decreto-Lei 3.688/1941, **art. 50, caput and §3º, a** | Keep real-money games off until counsel issues a game-by-game opinion based on rules, randomness and expert evidence. |
+| Offering an unauthorized product if it is classified as fixed-odds betting | Lei 14.790/2023, **arts. 4º, 6º and 21**; art. 21-A as amended in 2026 | Do not offer it; obtain SPA authorization or redesign only after a formal classification opinion. |
+| Treating the game result as an automatically enforceable debt without analyzing the civil-law gaming rule | Código Civil, **art. 814, caput and §§1º–3º**, and art. 815 | Do not execute `HoldGame` settlement in production until counsel confirms whether the exact product is a legally permitted game/competition, whether payment is voluntary, and whether the mandate may execute it. A contract cannot merely disguise, novate or guarantee a non-enforceable gaming debt. |
+| Contractually eliminating the seven-day online cancellation right | CDC, **arts. 49 and 51, II** | Do not publish a blanket “no refund” clause. Keep paid sandbox sales disabled until counsel approves a refund/reversal design compatible with the financial invariants. |
+| Excluding CTech's consumer liability or transferring it wholesale to Asaas | CDC, **arts. 14 and 51, I and III** | Use a factual dependency notice, without waiver or exclusion of statutory liability. |
+| Binding users to terms they could not read, or hiding restrictive clauses | CDC, **arts. 46 and 54, §§3º–4º** | Present the full provider terms and highlighted restrictions before a versioned, evidenced acceptance. |
+| Treating biometric KYC data only under ordinary contract performance | LGPD, **arts. 5º, II, and 11** | Use a valid sensitive-data basis, normally art. 11, II, `a` or `g`, as applicable; minimize access and document the controller for each operation. |
+| Claiming every ledger/audit record may be kept forever because it is append-only | LGPD, **arts. 15, 16 and 18** | Adopt a record-by-record retention schedule and legal basis. Append-only architecture is not itself a legal basis for indefinite retention. |
+| Assuming CTech has no direct PLD/COAF duty | Lei 9.613/1998, **arts. 9º, 10 and 11** | Obtain counsel's classification. If CTech falls within art. 9º (including caput I or parágrafo único VI), register and report as required in addition to cooperating with Asaas. |
+| Treating `payment.customer` as proof of the CPF that actually sent a Pix | Lei 9.613/1998, **arts. 10–11**; Res. Conj. 16/2025, **arts. 10–11** | Do not auto-credit on that inference. Asaas documents `customer` as the customer record linked to the charge, not authenticated payer identity. Require an authoritative payer field/transaction query tied to the Pix end-to-end ID, or hold for manual reconciliation. |
+
+Official sources used in this review: [Lei 12.865/2013](https://www.planalto.gov.br/ccivil_03/_ato2011-2014/2013/lei/l12865.htm),
+[Resolução Conjunta 16/2025 (BCB)](https://www.bcb.gov.br/estabilidadefinanceira/exibenormativo?numero=16&tipo=Resolu%C3%A7%C3%A3o%20Conjunta) and
+[official BCB summary](https://www.bcb.gov.br/detalhenoticia/20950/nota),
+[CDC](https://www.planalto.gov.br/ccivil_03/leis/l8078compilado.htm),
+[Código Civil](https://www.planalto.gov.br/ccivil_03/leis/2002/l10406compilada.htm),
+[Código Penal](https://www.planalto.gov.br/ccivil_03/decreto-lei/del2848compilado.htm),
+[Lei das Contravenções Penais](https://www.planalto.gov.br/ccivil_03/decreto-lei/del3688.htm),
+[Lei 14.790/2023](https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2023/lei/l14790.htm),
+[Lei 9.613/1998](https://www.planalto.gov.br/ccivil_03/leis/l9613compilado.htm), and
+[LGPD](https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2018/lei/l13709compilado.htm).
 
 ---
 
@@ -18,13 +111,16 @@ The `wallets` table is a private claim ledger against that single pooled balance
 | Consequence                                     | Why it is unacceptable                                                                                                                                                              |
 |-------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | **Commingling (conta omnibus)**                 | Third-party money is indistinguishable from company money in the same account.                                                                                                      |
-| **Bankruptcy / execution pooling**              | The Inter balance is a company asset. A `penhora`, `BacenJud` block, tax execution, or bankruptcy sweeps user funds with it — they are not `bens de terceiros` in any registry.     |
-| **Apropriação indébita exposure (CP art. 168)** | The company has *possession* of others' money in its own name. Any use of it — even accidental, even a transfer between own accounts — is the elementary conduct of the crime.      |
-| **Unauthorized payment-institution activity**   | Holding and moving third-party funds in own name and settling between users is `arranjo de pagamento` activity (Lei 12.865/2013, Res. BCB 80/2021). CTech is not authorized by BCB. |
+| **Bankruptcy / execution pooling**              | If the Inter balance is an ordinary CTech account rather than a legally segregated payment account, user claims are exposed to CTech's creditors. The legal conclusion depends on the Inter account contract. By contrast, resources actually held in payment accounts receive the segregation of Lei 12.865/2013, art. 12. |
+| **Apropriação indébita exposure (CP art. 168)** | Possession of third-party funds creates material criminal risk if CTech later acts as owner. The offence is not established by an accidental bookkeeping transfer alone: art. 168 criminalizes **appropriating** movable property held or possessed for another. Intent and the facts matter. |
+| **Unauthorized payment-service exposure**       | Lei 12.865/2013, art. 6º, III, includes providing cash-in/out, executing or facilitating payment instructions and managing payment accounts. Whether CTech is only a BaaS tomadora or itself performs regulated activity depends on the executed model and Res. Conj. 16/2025; it cannot be declared solved by architecture alone. |
 | **The terms addendum admits it**                | `docs/legal/wallet-terms-addendum.md` §6 literally says *"atua como intermediário técnico de custódia"* — a claim CTech is not licensed to make.                                    |
 
-The Asaas BaaS + per-user-subaccount model fixes the **custody** layer: money sits in an account **held by the
-user**, at an institution authorized by BCB. It does **not** settle the skill-game classification or the mandate layer — see §9.
+The Asaas BaaS + per-user-account model can correct the custody layer **only if** the executed arrangement meets
+Res. Conj. 16/2025: the account is legally held by the client at Asaas (art. 4º, §2º), the client contracts
+directly with Asaas for those services (art. 3º, IV), and CTech remains within the permitted tomadora role. It
+does **not** by itself settle CTech's regulatory perimeter, the games classification, PLD/FTP, consumer or mandate
+questions — see §§0, 9 and 14.
 
 ---
 
@@ -109,7 +205,7 @@ virtual credits (`SandboxCreditsPerCentavo = 10`).
 
 ---
 
-## 3. Target model — money is held by the user, at Asaas
+## 3. Target model — account held by the user at Asaas
 
 ```
                     CTech parent Asaas account (CNPJ) — company money ONLY (rake, subscriptions)
@@ -119,15 +215,20 @@ virtual credits (`SandboxCreditsPerCentavo = 10`).
    ▼                 ▼                 ▼                 ▼
  sub(user A)      sub(user B)      sub(user C)  ...   (one Asaas subaccount per user, in the USER'S name+CPF)
  EVP pix key      EVP pix key      EVP pix key         R$13,90 one-off each
- balance = A's    balance = B's    balance = C's       ← THIS is the custody; the money is legally theirs
+ balance = A's    balance = B's    balance = C's       ← Asaas clauses 5.1.1–5.1.3: account in the user's name
 ```
 
 **The new load-bearing invariant (#13):**
-> `real.balance + game.balance + Σ(open holds)` for a user **equals** that user's Asaas subaccount balance.
-> `sandbox` is excluded (virtual). Any drift is a reconciliation defect and must alarm.
+> At quiescence, `Σ Asaas subaccount balances == Σ(real + game + open holds)`. At all other times, both the
+> system-wide and per-user differences must be exactly explained by durable, idempotent
+> `settlement_pending_in/out`, withdrawal and provider-fee-reserve legs. Pending inbound winnings are
+> not withdrawable, returnable to `real`, or usable in another game until the corresponding Asaas transfer is
+> `DONE`. `sandbox` is excluded because it is virtual; unexplained drift must alarm and fail closed.
 
-CTech's own account never holds a centavo of user money. That single property is what removes the
-commingling, the bankruptcy pooling, and the `apropriação indébita` exposure.
+CTech's own account must never hold a centavo of user money. The API schema and Asaas Terms identified in §0.1
+support the required user-held topology under Res. Conj. 16/2025, art. 4º, §2º. Resources held in the user's
+payment account receive the protection of Lei 12.865/2013, art. 12. This addresses commingling and insolvency
+segregation, but CTech must still remain within the holder's express authority when controlling instructions.
 
 ### 3.1 What survives unchanged
 
@@ -153,7 +254,9 @@ hop stays the cheap IPv4 egress path.
 
 ## 4. Decision: the deposit QR is generated on the **user's subaccount**
 
-The user framed this as the central question. It is not close.
+The QR is generated on the user's approved Asaas subaccount. The endpoint identifies `cpfCnpj` as the document of
+the subaccount owner, and Asaas Terms clauses 5.1.1–5.1.3 describe the account as opened in that client's or
+partner's own name. This implements Res. Conj. 16/2025, art. 4º, §2º.
 
 |                                         | QR on CTech's account                                            | QR on the user's subaccount ✅                            |
 |-----------------------------------------|------------------------------------------------------------------|----------------------------------------------------------|
@@ -161,7 +264,7 @@ The user framed this as the central question. It is not close.
 | The defect this migration exists to fix | **reintroduced** on every single deposit                         | absent                                                   |
 | Extra failure mode                      | internal transfer can fail → money in limbo in CTech's account   | none — no transfer step exists                           |
 | Static-QR count / rate limits           | all deposits on one account → the ceiling the user worried about | spread across N accounts; the ceiling concern disappears |
-| Asaas free-Pix quota                    | one account's quota for all users                                | one quota **per subaccount** (must confirm — §10 Q1)     |
+| Asaas free-Pix quota                    | one account's quota for all users                                | one quota **per subaccount** (confirmed — §10 Q1)        |
 | Payer-facing name on the QR             | "A O CARVALHO TECH"                                              | the user's own name                                      |
 
 The only real argument for the CTech account is the QR showing the company name. That is cosmetic, and it cuts
@@ -174,7 +277,9 @@ migration tells. Handle it with UI copy, not architecture:
 
 Paying yourself is already a familiar act (Nubank → Mercado Pago). It reads as safe, not as broken.
 
-**Rejected outright:** deposit into CTech's account + internal transfer. It is the current defect with extra steps.
+**Prohibited for this BaaS flow:** deposit into CTech's account + internal transfer. Res. Conj. 16/2025,
+art. 8º, XIV, requires the BaaS contract to prohibit the tomadora from receiving in its own account values
+related to the financial services supplied to clients.
 
 ---
 
@@ -230,12 +335,14 @@ Mapping `ctech-account`'s KYC record (`internal/domain/kyc/model.go`, `address.g
 | `incomeValue`                              | —                                            | ❌ not in KYC — collected by the **wallet**, see below |
 
 **`incomeValue` does not belong in `ctech-account`.** It is an Asaas cadastral field, not an identity attribute,
-and `ctech-account`'s KYC is the identity service. Collect it in the **wallet's own real-wallet activation form**
-(the same request that triggers subaccount creation) and pass it straight through.
+and `ctech-account`'s KYC is the identity service. If Asaas confirms the field is necessary, collect it in the
+**wallet's own real-wallet activation form** and pass it through with the transparency required by LGPD arts. 6º,
+9º and 18. Collection, use and transmission are processing even if CTech does not persist the value.
 
-Better still: **do not persist it.** It is needed exactly once, at `POST /v3/accounts`, and it is sensitive
-(renda). Send it and drop it; if an audit trail is wanted, append a coarse bucket to `wallet_audit`, never the
-value. Nothing downstream reads it.
+Better still: **do not persist it** unless a documented legal or contractual duty requires retention. Income is
+personal data (although not “sensitive personal data” in the exhaustive LGPD art. 5º, II definition). Send it and
+drop it. Do not append even a coarse income bucket to `wallet_audit` without a defined purpose, necessity test and
+retention period (LGPD art. 6º, I–III).
 
 So the `ctech-account` change reduces to one thing: extend the internal KYC read — `kycclient.KYC` currently
 returns only `Level, CPF, LegalName, BirthDate` — to also return **email, phone and address**. `Address.City` /
@@ -245,7 +352,7 @@ there, no migration.
 #### 5.1.2 Subaccount API-key storage — do NOT use Secrets Manager
 
 One key per user, returned once, and the parent can only rotate it inside a **2-hour window manually enabled in
-the Asaas web UI** (BaaS clients excepted — confirm, §10 Q4). Losing a key is therefore expensive.
+the Asaas web UI** (BaaS clients excepted — confirm, §10 Q5). Losing a key is therefore expensive.
 
 - Secrets Manager: ~US$0.40/secret/month → 10k users ≈ US$4k/month. **No.**
 - SSM SecureString: free at standard tier but capped at 10k parameters per region. A hard user ceiling. **No.**
@@ -273,7 +380,8 @@ the Asaas web UI** (BaaS clients excepted — confirm, §10 Q4). Losing a key is
 7. api   ConfirmDeposit(txid)                    [Invariant 11 preserved, verbatim in spirit]
          ├─ GET /v3/payments/{id} (SUBACCOUNT key) ← SOURCE OF TRUTH, re-query, never the webhook body
          ├─ status must be RECEIVED (not CONFIRMED — funds not yet available)
-         ├─ payer CPF: GET /v3/customers/{payment.customer} → compare against kyc.CPF   (§5.2.2)
+         ├─ payer CPF: authoritative Pix-transaction source tied to endToEndId          (§5.2.2)
+         │             (`payment.customer` is NOT proof; launch blocked until §10 Q15)
          ├─ value != dep.AmountExpected → ALARM + refund
          ├─ lock.Acquire → repo.Credit{ amount = payment.netValue }   (§5.2.1 — NOT `value`)
          └─ broadcast deposit_confirmed                              [unchanged]
@@ -290,6 +398,17 @@ This is also self-correcting for the free-transfer quota: in the user's own test
 logic on our side. `netValue` is the only field that is always right.
 
 #### 5.2.2 Matching: `externalReference` propagates — verified
+
+**Correction after the second legal review:** `GET /v3/customers/{payment.customer}` cannot establish the actual
+Pix payer. Asaas documents `customer` as the customer record to which a charge is linked; it may be populated by
+the application before anyone pays. Comparing that record with the wallet user's CPF merely compares the user
+with data the platform already supplied and does not detect a third-party Pix.
+
+The same-CPF deposit rule therefore remains a launch blocker until Asaas identifies an authoritative API or
+webhook field for the actual debit-account holder, tied to the Pix `endToEndIdentifier`. The webhook may wake the
+flow, but the credit decision must re-query that authoritative source. If no such source is available, do not
+silently weaken the rule: leave the payment in `payer_verification_pending`, block use of the amount and route it
+to a documented manual/refund process. This is both an Invariant #11 issue and a PLD/FTP control.
 
 The static QR's `externalReference` **is** inherited by the auto-created `cobrança`. Verified against a live
 capture (2026-07-29, QR `CTECH00000000678362937ASA`):
@@ -310,7 +429,8 @@ covers the two cases `externalReference` cannot:
    `externalReference: null` with a populated `pixQrCodeId` — that QR was created without the field).
 2. A **third-party Pix straight into the user's Pix key**, with no QR at all — a real possibility now that the
    key is a live EVP on a real account. Neither field resolves to a known deposit. That is not an error: log it,
-   credit nothing automatically, and put it through the CPF gate as an unsolicited inbound payment.
+   credit nothing automatically, and put it through the authoritative payer-verification process above as an
+   unsolicited inbound payment.
 
 **Both `PAYMENT_CREATED` and `PAYMENT_RECEIVED` fire for a paid static QR, and the capture shows
 `PAYMENT_CREATED` already carrying `status: RECEIVED`.** Do not branch on the event name: resolve the txid, then
@@ -325,17 +445,32 @@ no-op by construction — but a dynamic charge's `PAYMENT_CREATED` arrives `PEND
 2. api   Withdraw
          ├─ lock, replay check, kyc.CPF as destination      [all unchanged]
          ├─ settleCustody(userID)   ← NEW: make custody match the ledger before money leaves (§5.4)
-         ├─ fee = WithdrawalFee(amount, wallet)             2% / min R$2,50 / max R$10  [§6.4]
-         ├─ DebitWithFee(amount, fee)                       [same single TransactWriteItems]
+         ├─ ctech_fee = 0                                   [legal hold; §6.4]
+         ├─ reserve provider_fee_max                        [Asaas tariff, not CTech revenue; see below]
+         ├─ DebitWithProviderFeeReserve(amount, provider_fee_max)
          └─ POST /v3/transfers (SUBACCOUNT key)
                 { value, pixAddressKey: kyc.CPF, pixAddressKeyType: "CPF",
                   externalReference: withdrawalID, operationType: "PIX" }
               ├─ Asaas calls our TRANSFER-VALIDATION webhook (§5.3.2) → we APPROVE/REFUSE
               ├─ status PENDING/BANK_PROCESSING → stays `processing`   [Invariant 12]
-              ├─ status DONE  → completed, then sweep the 2% fee to the parent account (§6.4.2)
-              └─ FAILED/CANCELLED → reverse (amount + fee; no sweep happened yet)
+              ├─ response exposes transferFee = T
+              ├─ append provider-fee adjustment +(provider_fee_max − T); never rewrite an entry
+              ├─ status DONE  → completed; no CTech fee sweep while §6.4 legal hold is active
+              └─ FAILED/CANCELLED → reverse amount + remaining provider-fee reserve
 3. cmd/reconcile: GET /v3/transfers?externalReference=<withdrawalID> → complete or reverse
 ```
+
+`ctech_fee` and `provider_fee` are different legal and accounting objects. While §6.4 is blocked, CTech charges
+zero. Asaas may still debit its own tariff directly from the user-held subaccount. The wallet must show that
+provider tariff before confirmation and mirror the exact debit in a distinct `EntryProviderFee`; otherwise the
+Asaas balance becomes smaller than the ledger by `T`.
+
+If Asaas does not expose an authoritative pre-transfer quote, reserve a named, contractually hard maximum
+`AsaasPixTransferFeeMax` before the call and release the unused portion with a compensating append-only credit
+after `transferFee` is known. Never guess from a free-quota counter alone. If the provider can charge more than
+the configured maximum, disable withdrawals until the contract/API supplies a safe bound. A normal full-balance
+withdrawal pays `balance − T`; only the account-closure flow in §5.6 is CTech-funded so that 100% of the user's
+balance can be returned.
 
 #### 5.3.1 ⚠ Regression to close: `/v3/transfers` has **no idempotency key**
 
@@ -375,23 +510,30 @@ This is the part with no analogue in the Inter model, and the design turns on on
 > **A BaaS subaccount holder has no Asaas panel, no login, and no API key.** Every movement is executed by the
 > parent account. (Confirmed with Asaas, 2026-07-29.)
 
-That fact changes the problem completely. When A loses R$100 to B, the money is still physically in **A's**
-subaccount while the ledger says it is B's — but A cannot touch it. The exits are:
+That fact changes the technical problem. When A loses R$100 to B, the money is still physically in **A's**
+subaccount while the ledger records B's claim. Within the contracted BaaS interface, A cannot technically move
+the held amount. The technical exits are:
 
 | Exit                          | Gate                                                           |
 |-------------------------------|----------------------------------------------------------------|
 | Asaas panel / direct Pix by A | **does not exist** — no access                                 |
 | `POST /wallet/withdrawals`    | our API: open hold + `ConditionExpression: balance >= :amount` |
-| Anything else                 | there is nothing else                                          |
+| Direct technical channel      | none is exposed in the confirmed BaaS journey                   |
 
-So internal drift is **not** a solvency risk and does not need per-hand chasing. It is a *legal-attribution* risk
-only, and its size is a function of the drift **window**, not of table activity.
+This avoids platform-wide commingling, but it does **not** eliminate execution risk. Until the Asaas transfer is
+complete, a winner's ledger claim is still physically backed by a loser's subaccount and may be hit by a judicial
+or compliance block. The risk is bounded by the drift window and must never be allowed to propagate through a
+second game or withdrawal.
 
 #### 5.4.1 Rejected approaches
 
 - ❌ **Transfer per hand/round.** Chips move continuously and a hand in progress has money in a pot that belongs
   to nobody yet. Settling mid-hand settles a fiction. Also: hundreds of API calls for a state that is about to
   change again.
+- ❌ **Asaas Conta Escrow.** It is not required and must not be enabled for this flow. It retains qualifying
+  subaccount receipts under a provider-configured release mechanism; it is not the per-buy-in reservation used
+  by the game ledger. Enabling it would add a second blocking state and reconciliation surface without replacing
+  `HoldGame`.
 - ❌ **Pot/omnibus account per table.** Buy-ins into a CTech-owned "mesa" account reintroduces commingling for
   the single most scrutinized category of money in the system. Rejected on the same grounds as the whole
   migration.
@@ -402,20 +544,34 @@ only, and its size is a function of the drift **window**, not of table activity.
 **The hold is the custody anchor.** At buy-in, `HoldGame` debits `game` and the money stays where it is,
 immobilized. Nothing physical happens. This is already the current behaviour — no change.
 
+Here, “immobilized” means **unavailable through the CTech wallet ledger**, not an Asaas Conta Escrow or a
+provider-side judicial block. This is operationally enforceable because the contracted BaaS journey gives the
+holder no direct panel, login or API credentials: the wallet is the sole technical movement channel. Every debit, withdrawal and
+settlement must use ledger `available` balance and must never authorize against the larger raw Asaas balance.
+The user's title to the full underlying subaccount balance is unchanged throughout the hold.
+
 **Settlement is a recorded obligation before it is a transfer.** When the poker engine settles (`CashoutGame`,
 table close), the ledger entries are written first, in the same `TransactWriteItems` as always. The internal
 transfer that follows is the *execution* of an obligation that is already durable. A failed transfer therefore
-never loses the record — it retries. That ordering is what answers *"como garantir que o dinheiro de A realmente
-vai para B"*: the guarantee is not the transfer, it is the ledger entry that precedes it and the sweep that
-insists on it.
+never loses the record — it retries. The ledger is durable evidence of what must be executed, but it is **not a
+guarantee of payment** if the source account is frozen or the underlying obligation is legally unenforceable.
+
+**A recorded obligation is not yet spendable custody.** Any net gain credited by `CashoutGame` is simultaneously
+encumbered as `settlement_pending_in`. It is shown separately in the UI and is excluded from every available-
+balance check: withdrawal, `game → real`, a new `HoldGame`, sandbox purchase and account closure. The matching
+loser-side amount is `settlement_pending_out` until the provider transfer is final. Only a `DONE` Asaas transfer
+atomically clears both pending markers; a failed or blocked leg remains unavailable and escalates to
+reconciliation. This prevents an unfunded win from being replayed through multiple tables.
 
 **Converge at three points, in this priority:**
 
 1. **Table close (`settlement batch`).** All stacks are final, no hand in progress, amounts are settled. Compute
    the **net delta per player** for the session and emit a *netted* set of internal transfers: net losers → net
-   winners, greedy-matched, at most `N-1` legs for `N` players instead of `N²`. The platform's **fixed table entry fee** — not a rake; real-money tables take no share of the pot
-   (§9.4, Invariant #15) — is one more leg in the same batch, and that leg is legitimate company revenue arriving
-   in a company account.
+   winners, greedy-matched, at most `N-1` legs for `N` players instead of `N²`. Whether multilateral netting may
+   match players without a direct bilateral debt is a legal question (§14). The platform's **fixed table access
+   fee** — not a rake; real-money tables take no share of the pot (§9.4, Invariant #15) — may be a separate leg
+   only if counsel confirms that it is valid consideration for a non-financial CTech service and may enter the
+   parent account under Res. Conj. 16/2025, arts. 8º, XIV, and 15.
 2. **Mandatorily before any withdrawal** (`settleCustody`, §5.3). This is the only moment custody must actually
    be true, because money is about to physically leave the platform. If the subaccount is short, pull the deficit
    from the surplus accounts the ledger identifies, then transfer out.
@@ -432,12 +588,14 @@ beats chasing rounds.
 
 Same hazard as §5.3.1 (`/v3/transfers` has no idempotency key), and worse because a batch has many legs. Shape:
 
-- A `settlement` row per batch: `batch_id` (ULID), table ref, the computed legs, status per leg.
+- A `settlement` row per batch: `batch_id` (ULID), table ref, the computed legs, status per leg and the matching
+  `settlement_pending_in/out` encumbrances.
 - Each leg carries `externalReference = <batch_id>#<leg_n>`.
 - Before sending any leg, `GET /v3/transfers?externalReference=<batch_id>#<leg_n>` — adopt an existing transfer,
   never re-send.
-- A leg that fails or is ambiguous stays `pending`; the sweep retries it. Partial batches are normal and safe,
-  because the ledger already reflects the full settlement.
+- A leg that fails or is ambiguous stays `pending`; the sweep retries it. Partial batches are expected, but the
+  related winnings remain unavailable. They are safe only while every unresolved amount is exactly explained by
+  an encumbrance and cannot be spent again.
 
 #### 5.4.4 The residual risk, stated honestly
 
@@ -453,8 +611,10 @@ Mitigations, all of which this design already requires:
 - Accept and document that a frozen counterparty account can delay a withdrawal, and size an operational
   reserve for it.
 
-Pulling money out of A's subaccount to pay B is only lawful because of the **mandate** (§9.2). No mandate, no
-settlement batch. That clause is load-bearing infrastructure, not paperwork.
+Pulling money from A's account to B uses the express authority required by Asaas Terms clauses 5.1.6–5.1.7 and
+implemented by the separate, versioned mandate in §9.2. The provider account/API approval is confirmed (§0.1);
+the remaining launch conditions include counsel's classification of the game, the effect of Código Civil art.
+814 on automatic settlement, and validation of the mandate wording.
 
 ### 5.5 New failure mode: a frozen or blocked subaccount
 
@@ -464,17 +624,20 @@ a `frozen` state on the wallet, withdrawals and settlements refused with a disti
 (`account-blocked`), and an operator surface. Silently failing a withdrawal because the destination account is
 frozen is precisely the "money in limbo" Invariant #12 forbids.
 
-### 5.6 Revocation of the mandate / account closure — **does not exist and must be built**
+### 5.6 Revocation of authority / account closure — **does not exist and must be built**
 
-Counsel's position (2026-07-29): *the mandate is only valid if it is revocable and revocation has real effect.*
-That makes this flow a **launch blocker**, not a nice-to-have. Verified against `api/internal/api/v1/router.go`:
+The user must be able to end both relationships and recover the balance. Res. Conj. 16/2025, art. 8º, §6º, II,
+requires the BaaS contract to address continuity and allow the client to choose closure of the relevant
+relationship; any mandate also ends by revocation under CC art. 682, I. That makes this flow a **launch blocker**,
+not a nice-to-have. Verified against `api/internal/api/v1/router.go`:
 there is **no closure or revocation route today** — the closest things are `gambling/self-exclude` (blocks play,
 keeps the account) and `gambling/limits`. Nothing returns the balance and nothing tears down the account.
 
 New route: `POST /v1.0/wallet/closure` — user JWT, `RequireRecentMFA` (it moves the entire balance out), and an
 `Idempotency-Key`. Steps, in order:
 
-1. **Refuse if not settleable.** Open holds, a hand in progress, or a `processing` withdrawal → `409`. Revocation
+1. **Refuse if not settleable.** Open holds, `settlement_pending_in/out`, a hand in progress, or a `processing`
+   withdrawal → `409`. Revocation
    cannot outrun §5.4's convergence; it *forces* it (`settleCustody`) and then re-checks.
 2. **Converge custody** — run the settlement of §5.4.2 so the subaccount balance equals `real + game`.
 3. **Freeze the wallet** — a terminal `closing` state. No deposits, no funding, no play, no new holds. Set
@@ -485,8 +648,8 @@ New route: `POST /v1.0/wallet/closure` — user JWT, `RequireRecentMFA` (it move
    a penalty for termination, and waiving it deletes the dust-balance trap, the waiver branch and the residue
    write-off in one move.
 5. **Sweep any residue** and close the subaccount at Asaas via API. Do not close before the payout is `DONE`.
-6. **Disable the wallet** for that user: `closed`, `mandate_revoked_at`, and a `wallet_audit` row
-   (`mandate_revoked`) carrying the accepted mandate version being revoked.
+6. **Disable the wallet** for that user: `closed`, `authority_revoked_at`, and a `wallet_audit` row describing
+   closure of the Asaas and CTech relationships and, if one exists, the mandate version revoked.
 
 **Do not make it a single request.** Each step is externally-visible and independently retryable; model it as a
 state machine on the wallet row (`closing → paid_out → subaccount_closed → closed`) driven by the same
@@ -494,11 +657,13 @@ reconciliation job as §5.3, so a failure between the payout and the Asaas closu
 the user half-closed. A closure stuck with money already sent but the account still open is Invariant #12
 territory.
 
-**Reopening** is a new subaccount and a new R$13,90 (§6.5) — and a fresh mandate acceptance. State that in the
-UI before the user confirms.
+**Reopening** is a new account and any new commercial opening cost (§6.5), a fresh direct Asaas contract and a
+fresh acceptance of the mandate required by Asaas Terms clauses 5.1.6–5.1.7. State verified consequences in the
+UI before confirmation.
 
-Extinction of the mandate is not only by revocation: **CC art. 682 IV — the mandate ends on the mandante's
-death.** At that point CTech has *no* authority to move the balance and succession law applies (§9.8). Support
+Extinction of the mandate is not only by revocation: **CC art. 682, II — the mandate ends on the death or
+interdição of either party.** At that point CTech cannot rely on the prior mandate to move the balance; counsel
+must define the limited preservation and succession procedure (§9.8). Support
 needs a written rule for this, and the `frozen` state of §5.5 is the mechanism. Counsel's draft v2.2 clause 7
 already carries this ("extingue-se automaticamente pela morte"), so it is contracted before it is built.
 
@@ -519,7 +684,7 @@ The collision is direct and there is no clever way around it:
 That leaves the subaccount short against a non-negative ledger — the exact inverse of the drift in §5.4, and the
 one case where custody goes *below* the ledger. Required handling:
 
-1. **Detect it.** Subscribe to the Asaas event for it (§10 — add as Q12: which webhook event, and what the
+1. **Detect it.** Subscribe to the Asaas event for it (§10 Q11: which webhook event, and what the
    notification window is). Do not discover MED from a balance mismatch.
 2. **Debit what is there**, conditionally, exactly as today; the shortfall becomes an explicit
    `med_receivable` row against the user — a *debt*, not a negative balance. Invariant #1 stays literally true:
@@ -530,10 +695,10 @@ one case where custody goes *below* the ledger. Required handling:
 4. **A `med_receivable` must never be netted into the conservation check** of §5.4.4 without being named, or the
    check silently stops meaning anything.
 
-Cheapest mitigation, and it is worth more than the machinery above: the CPF-match rule already rejects
-third-party deposits (§2 of the addendum), and MED overwhelmingly targets payments from a defrauded third party.
-Same-CPF-only deposits are a strong structural filter. It is not a complete one — a user whose own account was
-taken over is still a MED case — so the receivable path has to exist.
+Cheapest mitigation, and it is worth more than the machinery above: enforce the intended same-CPF deposit rule
+using actual payer data (§5.2.2). It is **not yet enforceable with `payment.customer`**. Once the authoritative
+source in §10 Q15 is available, same-CPF-only deposits become a strong structural filter, although not a complete
+one — a user whose own account was taken over is still a MED case — so the receivable path still has to exist.
 
 **⚠ Related hole in the same section: refunding a rejected deposit costs money that nobody has agreed to pay.**
 When a third-party deposit is auto-refunded, Asaas has *already* debited the receiving tariff from the user's
@@ -546,13 +711,14 @@ operating cost. That is a transfer leg that does not exist in this spec yet, and
 
 ---
 
-## 6. The fee question — answered
+## 6. The fee question — **not legally cleared**
 
 > *"A principal questão é a taxa de processamento, deveria cobrar a taxa de processamento do usuário diretamente logo?"*
 
-**It is already charged to the user, mechanically, and that is the right answer — but do not add a CTech fee on
-top of it. And because the free quota is per subaccount (confirmed 2026-07-29), for almost every real user the
-tariff is R$0 and there is nothing to charge at all.**
+**Asaas may charge a tariff permitted by the payment regulation; CTech may not charge in its own name for the
+financial or payment product supplied by Asaas.** Res. Conj. 16/2025, art. 8º, XI, requires that prohibition in
+the BaaS contract, and art. 15 limits BaaS tariffs to those permitted to the authorized institution. Any Asaas
+free quota is a commercial fact to be confirmed contractually and must not be hard-coded as a legal entitlement.
 
 > **Confirmed:** each subaccount has its own quota — roughly 100 free received Pix and ~30 free transfers per
 > month, *per user*. A normal user will never exhaust it. That collapses the fee from "a permanent per-transaction
@@ -566,14 +732,13 @@ about whether CTech **reimburses** it. Recommendation: no.
 
 ### 6.2 On deposits, do not invoice the tariff as a CTech charge
 
-Deposits carry **no CTech fee** (decided; the withdrawal fee is where the platform earns — §6.4). So for the
+Deposits carry **no CTech fee**. The proposed withdrawal charge is also disabled pending §6.4 clearance. For the
 deposit path the framing is simply:
 
 > The tariff is **Asaas's**, debited by Asaas from the user's own account, disclosed by us.
 
-Charging separately *for receiving a Pix* would be charging for a payment service CTech is not authorized to
-provide. Disclose, never invoice. (This is a framing rule about **what the charge is for**, not a prohibition on
-charging — see §6.4, where a platform service fee is a different thing entirely.)
+Charging separately *for receiving a Pix* in CTech's name is prohibited in this BaaS model by Res. Conj.
+16/2025, art. 8º, XI. Disclose any Asaas tariff and identify Asaas as its creditor; do not invoice it as CTech.
 
 ### 6.3 Minimum deposit — no change needed, but the tail must not be a surprise
 
@@ -596,15 +761,16 @@ For reference, if the quota ever does not apply: R$1,99 is 19,9% of a R$10 depos
 ever changes the quota model, raising the default `min_deposit` (admin-only, per-wallet, already implemented) is
 the one-line lever — no code change.
 
-### 6.4 Withdrawal fee — **percentage, 2% / min R$2,50 / max R$10**
+### 6.4 Proposed withdrawal charge — **disabled pending legal and Asaas approval**
 
-**Decided (reaffirmed 2026-07-29).** The withdrawal fee stays *ad valorem*: `clamp(amount*200/10000, 250, 1000)`.
-It is what funds the wallet's operating cost — R$13,90 per subaccount, the Asaas Pix tariff past quota,
-infrastructure, reconciliation and support. Deposits stay free (§6.2), so it is the only wallet-side revenue, and a
-flat fee would collapse it on exactly the large withdrawals that carry the cost (R$10 → R$2,50 on a R$10.000
-withdrawal).
+The proposed formula is `clamp(amount*200/10000, 250, 1000)`, but it is **not approved to ship**. Because the
+charge arises only when the user requests the Asaas payment service and expressly covers the transfer tariff,
+there is a substantial risk that it is remuneration for Asaas's product, which CTech cannot collect in its own
+name under Res. Conj. 16/2025, art. 8º, XI. Contract wording cannot cure a mismatch between label and substance.
 
-**This is the one place the platform keeps a percentage fee, and the contract must say so.** Everything else is
+If and only if Asaas and counsel approve it as consideration for a genuinely separate CTech service, the
+consumer must see the total price and basis before contracting (CDC arts. 6º, III, 31 and 46), and the amount must
+not create manifestly excessive advantage (CDC art. 51, IV and §1º). Everything else is
 fixed per operation, including real-money poker: those tables are **rake-free** (`hand.ConfigureRake` sets
 `rakeBPS = 0` for real money) with a fixed entry fee per tier (R$1/2/4/8, `ctech-poker`
 `api/internal/api/v1/stakes.go`). So mandate clause 7 item V may **not** be drafted as "todas de natureza fixa por
@@ -626,10 +792,10 @@ reaches R$2,50 at R$125, so the floor governs below that and the percentage abov
 `ui/src/lib/utils/fee.ts` (divergence **B18**) and move the root `CLAUDE.md` "absolute floor of 100 centavos" line
 to 250.
 
-**Call it what it is.** In the addendum and the UI this is a **tarifa de serviço da carteira** — custody
-operation, reconciliation, support — which explicitly covers the partner institution's Pix tariff. It is not a
-"tarifa Pix". Charging for your own software service is unquestionably lawful; charging *for the transfer* invites
-the unauthorized-payment-service argument for no benefit. Same money, one word.
+**Do not rely on naming.** Calling it `tarifa de serviço da carteira` does not make a withdrawal-triggered charge
+lawful. Until written clearance, the implementation value is zero, no fee ledger entry is created, and no fee
+sweep is sent to the parent account. The remaining calculations in §§6.4.1–6.4.3 describe a contingent technical
+option only and do not authorize production use.
 
 #### 6.4.1 Two consequences of the R$2,50 floor
 
@@ -677,8 +843,9 @@ So a withdrawal is now **two legs plus the tariff**:
 | 1. payout    | `POST /v3/transfers` `pixAddressKey = kyc.CPF` | `amount`                  | `T` = R$0 or R$1,99 (Asaas debits it from the same subaccount, automatically) |
 | 2. fee sweep | `POST /v3/transfers` `walletId = <parent>`     | **`fee − T`** — see below | **R$0** (internal)                                                            |
 
-Leg 2 is the same mechanism as the poker rake (§5.4.2), and for the same reason: it is the one path by which
-company revenue legitimately reaches a company account.
+Leg 2 is the same technical mechanism as a separately approved platform-fee transfer (§5.4.2). It may be used
+only after §§6 and 14 establish that the underlying CTech charge is lawful; the transfer mechanism itself does
+not make the revenue legitimate.
 
 **The swept amount is `fee − T`, not `fee`.** The custody arithmetic:
 
@@ -730,8 +897,8 @@ sent. `T` only moves CTech's own margin. So:
   for accounting, and the input to the sweep amount `fee − T` (§6.4.2). Keep the per-subaccount monthly counter
   only as an operational metric.
 
-This is strictly simpler than the passthrough model it replaces — the free quota becomes pure margin instead of a
-number the ledger has to guess at.
+This calculation is technical only. A free Asaas quota does not become CTech margin while the CTech charge is
+disabled under §6.4 and Res. Conj. 16/2025, art. 8º, XI.
 
 ### 6.5 The R$13,90 subaccount fee is CTech's, not the user's
 
@@ -757,13 +924,13 @@ It is charged to the **parent** account. Two consequences:
 | 6      | Sandbox never becomes real                              | **unchanged**                                                                                                                                                                                                                                                           |
 | 7      | Real money enters the ring-fence only via `real → game` | **unchanged** — still one internal edge                                                                                                                                                                                                                                 |
 | 8      | `real → game` limit counts gross inflow                 | **unchanged**                                                                                                                                                                                                                                                           |
-| 9      | `game` is real money                                    | **strengthened** — it is now real money in an account in the user's own name                                                                                                                                                                                            |
-| 10     | Consent opt-in and auditable                            | **extended** — the mandate (§9.2) and the Asaas-as-IP disclosure join the addendum; subaccount creation and key rotation become `wallet_audit` events                                                                                                                   |
-| 11     | Webhook never the source of truth                       | **preserved** — re-query `GET /v3/payments/{id}`; require `RECEIVED` not `CONFIRMED`; payer CPF now comes from `GET /v3/customers/{id}` instead of the webhook body, which is *better* (Inter's re-query dropped it entirely)                                           |
+| 9      | `game` is real money                                    | **externally backed in the confirmed topology** — each subaccount is opened in that user's name/CPF under Asaas Terms clauses 5.1.1–5.1.3 and reconciled to the ledger                                                                                                  |
+| 10     | Consent opt-in and auditable                            | **extended** — direct Asaas terms/disclosures and the express mandate required by Asaas Terms clauses 5.1.6–5.1.7 are separately versioned; subaccount creation and key rotation become `wallet_audit` events                                                            |
+| 11     | Webhook never the source of truth                       | **preserved with a blocker** — re-query `GET /v3/payments/{id}` and require `RECEIVED`; `payment.customer` is not payer proof. No automatic credit until an authoritative payer-identity query tied to the Pix transaction is defined (§5.2.2)                                  |
 | 12     | No money in limbo                                       | **preserved and widened** — new limbo states: subaccount `onboarding`/rejected, frozen subaccount (§5.5), custody drift (§5.4)                                                                                                                                          |
-| **13** | **NEW: ledger equals custody**                          | `real + game + Σholds + <fees swept but not yet transferred> == subaccount balance` per user; drift alarms. The fee term (§6.4.2) and the settlement term (§5.4.2) are the only legitimate sources of drift, and both are bounded and named — anything else is a defect |
+| **13** | **NEW: ledger equals custody**                          | system totals must match; per-user drift must be zero or exactly explained by durable settlement, withdrawal or provider-fee-reserve legs. Pending winnings are non-spendable until Asaas reports `DONE`; unexplained drift blocks withdrawals and new games                                      |
 | **14** | **NEW: CTech's own account never holds user money**     | every path that would place user funds in the parent account is a bug, whatever it enables                                                                                                                                                                              |
-| **15** | **NEW: CTech is never a counterparty in a game, nor takes a share of a real-money pot** | player-versus-player only; real-money tables rake-free with a fixed entry fee per tier (`ctech-poker` `hand.ConfigureRake` → `rakeBPS = 0`, `stakes.go`). This is the executable form of the skill-game classification (§9.4): a house position, a loss covered by CTech, or a percentage of a real-money pot breaks it, whatever revenue it adds |
+| **15** | **NEW: CTech is never a counterparty in a game, nor takes a share of a real-money pot** | mandatory risk control, **not proof of legality**. Real-money games remain disabled until the game-by-game opinion in §9.4; a house position or percentage of a pot remains forbidden by product policy                                                                   |
 
 ---
 
@@ -773,8 +940,8 @@ It is charged to the **parent** account. Two consequences:
 |-------------------------------------------------|-------------------------------------------|-----------------------------------|----------------------------------------------------------------|
 | Subaccount creation                             | R$13,90 one-off                           | CTech                             | lazy creation only (§6.5)                                      |
 | Pix received (static QR)                        | R$1,99, ~100 free/month                   | user, via `netValue`              | free-quota scope is **Q1** below                               |
-| Pix withdrawal (Asaas tariff)                   | R$1,99, ~30 free/month **per subaccount** | CTech, out of the 2% fee (§6.4.1) | free quota ⇒ the whole fee is margin                           |
-| Withdrawal fee (CTech revenue)                  | 2%, min **R$2,50**, max R$10              | user                              | the wallet's only revenue; needs its own transfer leg (§6.4.2) |
+| Pix withdrawal (Asaas tariff)                   | commercial value; confirm contract         | as defined by Asaas/user contract | CTech charge disabled; do not assume quota or margin           |
+| Proposed CTech withdrawal charge                | **disabled**                              | —                                 | blocked by §0 and §6.4 pending art. 8º, XI clearance           |
 | Internal transfer (settlement, entry fees, fee sweep) | **R$0**                                   | —                                 | makes §5.4 and §6.4.2 viable                                   |
 | EVP Pix key                                     | R$0                                       | —                                 | 1/min per account rate limit                                   |
 
@@ -785,30 +952,43 @@ It is charged to the **parent** account. Two consequences:
 Not legal advice. This section is engineering's map of the exposure, for counsel to rule on. The gambling and
 tax items need a lawyer and an accountant **before** launch, not after.
 
-### 9.1 What the migration genuinely fixes
+### 9.1 What the confirmed BaaS custody structure fixes — and what it does not
 
-- **Commingling** — money is in accounts held by users, at an institution authorized by BCB.
-- **Bankruptcy / execution pooling** — user funds are not CTech assets and never enter its estate.
-- **Apropriação indébita (CP art. 168)** — the elementary conduct requires possession of another's movable
-  property. CTech no longer has it; it has an instructed mandate over accounts belonging to others.
-- **Unauthorized payment-institution activity** — Asaas is the authorized institution. CTech's activity moves
-  toward technology/platform provider.
+- **Commingling** — the API fields and Asaas Terms clauses 5.1.1–5.1.3 support accounts in each user's name, so
+  the model separates user and CTech money.
+- **Bankruptcy / execution pooling** — resources maintained in a payment account are separate from the payment
+  institution's estate by Lei 12.865/2013, art. 12. The executed account and BaaS contracts must prove that this
+  protection applies to each account.
+- **Apropriação indébita risk** — the model reduces CTech's factual possession, but does not legalize an
+  instruction outside its authority. CP art. 168 requires appropriation; neither risk nor innocence follows from
+  the database topology alone.
+- **Payment-regulation perimeter** — Res. Conj. 16/2025 expressly recognizes a tomadora role, but confines it.
+  Asaas's authorization does not license CTech to perform regulated acts on its own account.
 
-This is a large, real improvement. The user's instinct is correct.
+This is a material improvement under the confirmed account/API premises. It does not validate the legal nature
+or civil enforceability of the game, the mandate language, fees, PLD/FTP allocation or tax treatment.
 
-### 9.2 What it does NOT fix — and the mandate is #1
+### 9.2 What it does NOT fix — authority to instruct the account
 
-**Control is not ownership.** CTech holds every subaccount's API key and moves the users' money unilaterally.
-Without express authority that is *worse* than the omnibus model, not better — moving money out of an account
-belonging to someone else, without a mandate, is closer to the crime the migration was meant to avoid.
+**Control is not ownership.** CTech holds credentials capable of initiating movements from client-held accounts.
+Res. Conj. 16/2025 now requires the user to contract directly with Asaas for the financial/payment services
+(art. 3º, IV) and makes Asaas responsible for those services (arts. 9º, 10 and 16). The source of CTech's
+instruction authority must therefore be the executed Asaas-user and Asaas-CTech contracts plus the holder's
+express authorization. Asaas Terms clauses 5.1.6–5.1.7 expressly require approval and a specific mandate when
+CTech opens, moves and closes accounts as mandatary. That mandate cannot replace the user's contract with Asaas,
+make a debt enforceable contrary to Código Civil art. 814, or expand CTech into regulated activity.
 
-The **contrato de mandato** (CC arts. 653–692) is therefore the load-bearing legal artifact and must be an
-express, versioned, audited clause in the wallet addendum. It must grant, and bound:
+The required **contrato de mandato** is governed by CC arts. 653–692. It must be express, versioned and audited,
+and must comply with the private-instrument content requirements of art. 654, §1º (place, qualification of both
+parties, date, object and extent of powers), the form required for the underlying act (art. 657), special and
+express powers for acts beyond ordinary administration (art. 661, §1º), diligence (art. 667) and accounting
+(art. 668). It must grant and bound only acts the regulated BaaS arrangement permits:
 
 1. Opening a payment account at Asaas in the user's name and on their behalf.
 2. Requesting a Pix key (EVP) and generating collection QR codes on that account.
 3. Executing Pix transfers **only** to a key belonging to the user's own verified CPF (withdrawal), and internal
-   transfers **only** to settle obligations recorded in the CTech ledger (game settlement, rake).
+   transfers **only** to settle legally valid obligations recorded in the CTech ledger (player settlement and,
+   if separately approved, a fixed platform access fee).
 4. Explicit prohibitions: no third-party destinations, no use of balance for CTech's own account, no credit
    operations.
 5. Revocability, and what revocation means operationally (balance returned to the user's own Pix key, account
@@ -820,9 +1000,11 @@ Acceptance must be versioned exactly like the existing terms/gambling addenda
 (three-wallet spec) **must never trap the user's money** — returning funds to the user must always remain
 available.
 
-**Can this simply live in the terms of use? Yes — and that is the right vehicle.** A mandate needs no special
-form (CC art. 656 — it may be express or tacit, written or verbal), so a clause in the wallet addendum is a valid
-grant. Three conditions decide whether it survives a challenge, and all three are engineering-visible:
+**Do not assume a checkbox inside general terms is sufficient.** Although CC art. 656 permits an express or tacit,
+written or verbal mandate in general, arts. 654, §1º, 657 and 661 impose content, form and special-power rules for
+this use. The electronic evidence must identify the signed version and parties and be accepted by Asaas for the
+acts it will execute. Use a separate highlighted electronic instrument unless counsel expressly approves another
+form. At minimum:
 
 1. **Specificity.** CC art. 661: a mandate *in general terms* confers only powers of ordinary administration;
    anything beyond that requires express, special powers. A clause saying "podemos administrar sua conta" grants
@@ -832,12 +1014,21 @@ grant. Three conditions decide whether it survives a challenge, and all three ar
 2. **Prominence.** CDC art. 54 §4: clauses that limit consumer rights must be highlighted. A separate,
    distinctly-presented acceptance step — not a line buried in the general terms — and CDC art. 51 makes a blanket
    authorization voidable as abusive. Specificity plus revocability is what keeps it out of that bucket.
-3. **Revocability, with a working exit.** CC art. 682: mandates are revocable. Revocation must have a real
+3. **Revocability, accounting and a working exit.** CC art. 682, I, ends the mandate by revocation; arts. 667 and
+   668 require diligence and rendition of accounts. Revocation must have a real
    operational meaning — balance returned to the user's own Pix key, subaccount closed — and that path must
    already be built, not promised (§9.8).
 
 Wording is counsel's call. The engineering requirement is that the *acceptance* is a versioned, audited gate on
 money movement, exactly like `GamblingAccepted()` is today.
+
+**The provider contract also allocates material liability to CTech.** Asaas Terms clause 5.1.4 states that the
+root-account holder assumes solidary responsibility for obligations of linked subaccounts, including
+chargebacks, cancellations, refunds, information and movements; clause 5.1.5 makes the parent account a guarantor
+for specified negative subaccount events in White Label arrangements. This does not authorize CTech to debit
+another user's balance or create a negative wallet. Counsel must reconcile those clauses with CDC rules, the
+loss allocation for MED/chargebacks and Invariants #1, #13 and #14. Any provider claim is paid from CTech's own
+funds unless a separate, valid and contestable claim against the affected user has been established.
 
 #### 9.2.1 Review of counsel's draft clause 7 (received 2026-07-29)
 
@@ -882,8 +1073,8 @@ v2.2 resolves conflicts **B, D, E, F, G and H** of §9.2.1, and both gaps (Asaas
 in clause 7). Conflict **C** is resolved by deletion — the tournament custody account is gone and item IV is now
 user-to-user only, which is what §5.4 actually builds. The clause is materially sound. What remains:
 
-The corrected text is in **§13**, ready to apply to `ctech-account`
-(`ui/src/lib/legal-documents.ts`) once implementation starts. The list below is why each change is there.
+The historical draft is in **§13**, but is withdrawn and must not be applied to `ctech-account`
+(`ui/src/lib/legal-documents.ts`). The list below records the earlier review only.
 
 **Must fix before publishing**
 
@@ -949,23 +1140,49 @@ The corrected text is in **§13**, ready to apply to `ctech-account`
 
 ### 9.3 Mandatory disclosure of Asaas as the payment institution
 
-Asaas's own BaaS documentation requires the integrator to identify Asaas as the *Instituição Prestadora de
-Serviço de Pagamento* (they cite Resolution 16/17 — confirm the exact norm with them, §10 Q5). This is a
-contractual obligation, not a nicety: it must appear in the addendum and in the UI. It also finally makes
-`docs/legal/wallet-terms-addendum.md` §6 honest — that paragraph's claim of being a *"intermediário técnico de
-custódia"* must be rewritten to say CTech custodies nothing.
+Identification is a regulatory obligation, not merely an Asaas documentation preference. Res. Conj. 16/2025,
+art. 14, I, requires accessible, visible identification of the BaaS institution in channels, interfaces,
+contracts, documents and payment instruments; art. 8º, §2º, I–II, requires the parties to tell the client that
+CTech does not act in Asaas's name and is not a BCB-authorized institution for these services. The addendum and UI
+must state this accurately. Replace `docs/legal/wallet-terms-addendum.md` §6's “intermediário técnico de
+custódia” claim; CTech is the BaaS tomadora/platform and Asaas supplies the regulated account/payment service.
 
-### 9.4 The skill-game layer — the classification is sound; the risk is misclassification, not illegality
+### 9.4 Games — classification is unresolved and real-money operation is blocked
 
-**Poker and dominó are games of skill.** They are not `jogo de azar` and not a `contravenção penal`, and the
-exclusion is in the text of the offence itself, not read into it: `Decreto-Lei 3.688/41 art. 50 §3, a` defines
-`jogo de azar` as the game in which *"o ganho e a perda dependem exclusiva ou principalmente da sorte"*. A game
-whose outcome is predominantly determined by skill falls outside that definition — there is no exemption to
-invoke because the conduct was never described. Jurisprudence and the sport recognition of poker reinforce the
-classification; they are not what creates it.
+The draft's categorical statement that poker and dominó “are games of skill” is not a safe legal conclusion.
+Decreto-Lei 3.688/1941, art. 50, caput, prohibits establishing or exploiting a game of chance in a place open or
+accessible to the public, and §3º, `a`, defines the prohibited category by whether gain and loss depend
+exclusively or **mainly** on chance. Whether skill predominates is a factual question about each exact rule set,
+randomization mechanism, time horizon, matchmaking and prize structure. A product name, absence of a house
+position, fixed entry fee or recognition of poker as a sport does not by itself answer that statutory test.
 
-Three structural facts of *this* system are what keep the classification defensible, and all three are
-engineering-visible — which is why they are now **Invariant #15** (§7):
+The SPA states that skill games, multi-player games and P2P games fall outside the regulated category of virtual
+fixed-odds online-game events under Portaria SPA/MF 1.207/2024. That exclusion is helpful but narrow: being outside
+Lei 14.790/2023 does **not** affirmatively legalize a product under the Contraventions Act. Conversely, if the
+product is found to contain a fixed quota or otherwise falls within Lei 14.790/2023, prior federal authorization
+is required by arts. 4º and 6º, payment institutions must not process an unauthorized operator under art. 21, and
+art. 21-A (2026 wording) allows blocking operator accounts and related transactions.
+
+There is a second, independent civil-law gate. Código Civil art. 814 provides that gaming or betting debts do
+not compel payment and extends the rule to contracts that disguise recognition, novation or guarantee of such a
+debt. Article 814 §2 applies even to a game that is not prohibited, except legally permitted games and bets; §3
+also excepts qualifying sporting, intellectual or artistic competitions that comply with applicable rules. The
+fact that a player clicked “aceitar”, that CTech reserved funds internally, or that a mandate authorizes account
+movements does not by itself answer which branch applies. If the obligation is not legally enforceable, the
+mandate cannot be used as a drafting device to force its settlement.
+
+Counsel must therefore decide whether the buy-in is already a voluntary payment before play, whether a mere
+internal hold can have that effect while title remains with the player, whether automatic post-result transfer
+is voluntary payment or enforcement of a gaming debt, and whether poker qualifies for an exception in art. 814,
+§2 or §3. Until that answer is written, `HoldGame` may exist for sandbox testing only and no real-money settlement
+instruction may be sent to Asaas.
+
+Therefore `GAMBLING_ENABLED` must remain false for real money until counsel provides a signed, game-by-game
+opinion supported by the final rules and, where needed, a technical probability/skill report. The opinion must
+separately cover poker and every dominó mode; a poker conclusion cannot be reused for dominó.
+
+The following structural facts reduce exposure but **do not decide classification**; keep them as mandatory
+controls if counsel approves the product:
 
 1. **CTech is never a counterparty.** Every real-money game is player versus player. The house never takes a
    position, never covers a loss, never wins. There is no `banca` to explore.
@@ -974,32 +1191,21 @@ engineering-visible — which is why they are now **Invariant #15** (§7):
    A fixed price for access to a service is a service price; a percentage of the pot is a share in the game's
    result, and it is the single fact that most invites an `exploração de jogo` reading. It is already absent —
    the requirement is to keep it absent.
-3. **Fixed-odds betting is a different product and the platform does not offer it.** `Lei 14.790/2023` regulates
-   `apostas de quota fixa` — a bettor staking against an *operator* on the outcome of a real event, the operator
-   being the counterparty and setting the quota. Player-versus-player skill games with a fixed entry fee have no
-   operator counterparty and no quota, so they are outside its object, and its licensing regime (authorization fee
-   in the tens of millions) does not reach them.
+3. **No fixed quota.** Lei 14.790/2023, art. 2º, II, defines quota fixa by the multiplier that determines the
+   award. P2P status or absence of a house counterparty is not alone conclusive; counsel must confirm that the
+   prize mechanics contain no fixed-odds structure.
 
-**Vocabulary is part of the legal position, and the codebase currently works against it.** `art. 50 §3, c` treats
-as `jogo de azar` *"as apostas sobre qualquer outra competição esportiva"* — betting **on** a competition. A
-player paying an entry fee to **compete** is not betting on anything, and that distinction —
-participation versus wager — is carried entirely by the words used. So published text must never say `aposta`,
-`apostar`, `apostador`, `odds` or `casa`: use `entrada`, `mesa`, `partida`, `premiação`, `participante`.
-Internally the code says gambling everywhere (`GAMBLING_ENABLED`, `gambling/self-exclude`,
-`GamblingAddendumVersion`, "gambling ring-fence" in the root `CLAUDE.md`). A private identifier is not an
-admission and renaming it is not urgent — but every **user-visible** string and every contract clause is, and a
-supplier whose own terms of use call its product gambling has handed the other side an admission nobody asked it
-for. The existing choice of `'wallet-gaming'` as the `LegalDocumentId` is the correct pattern; apply it wherever
-a user can read.
+**Vocabulary must be accurate, not euphemistic.** Art. 50, §3º, `c`, also addresses bets on other sporting
+competitions, but replacing `aposta` with `entrada` cannot change the legal nature of a product. User-facing and
+contract text must describe the actual flow in plain language (CDC arts. 6º, III, 31 and 46). Counsel may choose
+precise terminology after classification; engineering must not conceal staking, loss or prize mechanics.
 
 **What the residual risks actually are:**
 
-- **Provider misclassification, amplified by the migration.** The exposure is not that the activity is unlawful —
-  it is that Asaas's compliance team files it as betting. The consequence is no longer "our account is frozen" but
-  "**thousands of user accounts are frozen**", each one a consumer with a direct claim. Disclose the activity to
-  the account manager **in writing, before onboarding real users** (§10 Q4), and send the *basis*, not just the
-  label: player-versus-player, no house counterparty, rake-free, fixed entry fee per tier. Get the classification
-  back in writing. Do not discover this at scale.
+- **Continuing provider enforcement.** The account/API approval and poker contract premise are confirmed (§0.1),
+  but Asaas Terms clauses 19–20 preserve monitoring, blocking and termination for illegality, irregularity or
+  later commercial refusal. The design must retain a provider-block contingency; approval is not a promise that
+  no future review will occur.
 - **Regulatory evaluation period is a hard launch gate** (§10 Q3): max 10 subaccounts per distinct holder,
   R$2.000 per subaccount, 60 days from the first subaccount, after which *creation is automatically blocked*.
   A public launch that outruns evaluation clearance stops mid-onboarding with users stranded in `onboarding`
@@ -1008,8 +1214,8 @@ a user can read.
 
 The responsible-gaming machinery is unaffected and should stay exactly as it is: `real → game` is still one
 internal edge, still the only door, still metered gross, and Invariant #7 survives the custody change intact.
-Personal limits and self-exclusion are the strongest available evidence that the operator behaves responsibly and
-they cost nothing legally — they are `jogo responsável`, not a concession that the game is `jogo de azar`.
+Personal limits and self-exclusion remain prudent harm controls, but they do not prove that the product is lawful
+or outside a licensing regime.
 
 ### 9.5 PLD/AML — the platform layer is where the risk now lives
 
@@ -1027,22 +1233,20 @@ duty ours rather than Asaas's. Minimum controls: settlement-pattern monitoring b
 (the settlement batch of §5.4.3 is the natural detection surface — it names both sides and the amount),
 velocity limits, a documented suspicious-activity policy, and retention of the audit trail.
 
-Be precise about *which* duty this is. Since the platform is not a fixed-odds betting operator (§9.4), the PLD
-obligation here is primarily **contractual** — Asaas is an obliged party under `Lei 9.613/98` and its BaaS
-contract passes those duties down to the integrator — plus the ordinary criminal exposure for willful blindness
-(`Lei 9.613/98 art. 1`). It is not a formal COAF-registration duty, and it is not smaller for that: contractual
-breach is precisely what gets thousands of subaccounts closed at once (§9.4).
+Do **not** state that CTech has no formal COAF-registration duty. Res. Conj. 16/2025, arts. 10–11, makes Asaas
+responsible for the BaaS PLD/FTP policy while requiring CTech's cooperation. Separately, CTech's own model may
+fall within Lei 9.613/1998, art. 9º, caput, I (intermediation of third-party financial resources), or parágrafo
+único, VI (other systems for collecting bets and paying prizes), depending on the games classification and flow.
+If so, arts. 10 and 11 impose direct registration, records, controls and reporting duties. This is a launch
+question for counsel and, if necessary, a formal consultation to COAF/SPA; it cannot be delegated away by the
+BaaS contract.
 
 ### 9.6 Tax and invoicing
 
-- **Table entry fees** (fixed per tier) = CTech revenue → invoice and tax as *serviço de tecnologia/plataforma*.
-  There is no rake on real money (§9.4), so no revenue line is a share of a pot — which is also the cleaner tax
-  characterization: a price for access to a service, not participation in a result.
-- **Withdrawal fee (2%)** = CTech revenue → **invoice and tax it**, as a *serviço de carteira digital / tecnologia*
-  (§6.4.1's naming rule is a tax classification decision too, not only a legal-risk one). It reaches a company
-  account by the sweep leg of §6.4.2 — which is precisely what makes it clean, auditable revenue rather than money
-  resting in a customer's account. The Asaas tariff it absorbs is a deductible cost, not a reduction of revenue:
-  gross fee in, tariff out.
+- **Table entry fees** may be CTech revenue, but their legality and tax/service classification depend on the
+  game-by-game opinion and municipal/federal tax advice. A `serviço de tecnologia` label is not determinative.
+- **Proposed withdrawal charge (2%)** is disabled under §6.4. Do not invoice or sweep it unless Asaas and counsel
+  first clear Res. Conj. 16/2025, art. 8º, XI, and an accountant determines the correct tax treatment.
 - **Deposit Pix tariffs** = Asaas's charge to the user's own account → not CTech revenue and **not** to be
   invoiced by CTech (§6.2).
 - **Prize/winnings taxation** for skill games between players needs an accountant before launch, and the
@@ -1056,15 +1260,22 @@ breach is precisely what gets thousands of subaccounts closed at once (§9.4).
 
 ### 9.7 LGPD
 
-Full name, CPF, birth date, address, phone, income, and identity documents are transmitted to Asaas, who then
-runs its own KYC (selfie + ID) directly with the user. Required: legal basis (art. 7º V — contract execution),
-Asaas named in the privacy policy with its role (operator for account opening, controller for its own KYC),
-DPO contact already present (`dpo@aoctech.app`), and care with the selfie/document flow. The `onboardingUrl`
-path is preferable here too: the user submits documents **to Asaas directly**, so CTech never stores them.
+Full name, CPF, birth date, address, phone and income are personal data; selfie templates and other biometrics are
+sensitive personal data (LGPD art. 5º, II). Ordinary account-opening data may rely on contract performance where
+art. 7º, V, actually applies. Biometrics require an art. 11 basis — commonly legal/regulatory obligation under
+art. 11, II, `a`, or fraud prevention/authentication under art. 11, II, `g`, as determined by the relevant
+controller. Asaas cannot be labelled globally as CTech's “operator”: under Res. Conj. 16/2025 it contracts with
+the client and decides regulated KYC/PLD processing, which strongly indicates an independent-controller role for
+those operations. The privacy notice and data-processing agreement must map roles purpose by purpose. The
+`onboardingUrl` path minimizes CTech's access but does not eliminate CTech's processing of data it collects and
+transmits.
 
-A deletion request (art. 18 VI) does **not** reach `ledger_entries` or `wallet_audit`: retention there rests on
-legal obligation (art. 16 I) and on the append-only invariants, and account closure (§5.6) is not erasure. State
-that in the privacy policy instead of discovering it when the first request arrives.
+A deletion request under art. 18 must be assessed record by record. Legal/regulatory retention may justify
+conservation under art. 16, I, but the append-only invariant is an engineering control, **not** a statutory legal
+basis for indefinite retention. Before launch, counsel must define the source and period for each ledger, audit,
+KYC, webhook, device and security record; after that period, delete or irreversibly anonymize where legally
+permitted. Account closure is distinct from erasure, and the privacy notice must explain both without promising
+either blanket deletion or blanket perpetual retention.
 
 ### 9.8 Succession, closure, and the user's right to leave
 
@@ -1074,9 +1285,9 @@ existed under the omnibus model because the question could not even be asked.
 
 ### 9.9 Illegality review of the drafted text (2026-07-29)
 
-Second pass over the whole document, looking specifically for clauses and mechanics that are **unlawful or void**,
-not merely risky. The skill-game classification is taken as settled (§9.4), so everything below is consumer,
-custody or payment law. Ordered by how likely a clause is to be struck.
+Second pass over the whole document, looking specifically for clauses and mechanics that are **unlawful, void or
+unresolved**. The game classification is not settled (§9.4). These are preventive conclusions; counsel must
+confirm them against the final contracts and product.
 
 **(a) The liability exclusion in §13 clause 9 is void as drafted.** *"não se responsabiliza por atrasos
 decorrentes de exigências regulatórias ou medidas de compliance do provedor"* — CDC **art. 51 I** voids any clause
@@ -1085,27 +1296,20 @@ objectively liable. CTech chose the provider; the consumer did not. The clause a
 best-efforts-plus-information duty is what would be left standing anyway. Rewritten to promise notice, effort and
 progress updates, with an express statement that CDC liability is not excluded.
 
-**(b) The blanket no-refund on sandbox credits collides with CDC art. 49 — and the fix touches Invariant #6.
-DECISION NEEDED.** *"A sua aquisição é definitiva e não gera direito a reembolso em dinheiro"* cannot survive
-**art. 49**: an online purchase carries a 7-day right of regret that a contract cannot waive, and Brazilian law
-has no digital-content exception to it. Credits already played are a service rendered and are not refundable — but
-**unused** credits inside 7 days are. Honouring that requires a bounded `sandbox → game` reversal, and Invariant
-#6 says *nothing* converts sandbox back. Engineering's reading: the invariant's purpose — sandbox never acquires
-monetary value and never becomes an exit path — survives a reversal that is capped at the purchase amount, limited
-to unused credits, limited to 7 days, and returns the price to `game` (the wallet it was debited from), never to
-`real` and never toward a Pix key. It cannot move value between users, and it grants no `real → game` headroom, so
-Invariant #8 is untouched: the money already passed the meter on the way in. **This is the only finding here that
-cannot be implemented without amending an invariant, so it needs explicit sign-off rather than a quiet patch.**
-Until it exists, §13 carries the art. 49 wording and the code does not honour it — so that clause must not be
-published before the reversal path ships.
+**(b) A blanket no-refund clause is prohibited; the implementation is unresolved.** CDC art. 49 grants a
+seven-day right to withdraw from a remote contract and requires immediate return of amounts paid; art. 51, II,
+voids a clause that removes reimbursement where the CDC provides it. The statute does not itself specify the
+accounting treatment for partly consumed virtual credits. Engineering must not invent that legal rule or quietly
+break Invariant #6. **Paid sandbox sales remain disabled** until counsel defines the treatment of unused and used
+credits and approves a bounded reversal that cannot create a cash-out or bypass gambling limits. The terms must
+then match the implemented remedy exactly.
 
-**(c) Suspending all withdrawals over a `med_receivable` contradicts the mandate's own carve-out, and reads as
-retention.** §13 clause 6 ¶2 suspended `saque` until the debt was paid; clause 9 ¶8 promises withdrawal and
-closure are *always* available. Both cannot be true. Beyond the internal contradiction, holding a consumer's
-entire balance to secure a claim, with no judicial step and no ceiling, is `retenção`, and CC **art. 368–369**
-authorizes `compensação` only up to the amount of the debt — not across the whole account. Fixed: the receivable
-is compensated against future credits and blocks funding games, the balance **above** it stays withdrawable, and
-it never blocks closure. Read §5.7 step 3 with that limit.
+**(c) A `med_receivable` is not automatically a debt owed to CTech.** Compensation under CC arts. 368–369
+requires reciprocal, liquid, due obligations of fungible things. The provider's MED debit does not by itself
+prove that CTech is the user's creditor or may seize later deposits. Do not create, collect or compensate a
+`med_receivable` until the Asaas contract identifies the loss bearer and counsel confirms the claim, notice,
+contest and collection basis. In all cases, an undisputed balance above a valid claim must remain withdrawable;
+CTech may not retain the whole account as security through a standard-form clause (CDC art. 51, IV).
 
 **(d) Writing off a closing user's residual balance to CTech is appropriation, whatever it is called.** The
 earlier §13 clause 7 booked un-transferable residue as *"custo operacional da CTech"*. If those centavos
@@ -1142,19 +1346,20 @@ later versions is the `mandato em termos gerais` **art. 661** confines to ordina
 blanket power art. 51 IV reaches. Added to clause 9: material changes are communicated, and the mandate does not
 authorize accepting conditions that widen the user's obligations toward the provider.
 
-**(i) The withdrawal fee's *basis* belongs in the contract, not only its number.** An `ad valorem` charge levied
-at the moment of a transfer is economically indistinguishable from a payment tariff, and only an authorized
-institution may charge for a payment service (`Lei 12.865/2013`). §6.4's naming rule is right but thin standing
-alone. §13 clause 4 now states *what the percentage is for* — account maintenance, ledger, reconciliation,
-monitoring and support, services whose cost and risk scale with the value held and moved — and names the partner
-as the provider of the payment service itself. A percentage with a stated basis is a service price; a percentage
-with no stated basis reads as a tariff.
+**(i) The 2% withdrawal charge is a legal blocker, not a drafting problem.** Res. Conj. 16/2025, art. 8º, XI,
+requires the BaaS contract to prohibit CTech from charging in its own name for Asaas's products or services.
+Because this charge exists only on withdrawal and covers Asaas's transfer tariff, describing ledger,
+reconciliation and support does not safely separate it from the payment service. Disable it as required by §6.4;
+only written Asaas and counsel approval can restore a genuinely independent platform price.
 
-**Checked and clean:** same-CPF-only deposits and withdrawals; refunding third parties in full (§5.7); crediting
-`netValue` (§5.2.1); no CTech-billed payment fee (§6.2); absorbing the R$13,90 (§6.5); the death clause
-(CC art. 682 IV); the 18+ gate; sandbox non-convertibility as the contractual form of Invariant #6; disclosure of
-Asaas as the payment institution (§9.3); deposit and withdrawal limits shown before the operation; and the
-append-only `wallet_audit` with its IAM deny on `UpdateItem`/`DeleteItem`.
+**Technically coherent but still contract-dependent:** same-CPF-only withdrawals; refunding third parties in
+full; crediting `netValue`; absorbing the account-opening cost; the 18+ gate; sandbox
+non-convertibility; identifying Asaas; and pre-operation price/limit disclosure. Death is governed by CC
+art. 682, **II**, not IV. Append-only audit improves integrity but does not supply a perpetual-retention basis
+under LGPD arts. 15–16.
+
+**Not yet technically coherent:** same-CPF-only deposits. `payment.customer` is a platform-linked customer
+record, not proof of the actual Pix payer; §5.2.2 and §10 Q15 must be resolved before automatic credit.
 
 ---
 
@@ -1162,17 +1367,23 @@ append-only `wallet_audit` with its IAM deny on `UpdateItem`/`DeleteItem`.
 
 1. ✅ **ANSWERED (2026-07-29): the free-Pix quota is per subaccount** — each subaccount has its own quota and its
    own management. Consequence: deposits and withdrawals are free for ordinary users; §6 becomes a guard for the
-   tail, not the default experience; `min_deposit` needs no change; and the free quota becomes pure margin on the
-   2% withdrawal fee (§6.4.1) rather than a number the ledger has to predict.
+   tail, not the default experience; `min_deposit` needs no change. It does **not** become CTech margin while the
+   proposed withdrawal charge remains disabled (§6.4).
 2. ✅ **ANSWERED: BaaS subaccount holders have no panel/login/key access** — every movement is executed by the
-   parent via API. This is the fact §5.4 rests on. Get it restated in writing for the compliance file.
+   parent via API, and users interact only with the CTech wallet. This is the fact §5.4's internal hold rests on.
 3. **Regulatory evaluation period:** exact limits for our account and how to clear it (§9.4). ⚠ Note this gates
    the **wallet** launch, not just poker: the caps are on *subaccount creation* (max 10 per distinct holder) and
    *R$2.000 per subaccount* over 60 days. Deferring poker does not defer this.
-4. **Is the activity (poker/dominó for rake, real money) accepted?** In writing, from the account manager.
+4. ✅ **ANSWERED FOR POKER (2026-07-30):** the account is approved and the user confirms that the Asaas contract
+   does not prevent the described poker operation. The published Terms contain no express poker prohibition,
+   while clauses 19.2 and 20 preserve Asaas's rights concerning illegality and commercial acceptance. This closes
+   the provider-contract question, not the independent legal classification in §§0.2 and 14. **Dominó remains
+   unconfirmed** unless it was included in the same disclosed and approved activity.
 5. **BaaS subaccount `apiKey`:** confirmed returned at creation for BaaS clients, and rotation available without
    the 2-hour manual UI enablement?
-6. **Exact norm** behind the "identify Asaas as Instituição Prestadora de Serviço de Pagamento" requirement.
+6. ✅ **ANSWERED IN LAW:** Res. Conj. 16/2025, arts. 8º, §2º, and 14, I, require disclosure of the regulated
+   provider and of CTech's non-regulated role. Ask Asaas only for the exact brand/CNPJ wording and placement it
+   requires contractually.
 7. **Does a subaccount Pix transfer ever require SMS authorization** (`authorized: false`)? If so, the automated
    withdrawal path is blocked and needs a different mechanism.
 8. **Static QR limits** per subaccount (count, rate) — undocumented; the per-deposit QR strategy depends on it.
@@ -1180,12 +1391,23 @@ append-only `wallet_audit` with its IAM deny on `UpdateItem`/`DeleteItem`.
    `webhooks` array at creation)? Affects the onboarding call shape.
 10. **Internal transfer between two *sibling* subaccounts** — confirmed supported (§5.4), but is there a rate
     limit or a daily cap? A busy table close emits up to `N-1` legs at once.
-11. **Escrow account** (`Conta Escrow`) — does it offer anything for in-play funds that §5.4's internal transfers
-    do not, and at what per-subaccount fee?
-12. **MED:** which webhook event announces a `Mecanismo Especial de Devolução` reversal on a subaccount, what
+11. **MED:** which webhook event announces a `Mecanismo Especial de Devolução` reversal on a subaccount, what
     notification window we get before the debit settles, and whether it can be contested with evidence (§5.7).
     Referenced by §5.7 step 1 — the whole `med_receivable` design depends on not learning about MED from a
     balance mismatch.
+12. **Existing Asaas customer:** Terms clause 4.2 normally permits only one account per CPF and rejects duplicate
+    registration data. Can an existing PF Asaas account be linked/migrated into this BaaS root, or must onboarding
+    fail with a supported exit path? Do not create a second account or substitute a different document.
+13. **PF account purpose:** the general Terms describe the Conta Asaas as intended for commercial purposes. Which
+    BaaS addendum or approved commercial configuration governs a consumer player's PF subaccount, and does it
+    override or particularize that wording for the disclosed use?
+14. **Authoritative transfer tariff:** is there an API quote or a contractually fixed maximum available before a
+    Pix transfer? Confirm whether `transferFee` is returned before final settlement and whether a free-quota
+    counter is authoritative enough to disclose and reserve the exact user charge (§5.3).
+15. **Actual Pix payer identity:** which API endpoint or re-queryable transaction field returns the real payer's
+    CPF/CNPJ and is tied to `endToEndIdentifier`? `payment.customer` is insufficient because it identifies the
+    customer record linked to the charge. Confirm refund mechanics when the authoritative payer differs from the
+    subaccount holder.
 
 ---
 
@@ -1194,7 +1416,8 @@ append-only `wallet_audit` with its IAM deny on `UpdateItem`/`DeleteItem`.
 1. **Custody first, no gambling.** Onboarding + deposit + withdrawal on subaccounts; `GAMBLING_ENABLED=false`
    (already the default). Invariant #13 reconciliation job lands with it. Legal artifacts (§9.2, §9.3) published
    and gated before the first real user.
-2. **Settlement.** §5.4 internal transfers, rake to parent, `settleCustody`, drift alarms. Then games.
+2. **Settlement.** §5.4 internal transfers, `settlement_pending_in/out`, `settleCustody` and drift alarms. Add a
+   fixed platform-fee leg only after the legal answers in §§6 and 14. Then games.
 3. **Decommission Inter.** Only after every pending deposit and `processing` withdrawal at Inter is resolved and
    the Inter balance is zero. Both integrations must coexist during migration — a spec of its own, including
    what happens to existing users whose money currently sits in the Inter omnibus account (they must be
@@ -1205,18 +1428,24 @@ append-only `wallet_audit` with its IAM deny on `UpdateItem`/`DeleteItem`.
 - No change to the ledger, idempotency, locking, or three-wallet topology.
 - No change to the responsible-gambling limit engine or the `real → game` choke point.
 - No pot/omnibus account for tables (§5.4) — explicitly rejected.
+- No Asaas Conta Escrow — `HoldGame` is internal and the user has no direct Asaas access (§§0.1 and 5.4).
 - No CTech-billed payment fee (§6.2) — explicitly rejected.
 - No migration mechanics for existing Inter balances (separate spec, §11.3).
 
 ---
 
-## 13. Appendix — corrected wallet addendum v2.2, ready to apply
+## 13. Appendix — **withdrawn draft; do not apply or publish**
 
-Counsel's draft with every fix from §9.2.2 folded in. **Not applied yet** — it lands in `ctech-account`
-(`ui/src/lib/legal-documents.ts`) when implementation starts, not before.
+This appendix is retained only to show the text reviewed on 2026-07-30. It is **not legally corrected and must
+not be copied into `ctech-account`**. In particular it still (a) charges CTech's 2% withdrawal fee despite Res.
+Conj. 16/2025, art. 8º, XI; (b) assumes a CTech mandate is the correct source of instruction authority without
+reconciling the direct Asaas-user contract required by art. 3º, IV; (c) promises MED debt/compensation before the
+creditor and legal basis are established; and (d) states a sandbox refund solution not yet approved under the
+financial invariants. Replace the entire appendix only after counsel returns an approved mandate/terms package
+and Asaas approves it under the executed BaaS contract.
 
-**Where it goes.** `legalDocuments.wallet` currently holds **v2.1** (`updatedAt: '25 de julho de 2026'`). Applying
-this means:
+**Historical deployment notes — inactive.** `legalDocuments.wallet` currently holds **v2.1**
+(`updatedAt: '25 de julho de 2026'`). Do not perform the steps below while this legal hold remains:
 
 1. Archive the live 2.1 as a new `LegalDocumentId` — `'wallet-v2-1'` — with a page at
    `ui/src/app/products/wallet/v2-1/page.tsx` following the existing one-liner pattern of
@@ -1370,3 +1599,118 @@ rendering the Asaas terms at the acceptance step with an audit record that they 
 And one clause that **cannot ship without an invariant decision**: §5's CDC art. 49 refund of unused sandbox
 credits needs a bounded `sandbox → game` reversal, which Invariant #6 currently forbids outright. §9.9 (b) states
 the case; it is the only item in this appendix that engineering must not resolve on its own.
+
+---
+
+## 14. Questions to send directly to counsel
+
+Solicitar parecer assinado que identifique a versão do produto, regras dos jogos, contratos e documentos
+analisados. Cada resposta deve concluir `permitido`, `proibido` ou `permitido se`, citar a base legal e indicar a
+alteração contratual ou operacional necessária. “Risco baixo” sem conclusão não é suficiente.
+
+### 14.1 Premissas já confirmadas — não precisam ser investigadas novamente
+
+1. A conta-raiz CNPJ da CTech possui aprovação cadastral e acesso à API Asaas.
+2. A conta-raiz CNPJ pode criar subcontas com `cpfCnpj` e titularidade individual dos usuários PF.
+3. O usuário não recebe painel, login, chave de API ou outro canal técnico direto de movimentação; utiliza apenas
+   a CTech Wallet.
+4. Os Termos Asaas apresentados não proíbem expressamente poker; isso é distinto da aprovação cadastral da
+   conta-raiz e não substitui a análise de legalidade do jogo.
+5. A arquitetura não utilizará Conta Escrow, conta de mesa, conta de pote ou conta omnibus da CTech.
+6. O poker real é P2P, sem banca, sem rake percentual sobre o pote e com preço fixo de acesso por faixa.
+
+### 14.2 Hold, dívida de jogo e liquidação — perguntas prioritárias
+
+1. Considerando o **Código Civil, art. 814, caput e §§1º–3º**, o resultado de cada modalidade de poker constitui
+   dívida inexigível de jogo, jogo legalmente permitido ou prêmio de competição esportiva/intelectual? O parecer
+   deve explicar qual exceção permite — ou não permite — a liquidação automática, mesmo se o jogo não for
+   contravenção penal.
+2. O aceite do buy-in e a movimentação `available → held`, sem transferência bancária e mantendo o dinheiro na
+   conta PF do jogador, constituem pagamento voluntário anterior ao jogo para fins do art. 814? Ou a transferência
+   Asaas posterior ao resultado seria cobrança forçada de dívida de jogo? Indicar o momento jurídico exato em que
+   o valor deixa de estar livremente disponível ao jogador.
+3. Um mandato pode autorizar previamente a CTech a transferir o valor perdido depois do resultado, ou essa
+   autorização seria contrato destinado a reconhecer, novar, garantir ou disfarçar dívida de jogo, alcançado pelo
+   **art. 814, §1º**? A resposta deve considerar também os arts. 653, 661, §1º, 667 e 668 do Código Civil.
+4. A CTech pode recusar saque, `game → real`, nova partida e encerramento sobre a parcela em `held` durante uma
+   partida aceita pelo usuário? Definir hipóteses, prazo máximo, dever de informação, canal de contestação e
+   tratamento de partida interrompida, fraude, erro, desconexão ou resultado impugnado à luz do CDC, especialmente
+   arts. 6º, III, 14, 46, 51, IV, e 54, §4º.
+5. Depois do resultado, os ganhos podem permanecer como `settlement_pending_in`, indisponíveis para saque e novo
+   jogo até a transferência Asaas chegar a `DONE`? Essa indisponibilidade protege o consumidor ou configura
+   retenção abusiva de saldo? Definir prazo, informação ao usuário e solução se a conta do perdedor for bloqueada.
+6. A compensação e o netting multilateral de uma mesa podem gerar uma transferência de A para C quando não existe
+   obrigação bilateral direta entre eles, apenas posições líquidas na mesma mesa? Validar a base nos arts. 368–380
+   do Código Civil ou exigir que cada transferência siga exatamente a relação perdedor–vencedor registrada.
+7. Quem suporta economicamente uma liquidação impossível porque a conta do perdedor foi bloqueada depois do
+   resultado: perdedor, vencedor ou CTech? A CTech não pretende adiantar o prêmio nem ser contraparte; confirmar
+   se essa regra é válida e como deve aparecer nos termos sem excluir responsabilidade inderrogável do CDC.
+
+### 14.3 BaaS, titularidade e mandato
+
+8. Os Termos Asaas, cláusulas 5.1.1–5.1.7, o cadastro `POST /v3/accounts` em CPF e o aceite versionado satisfazem
+   a relação direta e a titularidade exigidas pela **Resolução Conjunta BCB/CMN 16/2025, arts. 3º, IV, e 4º,
+   §§2º–4º**, apesar de a CTech manter a credencial e a interface exclusiva? Quais comprovantes devem ser
+   conservados por usuário?
+9. A interface exclusiva da CTech atende aos deveres de acesso a saldo, extrato, contratos, tarifas, atendimento,
+   reclamação e encerramento ou algum desses direitos deve ser exercido diretamente perante a Asaas? Especificar
+   as obrigações de cada parte conforme os arts. 9º, 14 e 16 da Resolução Conjunta 16/2025.
+10. Criar contas, gerar QR Pix, iniciar saques de mesma titularidade, reservar saldo internamente e comandar
+    transferências entre subcontas excede o papel de tomadora BaaS ou constitui alguma atividade do **art. 6º,
+    III, da Lei 12.865/2013** que exija autorização própria?
+11. Revisar e redigir o mandato separado exigido pelas cláusulas 5.1.6–5.1.7 dos Termos Asaas. Ele deve cumprir os
+    arts. 654, §1º, 657, 661, §1º, 667, 668 e 682 do Código Civil, identificar poderes especiais, proibições,
+    prestação de contas, revogação, assinatura eletrônica e evidências. A CTech pode aceitar a versão atual dos
+    Termos Asaas em nome do usuário ou o próprio usuário precisa aceitá-la diretamente?
+12. As cláusulas Asaas 5.1.4–5.1.5 tornam a CTech solidariamente responsável por obrigações das subcontas e
+    garantidora de determinados saldos negativos. Quais perdas podem ser repassadas ao usuário, com contraditório,
+    e quais devem ser suportadas exclusivamente pela CTech? Confirmar que dívida de uma subconta nunca pode ser
+    coberta com dinheiro pertencente a outros usuários.
+
+### 14.4 Legalidade e exploração dos jogos
+
+13. Para **cada modalidade exata de poker**, considerando aleatoriedade das cartas, quantidade de mãos, duração,
+    matchmaking, prêmio e preço de acesso, a habilidade predomina para o **Decreto-Lei 3.688/1941, art. 50,
+    §3º, `a`**? Indicar jurisprudência atual e se é necessário laudo estatístico/pericial.
+14. Responder separadamente à pergunta 13 para **cada modalidade de dominó**. Não reutilizar automaticamente a
+    conclusão do poker.
+15. Ainda que o produto esteja fora do escopo de eventos virtuais de quota fixa da Portaria SPA/MF 1.207/2024,
+    qual norma oferece base afirmativa para sua exploração comercial online com dinheiro real? Se a Lei
+    14.790/2023 for aplicável, confirmar as consequências dos arts. 4º, 6º, 21 e 21-A.
+16. O preço fixo de acesso à mesa, sem percentual do pote, é remuneração lícita de serviço tecnológico ou ainda
+    caracteriza exploração econômica do jogo? Quais fatos, limites, nota fiscal e textos de oferta são necessários
+    para manter essa separação? Confirmar se qualquer rake real deve permanecer proibido.
+
+### 14.5 Tarifas, consumidor, PLD, dados e tributos
+
+17. A **Resolução Conjunta 16/2025, art. 8º, XI, e art. 15** proíbe a taxa CTech de saque de 2%, por ela nascer no
+    uso do serviço Pix da Asaas? Se existir preço de plataforma juridicamente separado, identificar sua
+    contraprestação real, forma de cobrança, possibilidade de percentual e limites do CDC, art. 51, IV e §1º.
+18. Quais valores podem entrar na conta-raiz CTech sem violar o **art. 8º, XIV**, incluindo preço fixo de acesso,
+    assinatura e outros serviços não financeiros? Informar documento fiscal, autorização e momento da
+    transferência. Confirmar que depósitos, holds, potes e liquidações entre jogadores nunca passam pela conta
+    CTech.
+19. Como o **CDC, art. 49**, aplica-se a créditos sandbox pagos quando não usados, parcialmente usados ou já
+    consumidos em jogo? Aprovar uma solução que não converta sandbox em dinheiro, não crie cash-out e não devolva
+    limite de entrada `real → game`.
+20. Enquanto o CPF/CNPJ do pagador real de um Pix não puder ser confirmado por fonte autoritativa, a CTech pode
+    manter o recebimento indisponível em `payer_verification_pending`? Definir prazo máximo, aviso, contestação e
+    devolução à origem conforme CDC e deveres de PLD/FTP; confirmar que `payment.customer` não basta como prova.
+21. A CTech se enquadra diretamente na **Lei 9.613/1998, art. 9º, caput, I, ou parágrafo único, VI**? Se sim,
+    listar cadastro, KYC complementar, PEP/sanções, registros, monitoramento, comunicação ao COAF e deveres dos
+    arts. 10–11, distinguindo-os das responsabilidades da Asaas.
+22. Após MED, chargeback ou estorno, quem é o credor jurídico do déficit? A CTech pode criar e compensar um
+    `med_receivable` com depósitos futuros sob os arts. 368–369 do Código Civil? Definir prova, aviso, contestação,
+    prescrição e parcela incontroversa que deve continuar disponível.
+23. Para cada fluxo de dados, classificar Asaas e CTech como controladoras independentes, conjuntas ou
+    controladora/operadora; indicar bases dos arts. 7º e 11 da LGPD, transparência, subprocessadores,
+    transferências internacionais, incidentes e necessidade de RIPD.
+24. Fornecer tabela de retenção para ledger, `wallet_audit`, KYC, biometria, webhooks, dispositivos, segurança,
+    MED e credenciais. Para cada item, citar fundamento e prazo do **art. 16 da LGPD** e o evento de eliminação ou
+    anonimização.
+25. Em morte ou incapacidade, considerando **Código Civil, art. 682, II**, quais atos de preservação, informação,
+    liquidação de partidas iniciadas e pagamento a sucessores ainda podem ser executados? Definir documentos e
+    procedimento sem violar sigilo ou LGPD.
+26. Após responder às questões 15–18, definir a tributação de cada receita da CTech e de ganhos entre jogadores:
+    ISS, município competente, emissor e momento da nota, IR/IRRF, obrigações acessórias e eventual dever de
+    informação ou retenção sobre liquidações P2P.
