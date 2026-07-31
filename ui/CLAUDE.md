@@ -35,3 +35,11 @@ Next.js 16 (static export) + React 19 frontend for the ctech-wallet API.
 - Keep the access token in memory; never move it to storage or a readable cookie.
 - Never call the API cross-origin — keep `/v1.0/*` same-origin so CORS never applies.
 - Money is integer **centavos** end to end; format for display only.
+
+## Mandatory Documentation Policy
+
+**Every code change MUST be documented.**
+
+There are NO exceptions.
+
+Any modification affecting behavior, architecture, APIs, integrations, configuration, deployment, security, business rules, or developer workflow MUST include the corresponding documentation update in the same change.

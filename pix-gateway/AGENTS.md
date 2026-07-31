@@ -64,3 +64,11 @@ source of truth — Invariant #11 — and the CPF gate is anti-fraud only).
 - Wire contract: [`../rpc-contract/README.md`](../rpc-contract/README.md)
 - IAM / deploy: [`../cdk/README.md`](../cdk/README.md)
 - Operations: [`../OPERATIONS.md`](../OPERATIONS.md) §4
+
+## Mandatory Documentation Policy
+
+**Every code change MUST be documented.**
+
+There are NO exceptions.
+
+Any modification affecting behavior, architecture, APIs, integrations, configuration, deployment, security, business rules, or developer workflow MUST include the corresponding documentation update in the same change.

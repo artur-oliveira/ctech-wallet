@@ -47,3 +47,11 @@ what `api` writes — never round or transform values here.
 - pix-gateway: [`../pix-gateway/README.md`](../pix-gateway/README.md)
 - Root invariants: [`../CLAUDE.md`](../CLAUDE.md)
 - Secrets / SSM seeding: [`../OPERATIONS.md`](../OPERATIONS.md)
+
+## Mandatory Documentation Policy
+
+**Every code change MUST be documented.**
+
+There are NO exceptions.
+
+Any modification affecting behavior, architecture, APIs, integrations, configuration, deployment, security, business rules, or developer workflow MUST include the corresponding documentation update in the same change.

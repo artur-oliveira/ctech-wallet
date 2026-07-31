@@ -45,3 +45,11 @@ convenience.
 - API: [`../api/README.md`](../api/README.md), [`../api/ENDPOINTS.md`](../api/ENDPOINTS.md)
 - Root invariants: [`../CLAUDE.md`](../CLAUDE.md)
 - Infra: [`../cdk/README.md`](../cdk/README.md)
+
+## Mandatory Documentation Policy
+
+**Every code change MUST be documented.**
+
+There are NO exceptions.
+
+Any modification affecting behavior, architecture, APIs, integrations, configuration, deployment, security, business rules, or developer workflow MUST include the corresponding documentation update in the same change.

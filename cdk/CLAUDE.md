@@ -123,3 +123,11 @@ CI: `.github/workflows/{api,frontend,infra,deploy}.yml`.
 - API: [`../api/README.md`](../api/README.md) · pix-gateway: [`../pix-gateway/README.md`](../pix-gateway/README.md)
 - Secrets / SSM seeding: [`../OPERATIONS.md`](../OPERATIONS.md)
 - Wire contract: [`../rpc-contract/README.md`](../rpc-contract/README.md)
+
+## Mandatory Documentation Policy
+
+**Every code change MUST be documented.**
+
+There are NO exceptions.
+
+Any modification affecting behavior, architecture, APIs, integrations, configuration, deployment, security, business rules, or developer workflow MUST include the corresponding documentation update in the same change.
