@@ -318,13 +318,13 @@ export class ApiStack extends cdk.Stack {
       // no DB number. Each service appends the DB it owns: /0 and /1 are already
       // taken by ctech-dfe and ctech-account, so the wallet uses /2. Its per-wallet
       // SETNX locks must never share a keyspace with another service.
-      `VALKEY_BASE=$(aws ssm get-parameter --name "${shared.valkeyUrl}" --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
+      `VALKEY_BASE=$(aws ssm get-parameter --name "${shared.valkeyUrl}" --with-decryption --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
       // Falls back to empty → the app uses the in-memory cache backend instead of crashing.
       `if [ -n "$VALKEY_BASE" ]; then VALKEY_URL="\${VALKEY_BASE%/}/${VALKEY_DB}"; else VALKEY_URL=""; fi`,
-      `CTECH_URL=$(aws ssm get-parameter --name "${account.baseUrl}" --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
-      `CTECH_JWKS_URL=$(aws ssm get-parameter --name "${account.jwksUrl}" --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
+      `CTECH_URL=$(aws ssm get-parameter --name "${account.baseUrl}" --with-decryption --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
+      `CTECH_JWKS_URL=$(aws ssm get-parameter --name "${account.jwksUrl}" --with-decryption --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
       // Wallet's own M2M client — used to call ctech-account internal:kyc.
-      `WALLET_CLIENT_ID=$(aws ssm get-parameter --name "${wallet.walletClientId}" --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
+      `WALLET_CLIENT_ID=$(aws ssm get-parameter --name "${wallet.walletClientId}" --with-decryption --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
       `WALLET_CLIENT_SECRET=$(aws ssm get-parameter --name "${wallet.walletClientSecret}" --with-decryption --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
       `export VALKEY_URL CTECH_URL CTECH_JWKS_URL`,
       `export WALLET_CLIENT_ID WALLET_CLIENT_SECRET`,

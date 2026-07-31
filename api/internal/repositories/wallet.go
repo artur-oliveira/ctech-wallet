@@ -278,7 +278,7 @@ func (r *WalletRepository) mutate(ctx context.Context, m Mutation, sign int64, e
 	signed := sign * m.Amount
 	entry := r.newEntry(m.WalletID, m.EntryType, signed, w.Balance+signed, m.IdempotencyKey, m.Ref)
 
-	walletTx, err := r.balanceTx(m.WalletID, m.Amount, sign)
+	walletTx, err := r.balanceTx(m.WalletID, m.Amount, sign, w.Version)
 	if err != nil {
 		return nil, false, err
 	}
@@ -364,7 +364,7 @@ func (r *WalletRepository) ApplyMedClawback(ctx context.Context, walletID, userI
 	// receivable's key alone for the all-shortfall case.
 	items := []types.TransactWriteItem{ledgerTx, guardTx}
 	if debited > 0 {
-		walletTx, err := r.balanceTx(walletID, debited, -1)
+		walletTx, err := r.balanceTx(walletID, debited, -1, w.Version)
 		if err != nil {
 			return 0, 0, false, err
 		}
@@ -437,7 +437,7 @@ func (r *WalletRepository) DebitWithFee(ctx context.Context, w *wallet.Withdrawa
 	wEntry := r.newEntry(w.WalletID, wallet.EntryWithdraw, -amount, wl.Balance-total, idemKey, w.WithdrawalID)
 	fEntry := r.newEntry(w.WalletID, wallet.EntryFee, -fee, wl.Balance-total, idemKey, w.WithdrawalID)
 
-	walletTx, err := r.balanceTx(w.WalletID, total, -1)
+	walletTx, err := r.balanceTx(w.WalletID, total, -1, wl.Version)
 	if err != nil {
 		return nil, nil, false, err
 	}
@@ -489,11 +489,11 @@ func (r *WalletRepository) Transfer(ctx context.Context, fromWalletID, toWalletI
 	dEntry := r.newEntry(fromWalletID, debitType, -amount, from.Balance-amount, idemKey, ref)
 	cEntry := r.newEntry(toWalletID, creditType, +creditAmount, to.Balance+creditAmount, idemKey, ref)
 
-	debitTx, err := r.balanceTx(fromWalletID, amount, -1)
+	debitTx, err := r.balanceTx(fromWalletID, amount, -1, from.Version)
 	if err != nil {
 		return nil, nil, false, err
 	}
-	creditTx, err := r.balanceTx(toWalletID, creditAmount, +1)
+	creditTx, err := r.balanceTx(toWalletID, creditAmount, +1, to.Version)
 	if err != nil {
 		return nil, nil, false, err
 	}
@@ -840,18 +840,20 @@ func (r *WalletRepository) newEntry(walletID, entryType string, signedAmount, ba
 
 // balanceTx builds the conditional wallet balance update. sign +1 credits,
 // -1 debits (with a balance>=amount guard so the balance never goes negative).
-func (r *WalletRepository) balanceTx(walletID string, amount int64, sign int64) (types.TransactWriteItem, error) {
+func (r *WalletRepository) balanceTx(walletID string, amount int64, sign int64, expectedVersion int64) (types.TransactWriteItem, error) {
 	op := "+"
-	cond := "attribute_exists(pk)"
+	cond := "attribute_exists(pk) AND (attribute_not_exists(version) OR version = :version)"
 	if sign < 0 {
 		op = "-"
-		cond = "attribute_exists(pk) AND balance >= :amt"
+		cond = "attribute_exists(pk) AND balance >= :amt AND (attribute_not_exists(version) OR version = :version)"
 	}
-	updateExpr := fmt.Sprintf("SET balance = balance %s :amt, version = version + :one, updated_at = :now", op)
+	updateExpr := fmt.Sprintf("SET balance = balance %s :amt, version = if_not_exists(version, :zero) + :one, updated_at = :now", op)
 	values := map[string]types.AttributeValue{
-		":amt": &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", amount)},
-		":one": &types.AttributeValueMemberN{Value: "1"},
-		":now": &types.AttributeValueMemberS{Value: NowStr()},
+		":amt":     &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", amount)},
+		":one":     &types.AttributeValueMemberN{Value: "1"},
+		":zero":    &types.AttributeValueMemberN{Value: "0"},
+		":version": &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", expectedVersion)},
+		":now":     &types.AttributeValueMemberS{Value: NowStr()},
 	}
 	// No #-aliased names in this expression — pass nil (an empty map is rejected
 	// by DynamoDB as "ExpressionAttributeNames must not be empty").

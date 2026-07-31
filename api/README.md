@@ -123,3 +123,13 @@ enforcement map.
 Tracked in [ENDPOINTS.md §7](ENDPOINTS.md#7-known-divergences-documented-not-fixed-here)
 (B1 IAM `TransactWriteItems`, B2/B3 scope strings, B7 Valkey fail‑closed,
 B18 money‑constant mirror). See also root `CLAUDE.md` "Open divergences".
+
+
+### Concurrency
+
+Wallet balance mutations condition on the persisted wallet version and increment it in the same transaction. This keeps each committed `ledger_entries.balance_after` snapshot tied to the exact balance state it updates, even if a distributed lock expires.
+
+
+### Concurrency
+
+Each wallet mutation conditions on the persisted wallet version and increments it in the same transaction. Therefore a committed ledger balance_after snapshot corresponds to the exact wallet state it changes.

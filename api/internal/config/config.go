@@ -90,6 +90,9 @@ func Load() (*Config, error) {
 		// happens to match. Never safe in prod — mirror the ServiceAudience guard.
 		return nil, fmt.Errorf("config: CTECH_URL must be set in production so the iss claim is verified")
 	}
+	if len(cfg.CorsAllowedOrigins) == 0 && cfg.Env == "prod" {
+		return nil, fmt.Errorf("config: CORS_ALLOWED_ORIGINS must be set in production")
+	}
 	if cfg.AsaasCustodyEnabled && cfg.AsaasParentWalletID == "" {
 		// Fail closed: with custody on, every settlement/fee-sweep leg needs a
 		// destination — an empty parent wallet ID would either panic deep in a

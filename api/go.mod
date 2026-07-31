@@ -9,7 +9,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.32
 	github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue v1.20.56
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.62.2
-	github.com/aws/aws-sdk-go-v2/service/lambda v1.100.2
+	github.com/aws/aws-sdk-go-v2/service/lambda v1.101.0
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.73.2
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/fasthttp/websocket v1.5.12
@@ -41,7 +41,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.33.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.38.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.45.2 // indirect
-	github.com/aws/smithy-go v1.27.5 // indirect
+	github.com/aws/smithy-go v1.27.6 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.15 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
