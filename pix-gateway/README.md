@@ -42,7 +42,12 @@ Payload}` with sentinels `key_not_found`, `unauthorized`, and
   | QueryCharge | `GET /pix/v2/cob/{txid}` |
   | Transfer (payout) | `POST /banking/v2/pix` (`x-id-idempotente` = idemKey) |
   | QueryTransfer | `GET /banking/v2/pix/{idemKey}` (any error ⇒ `NAO_ENCONTRADO` so reconciliation reverses) |
-  | Refund (devolução) | `PUT /pix/v2/pix/{e2eid}/devolucao/{idemKey}` |
+  | Refund (devolução) | `PUT /pix/v2/pix/{e2eid}/devolucao/{refundID}` |
+- **Refund idempotency:** Inter requires the client-generated devolução ID to
+  match `[a-zA-Z0-9]{1,35}`. `interRefundID` preserves already-compliant IDs
+  (so historical successful refunds keep the same provider idempotency key)
+  and deterministically maps service keys containing separators such as
+  `sandbox_refund#...` to 35 lowercase hexadecimal SHA-256 characters.
 - **QR code:** Inter returns only the EMV string; `qrPNG` generates the base64
   PNG (`inter.go:172`, `internal/inter/qr.go`). A render miss is logged and
   left empty — the EMV text still reaches the client.

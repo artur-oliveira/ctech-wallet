@@ -285,6 +285,43 @@ func TestTransferOtherErrorNotClassifiedAsKeyNotFound(t *testing.T) {
 	}
 }
 
+func TestRefundNormalizesInvalidInterID(t *testing.T) {
+	const legacyID = "sandbox_refund#sbxp546d65f027b9de5e1c7a3c4aaa519ed"
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.EscapedPath()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"EM_PROCESSAMENTO"}`))
+	}))
+	defer srv.Close()
+
+	c := newTestClient(srv.URL, srv.Client())
+	ctx := WithBearer(context.Background(), "BEARER123")
+	if _, err := c.Refund(ctx, "E10573521202607311225l3gq1phlcl9", 1000, legacyID); err != nil {
+		t.Fatalf("Refund: %v", err)
+	}
+
+	wantID := interRefundID(legacyID)
+	if gotPath != "/pix/v2/pix/E10573521202607311225l3gq1phlcl9/devolucao/"+wantID {
+		t.Fatalf("path = %q, want normalized refund id %q", gotPath, wantID)
+	}
+	if len(wantID) != interRefundIDMaxLength {
+		t.Fatalf("normalized id length = %d, want %d", len(wantID), interRefundIDMaxLength)
+	}
+	for _, ch := range wantID {
+		if !isASCIIAlphanumeric(byte(ch)) {
+			t.Fatalf("normalized id %q contains non-alphanumeric character %q", wantID, ch)
+		}
+	}
+}
+
+func TestInterRefundIDPreservesCompliantHistoricalID(t *testing.T) {
+	const compliant = "RefundABC123"
+	if got := interRefundID(compliant); got != compliant {
+		t.Fatalf("interRefundID(%q) = %q; compliant historical IDs must remain unchanged", compliant, got)
+	}
+}
+
 func TestPingValidatesBearer(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	defer srv.Close()

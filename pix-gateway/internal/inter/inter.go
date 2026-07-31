@@ -3,7 +3,9 @@ package inter
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -57,6 +59,11 @@ const (
 
 	tokenScope      = "cob.read cob.write pix.read pix.write pagamento-pix.read pagamento-pix.write"
 	chargeExpirySec = 300 // 5 min, mirrors the pix_deposits TTL
+
+	// Inter validates the client-generated devolução id as [a-zA-Z0-9]{1,35}.
+	// Existing compliant IDs must be preserved because changing one after a
+	// successful request would defeat provider-side idempotency on a retry.
+	interRefundIDMaxLength = 35
 )
 
 // NewInterClient builds the client. The mTLS keypair is already in memory
@@ -272,12 +279,40 @@ func (c *InterClient) Refund(ctx context.Context, e2eID string, amount int64, id
 	var resp struct {
 		Status string `json:"status"`
 	}
-	// The devolução id must be unique and idempotent per refund — reuse idemKey.
-	path := fmt.Sprintf(pathDevolucao, url.PathEscape(e2eID), url.PathEscape(idemKey))
+	// The devolução id must be unique and idempotent per refund. Service-level
+	// keys commonly contain separators such as "sandbox_refund#...", which
+	// Inter rejects. Preserve compliant historical IDs; map every other key to a
+	// stable SHA-256-derived alphanumeric ID accepted by the provider.
+	path := fmt.Sprintf(pathDevolucao, url.PathEscape(e2eID), interRefundID(idemKey))
 	if err := c.do(ctx, http.MethodPut, path, body, &resp); err != nil {
 		return nil, err
 	}
 	return &TransferResult{E2EID: e2eID, Status: resp.Status}, nil
+}
+
+// interRefundID returns an Inter-compatible, deterministic devolução id.
+// Invalid service-level keys are represented by 140 bits of SHA-256 (35 hex
+// characters), keeping collision risk negligible without exceeding Inter's
+// path constraint.
+func interRefundID(idemKey string) string {
+	if len(idemKey) >= 1 && len(idemKey) <= interRefundIDMaxLength {
+		valid := true
+		for i := 0; i < len(idemKey); i++ {
+			if !isASCIIAlphanumeric(idemKey[i]) {
+				valid = false
+				break
+			}
+		}
+		if valid {
+			return idemKey
+		}
+	}
+	digest := sha256.Sum256([]byte(idemKey))
+	return hex.EncodeToString(digest[:])[:interRefundIDMaxLength]
+}
+
+func isASCIIAlphanumeric(ch byte) bool {
+	return ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch >= '0' && ch <= '9'
 }
 
 // Ping validates that a bearer was supplied for this call AND that the partner
