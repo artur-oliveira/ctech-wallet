@@ -1,12 +1,15 @@
 package v1
 
 import (
+	"context"
+
 	"github.com/gofiber/fiber/v3"
+	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 )
 
 // confirmDeposit is called by pix-gateway's webhook Lambda after it has
 // already re-queried the charge at Inter (M2M, scope
-// internal:pix:confirm-deposit — never the account JWT). It never trusts its
+// internal:wallet:confirm-deposit — never the account JWT). It never trusts its
 // own caller either: ConfirmDeposit re-queries Inter itself through
 // LambdaPixClient before crediting anything (Financial Safety Invariant 11).
 func (h *handlers) confirmDeposit(c fiber.Ctx) error {
@@ -22,39 +25,33 @@ func (h *handlers) confirmDeposit(c fiber.Ctx) error {
 
 // sandboxCredit grants sandbox currency (M2M, scope internal:wallet:credit).
 func (h *handlers) sandboxCredit(c fiber.Ctx) error {
-	var body MovementOpRequest
-	if p := bindJSON(c, &body); p != nil {
-		return sendProblem(c, p)
-	}
-	entry, err := h.svc.CreditSandbox(c.Context(), body.UserID, body.Amount, body.IdempotencyKey, body.Reason)
-	if err != nil {
-		return sendProblem(c, err)
-	}
-	return c.Status(fiber.StatusCreated).JSON(entry)
+	return h.movement(c, h.svc.CreditSandbox)
 }
 
 // sandboxDebit spends sandbox currency (M2M, scope internal:wallet:debit).
 func (h *handlers) sandboxDebit(c fiber.Ctx) error {
-	var body MovementOpRequest
-	if p := bindJSON(c, &body); p != nil {
-		return sendProblem(c, p)
-	}
-	entry, err := h.svc.DebitSandbox(c.Context(), body.UserID, body.Amount, body.IdempotencyKey, body.Reason)
-	if err != nil {
-		return sendProblem(c, err)
-	}
-	return c.Status(fiber.StatusCreated).JSON(entry)
+	return h.movement(c, h.svc.DebitSandbox)
 }
 
 // realDebit debits the real wallet (M2M, scope internal:wallet:debit-real —
 // deliberately separate from sandbox's internal:wallet:debit, e.g. ctech-billing
 // charging a subscription). No PIX leg.
 func (h *handlers) realDebit(c fiber.Ctx) error {
+	return h.movement(c, h.svc.DebitReal)
+}
+
+// movementOp is any M2M balance mutation sharing MovementOpRequest's contract.
+type movementOp func(context.Context, string, int64, string, string) (*wallet.LedgerEntry, error)
+
+// movement centralizes the transport pipeline for M2M credit/debit operations.
+// Authorization remains route-specific in Register; the selected service method
+// retains all wallet type, locking, idempotency, and balance semantics.
+func (h *handlers) movement(c fiber.Ctx, op movementOp) error {
 	var body MovementOpRequest
 	if p := bindJSON(c, &body); p != nil {
 		return sendProblem(c, p)
 	}
-	entry, err := h.svc.DebitReal(c.Context(), body.UserID, body.Amount, body.IdempotencyKey, body.Reason)
+	entry, err := op(c.Context(), body.UserID, body.Amount, body.IdempotencyKey, body.Reason)
 	if err != nil {
 		return sendProblem(c, err)
 	}

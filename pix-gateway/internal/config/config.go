@@ -29,7 +29,7 @@ type Config struct {
 	AsaasBaseURL string `env:"ASAAS_BASE_URL" envDefault:"https://api-sandbox.asaas.com"`
 
 	// ctech-account, for the webhook Lambda's own M2M token (client_credentials,
-	// scope internal:pix:confirm-deposit) — a distinct client from api's own
+	// scope internal:wallet:confirm-deposit) — a distinct client from api's own
 	// WALLET_CLIENT_ID (see cross-project contract, root CLAUDE.md).
 	CtechURL               string `env:"CTECH_URL"`
 	PixGatewayClientID     string `env:"PIX_GATEWAY_CLIENT_ID"`

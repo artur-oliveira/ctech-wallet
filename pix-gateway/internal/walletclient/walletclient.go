@@ -1,6 +1,6 @@
 // Package walletclient calls api's internal confirm-deposit endpoint using
 // pix-gateway's own M2M client_credentials token (scope
-// internal:pix:confirm-deposit). This is the only way money moves as a result
+// internal:wallet:confirm-deposit). This is the only way money moves as a result
 // of the webhook: pix-gateway itself never touches the ledger.
 package walletclient
 
