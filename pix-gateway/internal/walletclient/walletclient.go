@@ -28,6 +28,11 @@ const (
 	// (see cmd/webhook/main.go) instead of a new scope.
 	pathConfirmSandboxPurchase = "/v1.0/internal/pix/confirm-sandbox-purchase"
 	scopeConfirmDeposit        = "internal:wallet:confirm-deposit"
+	headerAuthorization        = "Authorization"
+	headerContentType          = "Content-Type"
+	mediaTypeJSON              = "application/json"
+	bearerPrefix               = "Bearer "
+	maxErrorResponseBytes      = 64 << 10
 )
 
 // Client calls api's confirm-deposit endpoint.
@@ -59,37 +64,23 @@ func New(cfg *config.Config, clientSecret string) *Client {
 // the payer, so the webhook body (this call's only source) forwards them for
 // api to persist and use in its CPF-match check, never for crediting.
 func (c *Client) ConfirmDeposit(ctx context.Context, txid, payerCPF, payerName string) error {
-	body, err := json.Marshal(map[string]string{"txid": txid, "payer_cpf": payerCPF, "payer_name": payerName})
-	if err != nil {
-		return err
-	}
-	token, err := c.tokens.Get(ctx)
-	if err != nil {
-		return fmt.Errorf("walletclient: get token: %w", err)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+pathConfirmDeposit, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		raw, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("walletclient: confirm-deposit status %d: %s", resp.StatusCode, string(raw))
-	}
-	return nil
+	return c.postJSON(ctx, pathConfirmDeposit, map[string]string{
+		"txid": txid, "payer_cpf": payerCPF, "payer_name": payerName,
+	})
 }
 
 // ConfirmSandboxPurchase calls api's confirm-sandbox-purchase endpoint for
 // txid — the direct PIX→sandbox-credits sale (plan §9.3). No payer CPF/name:
 // unlike ConfirmDeposit, this flow has no CPF/KYC gate to feed (plan §9.1).
 func (c *Client) ConfirmSandboxPurchase(ctx context.Context, txid string) error {
-	body, err := json.Marshal(map[string]string{"txid": txid})
+	return c.postJSON(ctx, pathConfirmSandboxPurchase, map[string]string{"txid": txid})
+}
+
+// postJSON is the single authenticated transport path for wallet API wake-up
+// calls. Business verification remains in api; this client only forwards the
+// event identifier using its narrowly scoped M2M token.
+func (c *Client) postJSON(ctx context.Context, path string, payload any) error {
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
@@ -97,20 +88,20 @@ func (c *Client) ConfirmSandboxPurchase(ctx context.Context, txid string) error 
 	if err != nil {
 		return fmt.Errorf("walletclient: get token: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+pathConfirmSandboxPurchase, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+path, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(headerAuthorization, bearerPrefix+token)
+	req.Header.Set(headerContentType, mediaTypeJSON)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		raw, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("walletclient: confirm-sandbox-purchase status %d: %s", resp.StatusCode, string(raw))
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorResponseBytes))
+		return fmt.Errorf("walletclient: POST %s status %d: %s", path, resp.StatusCode, string(raw))
 	}
 	return nil
 }

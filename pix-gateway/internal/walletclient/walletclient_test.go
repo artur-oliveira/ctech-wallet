@@ -69,3 +69,31 @@ func TestConfirmDepositErrorStatus(t *testing.T) {
 		t.Fatal("expected an error on 500")
 	}
 }
+
+func TestConfirmSandboxPurchaseSendsBearerAndTxid(t *testing.T) {
+	accountSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "tok-abc", "expires_in": 3600})
+	}))
+	defer accountSrv.Close()
+
+	var gotAuth, gotTxid, gotPath string
+	walletSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get(headerAuthorization)
+		gotPath = r.URL.Path
+		var body map[string]string
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		gotTxid = body["txid"]
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer walletSrv.Close()
+
+	c := New(&config.Config{
+		CtechURL: accountSrv.URL, PixGatewayClientID: "pix-gateway", WalletAPIURL: walletSrv.URL,
+	}, "secret")
+	if err := c.ConfirmSandboxPurchase(context.Background(), "sbxp123"); err != nil {
+		t.Fatalf("ConfirmSandboxPurchase: %v", err)
+	}
+	if gotAuth != bearerPrefix+"tok-abc" || gotPath != pathConfirmSandboxPurchase || gotTxid != "sbxp123" {
+		t.Fatalf("request auth=%q path=%q txid=%q", gotAuth, gotPath, gotTxid)
+	}
+}
