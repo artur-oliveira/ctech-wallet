@@ -12,6 +12,20 @@ import (
 	"gopkg.aoctech.app/wallet/api/internal/problem"
 )
 
+const (
+	holdStatusUpdateExpression    = "SET #status = :to, " + attributeUpdatedAt + " = :now"
+	holdStatusConditionExpression = "#status = :from"
+	holdStatusAttribute           = "status"
+)
+
+func holdStatusTransition(fromStatus, toStatus, timestamp string) (map[string]string, map[string]types.AttributeValue) {
+	return map[string]string{"#status": holdStatusAttribute}, map[string]types.AttributeValue{
+		":to":   &types.AttributeValueMemberS{Value: toStatus},
+		":from": &types.AttributeValueMemberS{Value: fromStatus},
+		":now":  &types.AttributeValueMemberS{Value: timestamp},
+	}
+}
+
 // CreateHold debits amount from walletID and puts the Hold row in ONE
 // TransactWriteItems alongside the ledger entry and idempotency guard — a
 // crash between "money reserved" and "hold recorded" can never happen. holdID
@@ -98,16 +112,13 @@ func (r *WalletRepository) GetHold(ctx context.Context, holdID string) (*wallet.
 // double-crediting. Returns false (no error) if the hold is not currently in
 // fromStatus, which callers treat as a benign idempotent-replay case.
 func (r *WalletRepository) UpdateHoldStatus(ctx context.Context, holdID, fromStatus, toStatus string) (bool, error) {
+	names, values := holdStatusTransition(fromStatus, toStatus, NowStr())
 	_, err := r.holds.UpdateItemRaw(ctx, &dynamodb.UpdateItemInput{
-		Key:                      map[string]types.AttributeValue{"pk": &types.AttributeValueMemberS{Value: holdID}},
-		UpdateExpression:         aws.String("SET #status = :to, updated_at = :now"),
-		ConditionExpression:      aws.String("#status = :from"),
-		ExpressionAttributeNames: map[string]string{"#status": "status"},
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":to":   &types.AttributeValueMemberS{Value: toStatus},
-			":from": &types.AttributeValueMemberS{Value: fromStatus},
-			":now":  &types.AttributeValueMemberS{Value: NowStr()},
-		},
+		Key:                       map[string]types.AttributeValue{"pk": &types.AttributeValueMemberS{Value: holdID}},
+		UpdateExpression:          aws.String(holdStatusUpdateExpression),
+		ConditionExpression:       aws.String(holdStatusConditionExpression),
+		ExpressionAttributeNames:  names,
+		ExpressionAttributeValues: values,
 	})
 	if err != nil {
 		if IsConditionFailed(err) {
@@ -146,13 +157,9 @@ func (r *WalletRepository) ReleaseHoldAtomic(ctx context.Context, h *wallet.Hold
 	if err != nil {
 		return nil, false, err
 	}
+	names, values := holdStatusTransition(wallet.HoldHeld, wallet.HoldReleased, NowStr())
 	holdTx := r.holds.BuildRawUpdateTxItem(h.HoldID, nil,
-		"SET #status = :to, updated_at = :now", "#status = :from",
-		map[string]string{"#status": "status"}, map[string]types.AttributeValue{
-			":to":   &types.AttributeValueMemberS{Value: wallet.HoldReleased},
-			":from": &types.AttributeValueMemberS{Value: wallet.HoldHeld},
-			":now":  &types.AttributeValueMemberS{Value: NowStr()},
-		})
+		holdStatusUpdateExpression, holdStatusConditionExpression, names, values)
 	if err := r.wallets.TransactWrite(ctx, []types.TransactWriteItem{walletTx, ledgerTx, guardTx, holdTx}); err != nil {
 		if IsConditionFailed(err) {
 			if prior, _, replayErr := r.checkReplay(ctx, idemKey, reqHash); replayErr == nil && prior != nil {
@@ -201,16 +208,14 @@ func (r *WalletRepository) CashoutHoldsAtomic(ctx context.Context, walletID, use
 		return nil, false, err
 	}
 	items := []types.TransactWriteItem{walletTx, ledgerTx, guardTx}
+	transitionTime := NowStr()
 	for _, h := range holds {
+		names, values := holdStatusTransition(wallet.HoldHeld, wallet.HoldSettled, transitionTime)
+		values[":user"] = &types.AttributeValueMemberS{Value: userID}
+		values[":table"] = &types.AttributeValueMemberS{Value: tableRef}
 		items = append(items, r.holds.BuildRawUpdateTxItem(h.HoldID, nil,
-			"SET #status = :to, updated_at = :now", "#status = :from AND user_id = :user AND table_ref = :table",
-			map[string]string{"#status": "status"}, map[string]types.AttributeValue{
-				":to":    &types.AttributeValueMemberS{Value: wallet.HoldSettled},
-				":from":  &types.AttributeValueMemberS{Value: wallet.HoldHeld},
-				":user":  &types.AttributeValueMemberS{Value: userID},
-				":table": &types.AttributeValueMemberS{Value: tableRef},
-				":now":   &types.AttributeValueMemberS{Value: NowStr()},
-			}))
+			holdStatusUpdateExpression, holdStatusConditionExpression+" AND user_id = :user AND table_ref = :table",
+			names, values))
 	}
 	if err := r.wallets.TransactWrite(ctx, items); err != nil {
 		return r.resolveTxErr(ctx, idemKey, reqHash, +1, err)
