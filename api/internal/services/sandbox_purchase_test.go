@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
 	"gopkg.aoctech.app/wallet/api/internal/pix"
@@ -59,6 +61,31 @@ func (r *stubSandboxPurchaseRepo) Update(_ context.Context, purchaseID string, u
 	return nil
 }
 
+func (r *stubSandboxPurchaseRepo) BuildConfirmTx(purchaseID, e2eID, creditSK string) types.TransactWriteItem {
+	p := r.purchases[purchaseID]
+	if p != nil && p.Status == wallet.SandboxPurchasePending {
+		p.Status, p.E2EID, p.CreditSK = wallet.SandboxPurchaseConfirmed, e2eID, creditSK
+	}
+	return types.TransactWriteItem{}
+}
+
+func (r *stubSandboxPurchaseRepo) BuildRefundClaimTx(purchaseID string) types.TransactWriteItem {
+	p := r.purchases[purchaseID]
+	if p != nil && p.Status == wallet.SandboxPurchaseConfirmed {
+		p.Status = wallet.SandboxPurchaseRefundPending
+	}
+	return types.TransactWriteItem{}
+}
+
+func (r *stubSandboxPurchaseRepo) TransitionStatus(_ context.Context, purchaseID, fromStatus, toStatus string) (bool, error) {
+	p := r.purchases[purchaseID]
+	if p == nil || p.Status != fromStatus {
+		return false, nil
+	}
+	p.Status = toStatus
+	return true, nil
+}
+
 func (r *stubSandboxPurchaseRepo) ListPendingOlderThan(_ context.Context, _ time.Time, _ int) ([]wallet.SandboxPurchase, error) {
 	var out []wallet.SandboxPurchase
 	for _, p := range r.purchases {
@@ -73,6 +100,16 @@ func (r *stubSandboxPurchaseRepo) ListWebhookFailedOlderThan(_ context.Context, 
 	var out []wallet.SandboxPurchase
 	for _, p := range r.purchases {
 		if p.WebhookStatus == wallet.WebhookFailed {
+			out = append(out, *p)
+		}
+	}
+	return out, nil
+}
+
+func (r *stubSandboxPurchaseRepo) ListRefundPendingOlderThan(_ context.Context, _ time.Time, _ int) ([]wallet.SandboxPurchase, error) {
+	var out []wallet.SandboxPurchase
+	for _, p := range r.purchases {
+		if p.Status == wallet.SandboxPurchaseRefundPending {
 			out = append(out, *p)
 		}
 	}

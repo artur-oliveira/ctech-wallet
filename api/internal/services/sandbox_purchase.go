@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/pix"
 	"gopkg.aoctech.app/wallet/api/internal/problem"
@@ -161,16 +163,16 @@ func (s *WalletService) ConfirmSandboxPurchase(ctx context.Context, txid string,
 	entry, _, err := s.repo.Credit(ctx, repositories.Mutation{
 		WalletID: sandbox.WalletID, Amount: p.CreditsGranted, EntryType: wallet.EntrySandboxCredit,
 		Ref: txid, IdempotencyKey: "sandbox_purchase#" + txid, ReqHash: reqHash(txid, p.CreditsGranted),
+		Extra: func(entry *wallet.LedgerEntry) []types.TransactWriteItem {
+			return []types.TransactWriteItem{s.sandboxPurchases.BuildConfirmTx(txid, charge.E2EID, entry.SK)}
+		},
 	})
 	if err != nil {
 		return err
 	}
-	if err := s.sandboxPurchases.Update(ctx, txid, map[string]any{
-		"status": wallet.SandboxPurchaseConfirmed, "e2e_id": charge.E2EID, "credit_sk": entry.SK,
-	}); err != nil {
-		return err
-	}
 	p.Status = wallet.SandboxPurchaseConfirmed
+	p.E2EID = charge.E2EID
+	p.CreditSK = entry.SK
 	s.dispatchM2MWebhook(ctx, p)
 	return nil
 }
@@ -195,50 +197,76 @@ func (s *WalletService) RefundSandboxPurchase(ctx context.Context, userID, purch
 		return nil, problem.NotFound("compra não encontrada")
 	}
 	if p.Status == wallet.SandboxPurchaseRefunded {
-		return p, nil // idempotent replay
+		return p, nil
 	}
-	if p.Status != wallet.SandboxPurchaseConfirmed {
+	if p.Status != wallet.SandboxPurchaseConfirmed && p.Status != wallet.SandboxPurchaseRefundPending {
 		return nil, problem.Conflict("compra ainda não confirmada")
 	}
 
-	sandbox, err := s.repo.EnsureSandboxWallet(ctx, userID)
-	if err != nil {
-		return nil, err
+	if p.Status == wallet.SandboxPurchaseConfirmed {
+		sandbox, err := s.repo.EnsureSandboxWallet(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		release, err := acquireWallet(ctx, s.lock, sandbox.WalletID)
+		if err != nil {
+			return nil, err
+		}
+
+		// Re-read and validate under the wallet lock. The debit and durable
+		// refund_pending claim then commit in the same transaction.
+		current, err := s.sandboxPurchases.Get(ctx, purchaseID)
+		if err != nil {
+			release()
+			return nil, err
+		}
+		if current.Status == wallet.SandboxPurchaseConfirmed {
+			if used, err := s.repo.AnyDebitSince(ctx, sandbox.WalletID, current.CreditSK); err != nil {
+				release()
+				return nil, err
+			} else if used {
+				release()
+				return nil, problem.SandboxPurchaseUsed()
+			}
+			_, _, err = s.repo.Debit(ctx, repositories.Mutation{
+				WalletID: sandbox.WalletID, Amount: current.CreditsGranted, EntryType: wallet.EntrySandboxRefundReversal,
+				Ref: purchaseID, IdempotencyKey: "sandbox_refund#" + purchaseID, ReqHash: reqHash(purchaseID, current.CreditsGranted),
+			}, s.sandboxPurchases.BuildRefundClaimTx(purchaseID))
+			if err != nil {
+				release()
+				return nil, err
+			}
+			current.Status = wallet.SandboxPurchaseRefundPending
+		} else if current.Status != wallet.SandboxPurchaseRefundPending && current.Status != wallet.SandboxPurchaseRefunded {
+			release()
+			return nil, problem.Conflict("estado de estorno da compra inconsistente")
+		}
+		release()
+		p = current
 	}
-	if used, err := s.repo.AnyDebitSince(ctx, sandbox.WalletID, p.CreditSK); err != nil {
-		return nil, err
-	} else if used {
-		return nil, problem.SandboxPurchaseUsed()
+	if p.Status == wallet.SandboxPurchaseRefunded {
+		return p, nil
 	}
 
-	release, err := acquireWallet(ctx, s.lock, sandbox.WalletID)
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-
-	// Re-check under the lock: a concurrent debit may have won the race
-	// between the check above and acquiring the lock.
-	if used, err := s.repo.AnyDebitSince(ctx, sandbox.WalletID, p.CreditSK); err != nil {
-		return nil, err
-	} else if used {
-		return nil, problem.SandboxPurchaseUsed()
-	}
-
-	if _, _, err := s.repo.Debit(ctx, repositories.Mutation{
-		WalletID: sandbox.WalletID, Amount: p.CreditsGranted, EntryType: wallet.EntrySandboxRefundReversal,
-		Ref: purchaseID, IdempotencyKey: "sandbox_refund#" + purchaseID, ReqHash: reqHash(purchaseID, p.CreditsGranted),
-	}); err != nil {
-		return nil, err
-	}
-
+	// The provider key is stable. Failure leaves refund_pending durable, so the
+	// scheduled reconciler or an API replay resumes without debiting again.
 	if _, err := s.pix.Refund(ctx, p.E2EID, p.AmountExpected, "sandbox_refund#"+purchaseID); err != nil {
-		slog.Error("ALARM sandbox purchase refund failed", "purchase_id", purchaseID, "e2e_id", p.E2EID, "err", err)
-		return nil, problem.InternalServer("estorno da compra falhou; reconciliação manual necessária")
+		slog.Error("ALARM sandbox purchase refund failed; scheduled retry retained", "purchase_id", purchaseID, "e2e_id", p.E2EID, "err", err)
+		return nil, problem.InternalServer("estorno da compra falhou; nova tentativa agendada")
 	}
-
-	if err := s.sandboxPurchases.Update(ctx, purchaseID, map[string]any{"status": wallet.SandboxPurchaseRefunded}); err != nil {
+	changed, err := s.sandboxPurchases.TransitionStatus(ctx, purchaseID, wallet.SandboxPurchaseRefundPending, wallet.SandboxPurchaseRefunded)
+	if err != nil {
 		return nil, err
+	}
+	if !changed {
+		current, err := s.sandboxPurchases.Get(ctx, purchaseID)
+		if err != nil {
+			return nil, err
+		}
+		if current == nil || current.Status != wallet.SandboxPurchaseRefunded {
+			return nil, problem.InternalServer("estorno concluído no provedor aguardando reconciliação local")
+		}
+		p = current
 	}
 	p.Status = wallet.SandboxPurchaseRefunded
 	s.dispatchM2MWebhook(ctx, p)
@@ -276,6 +304,26 @@ func (s *WalletService) SweepPendingSandboxPurchases(ctx context.Context) (swept
 		p := purchases[i]
 		if err := s.ConfirmSandboxPurchase(ctx, p.PurchaseID, true); err != nil {
 			slog.Warn("sweep: confirm-sandbox-purchase failed, will retry next run", "purchase_id", p.PurchaseID, "err", err)
+			continue
+		}
+		swept++
+	}
+	return swept, nil
+}
+
+// SweepRefundPendingSandboxPurchases resumes provider refunds after a process
+// crash or transient provider failure. The credit reversal was already committed
+// with refund_pending, so retries never run usage validation or debit twice.
+func (s *WalletService) SweepRefundPendingSandboxPurchases(ctx context.Context) (swept int, err error) {
+	cutoff := time.Now().Add(-sweepAgeThreshold)
+	purchases, err := s.sandboxPurchases.ListRefundPendingOlderThan(ctx, cutoff, reconcileBatch)
+	if err != nil {
+		return 0, err
+	}
+	for i := range purchases {
+		p := purchases[i]
+		if _, err := s.RefundSandboxPurchase(ctx, p.UserID, p.PurchaseID, "reconcile#"+p.PurchaseID, p.RequestingClient); err != nil {
+			slog.Warn("sweep: sandbox refund failed, will retry next run", "purchase_id", p.PurchaseID, "err", err)
 			continue
 		}
 		swept++

@@ -155,6 +155,24 @@ func (s *WalletService) SweepPendingDeposits(ctx context.Context) (swept int, er
 	return swept, nil
 }
 
+// SweepDepositRefunds resumes CPF/amount-mismatch refund sagas and legacy
+// rejected rows. ConfirmDeposit re-queries the provider before every retry.
+func (s *WalletService) SweepDepositRefunds(ctx context.Context) (swept int, err error) {
+	cutoff := time.Now().Add(-sweepAgeThreshold)
+	deps, err := s.repo.ListRefundableDepositsOlderThan(ctx, cutoff, reconcileBatch)
+	if err != nil {
+		return 0, err
+	}
+	for i := range deps {
+		if err := s.ConfirmDeposit(ctx, deps[i].Txid, "", "", true); err != nil {
+			slog.Warn("sweep: deposit refund failed, will retry next run", "txid", deps[i].Txid, "err", err)
+			continue
+		}
+		swept++
+	}
+	return swept, nil
+}
+
 // SweepStaleHolds raises an operational alarm for every hold stuck `held`
 // past staleHoldCeiling. It never auto-releases or auto-cashes-out: the
 // calling skill game's own crash-recovery may still resume the table and

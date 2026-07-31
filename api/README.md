@@ -82,6 +82,23 @@ Every balance mutation is a conditional `TransactWriteItems`
 (`balance >= :amount` on debits); the ledger entry + idempotency guard are
 co‑written in the same transaction (`repositories/wallet.go:275`).
 
+### Durable money workflows
+
+- Deposit confirmation commits the balance credit, append-only ledger entry,
+  permanent idempotency guard, and conditional `pending` → `confirmed` deposit
+  transition in one DynamoDB transaction. A replay cannot observe a credited
+  deposit as pending.
+- A rejected deposit is persisted as `refund_pending` before the provider call.
+  The provider request uses the stable deposit transaction ID, and reconciliation
+  resumes both `refund_pending` and `refund_failed` rows until `refunded`.
+- Sandbox purchase confirmation co-writes the credit and purchase status. Refund
+  initiation atomically writes the reversal debit and `refund_pending`; retries
+  reuse the purchase ID at the provider and never debit twice. Reconciliation
+  resumes non-terminal refunds.
+- A MED event applies the exact available-balance debit, exact remaining
+  receivable, ledger entry, and permanent event guard in one transaction. A
+  retry therefore cannot recalculate and overstate the receivable.
+
 ## Endpoint reference
 
 See **[ENDPOINTS.md](ENDPOINTS.md)** — all routes, methods, auth/scope, request

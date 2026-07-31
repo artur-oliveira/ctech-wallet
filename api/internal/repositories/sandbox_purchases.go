@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
@@ -55,6 +56,51 @@ func (r *SandboxPurchaseRepository) Get(ctx context.Context, purchaseID string) 
 	return Decode[wallet.SandboxPurchase](item)
 }
 
+const (
+	sandboxStatusConditionExpression = "#status = :from"
+	sandboxStatusUpdateExpression    = "SET #status = :to, " + attributeUpdatedAt + " = :now"
+	sandboxConfirmUpdateExpression   = "SET #status = :to, e2e_id = :e2e, credit_sk = :credit, " + attributeUpdatedAt + " = :now"
+)
+
+func sandboxStatusValues(fromStatus, toStatus string) (map[string]string, map[string]types.AttributeValue) {
+	return map[string]string{"#status": "status"}, map[string]types.AttributeValue{
+		":from": &types.AttributeValueMemberS{Value: fromStatus},
+		":to":   &types.AttributeValueMemberS{Value: toStatus},
+		":now":  &types.AttributeValueMemberS{Value: NowStr()},
+	}
+}
+
+// BuildConfirmTx composes the purchase pending→confirmed transition with the
+// sandbox ledger credit transaction.
+func (r *SandboxPurchaseRepository) BuildConfirmTx(purchaseID, e2eID, creditSK string) types.TransactWriteItem {
+	names, values := sandboxStatusValues(wallet.SandboxPurchasePending, wallet.SandboxPurchaseConfirmed)
+	values[":e2e"] = &types.AttributeValueMemberS{Value: e2eID}
+	values[":credit"] = &types.AttributeValueMemberS{Value: creditSK}
+	return r.purchases.BuildRawUpdateTxItem(purchaseID, nil, sandboxConfirmUpdateExpression, sandboxStatusConditionExpression, names, values)
+}
+
+// BuildRefundClaimTx makes credit revocation and the durable refund_pending
+// state one atomic commit.
+func (r *SandboxPurchaseRepository) BuildRefundClaimTx(purchaseID string) types.TransactWriteItem {
+	names, values := sandboxStatusValues(wallet.SandboxPurchaseConfirmed, wallet.SandboxPurchaseRefundPending)
+	return r.purchases.BuildRawUpdateTxItem(purchaseID, nil, sandboxStatusUpdateExpression, sandboxStatusConditionExpression, names, values)
+}
+
+func (r *SandboxPurchaseRepository) TransitionStatus(ctx context.Context, purchaseID, fromStatus, toStatus string) (bool, error) {
+	names, values := sandboxStatusValues(fromStatus, toStatus)
+	_, err := r.purchases.UpdateItemRaw(ctx, &dynamodb.UpdateItemInput{
+		Key:                       map[string]types.AttributeValue{"pk": &types.AttributeValueMemberS{Value: purchaseID}},
+		UpdateExpression:          aws.String(sandboxStatusUpdateExpression),
+		ConditionExpression:       aws.String(sandboxStatusConditionExpression),
+		ExpressionAttributeNames:  names,
+		ExpressionAttributeValues: values,
+	})
+	if IsConditionFailed(err) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
 func (r *SandboxPurchaseRepository) Update(ctx context.Context, purchaseID string, updates map[string]any) error {
 	return UpdateItemWithTimestamp(ctx, r.purchases, purchaseID, updates)
 }
@@ -64,6 +110,12 @@ func (r *SandboxPurchaseRepository) Update(ctx context.Context, purchaseID strin
 // helper across tables) because the two tables are deliberately decoupled.
 func (r *SandboxPurchaseRepository) ListPendingOlderThan(ctx context.Context, cutoff time.Time, limit int) ([]wallet.SandboxPurchase, error) {
 	return r.listByGSIOlderThan(ctx, wallet.GSISandboxPurchaseStatus, "status", wallet.SandboxPurchasePending, cutoff, limit)
+}
+
+// ListRefundPendingOlderThan is the scheduled work queue for refunds whose
+// provider call or final local transition did not finish.
+func (r *SandboxPurchaseRepository) ListRefundPendingOlderThan(ctx context.Context, cutoff time.Time, limit int) ([]wallet.SandboxPurchase, error) {
+	return r.listByGSIOlderThan(ctx, wallet.GSISandboxPurchaseStatus, "status", wallet.SandboxPurchaseRefundPending, cutoff, limit)
 }
 
 // ListWebhookFailedOlderThan is the M2M webhook notify-back retry sweep's

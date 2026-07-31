@@ -6,6 +6,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
 	"gopkg.aoctech.app/wallet/api/internal/pix"
@@ -23,7 +25,7 @@ type reconRepo struct {
 func (r *reconRepo) ListProcessingWithdrawals(_ context.Context, _ int) ([]wallet.Withdrawal, error) {
 	return r.processing, nil
 }
-func (r *reconRepo) Credit(_ context.Context, _ repositories.Mutation) (*wallet.LedgerEntry, bool, error) {
+func (r *reconRepo) Credit(_ context.Context, _ repositories.Mutation, _ ...types.TransactWriteItem) (*wallet.LedgerEntry, bool, error) {
 	if r.creditErr != nil {
 		return nil, false, r.creditErr
 	}

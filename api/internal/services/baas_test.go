@@ -587,12 +587,15 @@ func TestProcessMedClawbackCreatesReceivableForShortfall(t *testing.T) {
 	if len(repo.debitCalls) != 1 || repo.debitCalls[0].Amount != 1000 {
 		t.Fatalf("expected a debit of exactly the available 1000, got %+v", repo.debitCalls)
 	}
-	recv := baasRepo.receivables["med-recv#med-evt-2"]
+	recv := repo.medReceivable
 	if recv == nil {
-		t.Fatal("expected a receivable to be created")
+		t.Fatal("expected the atomic wallet operation to create a receivable")
 	}
-	if recv.Amount != 2000 || recv.Status != wallet.MedReceivableOpen {
+	if recv.ReceivableID != "med-recv#med-evt-2" || recv.Amount != 2000 || recv.Status != wallet.MedReceivableOpen {
 		t.Fatalf("unexpected receivable: %+v", recv)
+	}
+	if len(baasRepo.receivables) != 0 {
+		t.Fatalf("service must not issue a second, non-atomic receivable write: %+v", baasRepo.receivables)
 	}
 }
 

@@ -62,8 +62,11 @@ type WalletStore interface {
 
 // LedgerStore owns atomic balance mutations and immutable ledger reads.
 type LedgerStore interface {
-	Credit(ctx context.Context, m repositories.Mutation) (*wallet.LedgerEntry, bool, error)
-	Debit(ctx context.Context, m repositories.Mutation) (*wallet.LedgerEntry, bool, error)
+	Credit(ctx context.Context, m repositories.Mutation, extra ...types.TransactWriteItem) (*wallet.LedgerEntry, bool, error)
+	Debit(ctx context.Context, m repositories.Mutation, extra ...types.TransactWriteItem) (*wallet.LedgerEntry, bool, error)
+	ConfirmDepositCredit(ctx context.Context, m repositories.Mutation, txid, e2eID string) (*wallet.LedgerEntry, bool, error)
+	ApplyMedClawback(ctx context.Context, walletID, userID string, amount int64, ref, reqHash string) (debited, shortfall int64, replayed bool, err error)
+	FindMutation(ctx context.Context, idemKey, reqHash string) (*wallet.LedgerEntry, error)
 	DebitWithFee(ctx context.Context, w *wallet.Withdrawal, amount, fee int64, idemKey, reqHash string) (*wallet.LedgerEntry, *wallet.LedgerEntry, bool, error)
 	Transfer(ctx context.Context, from, to string, amount, creditAmount int64, debitType, creditType, ref, idemKey, reqHash string, extra ...types.TransactWriteItem) (*wallet.LedgerEntry, *wallet.LedgerEntry, bool, error)
 	Statement(ctx context.Context, walletID string, limit int, startKey map[string]types.AttributeValue) (*repositories.QueryResult, error)
@@ -78,8 +81,10 @@ type DepositStore interface {
 	GetDepositByProviderQRCodeID(ctx context.Context, providerQRCodeID string) (*wallet.PixDeposit, error)
 	ReserveDepositIdem(ctx context.Context, guardPK, txid, userID, reqHash string) (reservedTxid string, existing *wallet.PixDeposit, conflict *problem.Problem, err error)
 	UpdateDepositStatus(ctx context.Context, txid, status, e2eID string) error
+	TransitionDepositStatus(ctx context.Context, txid, fromStatus, toStatus, e2eID string) (bool, error)
 	UpdateDepositPayer(ctx context.Context, txid, payerCPF, payerName string) error
 	ListPendingDepositsOlderThan(ctx context.Context, cutoff time.Time, limit int) ([]wallet.PixDeposit, error)
+	ListRefundableDepositsOlderThan(ctx context.Context, cutoff time.Time, limit int) ([]wallet.PixDeposit, error)
 }
 
 // WithdrawalStore owns withdrawal state-machine persistence.
@@ -164,7 +169,11 @@ type SandboxPurchaseRepo interface {
 	PutIfAbsent(ctx context.Context, p *wallet.SandboxPurchase) error
 	Get(ctx context.Context, purchaseID string) (*wallet.SandboxPurchase, error)
 	Update(ctx context.Context, purchaseID string, updates map[string]any) error
+	BuildConfirmTx(purchaseID, e2eID, creditSK string) types.TransactWriteItem
+	BuildRefundClaimTx(purchaseID string) types.TransactWriteItem
+	TransitionStatus(ctx context.Context, purchaseID, fromStatus, toStatus string) (bool, error)
 	ListPendingOlderThan(ctx context.Context, cutoff time.Time, limit int) ([]wallet.SandboxPurchase, error)
+	ListRefundPendingOlderThan(ctx context.Context, cutoff time.Time, limit int) ([]wallet.SandboxPurchase, error)
 	ListWebhookFailedOlderThan(ctx context.Context, cutoff time.Time, limit int) ([]wallet.SandboxPurchase, error)
 }
 
@@ -648,15 +657,31 @@ func (s *WalletService) ConfirmDeposit(ctx context.Context, txid, payerCPF, paye
 		return err
 	}
 
-	if dep.Status == wallet.DepositConfirmed {
+	switch dep.Status {
+	case wallet.DepositConfirmed:
 		// Already credited — a devolução here means the money left the PJ
 		// account after the fact, so the credit must be reversed.
 		return s.processDepositRefund(ctx, dep, charge)
+	case wallet.DepositRefundPending, wallet.DepositRefundFailed, wallet.DepositRejectedCPF:
+		// Resume a CPF/amount-mismatch compensation. DepositRejectedCPF is a
+		// legacy state written before the provider refund by older releases.
+		return s.refundMismatch(ctx, dep, charge)
+	case wallet.DepositRefunded:
+		// Repair the C-03 legacy window: an old release may have credited the
+		// ledger, failed to mark confirmed, then observed the provider refund.
+		prior, err := s.repo.FindMutation(ctx, "deposit#"+txid, reqHash(txid, charge.Amount))
+		if err != nil {
+			return err
+		}
+		if prior != nil {
+			return s.processDepositRefund(ctx, dep, charge)
+		}
+		return nil
+	case wallet.DepositPending:
+		// Continue below.
+	default:
+		return nil
 	}
-	if dep.Status != wallet.DepositPending {
-		return nil // already resolved (rejected/refunded) — idempotent no-op
-	}
-
 	if charge.Status != pix.ChargeCompleted {
 		return nil // not paid yet — safe to be re-woken later
 	}
@@ -706,18 +731,14 @@ func (s *WalletService) ConfirmDeposit(ctx context.Context, txid, payerCPF, paye
 	}
 	defer release()
 
-	if _, _, err := s.repo.Credit(ctx, repositories.Mutation{
+	if _, _, err := s.repo.ConfirmDepositCredit(ctx, repositories.Mutation{
 		WalletID:       dep.WalletID,
 		Amount:         charge.Amount,
 		EntryType:      wallet.EntryDeposit,
 		Ref:            txid,
 		IdempotencyKey: "deposit#" + txid,
 		ReqHash:        reqHash(txid, charge.Amount),
-	}); err != nil {
-		return err
-	}
-
-	if err := s.repo.UpdateDepositStatus(ctx, txid, wallet.DepositConfirmed, charge.E2EID); err != nil {
+	}, txid, charge.E2EID); err != nil {
 		return err
 	}
 	s.broadcastDepositConfirmed(ctx, dep.UserID, dep.WalletID, txid, charge.Amount)
@@ -821,37 +842,8 @@ func (s *WalletService) ProcessMedClawback(ctx context.Context, providerAccountI
 	}
 	defer release()
 
-	w, err := s.repo.GetWallet(ctx, realw.WalletID)
-	if err != nil {
-		return err
-	}
-	debited := amount
-	if w.Balance < amount {
-		debited = w.Balance
-	}
-	shortfall := amount - debited
-
-	if debited > 0 {
-		idemKey := "med#" + ref
-		rh := reqHash(ref, amount) // stable across redeliveries — NOT reqHash(ref, debited)
-		if _, _, err := s.repo.Debit(ctx, repositories.Mutation{
-			WalletID: realw.WalletID, Amount: debited, EntryType: wallet.EntryMedClawback,
-			Ref: ref, IdempotencyKey: idemKey, ReqHash: rh,
-		}); err != nil {
-			return err
-		}
-	}
-	if shortfall > 0 {
-		now := repositories.NowStr()
-		if err := s.baas.PutMedReceivableIfAbsent(ctx, &wallet.MedReceivable{
-			ReceivableID: "med-recv#" + ref, UserID: acc.UserID, WalletID: realw.WalletID,
-			Amount: shortfall, Status: wallet.MedReceivableOpen, Ref: ref, CreatedAt: now, UpdatedAt: now,
-		}); err != nil {
-			slog.Error("ALARM med receivable write failed", "ref", ref, "user_id", acc.UserID, "shortfall", shortfall, "err", err)
-			return err
-		}
-	}
-	return nil
+	_, _, _, err = s.repo.ApplyMedClawback(ctx, realw.WalletID, acc.UserID, amount, ref, reqHash(ref, amount))
+	return err
 }
 
 // ConfirmAsaasDeposit is the Asaas payment-webhook counterpart to
@@ -1020,14 +1012,79 @@ func (s *WalletService) broadcastEvent(ctx context.Context, userID, eventType st
 }
 
 func (s *WalletService) rejectMismatch(ctx context.Context, dep *wallet.PixDeposit, charge *pix.Charge) error {
-	if err := s.repo.UpdateDepositStatus(ctx, dep.Txid, wallet.DepositRejectedCPF, charge.E2EID); err != nil {
+	changed, err := s.repo.TransitionDepositStatus(ctx, dep.Txid, wallet.DepositPending, wallet.DepositRefundPending, charge.E2EID)
+	if err != nil {
 		return err
 	}
-	if _, err := s.pix.Refund(ctx, charge.E2EID, charge.Amount, "refund#"+dep.Txid); err != nil {
-		// Refund failure leaves money in the PJ account with no owner — raise an
-		// operational alarm for manual reconciliation (never a silent path).
-		slog.Error("ALARM deposit refund failed", "txid", dep.Txid, "e2e_id", charge.E2EID, "amount", charge.Amount, "err", err)
-		return problem.InternalServer("estorno do depósito falhou; reconciliação manual necessária")
+	if !changed {
+		current, err := s.repo.GetDeposit(ctx, dep.Txid)
+		if err != nil {
+			return err
+		}
+		if current == nil || current.Status == wallet.DepositRefunded {
+			return nil
+		}
+		dep = current
+	} else {
+		dep.Status = wallet.DepositRefundPending
+	}
+	return s.refundMismatch(ctx, dep, charge)
+}
+
+// refundMismatch resumes the compensation from a durable non-terminal state.
+// The provider key is stable, so a crash after the provider accepted the
+// refund but before the local final transition is safe to replay.
+func (s *WalletService) refundMismatch(ctx context.Context, dep *wallet.PixDeposit, charge *pix.Charge) error {
+	if dep.Status != wallet.DepositRefundPending {
+		changed, err := s.repo.TransitionDepositStatus(ctx, dep.Txid, dep.Status, wallet.DepositRefundPending, charge.E2EID)
+		if err != nil {
+			return err
+		}
+		if !changed {
+			current, err := s.repo.GetDeposit(ctx, dep.Txid)
+			if err != nil {
+				return err
+			}
+			if current == nil || current.Status == wallet.DepositRefunded {
+				return nil
+			}
+			if current.Status != wallet.DepositRefundPending {
+				return problem.InternalServer("estado de estorno de depósito inconsistente")
+			}
+		}
+	}
+	if _, refundErr := s.pix.Refund(ctx, charge.E2EID, charge.Amount, "refund#"+dep.Txid); refundErr != nil {
+		changed, stateErr := s.repo.TransitionDepositStatus(ctx, dep.Txid, wallet.DepositRefundPending, wallet.DepositRefundFailed, charge.E2EID)
+		if stateErr != nil {
+			slog.Error("ALARM deposit refund and durable failure transition both failed", "txid", dep.Txid, "refund_err", refundErr, "state_err", stateErr)
+			return problem.InternalServer("estorno do depósito falhou; estado será reconciliado")
+		}
+		if !changed {
+			current, readErr := s.repo.GetDeposit(ctx, dep.Txid)
+			if readErr != nil {
+				return readErr
+			}
+			// A concurrent worker may have completed the same stable provider
+			// request. Never regress its terminal state to refund_failed.
+			if current != nil && current.Status == wallet.DepositRefunded {
+				return nil
+			}
+		}
+		slog.Error("ALARM deposit refund failed; scheduled retry retained", "txid", dep.Txid, "e2e_id", charge.E2EID, "amount", charge.Amount, "err", refundErr)
+		return problem.InternalServer("estorno do depósito falhou; nova tentativa agendada")
+	}
+	changed, err := s.repo.TransitionDepositStatus(ctx, dep.Txid, wallet.DepositRefundPending, wallet.DepositRefunded, charge.E2EID)
+	if err != nil {
+		return err
+	}
+	if !changed {
+		current, err := s.repo.GetDeposit(ctx, dep.Txid)
+		if err != nil {
+			return err
+		}
+		if current == nil || current.Status != wallet.DepositRefunded {
+			return problem.InternalServer("estorno concluído no provedor aguardando reconciliação local")
+		}
 	}
 	return nil
 }

@@ -165,10 +165,12 @@ per-user split — internal bookkeeping with no external counterpart.
          ├─ maskedCPFMatches(dep.PayerCPF, kyc.CPF)       → else rejectMismatch + devolução
          ├─ charge.Amount != dep.AmountExpected           → ALARM + rejectMismatch
          ├─ lock.Acquire(walletID)        → else 409 wallet-busy
-         ├─ repo.Credit{EntryDeposit, IDEM#deposit#txid}  ← TransactWriteItems
+         ├─ repo.ConfirmDepositCredit{EntryDeposit, IDEM#deposit#txid}
+         │    ← balance + ledger + permanent guard + conditional deposit status in one TransactWriteItems
          └─ broadcast deposit_confirmed → Valkey ws:{user_id} → UI invalidates React Query
 8. cmd/reconcile sweeps pending deposits older than sweepAgeThreshold → ConfirmDeposit(sweep=true)
    (sweep skips the CPF gate when no webhook ever arrived — SEC-03)
+   and resumes rejected-deposit provider compensation from `refund_pending`/`refund_failed` with a stable txid.
 ```
 
 ### 2.3 Withdrawal (current)
@@ -686,8 +688,10 @@ one case where custody goes *below* the ledger. Required handling:
 
 1. **Detect it.** Subscribe to the Asaas event for it (§10 Q11: which webhook event, and what the
    notification window is). Do not discover MED from a balance mismatch.
-2. **Debit what is there**, conditionally, exactly as today; the shortfall becomes an explicit
-   `med_receivable` row against the user — a *debt*, not a negative balance. Invariant #1 stays literally true:
+2. **Apply the clawback atomically.** One `TransactWriteItems`, guarded by the immutable provider event ID,
+   conditionally debits exactly the available balance, appends the compensating ledger entry, and records exactly
+   the remaining shortfall as `med_receivable`. All amounts come from the same strongly read wallet snapshot, so a
+   retry cannot debit part of the amount and then recalculate a larger receivable. Invariant #1 stays literally true:
    `wallets.balance` never goes below zero.
 3. **Block withdrawals and funding while a `med_receivable` is open**, and settle it from the next inflow. This is
    the only place in the system where the wallet holds a claim against the user, so it must be a distinct concept

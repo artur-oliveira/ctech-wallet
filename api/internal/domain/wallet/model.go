@@ -72,12 +72,13 @@ const (
 
 // PIX deposit statuses.
 const (
-	DepositPending      = "pending"
-	DepositConfirmed    = "confirmed"
-	DepositRejectedCPF  = "rejected_cpf_mismatch"
-	DepositExpired      = "expired"
-	DepositRefunded     = "refunded"      // Inter returned the payment to the payer (devolução)
-	DepositRefundFailed = "refund_failed" // devolução seen, but the wallet debit-back failed — needs manual reconciliation
+	DepositPending       = "pending"
+	DepositConfirmed     = "confirmed"
+	DepositRejectedCPF   = "rejected_cpf_mismatch" // legacy pre-saga state; reconciler migrates it to refund_pending
+	DepositRefundPending = "refund_pending"
+	DepositExpired       = "expired"
+	DepositRefunded      = "refunded"      // Inter returned the payment to the payer (devolução)
+	DepositRefundFailed  = "refund_failed" // devolução seen, but the wallet debit-back failed — needs manual reconciliation
 )
 
 // Withdrawal statuses.
@@ -347,10 +348,11 @@ const (
 // Direct PIX→sandbox purchase statuses (plan §9.3). Deliberately its own
 // status set, not DepositPending/Confirmed — this is a sale, not custody.
 const (
-	SandboxPurchasePending   = "pending"
-	SandboxPurchaseConfirmed = "confirmed"
-	SandboxPurchaseRefunded  = "refunded"
-	SandboxPurchaseExpired   = "expired"
+	SandboxPurchasePending       = "pending"
+	SandboxPurchaseConfirmed     = "confirmed"
+	SandboxPurchaseRefundPending = "refund_pending"
+	SandboxPurchaseRefunded      = "refunded"
+	SandboxPurchaseExpired       = "expired"
 )
 
 // M2M webhook notify-back delivery status (RequestingClient-owned purchases

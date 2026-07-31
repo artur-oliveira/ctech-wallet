@@ -37,7 +37,9 @@ type Result struct {
 	Reversed              int `json:"reversed"`
 	Alarmed               int `json:"alarmed"`
 	SweptDeposits         int `json:"swept_deposits"`
+	RetriedDepositRefunds int `json:"retried_deposit_refunds"`
 	SweptSandboxPurchases int `json:"swept_sandbox_purchases"`
+	RetriedSandboxRefunds int `json:"retried_sandbox_refunds"`
 	RetriedM2MWebhooks    int `json:"retried_m2m_webhooks"`
 	StaleHolds            int `json:"stale_holds_alarmed"`
 	TransfersResolved     int `json:"asaas_transfers_resolved"`
@@ -121,7 +123,15 @@ func run(ctx context.Context) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	retriedDepositRefunds, err := svc.SweepDepositRefunds(ctx)
+	if err != nil {
+		return nil, err
+	}
 	sweptSandbox, err := svc.SweepPendingSandboxPurchases(ctx)
+	if err != nil {
+		return nil, err
+	}
+	retriedSandboxRefunds, err := svc.SweepRefundPendingSandboxPurchases(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +146,8 @@ func run(ctx context.Context) (*Result, error) {
 
 	res := &Result{
 		Resolved: resolved, Reversed: reversed, Alarmed: alarmed, SweptDeposits: swept,
-		SweptSandboxPurchases: sweptSandbox, RetriedM2MWebhooks: retriedWebhooks, StaleHolds: staleHolds,
+		RetriedDepositRefunds: retriedDepositRefunds, SweptSandboxPurchases: sweptSandbox,
+		RetriedSandboxRefunds: retriedSandboxRefunds, RetriedM2MWebhooks: retriedWebhooks, StaleHolds: staleHolds,
 	}
 	if cfg.AsaasCustodyEnabled {
 		baasSvc, err := newBaasService(ctx, cfg, clients, repo, audit, kycclient.New(cfg))

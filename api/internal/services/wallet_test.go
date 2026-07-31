@@ -34,6 +34,7 @@ type stubRepo struct {
 	debitFeeCalled      bool
 	transferErr         error
 	transferCalled      bool
+	medReceivable       *wallet.MedReceivable
 	holds               map[string]*wallet.Hold
 	createHoldErr       error
 	staleHolds          []wallet.Hold
@@ -90,16 +91,59 @@ func (s *stubRepo) EnsureSandboxWallet(_ context.Context, _ string) (*wallet.Wal
 	s.sandboxCreated = true
 	return &s.sandbox, nil
 }
-func (s *stubRepo) Credit(_ context.Context, m repositories.Mutation) (*wallet.LedgerEntry, bool, error) {
+func (s *stubRepo) Credit(_ context.Context, m repositories.Mutation, _ ...types.TransactWriteItem) (*wallet.LedgerEntry, bool, error) {
 	s.creditCalls = append(s.creditCalls, m)
-	return &wallet.LedgerEntry{WalletID: m.WalletID, Amount: m.Amount, Type: m.EntryType}, false, nil
+	entry := &wallet.LedgerEntry{WalletID: m.WalletID, SK: "ledger#credit", Amount: m.Amount, Type: m.EntryType}
+	if m.Extra != nil {
+		m.Extra(entry)
+	}
+	return entry, false, nil
 }
-func (s *stubRepo) Debit(_ context.Context, m repositories.Mutation) (*wallet.LedgerEntry, bool, error) {
+func (s *stubRepo) Debit(_ context.Context, m repositories.Mutation, _ ...types.TransactWriteItem) (*wallet.LedgerEntry, bool, error) {
 	s.debitCalls = append(s.debitCalls, m)
 	if s.debitErr != nil {
 		return nil, false, s.debitErr
 	}
-	return &wallet.LedgerEntry{WalletID: m.WalletID, Amount: -m.Amount, Type: m.EntryType}, false, nil
+	entry := &wallet.LedgerEntry{WalletID: m.WalletID, SK: "ledger#debit", Amount: -m.Amount, Type: m.EntryType}
+	if m.Extra != nil {
+		m.Extra(entry)
+	}
+	return entry, false, nil
+}
+func (s *stubRepo) ConfirmDepositCredit(ctx context.Context, m repositories.Mutation, _ string, e2eID string) (*wallet.LedgerEntry, bool, error) {
+	entry, replayed, err := s.Credit(ctx, m)
+	if err == nil {
+		s.depositStatus, s.depositE2E = wallet.DepositConfirmed, e2eID
+		if s.deposit != nil {
+			s.deposit.Status = wallet.DepositConfirmed
+		}
+	}
+	return entry, replayed, err
+}
+func (s *stubRepo) ApplyMedClawback(ctx context.Context, walletID, _ string, amount int64, ref, hash string) (int64, int64, bool, error) {
+	debited := amount
+	if s.real.Balance < debited {
+		debited = s.real.Balance
+	}
+	if debited > 0 {
+		_, _, err := s.Debit(ctx, repositories.Mutation{WalletID: walletID, Amount: debited, EntryType: wallet.EntryMedClawback, Ref: ref, IdempotencyKey: "med#" + ref, ReqHash: hash})
+		if err != nil {
+			return 0, 0, false, err
+		}
+	}
+	shortfall := amount - debited
+	if shortfall > 0 {
+		s.medReceivable = &wallet.MedReceivable{ReceivableID: "med-recv#" + ref, WalletID: walletID, Amount: shortfall, Status: wallet.MedReceivableOpen, Ref: ref}
+	}
+	return debited, shortfall, false, nil
+}
+func (s *stubRepo) FindMutation(_ context.Context, idemKey, _ string) (*wallet.LedgerEntry, error) {
+	for i := range s.creditCalls {
+		if s.creditCalls[i].IdempotencyKey == idemKey {
+			return &wallet.LedgerEntry{Amount: s.creditCalls[i].Amount}, nil
+		}
+	}
+	return nil, nil
 }
 func (s *stubRepo) DebitWithFee(_ context.Context, w *wallet.Withdrawal, amount, fee int64, _, _ string) (*wallet.LedgerEntry, *wallet.LedgerEntry, bool, error) {
 	s.debitFeeCalled = true
@@ -238,6 +282,22 @@ func (s *stubRepo) AmountAtSK(_ context.Context, _, _ string) (int64, error) {
 	return s.amountAtSK, nil
 }
 
+func (s *stubRepo) TransitionDepositStatus(_ context.Context, _ string, fromStatus, toStatus, e2e string) (bool, error) {
+	current := s.depositStatus
+	if s.deposit != nil {
+		current = s.deposit.Status
+	}
+	if current != fromStatus {
+		return false, nil
+	}
+	s.depositStatus, s.depositE2E = toStatus, e2e
+	if s.deposit != nil {
+		s.deposit.Status = toStatus
+		s.deposit.E2EID = e2e
+	}
+	return true, nil
+}
+
 type stubLocker struct{ busy bool }
 
 func (l *stubLocker) Acquire(_ context.Context, _ string) (func(), bool, error) {
@@ -275,6 +335,18 @@ type fakeDepositBaas struct {
 	lastSetStatus     string
 	settlementCalls   int
 	reversalCalls     int
+}
+
+func (s *stubRepo) ListRefundableDepositsOlderThan(_ context.Context, _ time.Time, _ int) ([]wallet.PixDeposit, error) {
+	if s.deposit == nil {
+		return nil, nil
+	}
+	switch s.deposit.Status {
+	case wallet.DepositRefundPending, wallet.DepositRefundFailed, wallet.DepositRejectedCPF:
+		return []wallet.PixDeposit{*s.deposit}, nil
+	default:
+		return nil, nil
+	}
 }
 
 func (f *fakeDepositBaas) GetIfApproved(context.Context, string) (*wallet.BaasAccount, error) {
@@ -388,8 +460,8 @@ func TestConfirmDepositRejectsAndRefundsOnCPFMismatch(t *testing.T) {
 	if len(repo.creditCalls) != 0 {
 		t.Fatalf("no credit expected on CPF mismatch, got %+v", repo.creditCalls)
 	}
-	if repo.depositStatus != wallet.DepositRejectedCPF {
-		t.Errorf("status = %q, want rejected_cpf_mismatch", repo.depositStatus)
+	if repo.depositStatus != wallet.DepositRefunded {
+		t.Errorf("status = %q, want refunded", repo.depositStatus)
 	}
 	if len(fake.Refunds) != 1 || fake.Refunds[0].Amount != 5000 {
 		t.Errorf("expected one refund of 5000, got %+v", fake.Refunds)

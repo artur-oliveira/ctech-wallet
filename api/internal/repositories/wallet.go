@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
@@ -25,6 +26,7 @@ type WalletRepository struct {
 	deposits   Base
 	withdrawal Base
 	holds      Base
+	med        Base
 }
 
 // NewWalletRepository builds the repository with one Base per wallet table.
@@ -36,6 +38,7 @@ func NewWalletRepository(db *dynamodb.Client, cfg *config.Config) *WalletReposit
 		deposits:   NewBase(db, cfg, wallet.TablePixDeposits),
 		withdrawal: NewBase(db, cfg, wallet.TableWithdrawals),
 		holds:      NewBase(db, cfg, wallet.TableHolds),
+		med:        NewBase(db, cfg, wallet.TableMedReceivables),
 	}
 }
 
@@ -69,6 +72,7 @@ type Mutation struct {
 	Ref            string
 	IdempotencyKey string
 	ReqHash        string
+	Extra          func(*wallet.LedgerEntry) []types.TransactWriteItem
 }
 
 // GetWallet returns the authoritative wallet record, or nil if absent.
@@ -231,16 +235,16 @@ func (r *WalletRepository) loadByMarkers(ctx context.Context, userID string, wal
 // Credit adds Amount to a wallet. Debit subtracts it with a balance>=Amount
 // condition. Both co-write the ledger entry and an idempotency guard in one
 // TransactWriteItems. On replay (same key) they return the prior entry.
-func (r *WalletRepository) Credit(ctx context.Context, m Mutation) (*wallet.LedgerEntry, bool, error) {
-	return r.mutate(ctx, m, +1)
+func (r *WalletRepository) Credit(ctx context.Context, m Mutation, extra ...types.TransactWriteItem) (*wallet.LedgerEntry, bool, error) {
+	return r.mutate(ctx, m, +1, extra...)
 }
 
-func (r *WalletRepository) Debit(ctx context.Context, m Mutation) (*wallet.LedgerEntry, bool, error) {
-	return r.mutate(ctx, m, -1)
+func (r *WalletRepository) Debit(ctx context.Context, m Mutation, extra ...types.TransactWriteItem) (*wallet.LedgerEntry, bool, error) {
+	return r.mutate(ctx, m, -1, extra...)
 }
 
 // mutate applies a signed single-wallet balance change. sign is +1 (credit) or -1 (debit).
-func (r *WalletRepository) mutate(ctx context.Context, m Mutation, sign int64) (*wallet.LedgerEntry, bool, error) {
+func (r *WalletRepository) mutate(ctx context.Context, m Mutation, sign int64, extra ...types.TransactWriteItem) (*wallet.LedgerEntry, bool, error) {
 	prior, conflict, err := r.checkReplay(ctx, m.IdempotencyKey, m.ReqHash)
 	if err != nil {
 		return nil, false, err
@@ -249,6 +253,17 @@ func (r *WalletRepository) mutate(ctx context.Context, m Mutation, sign int64) (
 		return nil, false, conflict
 	}
 	if prior != nil {
+		allExtra := extra
+		if m.Extra != nil {
+			allExtra = append(allExtra, m.Extra(prior)...)
+		}
+		// Lifecycle items are normally co-written with the mutation. Applying
+		// them on replay repairs rows left half-complete by older releases.
+		if len(allExtra) > 0 {
+			if err := r.wallets.TransactWrite(ctx, allExtra); err != nil && !IsConditionFailed(err) {
+				return nil, false, err
+			}
+		}
 		return prior, true, nil
 	}
 
@@ -272,10 +287,123 @@ func (r *WalletRepository) mutate(ctx context.Context, m Mutation, sign int64) (
 		return nil, false, err
 	}
 
-	if err := r.wallets.TransactWrite(ctx, []types.TransactWriteItem{walletTx, ledgerTx, guardTx}); err != nil {
+	items := []types.TransactWriteItem{walletTx, ledgerTx, guardTx}
+	items = append(items, extra...)
+	if m.Extra != nil {
+		items = append(items, m.Extra(entry)...)
+	}
+	if err := r.wallets.TransactWrite(ctx, items); err != nil {
 		return r.resolveTxErr(ctx, m.IdempotencyKey, m.ReqHash, sign, err)
 	}
 	return entry, false, nil
+}
+
+// FindMutation returns the immutable ledger entry for a matching idempotency
+// fingerprint. A reused key with different input remains a conflict.
+func (r *WalletRepository) FindMutation(ctx context.Context, idemKey, reqHash string) (*wallet.LedgerEntry, error) {
+	prior, conflict, err := r.checkReplay(ctx, idemKey, reqHash)
+	if err != nil {
+		return nil, err
+	}
+	if conflict != nil {
+		return nil, conflict
+	}
+	return prior, nil
+}
+
+// ConfirmDepositCredit atomically creates value and transitions the source
+// deposit pending→confirmed. The replay path repairs legacy rows where an older
+// release committed the credit before updating the deposit status.
+func (r *WalletRepository) ConfirmDepositCredit(ctx context.Context, m Mutation, txid, e2eID string) (*wallet.LedgerEntry, bool, error) {
+	return r.Credit(ctx, m, r.depositStatusTx(txid, wallet.DepositPending, wallet.DepositConfirmed, e2eID))
+}
+
+// ApplyMedClawback commits the available-balance debit and exact receivable
+// shortfall together. Replays derive the applied amount from the immutable
+// ledger entry, never from the already-reduced current balance.
+func (r *WalletRepository) ApplyMedClawback(ctx context.Context, walletID, userID string, amount int64, ref, reqHash string) (int64, int64, bool, error) {
+	idemKey := "med#" + ref
+	prior, conflict, err := r.checkReplay(ctx, idemKey, reqHash)
+	if err != nil {
+		return 0, 0, false, err
+	}
+	if conflict != nil {
+		return 0, 0, false, conflict
+	}
+	if prior != nil {
+		debited := -prior.Amount
+		shortfall := amount - debited
+		if shortfall > 0 {
+			if err := r.putMedReceivableIfAbsent(ctx, userID, walletID, shortfall, ref); err != nil {
+				return 0, 0, true, err
+			}
+		}
+		return debited, shortfall, true, nil
+	}
+
+	w, err := r.GetWallet(ctx, walletID)
+	if err != nil {
+		return 0, 0, false, err
+	}
+	if w == nil {
+		return 0, 0, false, problem.NotFound("carteira não encontrada")
+	}
+	debited := amount
+	if w.Balance < debited {
+		debited = w.Balance
+	}
+	shortfall := amount - debited
+	entry := r.newEntry(walletID, wallet.EntryMedClawback, -debited, w.Balance-debited, idemKey, ref)
+	ledgerTx, guardTx, err := r.ledgerAndGuardTx(entry, idemKey, reqHash)
+	if err != nil {
+		return 0, 0, false, err
+	}
+	// Even a zero-available-balance clawback writes a zero-amount ledger event
+	// and permanent guard with the receivable. This keeps every new MED event
+	// one atomic, replay-verifiable aggregate instead of relying on the
+	// receivable's key alone for the all-shortfall case.
+	items := []types.TransactWriteItem{ledgerTx, guardTx}
+	if debited > 0 {
+		walletTx, err := r.balanceTx(walletID, debited, -1)
+		if err != nil {
+			return 0, 0, false, err
+		}
+		items = append([]types.TransactWriteItem{walletTx}, items...)
+	}
+	if shortfall > 0 {
+		items = append(items, r.med.BuildPutTxItemIfAbsent(mustEncode(newMedReceivable(userID, walletID, shortfall, ref))))
+	}
+	if err := r.wallets.TransactWrite(ctx, items); err != nil {
+		if replay, _, replayErr := r.checkReplay(ctx, idemKey, reqHash); replayErr == nil && replay != nil {
+			return -replay.Amount, amount + replay.Amount, true, nil
+		}
+		if IsConditionFailed(err) {
+			return 0, 0, false, problem.InsufficientBalance()
+		}
+		return 0, 0, false, err
+	}
+	return debited, shortfall, false, nil
+}
+
+func newMedReceivable(userID, walletID string, amount int64, ref string) *wallet.MedReceivable {
+	now := NowStr()
+	return &wallet.MedReceivable{
+		ReceivableID: "med-recv#" + ref,
+		UserID:       userID, WalletID: walletID, Amount: amount,
+		Status: wallet.MedReceivableOpen, Ref: ref, CreatedAt: now, UpdatedAt: now,
+	}
+}
+
+func (r *WalletRepository) putMedReceivableIfAbsent(ctx context.Context, userID, walletID string, amount int64, ref string) error {
+	if amount <= 0 {
+		return nil
+	}
+	item := r.med.BuildPutTxItemIfAbsent(mustEncode(newMedReceivable(userID, walletID, amount, ref)))
+	err := r.med.TransactWrite(ctx, []types.TransactWriteItem{item})
+	if IsConditionFailed(err) {
+		return nil
+	}
+	return err
 }
 
 // DebitWithFee debits amount+fee in one transaction, writing a withdraw entry and
@@ -582,6 +710,70 @@ func (r *WalletRepository) ListPendingDepositsOlderThan(ctx context.Context, cut
 		}
 	}
 	return out, nil
+}
+
+// ListRefundableDepositsOlderThan returns mismatch-refund saga rows, including
+// the legacy rejected status, for scheduled retry.
+func (r *WalletRepository) ListRefundableDepositsOlderThan(ctx context.Context, cutoff time.Time, limit int) ([]wallet.PixDeposit, error) {
+	statuses := []string{wallet.DepositRefundPending, wallet.DepositRefundFailed, wallet.DepositRejectedCPF}
+	out := make([]wallet.PixDeposit, 0, limit)
+	for _, status := range statuses {
+		remaining := limit - len(out)
+		if remaining <= 0 {
+			break
+		}
+		res, err := r.deposits.QueryGSI(ctx, wallet.GSIStatus, "status", status, remaining, nil)
+		if err != nil {
+			return nil, err
+		}
+		for _, it := range res.Items {
+			d, err := Decode[wallet.PixDeposit](it)
+			if err != nil {
+				return nil, err
+			}
+			createdAt, err := time.Parse(time.RFC3339Nano, d.CreatedAt)
+			if err == nil && createdAt.Before(cutoff) {
+				out = append(out, *d)
+			}
+		}
+	}
+	return out, nil
+}
+
+const (
+	depositStatusUpdateExpression    = "SET #status = :to, e2e_id = :e2e, " + attributeUpdatedAt + " = :now"
+	depositStatusConditionExpression = "#status = :from"
+)
+
+func depositStatusTransition(fromStatus, toStatus, e2eID string) (map[string]string, map[string]types.AttributeValue) {
+	return map[string]string{"#status": "status"}, map[string]types.AttributeValue{
+		":from": &types.AttributeValueMemberS{Value: fromStatus},
+		":to":   &types.AttributeValueMemberS{Value: toStatus},
+		":e2e":  &types.AttributeValueMemberS{Value: e2eID},
+		":now":  &types.AttributeValueMemberS{Value: NowStr()},
+	}
+}
+
+func (r *WalletRepository) depositStatusTx(txid, fromStatus, toStatus, e2eID string) types.TransactWriteItem {
+	names, values := depositStatusTransition(fromStatus, toStatus, e2eID)
+	return r.deposits.BuildRawUpdateTxItem(txid, nil, depositStatusUpdateExpression, depositStatusConditionExpression, names, values)
+}
+
+// TransitionDepositStatus is a compare-and-set lifecycle transition. Losing a
+// race is reported as changed=false so callers can re-read and resume safely.
+func (r *WalletRepository) TransitionDepositStatus(ctx context.Context, txid, fromStatus, toStatus, e2eID string) (bool, error) {
+	names, values := depositStatusTransition(fromStatus, toStatus, e2eID)
+	_, err := r.deposits.UpdateItemRaw(ctx, &dynamodb.UpdateItemInput{
+		Key:                       map[string]types.AttributeValue{"pk": &types.AttributeValueMemberS{Value: txid}},
+		UpdateExpression:          aws.String(depositStatusUpdateExpression),
+		ConditionExpression:       aws.String(depositStatusConditionExpression),
+		ExpressionAttributeNames:  names,
+		ExpressionAttributeValues: values,
+	})
+	if IsConditionFailed(err) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // --- withdrawal persistence ---

@@ -82,6 +82,19 @@ is a business deadline, not DynamoDB TTL. Reusing the same caller/user/idempoten
 `cmd/reconcile` exits non-zero on (Invariant #12 is about money in limbo — a lost notification is not; the
 receiver's own poll path covers it either way).
 
+## Durable confirmation and refund state
+
+Confirmation uses one DynamoDB transaction for the sandbox credit, ledger entry,
+permanent idempotency guard, and conditional purchase transition to `confirmed`.
+The purchase therefore cannot remain pending after its credits exist.
+
+Refund initiation validates post-purchase usage while the purchase is confirmed,
+then atomically records the reversal debit and `refund_pending`. The provider call
+uses the purchase ID as its stable request identity. A timeout or provider failure
+leaves the resumable `refund_pending` state; `cmd/reconcile` retries those rows
+without debiting again, and only the successful provider
+response moves the purchase to `refunded`.
+
 ## New scope
 
 `ScopeWalletSandboxPurchase = "internal:wallet:sandbox-purchase"` (`internal/middleware/scope.go`) — deliberately
