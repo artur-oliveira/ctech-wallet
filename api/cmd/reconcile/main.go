@@ -143,6 +143,7 @@ func run(ctx context.Context) (*Result, error) {
 		if err != nil {
 			return nil, fmt.Errorf("baas: %w", err)
 		}
+		baasSvc.SetWithdrawalReverser(svc.ReverseWithdrawal)
 		tResolved, tRetried, tAlarmed, err := baasSvc.ReconcileTransferIntents(ctx)
 		if err != nil {
 			return nil, err

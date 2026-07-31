@@ -215,7 +215,8 @@ New route, new service method `InitiateBaasOnboarding(ctx, userID) (*BaasAccount
 1. Require `kycLevel == verified` (mirrors `ActivateGambling`'s gate).
 2. Idempotent on `user_id` — a second call while `status` is anything other than absent returns the existing
    record (mirrors `EnsureRealWallet`'s create-or-reuse pattern, never a second `POST /v3/accounts`).
-3. `asaas.CreateAccount` with the parent API key; on success, write the `wallet_baas_accounts` row with
+3. Conditionally reserve `wallet_baas_accounts` by user **before** the provider call, then call
+   `asaas.CreateAccount` with the parent API key; on success, complete that reserved row with
    `status=onboarding`, KMS-encrypted `api_key_ciphertext` (§3.3), `provider_account_id`, `provider_wallet_id`
    (Asaas's `account.id`/`walletId` — named generically because a future provider's IDs land in the same columns).
 4. Audit event `EventBaasSubaccountCreated` (new constant in `domain/wallet/audit.go`, same append-only table,
@@ -328,7 +329,8 @@ confirm this with a live Asaas-sandbox test before writing the gate logic, don't
 ### 4.4 Testing
 
 Same integration-test shape as the existing `tests/integration` deposit tests (webhook → re-query → credit,
-CPF mismatch → refund, double-payment → excess refund, sweep path skips the CPF gate) — literally the same test
+CPF mismatch → refund, double-payment → excess refund; a sweep with no independently verified payer CPF is
+quarantined and never credited) — literally the same test
 cases, pointed at the `asaas` fake instead of the `pix` fake. This is the value of not touching `ConfirmDeposit`'s
 signature/logic: the existing test suite's *scenarios* transfer over almost unchanged; only the setup transport
 differs.

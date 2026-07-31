@@ -342,17 +342,12 @@ func (c *InterClient) doIdem(ctx context.Context, method, path string, body, out
 	}
 	defer func() { _ = resp.Body.Close() }()
 	raw, _ := io.ReadAll(resp.Body)
-	// Log the full Inter response body at info. The gateway is stateless and
-	// returns only a subset of fields upstream (inter.Charge/TransferResult),
-	// so this raw body is the ONLY place every field Inter
-	// documents for the op is captured and auditable. The body never contains
-	// the OAuth bearer (that travels only in the request), so no secret leaks
-	// here — unlike GetToken, which must NOT log its body (it holds access_token).
+	// Never log the raw bank body: charge responses can contain payer PII and
+	// error responses can echo sensitive request/provider details.
 	slog.InfoContext(ctx, "inter response",
 		"method", method,
 		"path", path,
 		"status", resp.StatusCode,
-		"body", string(raw),
 	)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return &statusError{Method: method, Path: path, Code: resp.StatusCode, Body: string(raw)}

@@ -10,6 +10,7 @@ package validation
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"strings"
 	"sync"
@@ -52,12 +53,14 @@ func Struct(v any) *problem.Problem {
 	}
 	var invalid *validator.InvalidValidationError
 	if asInvalid(err, &invalid) {
-		return problem.InternalServer("validation misconfigured: " + err.Error())
+		slog.Error("validation misconfigured", "err", err)
+		return problem.InternalServer("erro interno")
 	}
 	var ve validator.ValidationErrors
 	ok := errors.As(err, &ve)
 	if !ok {
-		return problem.InternalServer("validation failed: " + err.Error())
+		slog.Error("validation failed", "err", err)
+		return problem.InternalServer("erro interno")
 	}
 	errs := make([]problem.FieldError, 0, len(ve))
 	for _, fe := range ve {

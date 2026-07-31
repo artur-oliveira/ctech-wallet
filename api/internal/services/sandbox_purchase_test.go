@@ -146,6 +146,20 @@ func TestPurchaseSandboxDirectIdempotentReplay(t *testing.T) {
 	}
 }
 
+func TestPurchaseSandboxDirectRejectsSameKeyDifferentSKU(t *testing.T) {
+	repo := newStubRepo()
+	purchases := newStubSandboxPurchaseRepo()
+	svc := newSandboxSvc(repo, purchases, pix.NewFake())
+	if _, _, err := svc.PurchaseSandboxDirect(context.Background(), "u1", "pack_100", "idem-conflict", "client-a"); err != nil {
+		t.Fatalf("first call: %v", err)
+	}
+	_, _, err := svc.PurchaseSandboxDirect(context.Background(), "u1", "pack_500", "idem-conflict", "client-a")
+	p, ok := errors.AsType[*problem.Problem](err)
+	if !ok || p.Type != problem.TypeIdempotencyConflict {
+		t.Fatalf("expected idempotency conflict, got %v", err)
+	}
+}
+
 func TestConfirmSandboxPurchaseCreditsSandboxWallet(t *testing.T) {
 	repo := newStubRepo()
 	purchases := newStubSandboxPurchaseRepo()

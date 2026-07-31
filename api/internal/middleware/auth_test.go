@@ -59,7 +59,7 @@ func TestVerifier_VerifyClaimsExtractsAllFields(t *testing.T) {
 		"scope":       "openid internal:wallet:credit",
 		"sid":         "sess_1",
 		"azp":         "poker",
-		"kyc_level":   "verified",
+		"kyc_level":   "enhanced",
 		"last_mfa_at": now,
 		"aud":         "https://wallet-api.aoctech.app",
 		"iss":         "https://accounts.aoctech.app",
@@ -70,7 +70,7 @@ func TestVerifier_VerifyClaimsExtractsAllFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("VerifyClaims: %v", err)
 	}
-	if cl.Sub != "user_1" || cl.KYCLevel != "verified" || cl.LastMFAAt != now {
+	if cl.Sub != "user_1" || cl.KYCLevel != "enhanced" || cl.LastMFAAt != now {
 		t.Fatalf("bad claims: %+v", cl)
 	}
 	if !cl.HasScope("internal:wallet:credit") || cl.HasScope("internal:wallet:debit") {

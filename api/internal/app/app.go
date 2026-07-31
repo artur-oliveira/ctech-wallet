@@ -219,6 +219,7 @@ func newWalletService(repo *repositories.WalletRepository, users *repositories.U
 	svc.SetCustodyEnabled(cfg.AsaasCustodyEnabled)
 	svc.SetSandboxPurchases(sandboxPurchases)
 	svc.SetM2MClients(m2mClients)
+	baas.SetWithdrawalReverser(svc.ReverseWithdrawal)
 	return svc
 }
 

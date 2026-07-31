@@ -71,7 +71,7 @@ non‑empty `sid` (`scope.go:42`).
 | POST   | `/v1.0/internal/wallet/real/debit`                 | `internal:wallet:debit-real` (`scope.go:14`)      | `internal.go:52`  | same                                                                        | Debits the **real** wallet for an authorized M2M client (e.g. `ctech-billing` subscription). No PIX leg. **Deliberately separate from `internal:wallet:debit`** so a sandbox‑only client can never touch `real`. `wallet.go:811`.                              |
 | POST   | `/v1.0/internal/wallet/game/hold`                  | `internal:wallet:game-hold` (`scope.go:22`)       | `internal.go:66`  | `{user_id, amount>0, table_ref, idempotency_key}` (`dto.go:78`)             | Reserves a buy‑in against `game` (real conditional debit, Invariant #1). Hold record never bounds the later cash‑out. `wallet.go:843`.                                                                                                                         |
 | POST   | `/v1.0/internal/wallet/game/hold/:hold_id/release` | `internal:wallet:game-hold`                       | `internal.go:80`  | `{user_id, idempotency_key}` (`dto.go:89`)                                  | Refunds a `held` hold in full (table/hand aborted before play). Requires `user_id` to match the hold's owner (SEC‑07). Idempotent. `wallet.go:871`.                                                                                                            |
-| POST   | `/v1.0/internal/wallet/game/cashout`               | `internal:wallet:game-cashout` (`scope.go:24`)    | `internal.go:95`  | `{user_id, amount>0, table_ref, hold_ids[], idempotency_key}` (`dto.go:97`) | Credits the player's final stack — amount is credited **exactly as sent, never bounded** by the sum of `hold_ids` (the caller's table ledger is authoritative). Every listed hold must belong to `user_id` (SEC‑07) before any mutation. `wallet.go:941`.      |
+| POST   | `/v1.0/internal/wallet/game/cashout`               | `internal:wallet:game-cashout` (`scope.go:24`)    | `internal.go:95`  | `{user_id, amount>0, table_ref, hold_ids[], idempotency_key}` (`dto.go:97`) | Fail-closed settlement: amount may not exceed the referenced held value. Wallet credit, ledger/idempotency guard, and every `held→settled` transition commit atomically. Multi-player winnings require the future zero-sum settlement protocol. |
 | GET    | `/v1.0/internal/wallet/game/status/:user_id`       | `internal:wallet:game-status` (`scope.go:27`)     | `internal.go:111` | —                                                                           | Real‑money eligibility for a skill game: `{activated, self_excluded, limits_configured}`. Registered unconditionally so poker sees "not eligible" even while the flag is off. `responsible.go:236`.                                                            |
 | GET    | `/v1.0/internal/wallet/balance/:user_id`           | `internal:wallet:balance` (`scope.go:32`)         | `internal.go:121` | —                                                                           | Read‑only `{game_balance, sandbox_balance}` (centavos). `real` deliberately excluded — poker never touches real money directly. Never creates a wallet; a wallet that doesn't exist reports `0`. `wallet.go` `BalancesFor`.                                    |
 
@@ -119,7 +119,8 @@ non‑empty `sid` (`scope.go:42`).
 3. **Idempotent** — guard item `IDEM#{key}` written `attribute_not_exists` in
    the same `TransactWriteItems` (`repositories/wallet.go:619`); replay by
    `Idempotency-Key` header (user) or `idempotency_key` body (internal)
-   returns the prior result, and a payload hash drift ⇒ `idempotency-conflict`
+   returns the prior result, and a payload hash drift ⇒ `idempotency-conflict`.
+   Guard rows are permanent; a replay does not become fresh after a retention window.
    (`checkReplay:638`).
 4. **One op / wallet** — Valkey `SETNX` lock, `LockTTL = 10s` auto‑release
    (`lock/lock.go:23`). Contention ⇒ `wallet-busy` (`problem.go:147`).
@@ -147,7 +148,8 @@ non‑empty `sid` (`scope.go:42`).
 12. **No money in limbo** — withdrawal `processing` resolved by the
     **reconcile** job (`services/reconcile.go:33`): completed ⇒ mark done,
     not‑found ⇒ reverse (credit back), failed reversal ⇒ `refund_failed` +
-    alarm. Deposit sweep re‑queries pending deposits near TTL
+    alarm. Deposit sweep re‑queries pending deposits, but a paid deposit with no
+    verified payer identity remains quarantined and is never credited.
     (`reconcile.go:112`). Stale `held` holds alarm only, never auto‑release
     (`reconcile.go:135`).
 

@@ -132,7 +132,7 @@ func (h *handler) handle(ctx context.Context, req events.APIGatewayV2HTTPRequest
 	}
 	var body pixWebhookPayload
 	if err := json.Unmarshal([]byte(req.Body), &body); err != nil {
-		slog.ErrorContext(ctx, "webhook request malformed", "body", req.Body, "err", err)
+		slog.ErrorContext(ctx, "webhook request malformed", "err", err)
 		return events.APIGatewayV2HTTPResponse{StatusCode: 400, Body: "malformed webhook payload"}, nil
 	}
 	details := body.Pix
@@ -150,7 +150,7 @@ func (h *handler) handle(ctx context.Context, req events.APIGatewayV2HTTPRequest
 			txids = append(txids, p.Txid)
 		}
 	}
-	slog.InfoContext(ctx, "webhook request", "txids", txids, "body", req.Body)
+	slog.InfoContext(ctx, "webhook request", "txids", txids)
 
 	resp := events.APIGatewayV2HTTPResponse{StatusCode: 200}
 	for _, p := range details {

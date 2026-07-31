@@ -2,6 +2,8 @@ package v1
 
 // Request bodies. Amounts are integer centavos; validation rejects non-positive.
 
+const MaxIdempotencyKeyLength = 128
+
 type DepositRequest struct {
 	Amount int64 `json:"amount" validate:"required,gt=0"`
 }
@@ -20,7 +22,7 @@ type SandboxPurchaseRequest struct {
 // SandboxPurchaseDirectRequest opens a direct PIX→sandbox-credits sale (plan
 // §9.1/§9.3) — a fixed server-side SKU, never a client-supplied amount.
 type SandboxPurchaseDirectRequest struct {
-	SKU string `json:"sku" validate:"required"`
+	SKU string `json:"sku" validate:"required,max=64"`
 }
 
 // M2MSandboxPurchaseRequest opens a direct PIX→sandbox-credits sale on a
@@ -29,16 +31,16 @@ type SandboxPurchaseDirectRequest struct {
 // (e.g. ctech-poker). The idempotency key travels in the body, not the
 // Idempotency-Key header, matching every other M2M request body in this file.
 type M2MSandboxPurchaseRequest struct {
-	UserID         string `json:"user_id" validate:"required"`
-	SKU            string `json:"sku" validate:"required"`
-	IdempotencyKey string `json:"idempotency_key" validate:"required"`
+	UserID         string `json:"user_id" validate:"required,max=128"`
+	SKU            string `json:"sku" validate:"required,max=64"`
+	IdempotencyKey string `json:"idempotency_key" validate:"required,max=128"`
 }
 
 // M2MRefundSandboxPurchaseRequest mirrors M2MSandboxPurchaseRequest's shape
 // for the refund leg — the purchase id travels in the route path.
 type M2MRefundSandboxPurchaseRequest struct {
-	UserID         string `json:"user_id" validate:"required"`
-	IdempotencyKey string `json:"idempotency_key" validate:"required"`
+	UserID         string `json:"user_id" validate:"required,max=128"`
+	IdempotencyKey string `json:"idempotency_key" validate:"required,max=128"`
 }
 
 // ConfirmSandboxPurchaseRequest is pix-gateway's webhook-Lambda call for the
@@ -88,10 +90,10 @@ type GameLimitsRequest struct {
 // MovementOpRequest is the M2M body for internal credit/debit. The
 // idempotency key travels in the body (e.g. wallet_id#round_id), not a header.
 type MovementOpRequest struct {
-	UserID         string `json:"user_id" validate:"required"`
+	UserID         string `json:"user_id" validate:"required,max=128"`
 	Amount         int64  `json:"amount" validate:"required,gt=0"`
-	IdempotencyKey string `json:"idempotency_key" validate:"required"`
-	Reason         string `json:"reason"`
+	IdempotencyKey string `json:"idempotency_key" validate:"required,max=128"`
+	Reason         string `json:"reason" validate:"max=256"`
 }
 
 // ConfirmDepositRequest is pix-gateway's webhook-Lambda call. api re-derives
@@ -114,10 +116,10 @@ type ConfirmDepositRequest struct {
 // scope internal:wallet:game-hold). TableRef is an opaque caller-supplied
 // session identifier (e.g. table_id:seat) — the wallet never interprets it.
 type HoldRequest struct {
-	UserID         string `json:"user_id" validate:"required"`
+	UserID         string `json:"user_id" validate:"required,max=128"`
 	Amount         int64  `json:"amount" validate:"required,gt=0"`
-	TableRef       string `json:"table_ref" validate:"required"`
-	IdempotencyKey string `json:"idempotency_key" validate:"required"`
+	TableRef       string `json:"table_ref" validate:"required,max=256"`
+	IdempotencyKey string `json:"idempotency_key" validate:"required,max=128"`
 }
 
 // ReleaseRequest refunds a `held` hold in full (M2M, scope
@@ -125,17 +127,17 @@ type HoldRequest struct {
 // required so the service can verify the hold actually belongs to the named user
 // before releasing it (SEC-07) — a hold id alone is not proof of ownership.
 type ReleaseRequest struct {
-	UserID         string `json:"user_id" validate:"required"`
-	IdempotencyKey string `json:"idempotency_key" validate:"required"`
+	UserID         string `json:"user_id" validate:"required,max=128"`
+	IdempotencyKey string `json:"idempotency_key" validate:"required,max=128"`
 }
 
 // CashoutRequest credits the caller's final stack (M2M, scope
-// internal:wallet:game-cashout). Amount is NEVER validated against the sum of
-// HoldIDs — see WalletService.CashoutGame.
+// internal:wallet:game-cashout). The service requires every hold to be held,
+// owned by this user and table, and the amount not to exceed their total.
 type CashoutRequest struct {
-	UserID         string   `json:"user_id" validate:"required"`
+	UserID         string   `json:"user_id" validate:"required,max=128"`
 	Amount         int64    `json:"amount" validate:"required,gt=0"`
-	TableRef       string   `json:"table_ref" validate:"required"`
-	HoldIDs        []string `json:"hold_ids" validate:"required,min=1"`
-	IdempotencyKey string   `json:"idempotency_key" validate:"required"`
+	TableRef       string   `json:"table_ref" validate:"required,max=256"`
+	HoldIDs        []string `json:"hold_ids" validate:"required,min=1,max=20,dive,max=256"`
+	IdempotencyKey string   `json:"idempotency_key" validate:"required,max=128"`
 }

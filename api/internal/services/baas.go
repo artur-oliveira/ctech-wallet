@@ -70,7 +70,12 @@ type BaasService struct {
 	// authenticates as the subaccount). Empty is fine for every environment
 	// that never reverses a game-funded sandbox purchase against a custodied
 	// user (i.e. everywhere until AsaasCustodyEnabled is on).
-	parentAPIKey string
+	parentAPIKey      string
+	reverseWithdrawal func(context.Context, string) error
+}
+
+func (b *BaasService) SetWithdrawalReverser(fn func(context.Context, string) error) {
+	b.reverseWithdrawal = fn
 }
 
 func NewBaasService(repo BaasRepo, wallets WalletReader, asaasClient asaas.AsaasClient, audit Auditor, kyc KYCClient, masterKey []byte, parentWalletID, parentAPIKey string) *BaasService {
@@ -239,10 +244,15 @@ func (b *BaasService) reconcileOneIntent(ctx context.Context, it wallet.Transfer
 	}
 
 	transfer, err := b.asaas.QueryTransfer(ctx, apiKey, it.ExternalReference)
-	if err != nil || transfer == nil {
-		// Never reached Asaas (or the query itself failed) — resubmit. Idempotent
-		// by ExternalReference: if it actually landed, Asaas simply returns the
-		// existing transfer rather than creating a duplicate.
+	if err != nil && !errors.Is(err, asaas.ErrTransferNotFound) {
+		// An ambiguous query failure cannot prove that the original submission
+		// was absent. Never resubmit in that state: doing so could duplicate a
+		// real-money payout if provider idempotency regressed or was unavailable.
+		slog.Error("reconcile: transfer query failed; refusing ambiguous resubmission", "external_reference", it.ExternalReference, "err", err)
+		return 0, 0, 1
+	}
+	if errors.Is(err, asaas.ErrTransferNotFound) || transfer == nil {
+		// The provider positively reported that the external reference is absent.
 		if b.retrySubmission(ctx, it, apiKey) {
 			return 0, 1, 0
 		}
@@ -270,6 +280,14 @@ func (b *BaasService) reconcileOneIntent(ctx context.Context, it wallet.Transfer
 		// contract as WalletService.reverse. Other kinds (fee sweep, settlement,
 		// sandbox-purchase settlement) have no symmetric "reverse the ledger"
 		// action defined yet — alarmed for manual follow-up rather than guessed at.
+		if it.Kind == wallet.IntentKindWithdrawalPayout && b.reverseWithdrawal != nil {
+			if err := b.reverseWithdrawal(ctx, it.Ref); err != nil {
+				slog.Error("ALARM asaas withdrawal reversal failed", "withdrawal_id", it.Ref, "err", err)
+				return 0, 0, 1
+			}
+			_ = b.repo.UpdateTransferIntent(ctx, it.ExternalReference, map[string]any{"status": wallet.IntentFailed})
+			return 0, 0, 0
+		}
 		slog.Error("ALARM asaas transfer cancelled/failed", "external_reference", it.ExternalReference, "kind", it.Kind, "status", transfer.Status)
 		return 0, 0, 1
 	default:
@@ -285,16 +303,13 @@ func (b *BaasService) reconcileOneIntent(ctx context.Context, it wallet.Transfer
 func (b *BaasService) retrySubmission(ctx context.Context, it wallet.TransferIntent, apiKey string) bool {
 	req := asaas.TransferRequest{Value: it.Amount, ExternalReference: it.ExternalReference}
 	if len(it.Destination) > 0 {
-		// Asaas walletId destinations are always non-numeric-looking opaque IDs
-		// in this codebase's own fakes; a PIX key (CPF) is 11 digits. This
-		// heuristic is a placeholder — plan §5.2/§9.1a always know statically
-		// which field they set, so a real implementation should carry that
-		// discriminator on the intent row rather than sniff it here. Flagged as
-		// a simplification, not a final design.
-		if len(it.Destination) == 11 {
+		if it.DestinationType == wallet.TransferDestinationPIX {
 			req.PixAddressKey, req.PixAddressKeyType = it.Destination, asaas.PixKeyTypeCPF
-		} else {
+		} else if it.DestinationType == wallet.TransferDestinationWallet {
 			req.WalletID = it.Destination
+		} else {
+			slog.Error("reconcile: transfer intent missing destination type", "external_reference", it.ExternalReference)
+			return false
 		}
 	}
 	if _, err := b.asaas.CreateTransfer(ctx, apiKey, req); err != nil {
@@ -512,8 +527,10 @@ func (b *BaasService) MarkTransferDone(ctx context.Context, externalReference, p
 // retried CreateTransfer never double-submits.
 func (b *BaasService) SubmitTransfer(ctx context.Context, kind, userID, apiKey string, req asaas.TransferRequest, ref string) error {
 	destination := req.WalletID
+	destinationType := wallet.TransferDestinationWallet
 	if destination == "" {
 		destination = req.PixAddressKey
+		destinationType = wallet.TransferDestinationPIX
 	}
 	intent := &wallet.TransferIntent{
 		ExternalReference: req.ExternalReference,
@@ -522,13 +539,21 @@ func (b *BaasService) SubmitTransfer(ctx context.Context, kind, userID, apiKey s
 		UserID:            userID,
 		Amount:            req.Value,
 		Destination:       destination,
+		DestinationType:   destinationType,
 		Ref:               ref,
 		CreatedAt:         repositories.NowStr(),
 		UpdatedAt:         repositories.NowStr(),
 	}
 	if err := b.repo.PutTransferIntentIfAbsent(ctx, intent); err != nil {
 		if errors.Is(err, repositories.ErrTransferIntentExists) {
-			return nil // already submitted — idempotent no-op, never re-send
+			existing, getErr := b.repo.GetTransferIntent(ctx, req.ExternalReference)
+			if getErr != nil {
+				return getErr
+			}
+			if existing == nil || existing.Kind != kind || existing.UserID != userID || existing.Amount != req.Value || existing.Destination != destination || existing.DestinationType != destinationType || existing.Ref != ref {
+				return problem.IdempotencyConflict()
+			}
+			return nil // exact replay — never re-send
 		}
 		slog.Error("ALARM asaas transfer intent write failed", "external_reference", req.ExternalReference, "kind", kind, "err", err)
 		return err
@@ -566,19 +591,28 @@ func (b *BaasService) InitiateOnboarding(ctx context.Context, userID, kycLevel s
 	if existing != nil {
 		return existing, nil
 	}
+	now := repositories.NowStr()
+	reservation := &wallet.BaasAccount{UserID: userID, Status: wallet.BaasOnboarding, CreatedAt: now, UpdatedAt: now}
+	if err := b.repo.PutBaasAccount(ctx, reservation); err != nil {
+		if errors.Is(err, repositories.ErrBaasAccountExists) {
+			return b.repo.GetBaasAccount(ctx, userID)
+		}
+		return nil, err
+	}
 
 	kyc, err := b.kyc.Get(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	acc, err := b.asaas.CreateAccount(ctx, asaas.CreateAccountRequest{
+	acc, err := b.asaas.CreateAccount(ctx, b.parentAPIKey, asaas.CreateAccountRequest{
 		Name: kyc.LegalName, CPF: kyc.CPF, Email: kyc.Email, MobilePhone: kyc.Phone,
 		BirthDate: kyc.BirthDate, Address: kyc.Address.Street, AddressNumber: kyc.Address.Number,
 		Complement: kyc.Address.Complement, Province: kyc.Address.District, City: kyc.Address.City, State: kyc.Address.State,
 		PostalCode: kyc.Address.ZipCode, IncomeValue: incomeValue,
 	})
 	if err != nil {
-		return nil, problem.InternalServer("falha ao criar subconta Asaas: " + err.Error())
+		slog.Error("asaas account creation failed", "user_id", userID, "err", err)
+		return nil, problem.InternalServer("falha ao criar subconta de custódia")
 	}
 
 	ciphertext, nonce, err := asaas.EncryptAPIKey(b.masterKey, acc.APIKey)
@@ -586,7 +620,6 @@ func (b *BaasService) InitiateOnboarding(ctx context.Context, userID, kycLevel s
 		return nil, err
 	}
 
-	now := repositories.NowStr()
 	row := &wallet.BaasAccount{
 		UserID:            userID,
 		Status:            wallet.BaasOnboarding,
@@ -597,7 +630,10 @@ func (b *BaasService) InitiateOnboarding(ctx context.Context, userID, kycLevel s
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
-	if err := b.repo.PutBaasAccount(ctx, row); err != nil {
+	if err := b.repo.UpdateBaasAccount(ctx, userID, map[string]any{
+		"provider_account_id": acc.ID, "provider_wallet_id": acc.WalletID,
+		"api_key_ciphertext": ciphertext, "api_key_nonce": nonce,
+	}); err != nil {
 		return nil, err
 	}
 	if b.audit != nil {

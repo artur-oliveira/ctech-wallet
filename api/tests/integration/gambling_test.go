@@ -107,7 +107,7 @@ func TestGetBalancesHidesGamblingWalletsUntilActivated(t *testing.T) {
 	h := newHarness(verified())
 	user := "u-" + id.New()
 
-	real, game, sandbox, err := h.svc.GetBalances(ctx, user)
+	real, game, sandbox, _, err := h.svc.GetBalances(ctx, user)
 	if err != nil {
 		t.Fatalf("GetBalances: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestGetBalancesHidesGamblingWalletsUntilActivated(t *testing.T) {
 		t.Fatalf("ActivateGambling: %v", err)
 	}
 
-	real, game, sandbox, err = h.svc.GetBalances(ctx, user)
+	real, game, sandbox, _, err = h.svc.GetBalances(ctx, user)
 	if err != nil {
 		t.Fatalf("GetBalances after activation: %v", err)
 	}
@@ -308,8 +308,8 @@ func TestSandboxPurchaseNeverDebitsRealWallet(t *testing.T) {
 	if game.Balance != 2500 {
 		t.Errorf("game = %d, want 2500 (4000 funded - 1500 spent)", game.Balance)
 	}
-	if sandbox.Balance != 15000 {
-		t.Errorf("sandbox = %d, want 15000 (1500¢ × 10 credits/centavo)", sandbox.Balance)
+	if sandbox.Balance != 1500*wallet.SandboxCreditsPerCent {
+		t.Errorf("sandbox = %d, want %d", sandbox.Balance, 1500*wallet.SandboxCreditsPerCent)
 	}
 }
 
@@ -366,10 +366,10 @@ func TestLegacySandboxHolderIsNotTreatedAsActivated(t *testing.T) {
 	wantProblem(t, err, problem.TypeGamblingNotActivated)
 
 	_, err = h.svc.DebitSandbox(ctx, user, 100, "idem-legacy-d", "bet")
-	wantProblem(t, err, problem.TypeGamblingNotActivated)
+	wantProblem(t, err, problem.TypeInsufficientBalance)
 
 	// Balances hide the frozen sandbox until they activate.
-	_, game, _, err := h.svc.GetBalances(ctx, user)
+	_, game, _, _, err := h.svc.GetBalances(ctx, user)
 	if err != nil {
 		t.Fatalf("GetBalances: %v", err)
 	}

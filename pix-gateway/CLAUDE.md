@@ -15,8 +15,8 @@ supplied per call.
 - **`cmd/outbound`** — performs the actual Inter calls (CreateCharge,
   QueryCharge, Transfer, QueryTransfer, Refund, Ping, GetToken). Dispatches
   on the `rpc-contract` `Op` enum (`cmd/outbound/main.go:89`); returns
-  `Response{Error,Payload}` with sentinels `key_not_found`/`unauthorized`
-  (`:199`); scrubs the bearer from logs (`scrubPayload`, `:218`).
+  `Response{Error,Payload}` with sentinels `key_not_found`/`unauthorized`/
+  `transfer_not_found`; logs operation metadata only.
 - **`cmd/webhook`** — receives Inter's PIX callback, validates it, and asks
   `api` to re-derive + credit the deposit. Carries **no Inter credentials at
   all** (`cmd/webhook/main.go:1`).
@@ -25,8 +25,8 @@ supplied per call.
 
 Both Lambdas speak `rpc-contract` ([`../rpc-contract/README.md`](../rpc-contract/README.md)):
 `api` sends `Request{Op, OAuthToken, Payload}`, `pix-gateway` returns
-`Response{Error, Payload}`. The Inter bearer travels in `OAuthToken` and
-**must never be logged** (`cmd/outbound/main.go:68`, `scrubPayload:218`).
+`Response{Error, Payload}`. Credentials travel in `OAuthToken`; credentials
+and request/response payloads **must never be logged**.
 
 ## Outbound — Inter client (`internal/inter`)
 

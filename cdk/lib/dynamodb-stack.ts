@@ -127,17 +127,18 @@ export class DynamoDBStack extends cdk.Stack {
         const ledgerTable = table('wallet_ledger_entries', {sortKey: true});
         gsi(ledgerTable, GSI_IDEM, ATTR_IDEMPOTENCY_KEY); // replay lookup
 
-        // ── wallet_idempotency: IDEM#{key} guard items, expire via TTL ─────────────
-        table('wallet_idempotency', {ttl: true});
+		// ── wallet_idempotency: permanent IDEM#{key} guards ───────────────────────
+		table('wallet_idempotency');
 
-        // ── wallet_pix_deposits: in-flight charges keyed by txid, expire via TTL ───
-        // gsi_status backs the pre-TTL sweep (F6): find pending deposits close to
-        // expiry and re-query Inter once before the row is lost. gsi_deposit_provider_qr
+		// ── wallet_pix_deposits: durable charges keyed by txid ────────────────────
+		// gsi_status backs reconciliation of pending deposits. Business expiration
+		// closes charges but never deletes their idempotency/audit record.
+		// gsi_deposit_provider_qr
         // resolves an Asaas payment webhook's pixQrCodeId back to the deposit it
         // belongs to (plan §4.3: "the webhook resolves payment.pixQrCodeId → txid,
         // not the other way round") — Asaas-opened deposits only, empty for every
         // Inter-opened row.
-        const depositsTable = table('wallet_pix_deposits', {ttl: true});
+		const depositsTable = table('wallet_pix_deposits');
         gsi(depositsTable, GSI_STATUS, ATTR_STATUS);
         gsi(depositsTable, GSI_DEPOSIT_PROVIDER_QR, ATTR_PROVIDER_QR_CODE_ID);
 
@@ -200,7 +201,7 @@ export class DynamoDBStack extends cdk.Stack {
         // purchases. Deliberately its own table, decoupled from wallet_pix_deposits:
         // a deposit is custody, this is a sale (plan §9.1/§9.3). gsi_sandbox_purchase_status
         // backs the pending-purchase sweep.
-        const sandboxPurchasesTable = table('wallet_sandbox_purchases', {ttl: true});
+		const sandboxPurchasesTable = table('wallet_sandbox_purchases');
         gsi(sandboxPurchasesTable, GSI_SANDBOX_PURCHASE_STATUS, ATTR_STATUS);
         // Backs the M2M webhook notify-back retry sweep (RetryFailedM2MWebhooks) —
         // a purchase opened by an M2M client (e.g. ctech-poker) whose last

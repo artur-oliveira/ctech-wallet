@@ -15,9 +15,6 @@ import (
 	"gopkg.aoctech.app/wallet/api/internal/problem"
 )
 
-// idemTTLDays is how long idempotency guard rows live before Dynamo TTL reaps them.
-const idemTTLDays = 7
-
 // WalletRepository owns all wallet persistence: balances (authoritative),
 // the append-only ledger, idempotency guards, PIX deposits, and withdrawals.
 // Every balance mutation is a single conditional TransactWriteItems.
@@ -49,7 +46,6 @@ type idemGuard struct {
 	EntrySK   string `dynamodbav:"entry_sk"`
 	ReqHash   string `dynamodbav:"req_hash"`
 	CreatedAt string `dynamodbav:"created_at"`
-	TTL       int64  `dynamodbav:"ttl"`
 }
 
 // walletMarker is the (user_id, type) uniqueness guard so a user always has
@@ -518,7 +514,6 @@ func (r *WalletRepository) ReserveDepositIdem(ctx context.Context, guardPK, txid
 		EntrySK:   txid,
 		ReqHash:   reqHash,
 		CreatedAt: NowStr(),
-		TTL:       time.Now().Add(idemTTLDays * 24 * time.Hour).Unix(),
 	}
 	gav, err := Encode(g)
 	if err != nil {
@@ -706,7 +701,6 @@ func (r *WalletRepository) guardTx(walletID, entrySK, idemKey, reqHash string) (
 		EntrySK:   entrySK,
 		ReqHash:   reqHash,
 		CreatedAt: NowStr(),
-		TTL:       time.Now().Add(idemTTLDays * 24 * time.Hour).Unix(),
 	}
 	gav, err := Encode(g)
 	if err != nil {

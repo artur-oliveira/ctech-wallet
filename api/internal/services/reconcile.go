@@ -2,11 +2,13 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/pix"
+	"gopkg.aoctech.app/wallet/api/internal/problem"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
 )
 
@@ -37,6 +39,9 @@ func (s *WalletService) ReconcileWithdrawals(ctx context.Context) (resolved, rev
 	}
 	for i := range ws {
 		w := ws[i]
+		if w.Provider == wallet.ProviderAsaas {
+			continue // resolved by BaasService.ReconcileTransferIntents
+		}
 		res, qErr := s.pix.QueryTransfer(ctx, interIdemKey(w.WithdrawalID))
 		if qErr != nil {
 			slog.Warn("reconcile: query transfer failed, will retry", "withdrawal_id", w.WithdrawalID, "err", qErr)
@@ -75,6 +80,34 @@ func (s *WalletService) ReconcileWithdrawals(ctx context.Context) (resolved, rev
 		}
 	}
 	return resolved, reversed, alarmed, nil
+}
+
+// ReverseWithdrawal serializes and idempotently restores a failed payout.
+// It is exported so the provider-specific Asaas reconciler can use the same
+// reversal primitive as the Inter reconciler.
+func (s *WalletService) ReverseWithdrawal(ctx context.Context, withdrawalID string) error {
+	w, err := s.repo.GetWithdrawal(ctx, withdrawalID)
+	if err != nil {
+		return err
+	}
+	if w == nil {
+		return fmt.Errorf("withdrawal %s not found", withdrawalID)
+	}
+	if w.Status == wallet.WithdrawReversed {
+		return nil
+	}
+	release, ok, err := s.lock.Acquire(ctx, w.WalletID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return problem.WalletBusy()
+	}
+	defer release()
+	if !s.reverse(ctx, *w) {
+		return fmt.Errorf("withdrawal %s reversal failed", withdrawalID)
+	}
+	return nil
 }
 
 // reverse credits the debited amount+fee back to the wallet, whether called

@@ -59,11 +59,8 @@ func (c *LambdaAsaasClient) call(ctx context.Context, op rpccontract.Op, apiKey 
 	if err != nil {
 		return err
 	}
-	// apiKey travels in OAuthToken — the transport field already exists to
-	// carry "the credential this call authenticates with" (Inter's bearer
-	// today); every Asaas *Args struct also repeats it in-payload for
-	// CreateAccount's parent-key case where the caller and the credential
-	// being used are the SAME field slot, avoiding a second wire field.
+	// Credentials travel only in OAuthToken and are never duplicated into the
+	// operation payload.
 	reqJSON, err := json.Marshal(rpccontract.Request{Op: op, OAuthToken: apiKey, Payload: argsJSON})
 	if err != nil {
 		return err
@@ -77,6 +74,9 @@ func (c *LambdaAsaasClient) call(ctx context.Context, op rpccontract.Op, apiKey 
 		return err
 	}
 	if resp.Error != "" {
+		if resp.Error == rpccontract.ErrTransferNotFoundSentinel {
+			return ErrTransferNotFound
+		}
 		return fmt.Errorf("asaas: %s", resp.Error)
 	}
 	if out != nil && len(resp.Payload) > 0 {
@@ -85,14 +85,14 @@ func (c *LambdaAsaasClient) call(ctx context.Context, op rpccontract.Op, apiKey 
 	return nil
 }
 
-func (c *LambdaAsaasClient) CreateAccount(ctx context.Context, req CreateAccountRequest) (*Account, error) {
+func (c *LambdaAsaasClient) CreateAccount(ctx context.Context, parentAPIKey string, req CreateAccountRequest) (*Account, error) {
 	var res rpccontract.AsaasAccountResult
 	args := rpccontract.AsaasCreateAccountArgs{
 		Name: req.Name, CPF: req.CPF, Email: req.Email, MobilePhone: req.MobilePhone, BirthDate: req.BirthDate,
 		Address: req.Address, AddressNumber: req.AddressNumber, Complement: req.Complement,
 		Province: req.Province, City: req.City, State: req.State, PostalCode: req.PostalCode, IncomeValue: req.IncomeValue,
 	}
-	if err := c.call(ctx, rpccontract.OpAsaasCreateAccount, "", args, &res); err != nil {
+	if err := c.call(ctx, rpccontract.OpAsaasCreateAccount, parentAPIKey, args, &res); err != nil {
 		return nil, err
 	}
 	return &Account{ID: res.ID, WalletID: res.WalletID, APIKey: res.APIKey, Status: res.Status, OnboardingURL: res.OnboardingURL}, nil
@@ -100,13 +100,13 @@ func (c *LambdaAsaasClient) CreateAccount(ctx context.Context, req CreateAccount
 
 func (c *LambdaAsaasClient) UploadDocument(ctx context.Context, subaccountAPIKey, documentID string, file []byte) error {
 	return c.call(ctx, rpccontract.OpAsaasUploadDocument, subaccountAPIKey,
-		rpccontract.AsaasUploadDocumentArgs{APIKey: subaccountAPIKey, DocumentID: documentID, File: file}, nil)
+		rpccontract.AsaasUploadDocumentArgs{DocumentID: documentID, File: file}, nil)
 }
 
 func (c *LambdaAsaasClient) CreateStaticPixKey(ctx context.Context, subaccountAPIKey string) (*PixAddressKey, error) {
 	var res rpccontract.AsaasPixAddressKeyResult
 	if err := c.call(ctx, rpccontract.OpAsaasCreateStaticPixKey, subaccountAPIKey,
-		rpccontract.AsaasCreateStaticPixKeyArgs{APIKey: subaccountAPIKey}, &res); err != nil {
+		rpccontract.AsaasCreateStaticPixKeyArgs{}, &res); err != nil {
 		return nil, err
 	}
 	return &PixAddressKey{Key: res.Key, Status: res.Status}, nil
@@ -115,7 +115,7 @@ func (c *LambdaAsaasClient) CreateStaticPixKey(ctx context.Context, subaccountAP
 func (c *LambdaAsaasClient) CreatePixQRCode(ctx context.Context, subaccountAPIKey string, req QRCodeRequest) (*QRCode, error) {
 	var res rpccontract.AsaasQRCodeResult
 	args := rpccontract.AsaasCreatePixQRCodeArgs{
-		APIKey: subaccountAPIKey, AddressKey: req.AddressKey, Value: req.Value, Format: req.Format,
+		AddressKey: req.AddressKey, Value: req.Value, Format: req.Format,
 		ExpirationSeconds: req.ExpirationSeconds, AllowsMultiplePayments: req.AllowsMultiplePayments,
 		ExternalReference: req.ExternalReference,
 	}
@@ -128,7 +128,7 @@ func (c *LambdaAsaasClient) CreatePixQRCode(ctx context.Context, subaccountAPIKe
 func (c *LambdaAsaasClient) QueryPayment(ctx context.Context, apiKey, paymentID string) (*Payment, error) {
 	var res rpccontract.AsaasPaymentResult
 	if err := c.call(ctx, rpccontract.OpAsaasQueryPayment, apiKey,
-		rpccontract.AsaasQueryPaymentArgs{APIKey: apiKey, PaymentID: paymentID}, &res); err != nil {
+		rpccontract.AsaasQueryPaymentArgs{PaymentID: paymentID}, &res); err != nil {
 		return nil, err
 	}
 	return &Payment{ID: res.ID, Value: res.Value, Status: res.Status, ExternalReference: res.ExternalReference}, nil
@@ -137,7 +137,7 @@ func (c *LambdaAsaasClient) QueryPayment(ctx context.Context, apiKey, paymentID 
 func (c *LambdaAsaasClient) CreateTransfer(ctx context.Context, apiKey string, req TransferRequest) (*Transfer, error) {
 	var res rpccontract.AsaasTransferResult
 	args := rpccontract.AsaasCreateTransferArgs{
-		APIKey: apiKey, Value: req.Value, PixAddressKey: req.PixAddressKey, PixAddressKeyType: req.PixAddressKeyType,
+		Value: req.Value, PixAddressKey: req.PixAddressKey, PixAddressKeyType: req.PixAddressKeyType,
 		WalletID: req.WalletID, ExternalReference: req.ExternalReference,
 	}
 	if err := c.call(ctx, rpccontract.OpAsaasCreateTransfer, apiKey, args, &res); err != nil {
@@ -149,7 +149,7 @@ func (c *LambdaAsaasClient) CreateTransfer(ctx context.Context, apiKey string, r
 func (c *LambdaAsaasClient) QueryTransfer(ctx context.Context, apiKey, externalReference string) (*Transfer, error) {
 	var res rpccontract.AsaasTransferResult
 	if err := c.call(ctx, rpccontract.OpAsaasQueryTransfer, apiKey,
-		rpccontract.AsaasQueryTransferArgs{APIKey: apiKey, ExternalReference: externalReference}, &res); err != nil {
+		rpccontract.AsaasQueryTransferArgs{ExternalReference: externalReference}, &res); err != nil {
 		return nil, err
 	}
 	return &Transfer{ID: res.ID, Status: res.Status, TransferFee: res.TransferFee, ExternalReference: res.ExternalReference}, nil
@@ -158,7 +158,7 @@ func (c *LambdaAsaasClient) QueryTransfer(ctx context.Context, apiKey, externalR
 func (c *LambdaAsaasClient) QueryAccountBalance(ctx context.Context, apiKey string) (int64, error) {
 	var res rpccontract.AsaasBalanceResult
 	if err := c.call(ctx, rpccontract.OpAsaasQueryAccountBalance, apiKey,
-		rpccontract.AsaasQueryAccountBalanceArgs{APIKey: apiKey}, &res); err != nil {
+		rpccontract.AsaasQueryAccountBalanceArgs{}, &res); err != nil {
 		return 0, err
 	}
 	return res.Balance, nil

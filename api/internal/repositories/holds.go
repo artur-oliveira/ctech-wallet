@@ -118,6 +118,106 @@ func (r *WalletRepository) UpdateHoldStatus(ctx context.Context, holdID, fromSta
 	return true, nil
 }
 
+// ReleaseHoldAtomic credits the reserved amount and transitions held→released
+// in the same transaction. A crash or retry can therefore never leave a
+// credited hold in the held state and credit it again under another request key.
+func (r *WalletRepository) ReleaseHoldAtomic(ctx context.Context, h *wallet.Hold, idemKey, reqHash string) (*wallet.Hold, bool, error) {
+	prior, conflict, err := r.checkReplay(ctx, idemKey, reqHash)
+	if err != nil {
+		return nil, false, err
+	}
+	if conflict != nil {
+		return nil, false, conflict
+	}
+	if prior != nil {
+		resolved, err := r.GetHold(ctx, h.HoldID)
+		return resolved, true, err
+	}
+	w, err := r.GetWallet(ctx, h.WalletID)
+	if err != nil {
+		return nil, false, err
+	}
+	entry := r.newEntry(h.WalletID, wallet.EntryGameHoldRelease, h.Amount, w.Balance+h.Amount, idemKey, h.TableRef)
+	walletTx, err := r.balanceTx(h.WalletID, h.Amount, +1)
+	if err != nil {
+		return nil, false, err
+	}
+	ledgerTx, guardTx, err := r.ledgerAndGuardTx(entry, idemKey, reqHash)
+	if err != nil {
+		return nil, false, err
+	}
+	holdTx := r.holds.BuildRawUpdateTxItem(h.HoldID, nil,
+		"SET #status = :to, updated_at = :now", "#status = :from",
+		map[string]string{"#status": "status"}, map[string]types.AttributeValue{
+			":to":   &types.AttributeValueMemberS{Value: wallet.HoldReleased},
+			":from": &types.AttributeValueMemberS{Value: wallet.HoldHeld},
+			":now":  &types.AttributeValueMemberS{Value: NowStr()},
+		})
+	if err := r.wallets.TransactWrite(ctx, []types.TransactWriteItem{walletTx, ledgerTx, guardTx, holdTx}); err != nil {
+		if IsConditionFailed(err) {
+			if prior, _, replayErr := r.checkReplay(ctx, idemKey, reqHash); replayErr == nil && prior != nil {
+				resolved, getErr := r.GetHold(ctx, h.HoldID)
+				return resolved, true, getErr
+			}
+			resolved, getErr := r.GetHold(ctx, h.HoldID)
+			if getErr != nil {
+				return nil, false, getErr
+			}
+			if resolved != nil && resolved.Status != wallet.HoldHeld {
+				return resolved, true, nil
+			}
+		}
+		return nil, false, err
+	}
+	h.Status = wallet.HoldReleased
+	return h, false, nil
+}
+
+// CashoutHoldsAtomic credits a bounded final stack and consumes all referenced
+// holds in one transaction. No partial status update can leave credited value
+// backed by reusable holds.
+func (r *WalletRepository) CashoutHoldsAtomic(ctx context.Context, walletID, userID string, amount int64, tableRef string, holds []*wallet.Hold, idemKey, reqHash string) (*wallet.LedgerEntry, bool, error) {
+	prior, conflict, err := r.checkReplay(ctx, idemKey, reqHash)
+	if err != nil {
+		return nil, false, err
+	}
+	if conflict != nil {
+		return nil, false, conflict
+	}
+	if prior != nil {
+		return prior, true, nil
+	}
+	w, err := r.GetWallet(ctx, walletID)
+	if err != nil {
+		return nil, false, err
+	}
+	entry := r.newEntry(walletID, wallet.EntryGameCashoutCredit, amount, w.Balance+amount, idemKey, tableRef)
+	walletTx, err := r.balanceTx(walletID, amount, +1)
+	if err != nil {
+		return nil, false, err
+	}
+	ledgerTx, guardTx, err := r.ledgerAndGuardTx(entry, idemKey, reqHash)
+	if err != nil {
+		return nil, false, err
+	}
+	items := []types.TransactWriteItem{walletTx, ledgerTx, guardTx}
+	for _, h := range holds {
+		items = append(items, r.holds.BuildRawUpdateTxItem(h.HoldID, nil,
+			"SET #status = :to, updated_at = :now", "#status = :from AND user_id = :user AND table_ref = :table",
+			map[string]string{"#status": "status"}, map[string]types.AttributeValue{
+				":to":    &types.AttributeValueMemberS{Value: wallet.HoldSettled},
+				":from":  &types.AttributeValueMemberS{Value: wallet.HoldHeld},
+				":user":  &types.AttributeValueMemberS{Value: userID},
+				":table": &types.AttributeValueMemberS{Value: tableRef},
+				":now":   &types.AttributeValueMemberS{Value: NowStr()},
+			}))
+	}
+	if err := r.wallets.TransactWrite(ctx, items); err != nil {
+		return r.resolveTxErr(ctx, idemKey, reqHash, +1, err)
+	}
+	return entry, false, nil
+}
+
 // ListOpenHoldsForWallet returns every currently-`held` hold on walletID, via
 // gsi_hold_status filtered in memory (mirrors ScanStaleHolds' filter-after-GSI-
 // query shape — no table scan). Used by the Invariant #13 conservation check

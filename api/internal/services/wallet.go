@@ -72,6 +72,8 @@ type Repo interface {
 	CreateHold(ctx context.Context, holdID, walletID, userID string, amount int64, tableRef, idemKey, reqHash string) (*wallet.Hold, bool, error)
 	GetHold(ctx context.Context, holdID string) (*wallet.Hold, error)
 	UpdateHoldStatus(ctx context.Context, holdID, fromStatus, toStatus string) (bool, error)
+	ReleaseHoldAtomic(ctx context.Context, hold *wallet.Hold, idemKey, reqHash string) (*wallet.Hold, bool, error)
+	CashoutHoldsAtomic(ctx context.Context, walletID, userID string, amount int64, tableRef string, holds []*wallet.Hold, idemKey, reqHash string) (*wallet.LedgerEntry, bool, error)
 	ScanStaleHolds(ctx context.Context, cutoff time.Time, limit int) ([]wallet.Hold, error)
 	ListOpenHoldsForWallet(ctx context.Context, walletID string, limit int) ([]wallet.Hold, error)
 	// AnyDebitSince/AmountAtSK back §9.2's refund eligibility rule and §9.1a's
@@ -491,7 +493,7 @@ func (s *WalletService) InitiateDeposit(ctx context.Context, userID, kycLevel st
 	// retried POST never opens a second PIX charge. On replay we return the prior
 	// deposit + re-query its charge (idempotent).
 	rh := reqHash("deposit#"+userID+"#"+idemKey, amount)
-	guardPK := wallet.IdemPrefix + "initdep#" + idemKey
+	guardPK := wallet.IdemPrefix + "initdep#" + userID + "#" + idemKey
 	txid, existing, conflict, err := s.repo.ReserveDepositIdem(ctx, guardPK, id.New(), userID, rh)
 	if err != nil {
 		return nil, nil, err
@@ -517,7 +519,8 @@ func (s *WalletService) InitiateDeposit(ctx context.Context, userID, kycLevel st
 		charge, err = s.pix.CreateCharge(ctx, txid, amount, "")
 	}
 	if err != nil {
-		return nil, nil, problem.InternalServer("falha ao criar cobrança PIX: " + err.Error())
+		slog.Error("pix charge creation failed", "user_id", userID, "txid", txid, "err", err)
+		return nil, nil, problem.InternalServer("falha ao criar cobrança PIX")
 	}
 	dep := &wallet.PixDeposit{
 		Txid:             txid,
@@ -617,15 +620,24 @@ func (s *WalletService) ConfirmDeposit(ctx context.Context, txid, payerCPF, paye
 		return err
 	}
 
-	// CPF anti-fraud gate. On the webhook-driven path a payer CPF is always
-	// present (persisted from the webhook body) and must match KYC. But the sweep
-	// path re-confirms deposits whose webhook never arrived, so dep.PayerCPF is
-	// empty — the charge re-query already proves the payment is for OUR txid, so
-	// we credit it rather than refunding a genuinely paid deposit (SEC-03).
-	if !(sweep && dep.PayerCPF == "") {
-		if dep.PayerCPF == "" || !maskedCPFMatches(dep.PayerCPF, kyc.CPF) {
-			return s.rejectMismatch(ctx, dep, charge)
+	// A provider re-query proves payment status and amount, but not ownership.
+	// Never credit without payer identity evidence: doing so would let a third
+	// party fund this account and the user withdraw the proceeds to their own CPF.
+	// Some providers include the payer on re-query; persist that evidence when
+	// available. Otherwise leave the deposit pending for webhook retry/manual
+	// reconciliation instead of guessing or refunding an unidentified payment.
+	if dep.PayerCPF == "" && charge.PayerCPF != "" {
+		if err := s.repo.UpdateDepositPayer(ctx, txid, charge.PayerCPF, dep.PayerName); err != nil {
+			return err
 		}
+		dep.PayerCPF = charge.PayerCPF
+	}
+	if dep.PayerCPF == "" {
+		slog.Error("ALARM paid deposit missing payer identity; quarantined", "txid", txid, "sweep", sweep)
+		return problem.InternalServer("depósito pago aguardando verificação do pagador")
+	}
+	if !maskedCPFMatches(dep.PayerCPF, kyc.CPF) {
+		return s.rejectMismatch(ctx, dep, charge)
 	}
 
 	// Invariant 11 follow-through: the credited amount must match what we opened
@@ -1023,6 +1035,11 @@ func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, a
 // function only ever moves money.
 func (s *WalletService) executeWithdrawal(ctx context.Context, userID string, realw *wallet.Wallet, amount int64, idemKey string, custodied, isClosure bool) (*wallet.Withdrawal, error) {
 	withdrawalID := "withdraw#" + userID + "#" + idemKey
+	kyc, err := s.kyc.Get(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	pixKey := kyc.CPF
 
 	release, ok, err := s.lock.Acquire(ctx, realw.WalletID)
 	if err != nil {
@@ -1031,7 +1048,12 @@ func (s *WalletService) executeWithdrawal(ctx context.Context, userID string, re
 	if !ok {
 		return nil, problem.WalletBusy()
 	}
-	defer release()
+	released := false
+	defer func() {
+		if !released {
+			release()
+		}
+	}()
 
 	if isClosure {
 		// Re-read the balance under the lock — the caller's snapshot (taken
@@ -1060,12 +1082,6 @@ func (s *WalletService) executeWithdrawal(ctx context.Context, userID string, re
 		return existing, nil
 	}
 
-	kyc, err := s.kyc.Get(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	pixKey := kyc.CPF
-
 	fee := wallet.WithdrawalFee(amount, realw, isClosure)
 	rh := reqHash(pixKey, amount)
 
@@ -1079,12 +1095,18 @@ func (s *WalletService) executeWithdrawal(ctx context.Context, userID string, re
 	// exist, so GetWithdrawal returns it and there is no orphan (and no nil
 	// deref in the handler).
 	w := &wallet.Withdrawal{
-		WithdrawalID:   withdrawalID,
-		WalletID:       realw.WalletID,
-		UserID:         userID,
-		Amount:         amount,
-		Fee:            fee,
-		PixKey:         pixKey,
+		WithdrawalID: withdrawalID,
+		WalletID:     realw.WalletID,
+		UserID:       userID,
+		Amount:       amount,
+		Fee:          fee,
+		PixKey:       pixKey,
+		Provider: func() string {
+			if custodied {
+				return wallet.ProviderAsaas
+			}
+			return ""
+		}(),
 		Status:         wallet.WithdrawProcessing,
 		IdempotencyKey: idemKey,
 		CreatedAt:      repositories.NowStr(),
@@ -1100,6 +1122,11 @@ func (s *WalletService) executeWithdrawal(ctx context.Context, userID string, re
 		// re-transfer; return whatever is on record.
 		return s.repo.GetWithdrawal(ctx, withdrawalID)
 	}
+	// The durable processing row and debit now own convergence. Release the
+	// advisory wallet lock before any provider network call so its 10s lease can
+	// never expire mid-call and admit overlapping critical sections.
+	release()
+	released = true
 
 	if custodied {
 		// Asaas transfers never confirm synchronously — leg 1 (plan §5.2) is
@@ -1520,38 +1547,15 @@ func (s *WalletService) ReleaseHold(ctx context.Context, userID, holdID, idemKey
 		return h, nil
 	}
 
-	if _, _, err := s.repo.Credit(ctx, repositories.Mutation{
-		WalletID:       h.WalletID,
-		Amount:         h.Amount,
-		EntryType:      wallet.EntryGameHoldRelease,
-		Ref:            h.TableRef,
-		IdempotencyKey: wallet.EntryGameHoldRelease + "#" + idemKey,
-		ReqHash:        reqHash(holdID, h.Amount),
-	}); err != nil {
-		return nil, err
-	}
-	if ok, err := s.repo.UpdateHoldStatus(ctx, holdID, wallet.HoldHeld, wallet.HoldReleased); err != nil {
-		return nil, err
-	} else if !ok {
-		// Lost a race to a concurrent transition after the credit above committed
-		// (the credit is idempotent-keyed, so a retry of this call would simply
-		// replay it) — return the current state rather than erroring.
-		return s.repo.GetHold(ctx, holdID)
-	}
-	h.Status = wallet.HoldReleased
-	return h, nil
+	resolved, _, err := s.repo.ReleaseHoldAtomic(ctx, h,
+		wallet.EntryGameHoldRelease+"#"+holdID, reqHash(holdID, h.Amount))
+	return resolved, err
 }
 
-// CashoutGame credits the caller's game wallet with amount — the calling
-// skill game's own table ledger is authoritative for what a player's final
-// stack is worth when they leave, so amount is credited exactly as sent,
-// NEVER validated or bounded against the sum of the listed holds' amounts (see
-// the design spec's "Why cash-out isn't bounded by the hold" — a player can
-// leave with more than any single hold, e.g. having won another seated
-// player's buy-in). Every listed hold is marked settled; a hold not currently
-// `held` (already released/settled) is a benign idempotent-replay case, not an
-// error, so a retry after a prior partial failure never fails the whole
-// cash-out.
+// CashoutGame atomically credits the caller's game wallet and consumes the
+// listed holds. Until a table-wide, zero-sum settlement contract exists, the
+// amount is fail-closed at the total value of the caller's held reservations;
+// this prevents a compromised game client from minting wallet funds.
 func (s *WalletService) CashoutGame(ctx context.Context, userID string, amount int64, tableRef string, holdIDs []string, idemKey string) (*wallet.LedgerEntry, error) {
 	_, game, _, err := s.requireActivated(ctx, userID)
 	if err != nil {
@@ -1573,7 +1577,17 @@ func (s *WalletService) CashoutGame(ctx context.Context, userID string, amount i
 	// settling. A compromised/bhuggy internal client (scope
 	// internal:wallet:game-cashout) must not credit one user while settling
 	// another's holds. Checked under the lock, before any mutation.
+	if len(holdIDs) > maxCashoutHolds {
+		return nil, problem.BadRequest("quantidade de holds excede o limite")
+	}
+	seen := make(map[string]struct{}, len(holdIDs))
+	holds := make([]*wallet.Hold, 0, len(holdIDs))
+	var reserved int64
 	for _, holdID := range holdIDs {
+		if _, duplicate := seen[holdID]; duplicate {
+			return nil, problem.BadRequest("hold duplicado")
+		}
+		seen[holdID] = struct{}{}
 		hh, gerr := s.repo.GetHold(ctx, holdID)
 		if gerr != nil {
 			return nil, gerr
@@ -1581,26 +1595,24 @@ func (s *WalletService) CashoutGame(ctx context.Context, userID string, amount i
 		if hh == nil || hh.UserID != userID {
 			return nil, problem.Forbidden("hold não pertence ao usuário")
 		}
-	}
-
-	entry, _, err := s.repo.Credit(ctx, repositories.Mutation{
-		WalletID:       game.WalletID,
-		Amount:         amount,
-		EntryType:      wallet.EntryGameCashoutCredit,
-		Ref:            tableRef + "#" + strings.Join(holdIDs, ","),
-		IdempotencyKey: wallet.EntryGameCashoutCredit + "#" + idemKey,
-		ReqHash:        reqHash(tableRef, amount),
-	})
-	if err != nil {
-		return nil, err
-	}
-	for _, holdID := range holdIDs {
-		if _, err := s.repo.UpdateHoldStatus(ctx, holdID, wallet.HoldHeld, wallet.HoldSettled); err != nil {
-			return nil, err
+		if hh.Status != wallet.HoldHeld || hh.TableRef != tableRef {
+			return nil, problem.Conflict("hold não está disponível para esta liquidação")
 		}
+		reserved += hh.Amount
+		holds = append(holds, hh)
 	}
-	return entry, nil
+	// Until the multi-player zero-sum settlement table is implemented, never
+	// let a scoped caller mint value beyond the real funds these holds reserved.
+	if amount > reserved {
+		return nil, problem.BadRequest("cashout excede o valor reservado")
+	}
+	entry, _, err := s.repo.CashoutHoldsAtomic(ctx, game.WalletID, userID, amount, tableRef, holds,
+		wallet.EntryGameCashoutCredit+"#"+userID+"#"+idemKey,
+		reqHash(tableRef+"#"+strings.Join(holdIDs, ","), amount))
+	return entry, err
 }
+
+const maxCashoutHolds = 20
 
 // reqHash is the canonical fingerprint guarding "same idempotency key, different
 // payload" — the repository compares it and returns idempotency-conflict on drift.

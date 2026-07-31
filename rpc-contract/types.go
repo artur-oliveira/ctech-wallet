@@ -20,9 +20,9 @@ const (
 
 	// Asaas BaaS custody ops (ctech-wallet-api plan
 	// docs/plans/2026-07-30-asaas-baas-implementation-plan.md §2.2). Each
-	// Asaas *Args struct below carries its own APIKey — unlike the Inter ops
-	// above, there is no fleet-wide bearer: every call authenticates as a
-	// specific subaccount (or the parent account).
+	// Asaas credentials travel only in Request.OAuthToken. They MUST NOT be
+	// duplicated into Payload. Payloads can contain financial data and are never
+	// operationally logged.
 	OpAsaasCreateAccount       Op = "AsaasCreateAccount"
 	OpAsaasUploadDocument      Op = "AsaasUploadDocument"
 	OpAsaasCreateStaticPixKey  Op = "AsaasCreateStaticPixKey"
@@ -41,6 +41,11 @@ const ErrKeyNotFoundSentinel = "key_not_found"
 // ErrUnauthorizedSentinel is the Response.Error value that means Inter rejected
 // the passed bearer (HTTP 401). api force-refreshes and retries once.
 const ErrUnauthorizedSentinel = "unauthorized"
+
+// ErrTransferNotFoundSentinel means a provider query succeeded and proved no
+// transfer exists for the supplied external reference. It is deliberately
+// distinct from a query/transport error: only this result permits resubmission.
+const ErrTransferNotFoundSentinel = "transfer_not_found"
 
 // Request is the Lambda Invoke payload. OAuthToken is supplied by api's
 // InterTokenManager on every call and must never be logged. Payload is
@@ -156,14 +161,11 @@ type AsaasAccountResult struct {
 }
 
 type AsaasUploadDocumentArgs struct {
-	APIKey     string `json:"api_key"`
 	DocumentID string `json:"document_id"`
 	File       []byte `json:"file"`
 }
 
-type AsaasCreateStaticPixKeyArgs struct {
-	APIKey string `json:"api_key"`
-}
+type AsaasCreateStaticPixKeyArgs struct{}
 
 type AsaasPixAddressKeyResult struct {
 	Key    string `json:"key"`
@@ -171,7 +173,6 @@ type AsaasPixAddressKeyResult struct {
 }
 
 type AsaasCreatePixQRCodeArgs struct {
-	APIKey                 string `json:"api_key"`
 	AddressKey             string `json:"address_key"`
 	Value                  int64  `json:"value"`
 	Format                 string `json:"format"`
@@ -188,7 +189,6 @@ type AsaasQRCodeResult struct {
 }
 
 type AsaasQueryPaymentArgs struct {
-	APIKey    string `json:"api_key"`
 	PaymentID string `json:"payment_id"`
 }
 
@@ -200,7 +200,6 @@ type AsaasPaymentResult struct {
 }
 
 type AsaasCreateTransferArgs struct {
-	APIKey            string `json:"api_key"`
 	Value             int64  `json:"value"`
 	PixAddressKey     string `json:"pix_address_key"`
 	PixAddressKeyType string `json:"pix_address_key_type"`
@@ -216,13 +215,10 @@ type AsaasTransferResult struct {
 }
 
 type AsaasQueryTransferArgs struct {
-	APIKey            string `json:"api_key"`
 	ExternalReference string `json:"external_reference"`
 }
 
-type AsaasQueryAccountBalanceArgs struct {
-	APIKey string `json:"api_key"`
-}
+type AsaasQueryAccountBalanceArgs struct{}
 
 type AsaasBalanceResult struct {
 	Balance int64 `json:"balance"`

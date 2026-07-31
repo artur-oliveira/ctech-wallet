@@ -14,13 +14,14 @@ Split into two functions:
 
 > The API reads its Inter bearer from `pix-gateway`'s `GetToken` op and passes it
 > on the wire (`OAuthToken` in `rpc-contract.Request`) — it is **never logged**
-> (`cmd/outbound/main.go:68`, `scrubPayload` at `:218`).
+> and neither request nor response financial payloads are logged.
 
 ## Wire contract
 
 Both Lambdas speak `rpc-contract` (`../rpc-contract/README.md`): `api` sends
 `Request{Op, OAuthToken, Payload}`, `pix-gateway` returns `Response{Error,
-Payload}` with sentinels `key_not_found` / `unauthorized`
+Payload}` with sentinels `key_not_found`, `unauthorized`, and
+`transfer_not_found`
 (`cmd/outbound/main.go:199`).
 
 ## Outbound — Inter client (`internal/inter`)
@@ -84,6 +85,11 @@ Payload}` with sentinels `key_not_found` / `unauthorized`
 > uses it only for the CPF‑match gate — never to authorize crediting.
 
 ## Secrets — SSM SecureString (`internal/secrets/ssm.go:16`)
+
+Asaas account credentials travel only in the Lambda request's redacted
+`oauth_token` transport field. They are never duplicated into the logged JSON
+payload. Request/response logs redact credentials, documents, CPF fields, and
+encoded QR images; raw Inter/webhook bodies are not logged.
 
 All read with `WithDecryption: true`; none hit disk or logs.
 

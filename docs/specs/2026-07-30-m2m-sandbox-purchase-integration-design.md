@@ -75,6 +75,10 @@ Failed deliveries are retried by the reconcile job (`cmd/reconcile`), not a dedi
 sweep shape (`SweepPendingSandboxPurchases`'s sibling). `GSISandboxPurchaseWebhookStatus` on
 `wallet_sandbox_purchases` (`webhook_status = "failed"`) backs `WalletService.RetryFailedM2MWebhooks`, run every
 reconcile cycle alongside the other sweeps. A webhook failure never raises the operational alarm
+
+Purchase rows and their deterministic request hashes are retained permanently for idempotency. `expires_at`
+is a business deadline, not DynamoDB TTL. Reusing the same caller/user/idempotency tuple with another SKU returns
+`409 idempotency-conflict`; it never silently returns or opens a differently priced charge.
 `cmd/reconcile` exits non-zero on (Invariant #12 is about money in limbo — a lost notification is not; the
 receiver's own poll path covers it either way).
 

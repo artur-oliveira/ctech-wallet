@@ -237,7 +237,7 @@ type PixDeposit struct {
 	Provider         string `dynamodbav:"provider,omitempty" json:"-"`
 	ProviderQRCodeID string `dynamodbav:"provider_qr_code_id,omitempty" json:"-"`
 	CreatedAt        string `dynamodbav:"created_at" json:"created_at"`
-	TTL              int64  `dynamodbav:"ttl" json:"-"` // Dynamo TTL epoch, 5 min
+	TTL              int64  `dynamodbav:"expires_at" json:"-"` // business expiry; retained for durable idempotency/audit
 }
 
 // ProviderAsaas marks a PixDeposit opened against a user's Asaas subaccount
@@ -254,6 +254,7 @@ type Withdrawal struct {
 	Amount         int64  `dynamodbav:"amount" json:"amount"`
 	Fee            int64  `dynamodbav:"fee" json:"fee"`
 	PixKey         string `dynamodbav:"pix_key" json:"pix_key"`
+	Provider       string `dynamodbav:"provider,omitempty" json:"provider,omitempty"`
 	Status         string `dynamodbav:"status" json:"status"`
 	E2EID          string `dynamodbav:"e2e_id" json:"e2e_id,omitempty"`
 	IdempotencyKey string `dynamodbav:"idempotency_key" json:"-"`
@@ -324,8 +325,14 @@ const (
 	IntentAwaitingAuthorization = "awaiting_authorization"
 	IntentProcessing            = "processing"
 	IntentDone                  = "done"
+	IntentFailed                = "failed"
 	IntentSuperseded            = "superseded" // §9.1a — reversed before the forward leg ever reached done
 	IntentCancelled             = "cancelled"  // Asaas auto-cancelled after 3 failed authorization responses
+)
+
+const (
+	TransferDestinationPIX    = "pix"
+	TransferDestinationWallet = "wallet"
 )
 
 // Transfer-intent kinds — what CreateTransfer call this row is tracking.
@@ -370,6 +377,7 @@ type SandboxPurchase struct {
 	SKU            string `dynamodbav:"sku" json:"sku"`
 	AmountExpected int64  `dynamodbav:"amount_expected" json:"amount_expected"` // centavos, the PIX price
 	CreditsGranted int64  `dynamodbav:"credits_granted" json:"credits_granted"` // sandbox credits
+	RequestHash    string `dynamodbav:"request_hash" json:"-"`
 	Status         string `dynamodbav:"status" json:"status"`
 	CreditSK       string `dynamodbav:"credit_sk,omitempty" json:"-"`
 	E2EID          string `dynamodbav:"e2e_id,omitempty" json:"e2e_id,omitempty"`
@@ -386,7 +394,7 @@ type SandboxPurchase struct {
 	WebhookStatus string `dynamodbav:"webhook_status,omitempty" json:"-"`
 	CreatedAt     string `dynamodbav:"created_at" json:"created_at"`
 	UpdatedAt     string `dynamodbav:"updated_at" json:"updated_at"`
-	TTL           int64  `dynamodbav:"ttl,omitempty" json:"-"` // swept if never confirmed
+	TTL           int64  `dynamodbav:"expires_at,omitempty" json:"-"` // business expiry; row is retained for idempotency
 }
 
 // MED receivable statuses (plan §7.3).
@@ -430,6 +438,7 @@ type TransferIntent struct {
 	// settlement leg, sandbox-purchase settlement/reversal) — compared
 	// verbatim against the authorization webhook's payload (plan §2.3 step 2).
 	Destination        string `dynamodbav:"destination,omitempty" json:"destination,omitempty"`
+	DestinationType    string `dynamodbav:"destination_type,omitempty" json:"destination_type,omitempty"`
 	Ref                string `dynamodbav:"ref,omitempty" json:"ref,omitempty"` // e.g. withdrawal ID, batch leg, ledger credit SK (§9.1a)
 	ProviderTransferID string `dynamodbav:"provider_transfer_id,omitempty" json:"provider_transfer_id,omitempty"`
 	TransferFee        int64  `dynamodbav:"transfer_fee,omitempty" json:"transfer_fee,omitempty"` // §5.2 — Asaas's own leg-1 fee, read back from the response

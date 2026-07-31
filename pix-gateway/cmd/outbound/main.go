@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -45,8 +46,7 @@ func main() {
 	// pixClient (and the SSM store + mTLS HTTP transport it wraps) is built once
 	// at cold start and reused for every invocation — no per-call SSM/SSM-KMS.
 	// asaasClient needs no SSM/cold-start secret at all — every Asaas call
-	// carries its own api_key in the request payload (plan §2.2), unlike Inter's
-	// shared OAuth bearer.
+	// carries its credential in the non-logged OAuthToken envelope field.
 	h := &handler{pix: pixClient, asaas: asaas.NewAsaasClient(cfg.AsaasBaseURL)}
 	lambda.Start(h.handle)
 }
@@ -68,22 +68,15 @@ func newInter(ctx context.Context, cfg *config.Config) (inter.PixClient, error) 
 	return inter.NewInterClient(cfg, kp, store)
 }
 
-// handle logs the Invoke request/response (OAuthToken and other sensitive
-// fields scrubbed) then dispatches to the matching PixClient method.
+// handle logs only operation metadata. Request and response payloads can hold
+// credentials, CPF, payment keys, QR codes and provider data, so they are never
+// logged—even through a best-effort redactor.
 func (h *handler) handle(ctx context.Context, req rpc.Request) (rpc.Response, error) {
-	slog.InfoContext(ctx, "outbound request",
-		"op", req.Op,
-		"oauth_token", "[redacted]",
-		"payload", string(scrubPayload(req.Payload)),
-	)
+	slog.InfoContext(ctx, "outbound request", "op", req.Op)
 	// Seed the bearer api passed per call; inter reads it from ctx in do/doIdem.
 	ctx = inter.WithBearer(ctx, req.OAuthToken)
 	resp := h.dispatch(ctx, req)
-	slog.InfoContext(ctx, "outbound response",
-		"op", req.Op,
-		"error", resp.Error,
-		"payload", string(scrubPayload(resp.Payload)),
-	)
+	slog.InfoContext(ctx, "outbound response", "op", req.Op, "failed", resp.Error != "")
 	return resp, nil
 }
 
@@ -186,7 +179,7 @@ func (h *handler) dispatch(ctx context.Context, req rpc.Request) rpc.Response {
 		if err := json.Unmarshal(req.Payload, &a); err != nil {
 			return toResp(err)
 		}
-		if err := h.asaas.UploadDocument(ctx, a.APIKey, a.DocumentID, a.File); err != nil {
+		if err := h.asaas.UploadDocument(ctx, req.OAuthToken, a.DocumentID, a.File); err != nil {
 			return errResp(err)
 		}
 		return rpc.Response{}
@@ -196,7 +189,7 @@ func (h *handler) dispatch(ctx context.Context, req rpc.Request) rpc.Response {
 		if err := json.Unmarshal(req.Payload, &a); err != nil {
 			return toResp(err)
 		}
-		k, err := h.asaas.CreateStaticPixKey(ctx, a.APIKey)
+		k, err := h.asaas.CreateStaticPixKey(ctx, req.OAuthToken)
 		if err != nil {
 			return errResp(err)
 		}
@@ -207,7 +200,7 @@ func (h *handler) dispatch(ctx context.Context, req rpc.Request) rpc.Response {
 		if err := json.Unmarshal(req.Payload, &a); err != nil {
 			return toResp(err)
 		}
-		qr, err := h.asaas.CreatePixQRCode(ctx, a.APIKey, asaas.CreatePixQRCodeArgs{
+		qr, err := h.asaas.CreatePixQRCode(ctx, req.OAuthToken, asaas.CreatePixQRCodeArgs{
 			AddressKey: a.AddressKey, Value: a.Value, Format: a.Format,
 			ExpirationSeconds: a.ExpirationSeconds, AllowsMultiplePayments: a.AllowsMultiplePayments,
 			ExternalReference: a.ExternalReference,
@@ -224,7 +217,7 @@ func (h *handler) dispatch(ctx context.Context, req rpc.Request) rpc.Response {
 		if err := json.Unmarshal(req.Payload, &a); err != nil {
 			return toResp(err)
 		}
-		p, err := h.asaas.QueryPayment(ctx, a.APIKey, a.PaymentID)
+		p, err := h.asaas.QueryPayment(ctx, req.OAuthToken, a.PaymentID)
 		if err != nil {
 			return errResp(err)
 		}
@@ -237,7 +230,7 @@ func (h *handler) dispatch(ctx context.Context, req rpc.Request) rpc.Response {
 		if err := json.Unmarshal(req.Payload, &a); err != nil {
 			return toResp(err)
 		}
-		t, err := h.asaas.CreateTransfer(ctx, a.APIKey, asaas.CreateTransferArgs{
+		t, err := h.asaas.CreateTransfer(ctx, req.OAuthToken, asaas.CreateTransferArgs{
 			Value: a.Value, PixAddressKey: a.PixAddressKey, PixAddressKeyType: a.PixAddressKeyType,
 			WalletID: a.WalletID, ExternalReference: a.ExternalReference,
 		})
@@ -253,7 +246,10 @@ func (h *handler) dispatch(ctx context.Context, req rpc.Request) rpc.Response {
 		if err := json.Unmarshal(req.Payload, &a); err != nil {
 			return toResp(err)
 		}
-		t, err := h.asaas.QueryTransfer(ctx, a.APIKey, a.ExternalReference)
+		t, err := h.asaas.QueryTransfer(ctx, req.OAuthToken, a.ExternalReference)
+		if errors.Is(err, asaas.ErrTransferNotFound) {
+			return rpc.Response{Error: rpc.ErrTransferNotFoundSentinel}
+		}
 		if err != nil {
 			return errResp(err)
 		}
@@ -266,7 +262,7 @@ func (h *handler) dispatch(ctx context.Context, req rpc.Request) rpc.Response {
 		if err := json.Unmarshal(req.Payload, &a); err != nil {
 			return toResp(err)
 		}
-		balance, err := h.asaas.QueryAccountBalance(ctx, a.APIKey)
+		balance, err := h.asaas.QueryAccountBalance(ctx, req.OAuthToken)
 		if err != nil {
 			return errResp(err)
 		}
@@ -332,29 +328,4 @@ func toResp(err error) rpc.Response {
 
 func errResp(err error) rpc.Response {
 	return rpc.Response{Error: err.Error()}
-}
-
-// scrubPayload returns payload with sensitive/oversized fields redacted so
-// request/response logs never leak secrets (oauth_token is scrubbed by the
-// caller) or dump multi-KB blobs. Redacted: token (Inter bearer), qr_code_b64
-// (base64 PNG), payer_hint_cpf/cpf (PII). Request and response payloads are
-// single top-level objects, so a shallow key strip is enough.
-func scrubPayload(p json.RawMessage) json.RawMessage {
-	if len(p) == 0 {
-		return p
-	}
-	var m map[string]json.RawMessage
-	if err := json.Unmarshal(p, &m); err != nil {
-		return p
-	}
-	for _, k := range []string{"token", "payer_hint_cpf", "cpf"} {
-		if _, ok := m[k]; ok {
-			m[k] = json.RawMessage(`"[redacted]"`)
-		}
-	}
-	out, err := json.Marshal(m)
-	if err != nil {
-		return p
-	}
-	return out
 }

@@ -23,6 +23,7 @@ type FakeAsaasClient struct {
 	CreateAccountErr       error
 	CreateTransferErr      error
 	QueryPaymentErr        error
+	QueryTransferErr       error
 	QueryAccountBalanceErr error
 
 	// Recorded calls for assertions.
@@ -58,7 +59,7 @@ func (f *FakeAsaasClient) StageBalance(apiKey string, balance int64) {
 	f.Balances[apiKey] = balance
 }
 
-func (f *FakeAsaasClient) CreateAccount(_ context.Context, req CreateAccountRequest) (*Account, error) {
+func (f *FakeAsaasClient) CreateAccount(_ context.Context, _ string, req CreateAccountRequest) (*Account, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.CreatedAccounts = append(f.CreatedAccounts, req)
@@ -131,10 +132,13 @@ func (f *FakeAsaasClient) QueryTransfer(_ context.Context, _ string, externalRef
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.QueriedTransfers = append(f.QueriedTransfers, externalReference)
+	if f.QueryTransferErr != nil {
+		return nil, f.QueryTransferErr
+	}
 	if t, ok := f.Transfers[externalReference]; ok {
 		return t, nil
 	}
-	return nil, fmt.Errorf("asaas: transfer %s not found", externalReference)
+	return nil, ErrTransferNotFound
 }
 
 // StagePayment marks a payment as received — for deposit-confirm tests.

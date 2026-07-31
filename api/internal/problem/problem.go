@@ -140,7 +140,7 @@ func FromFiber(err *fiber.Error) *Problem {
 	case http.StatusNotFound:
 		return NotFound(err.Error())
 	default:
-		return InternalServer(err.Error())
+		return InternalServer("erro interno")
 	}
 }
 

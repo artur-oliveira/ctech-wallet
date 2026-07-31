@@ -70,8 +70,8 @@ account KYC). `GAMBLING_ENABLED` (default `false`) gates the entire
 |-------------------------|--------------------------------|-----------------------------------------------------------------------|
 | `wallets`               | `TableWallets` (`model.go:74`) | authoritative balance (centavos for real/game, credits for sandbox)   |
 | `wallet_ledger_entries` | `TableLedger` (`:75`)          | append‑only audit; GSI `gsi_idem` for replay                          |
-| `wallet_idempotency`    | `TableIdempotency` (`:76`)     | `IDEM#{key}` guard rows (TTL 7d)                                      |
-| `wallet_pix_deposits`   | `TablePixDeposits` (`:77`)     | pending charges; GSI `gsi_status` for sweep                           |
+| `wallet_idempotency`    | `TableIdempotency` (`:76`)     | Permanent `IDEM#{key}` guard rows; financial replays never expire     |
+| `wallet_pix_deposits`   | `TablePixDeposits` (`:77`)     | durable charge records; GSI `gsi_status` for pending sweep             |
 | `wallet_withdrawals`    | `TableWithdrawals` (`:78`)     | `processing`/`completed`/`reversed`/`refund_failed`; GSI `gsi_status` |
 | `wallet_users`          | `TableUsers` (`:79`)           | consent + responsible‑gambling state                                  |
 | `wallet_audit`          | `TableAudit` (`:80`)           | append‑only non‑money events                                          |

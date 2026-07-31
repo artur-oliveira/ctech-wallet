@@ -55,8 +55,16 @@ func (r *BaasRepository) PutBaasAccount(ctx context.Context, a *wallet.BaasAccou
 	if err != nil {
 		return err
 	}
-	return r.accounts.PutItem(ctx, av)
+	if err := r.accounts.TransactWrite(ctx, []types.TransactWriteItem{r.accounts.BuildPutTxItemIfAbsent(av)}); err != nil {
+		if IsConditionFailed(err) {
+			return ErrBaasAccountExists
+		}
+		return err
+	}
+	return nil
 }
+
+var ErrBaasAccountExists = errors.New("repositories: baas account already exists")
 
 func (r *BaasRepository) UpdateBaasAccount(ctx context.Context, userID string, updates map[string]any) error {
 	updates["updated_at"] = NowStr()

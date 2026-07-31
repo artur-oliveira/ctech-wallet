@@ -14,16 +14,16 @@ source of truth — Invariant #11 — and the CPF gate is anti-fraud only).
 
 - **`cmd/outbound`** — actual Inter calls. Dispatches on `rpc-contract` `Op`
   (`cmd/outbound/main.go:89`); returns `Response{Error,Payload}` with
-  sentinels `key_not_found`/`unauthorized` (`:199`); scrubs the bearer from
-  logs (`scrubPayload`, `:218`).
+  sentinels `key_not_found`/`unauthorized`/`transfer_not_found`; logs operation
+  metadata only, never request or response payloads.
 - **`cmd/webhook`** — receives Inter's PIX callback, validates it, asks `api`
   to re-derive + credit. Carries **no Inter credentials at all**
   (`cmd/webhook/main.go:1`).
 
 ## Rules (MUST follow)
 
-- **Never** log the Inter bearer — it travels in `OAuthToken`
-  (`cmd/outbound/main.go:68`, `scrubPayload:218`).
+- **Never** log credentials or request/response payloads. The Inter bearer and
+  Asaas API keys travel only in `OAuthToken`.
 - **mTLS + OAuth2 client_credentials** only (`internal/inter/inter.go:67-92`,
   `tokenScope:58`, `pathToken:53`). Min TLS 1.2, 20s timeout.
 - Endpoint paths/JSON field names follow Inter's v2 API — **confirm each

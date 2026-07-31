@@ -202,6 +202,23 @@ func (s *stubRepo) UpdateHoldStatus(_ context.Context, holdID, fromStatus, toSta
 	h.Status = toStatus
 	return true, nil
 }
+func (s *stubRepo) ReleaseHoldAtomic(_ context.Context, h *wallet.Hold, _, _ string) (*wallet.Hold, bool, error) {
+	if h.Status != wallet.HoldHeld {
+		return h, true, nil
+	}
+	h.Status = wallet.HoldReleased
+	s.creditCalls = append(s.creditCalls, repositories.Mutation{WalletID: h.WalletID, Amount: h.Amount, EntryType: wallet.EntryGameHoldRelease})
+	if s.holds != nil {
+		s.holds[h.HoldID] = h
+	}
+	return h, false, nil
+}
+func (s *stubRepo) CashoutHoldsAtomic(_ context.Context, walletID, _ string, amount int64, tableRef string, holds []*wallet.Hold, _, _ string) (*wallet.LedgerEntry, bool, error) {
+	for _, h := range holds {
+		h.Status = wallet.HoldSettled
+	}
+	return &wallet.LedgerEntry{WalletID: walletID, Amount: amount, Type: wallet.EntryGameCashoutCredit, Ref: tableRef}, false, nil
+}
 func (s *stubRepo) ScanStaleHolds(_ context.Context, _ time.Time, _ int) ([]wallet.Hold, error) {
 	return s.staleHolds, nil
 }
@@ -391,6 +408,21 @@ func TestConfirmDepositNoopWhenNotPaid(t *testing.T) {
 	}
 	if len(repo.creditCalls) != 0 {
 		t.Errorf("no credit expected when charge not completed")
+	}
+}
+
+func TestConfirmDepositSweepNeverCreditsWithoutPayerIdentity(t *testing.T) {
+	repo := newStubRepo()
+	repo.deposit = &wallet.PixDeposit{Txid: "tx1", WalletID: "w-real", UserID: "u1", AmountExpected: 5000, Status: wallet.DepositPending}
+	fake := pix.NewFake()
+	fake.StageCharge("tx1", 5000, pix.ChargeCompleted, "", "E2E-1")
+	svc := newSvc(repo, &stubLocker{}, fake, &stubKYC{rec: &kycclient.KYC{CPF: "12345678901"}})
+
+	if err := svc.ConfirmDeposit(context.Background(), "tx1", "", "", true); err == nil {
+		t.Fatal("paid deposit without payer identity must remain quarantined")
+	}
+	if len(repo.creditCalls) != 0 || repo.depositStatus == wallet.DepositConfirmed {
+		t.Fatalf("payer-less sweep must never credit: credits=%v status=%q", repo.creditCalls, repo.depositStatus)
 	}
 }
 
@@ -915,11 +947,8 @@ func TestReleaseHoldNotFound(t *testing.T) {
 	isProblem(t, err, problem.TypeNotFound)
 }
 
-// CashoutGame is regression-tested for the "not bounded by the hold" behavior:
-// a cash-out larger than any single hold must succeed, proving this is
-// intentional (a player can win another seated player's buy-in), not an
-// oversight.
-func TestCashoutGameNotBoundedByHoldAmount(t *testing.T) {
+// A cashout may span several holds but cannot exceed their aggregate value.
+func TestCashoutGameMayConsumeMultipleHolds(t *testing.T) {
 	repo := newStubRepo()
 	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 
@@ -952,7 +981,21 @@ func TestCashoutGameNotBoundedByHoldAmount(t *testing.T) {
 	}
 }
 
-func TestCashoutGameRetryAfterPartialFailureIsBenign(t *testing.T) {
+func TestCashoutGameCannotMintBeyondReservedHolds(t *testing.T) {
+	repo := newStubRepo()
+	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	h, err := svc.HoldGame(context.Background(), "u1", 5000, "table-1", "idem-hold")
+	if err != nil {
+		t.Fatalf("HoldGame: %v", err)
+	}
+	_, err = svc.CashoutGame(context.Background(), "u1", 5001, "table-1", []string{h.HoldID}, "idem-cashout")
+	isProblem(t, err, problem.TypeBadRequest)
+	if h.Status != wallet.HoldHeld {
+		t.Fatalf("rejected cashout consumed hold: %s", h.Status)
+	}
+}
+
+func TestCashoutGameRejectsAlreadyConsumedHold(t *testing.T) {
 	repo := newStubRepo()
 	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 	h, err := svc.HoldGame(context.Background(), "u1", 5000, "table-1", "idem-hold")
@@ -965,9 +1008,8 @@ func TestCashoutGameRetryAfterPartialFailureIsBenign(t *testing.T) {
 		t.Fatalf("UpdateHoldStatus: %v", err)
 	}
 
-	if _, err := svc.CashoutGame(context.Background(), "u1", 5000, "table-1", []string{h.HoldID}, "idem-cashout-retry"); err != nil {
-		t.Fatalf("CashoutGame retry must not fail on an already-settled hold: %v", err)
-	}
+	_, err = svc.CashoutGame(context.Background(), "u1", 5000, "table-1", []string{h.HoldID}, "idem-cashout-retry")
+	isProblem(t, err, problem.TypeConflict)
 }
 
 func TestInitiateDepositRejectsUnapprovedSubaccountWhenCustodyEnabled(t *testing.T) {

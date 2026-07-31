@@ -56,7 +56,7 @@ func setWalletDepositRange(t *testing.T, walletID string, minDep, maxDep int64) 
 
 const cpf = "12345678901"
 
-func verified() *kycclient.KYC { return &kycclient.KYC{Level: "verified", CPF: cpf} }
+func verified() *kycclient.KYC { return &kycclient.KYC{Level: "enhanced", CPF: cpf} }
 
 // activate opens the caller's game + sandbox wallets at the repository level,
 // standing in for the consent-gated service flow (which TestActivateGambling*
@@ -144,10 +144,10 @@ func wantProblem(t *testing.T, err error, typ string) {
 
 func TestDepositConfirmCreditsOnCPFMatch(t *testing.T) {
 	ctx := context.Background()
-	h := newHarness(&kycclient.KYC{Level: "verified", CPF: cpf})
+	h := newHarness(&kycclient.KYC{Level: "enhanced", CPF: cpf})
 	user := "u-" + id.New()
 
-	dep, _, err := h.svc.InitiateDeposit(ctx, user, "verified", 5000, id.New())
+	dep, _, err := h.svc.InitiateDeposit(ctx, user, "enhanced", 5000, id.New())
 	if err != nil {
 		t.Fatalf("InitiateDeposit: %v", err)
 	}
@@ -271,7 +271,7 @@ func TestDepositRejectsAmountOutsideGlobalRange(t *testing.T) {
 	user := "u-" + id.New()
 
 	for _, amount := range []int64{wallet.DefaultMinDeposit - 1, wallet.DefaultMaxDeposit + 1} {
-		dep, charge, err := h.svc.InitiateDeposit(ctx, user, "verified", amount, id.New())
+		dep, charge, err := h.svc.InitiateDeposit(ctx, user, "enhanced", amount, id.New())
 		var p *problem.Problem
 		if !errors.As(err, &p) || p.Type != problem.TypeDepositOutOfRange {
 			t.Fatalf("InitiateDeposit(%d) err = %v, want deposit-out-of-range", amount, err)
@@ -288,10 +288,10 @@ func TestDepositRejectsAmountOutsideGlobalRange(t *testing.T) {
 	}
 
 	// The boundaries themselves are accepted.
-	if _, _, err := h.svc.InitiateDeposit(ctx, user, "verified", wallet.DefaultMinDeposit, id.New()); err != nil {
+	if _, _, err := h.svc.InitiateDeposit(ctx, user, "enhanced", wallet.DefaultMinDeposit, id.New()); err != nil {
 		t.Fatalf("InitiateDeposit at min: %v", err)
 	}
-	if _, _, err := h.svc.InitiateDeposit(ctx, user, "verified", wallet.DefaultMaxDeposit, id.New()); err != nil {
+	if _, _, err := h.svc.InitiateDeposit(ctx, user, "enhanced", wallet.DefaultMaxDeposit, id.New()); err != nil {
 		t.Fatalf("InitiateDeposit at max: %v", err)
 	}
 }
@@ -308,25 +308,25 @@ func TestDepositUsesPerWalletRangeOverride(t *testing.T) {
 	setWalletDepositRange(t, real.WalletID, 5000, 20000)
 
 	// Inside the global range but below this wallet's floor → rejected.
-	if _, _, err := h.svc.InitiateDeposit(ctx, user, "verified", 4999, id.New()); err == nil {
+	if _, _, err := h.svc.InitiateDeposit(ctx, user, "enhanced", 4999, id.New()); err == nil {
 		t.Fatal("InitiateDeposit(4999) = nil, want deposit-out-of-range")
 	}
 	// Inside the global range but above this wallet's cap → rejected.
-	if _, _, err := h.svc.InitiateDeposit(ctx, user, "verified", 20001, id.New()); err == nil {
+	if _, _, err := h.svc.InitiateDeposit(ctx, user, "enhanced", 20001, id.New()); err == nil {
 		t.Fatal("InitiateDeposit(20001) = nil, want deposit-out-of-range")
 	}
 	// Within the wallet's own range → accepted.
-	if _, _, err := h.svc.InitiateDeposit(ctx, user, "verified", 20000, id.New()); err != nil {
+	if _, _, err := h.svc.InitiateDeposit(ctx, user, "enhanced", 20000, id.New()); err != nil {
 		t.Fatalf("InitiateDeposit(20000): %v", err)
 	}
 }
 
 func TestDepositRejectsAndRefundsOnCPFMismatch(t *testing.T) {
 	ctx := context.Background()
-	h := newHarness(&kycclient.KYC{Level: "verified", CPF: cpf})
+	h := newHarness(&kycclient.KYC{Level: "enhanced", CPF: cpf})
 	user := "u-" + id.New()
 
-	dep, _, err := h.svc.InitiateDeposit(ctx, user, "verified", 5000, id.New())
+	dep, _, err := h.svc.InitiateDeposit(ctx, user, "enhanced", 5000, id.New())
 	if err != nil {
 		t.Fatalf("InitiateDeposit: %v", err)
 	}
@@ -352,11 +352,11 @@ func TestInitiateDepositIdempotentReturnsSameCharge(t *testing.T) {
 	user := "u-" + id.New()
 	idemKey := "idem-deposit-" + id.New()
 
-	dep1, charge1, err := h.svc.InitiateDeposit(ctx, user, "verified", 5000, idemKey)
+	dep1, charge1, err := h.svc.InitiateDeposit(ctx, user, "enhanced", 5000, idemKey)
 	if err != nil {
 		t.Fatalf("first InitiateDeposit: %v", err)
 	}
-	dep2, charge2, err := h.svc.InitiateDeposit(ctx, user, "verified", 5000, idemKey)
+	dep2, charge2, err := h.svc.InitiateDeposit(ctx, user, "enhanced", 5000, idemKey)
 	if err != nil {
 		t.Fatalf("replay InitiateDeposit: %v", err)
 	}
@@ -378,7 +378,7 @@ func TestWithdrawHappyPath(t *testing.T) {
 	user := "u-" + id.New()
 	real := fund(t, h, user, 20000)
 
-	w, err := h.svc.Withdraw(ctx, user, "verified", 5000, "idem-"+id.New())
+	w, err := h.svc.Withdraw(ctx, user, "enhanced", 5000, "idem-"+id.New())
 	if err != nil {
 		t.Fatalf("Withdraw: %v", err)
 	}
@@ -388,7 +388,7 @@ func TestWithdrawHappyPath(t *testing.T) {
 	if w.PixKey != cpf {
 		t.Fatalf("PixKey = %q, want the KYC CPF %q", w.PixKey, cpf)
 	}
-	fee := wallet.WithdrawalFee(5000, nil)
+	fee := wallet.WithdrawalFee(5000, nil, false)
 	want := int64(20000) - 5000 - fee
 	if got := balance(t, h, real.WalletID); got != want {
 		t.Fatalf("balance = %d, want %d", got, want)
@@ -406,7 +406,7 @@ func TestWithdrawKeyNotFoundRefundsImmediately(t *testing.T) {
 	real := fund(t, h, user, 20000)
 	h.pix.TransferErr = pix.ErrKeyNotFound
 
-	_, err := h.svc.Withdraw(ctx, user, "verified", 5000, "idem-"+id.New())
+	_, err := h.svc.Withdraw(ctx, user, "enhanced", 5000, "idem-"+id.New())
 	wantProblem(t, err, problem.TypePixKeyNotFound)
 
 	if got := balance(t, h, real.WalletID); got != 20000 {
@@ -423,7 +423,7 @@ func TestWithdrawUsesPerWalletFeeOverride(t *testing.T) {
 	// Admin sets a 1% fee with a higher cap directly on the wallet item (no API path).
 	setWalletFee(t, real.WalletID, 100, 100, 5000)
 
-	w, err := h.svc.Withdraw(ctx, user, "verified", 100000, "idem-"+id.New())
+	w, err := h.svc.Withdraw(ctx, user, "enhanced", 100000, "idem-"+id.New())
 	if err != nil {
 		t.Fatalf("Withdraw: %v", err)
 	}
@@ -438,7 +438,7 @@ func TestWithdrawInsufficientBalance(t *testing.T) {
 	user := "u-" + id.New()
 	fund(t, h, user, 100) // less than amount+fee
 
-	_, err := h.svc.Withdraw(ctx, user, "verified", 5000, "idem-"+id.New())
+	_, err := h.svc.Withdraw(ctx, user, "enhanced", 5000, "idem-"+id.New())
 	wantProblem(t, err, problem.TypeInsufficientBalance)
 }
 
@@ -455,7 +455,7 @@ func TestWithdrawWalletBusy(t *testing.T) {
 	}
 	defer release()
 
-	_, err = h.svc.Withdraw(ctx, user, "verified", 5000, "idem-"+id.New())
+	_, err = h.svc.Withdraw(ctx, user, "enhanced", 5000, "idem-"+id.New())
 	wantProblem(t, err, problem.TypeWalletBusy)
 }
 
@@ -484,8 +484,8 @@ func TestSandboxPurchaseAtomic(t *testing.T) {
 	if got := balance(t, h, game.WalletID); got != 2000 {
 		t.Fatalf("game = %d, want 2000 (5000 funded - 3000 spent)", got)
 	}
-	if got := balance(t, h, sandbox.WalletID); got != 30000 {
-		t.Fatalf("sandbox = %d, want 30000 (3000¢ × 10 credits/centavo)", got)
+	if got := balance(t, h, sandbox.WalletID); got != 3000*wallet.SandboxCreditsPerCent {
+		t.Fatalf("sandbox = %d, want %d", got, 3000*wallet.SandboxCreditsPerCent)
 	}
 }
 
@@ -569,8 +569,8 @@ func TestBalancesForReflectsRealBalances(t *testing.T) {
 	if got.GameBalance != 3000 {
 		t.Fatalf("GameBalance = %d, want 3000 (4000 funded - 1000 spent)", got.GameBalance)
 	}
-	if got.SandboxBalance != 10000 {
-		t.Fatalf("SandboxBalance = %d, want 10000 (1000¢ x 10 credits/centavo)", got.SandboxBalance)
+	if got.SandboxBalance != 1000*wallet.SandboxCreditsPerCent {
+		t.Fatalf("SandboxBalance = %d, want %d", got.SandboxBalance, 1000*wallet.SandboxCreditsPerCent)
 	}
 }
 
@@ -626,20 +626,20 @@ func TestWithdrawConcurrentSameIdempotencyKeyExactlyOneTransfer(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			_, errs[i] = h.svc.Withdraw(ctx, user, "verified", 5000, "idem-race")
+			_, errs[i] = h.svc.Withdraw(ctx, user, "enhanced", 5000, "idem-race")
 		}(i)
 	}
 	wg.Wait()
 
 	for i, err := range errs {
-		if err != nil {
+		if err != nil && !isWalletBusy(err) {
 			t.Fatalf("goroutine %d: unexpected error: %v", i, err)
 		}
 	}
 	if got := len(h.pix.Transfers); got != 1 {
 		t.Fatalf("expected exactly 1 PIX transfer call, got %d", got)
 	}
-	fee := wallet.WithdrawalFee(5000, nil)
+	fee := wallet.WithdrawalFee(5000, nil, false)
 	want := int64(100000) - 5000 - fee
 	if got := balance(t, h, real.WalletID); got != want {
 		t.Fatalf("balance = %d, want %d (double-debit if lower)", got, want)
@@ -674,7 +674,7 @@ func TestListPendingDepositsOlderThanFindsAgedPending(t *testing.T) {
 	old := &wallet.PixDeposit{
 		Txid: "old-" + id.New(), WalletID: "w1", UserID: "u1",
 		AmountExpected: 1000, Status: wallet.DepositPending,
-		CreatedAt: time.Now().Add(-4 * time.Minute).UTC().Format(time.RFC3339Nano),
+		CreatedAt: time.Now().Add(-11 * time.Minute).UTC().Format(time.RFC3339Nano),
 		TTL:       time.Now().Add(1 * time.Minute).Unix(),
 	}
 	fresh := &wallet.PixDeposit{
@@ -725,7 +725,7 @@ func TestSweepPendingDepositsCreditsOnceInterConfirms(t *testing.T) {
 	dep := &wallet.PixDeposit{
 		Txid: txid, WalletID: real.WalletID, UserID: user,
 		AmountExpected: 5000, Status: wallet.DepositPending, PayerCPF: cpf,
-		CreatedAt: time.Now().Add(-4 * time.Minute).UTC().Format(time.RFC3339Nano),
+		CreatedAt: time.Now().Add(-11 * time.Minute).UTC().Format(time.RFC3339Nano),
 		TTL:       time.Now().Add(1 * time.Minute).Unix(),
 	}
 	if err := h.repo.PutDeposit(ctx, dep); err != nil {
@@ -733,9 +733,15 @@ func TestSweepPendingDepositsCreditsOnceInterConfirms(t *testing.T) {
 	}
 	h.pix.StageCharge(txid, 5000, pix.ChargeCompleted, cpf, "E2E-sweep")
 
-	swept, err := h.svc.SweepPendingDeposits(ctx)
-	if err != nil {
-		t.Fatal(err)
+	var swept int
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline) && swept == 0; {
+		swept, err = h.svc.SweepPendingDeposits(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if swept == 0 {
+			time.Sleep(25 * time.Millisecond)
+		}
 	}
 	if swept != 1 {
 		t.Fatalf("swept = %d, want 1", swept)
@@ -745,12 +751,9 @@ func TestSweepPendingDepositsCreditsOnceInterConfirms(t *testing.T) {
 	}
 }
 
-// TestSweepPendingDepositsCreditsWhenPayerCPFAbsent proves SEC-03: a deposit
-// whose webhook never arrived has no persisted payer CPF. The old sweep logic
-// treated the empty CPF as a mismatch and refunded a genuinely paid deposit.
-// With sweep=true the CPF gate is skipped (the re-query already proves the
-// payment is for our txid), so the deposit is credited.
-func TestSweepPendingDepositsCreditsWhenPayerCPFAbsent(t *testing.T) {
+// A provider re-query proves payment, not payer ownership. Missing payer
+// evidence must quarantine the deposit rather than create a laundering path.
+func TestSweepPendingDepositsQuarantinesWhenPayerCPFAbsent(t *testing.T) {
 	ctx := context.Background()
 	h := newHarness(verified())
 	user := "u-" + id.New()
@@ -762,7 +765,7 @@ func TestSweepPendingDepositsCreditsWhenPayerCPFAbsent(t *testing.T) {
 	dep := &wallet.PixDeposit{
 		Txid: txid, WalletID: real.WalletID, UserID: user,
 		AmountExpected: 5000, Status: wallet.DepositPending, PayerCPF: "",
-		CreatedAt: time.Now().Add(-4 * time.Minute).UTC().Format(time.RFC3339Nano),
+		CreatedAt: time.Now().Add(-11 * time.Minute).UTC().Format(time.RFC3339Nano),
 		TTL:       time.Now().Add(1 * time.Minute).Unix(),
 	}
 	if err := h.repo.PutDeposit(ctx, dep); err != nil {
@@ -774,11 +777,11 @@ func TestSweepPendingDepositsCreditsWhenPayerCPFAbsent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if swept != 1 {
-		t.Fatalf("swept = %d, want 1", swept)
+	if swept != 0 {
+		t.Fatalf("swept = %d, want 0", swept)
 	}
-	if got := balance(t, h, real.WalletID); got != 5000 {
-		t.Fatalf("balance = %d, want 5000 (paid deposit with no CPF must be credited, not refunded)", got)
+	if got := balance(t, h, real.WalletID); got != 0 {
+		t.Fatalf("balance = %d, want 0 (payer-less deposit must remain quarantined)", got)
 	}
 }
 
@@ -809,7 +812,7 @@ func TestConcurrentCreditSameIdempotencyKeyAppliesOnce(t *testing.T) {
 	}
 	wg.Wait()
 	for i, err := range errs {
-		if err != nil {
+		if err != nil && !isWalletBusy(err) {
 			t.Fatalf("goroutine %d: %v", i, err)
 		}
 	}
@@ -841,13 +844,18 @@ func TestConcurrentFundGameSameIdempotencyKeyAppliesOnce(t *testing.T) {
 	}
 	wg.Wait()
 	for i, err := range errs {
-		if err != nil {
+		if err != nil && !isWalletBusy(err) {
 			t.Fatalf("goroutine %d: %v", i, err)
 		}
 	}
 	if got := balance(t, h, real.WalletID); got != 45000 {
 		t.Fatalf("real balance = %d, want 45000 (double-fund if lower)", got)
 	}
+}
+
+func isWalletBusy(err error) bool {
+	p, ok := errors.AsType[*problem.Problem](err)
+	return ok && p.Type == problem.TypeWalletBusy
 }
 
 // TestConcurrentPurchaseSandboxSameIdempotencyKeyAppliesOnce proves the
@@ -876,7 +884,7 @@ func TestConcurrentPurchaseSandboxSameIdempotencyKeyAppliesOnce(t *testing.T) {
 	}
 	wg.Wait()
 	for i, err := range errs {
-		if err != nil {
+		if err != nil && !isWalletBusy(err) {
 			t.Fatalf("goroutine %d: %v", i, err)
 		}
 	}

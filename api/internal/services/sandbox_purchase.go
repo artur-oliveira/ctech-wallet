@@ -74,6 +74,7 @@ func (s *WalletService) PurchaseSandboxDirect(ctx context.Context, userID, sku, 
 		SKU:              sku,
 		AmountExpected:   skuDef.PriceCents,
 		CreditsGranted:   skuDef.TotalCredits(),
+		RequestHash:      reqHash(requestingClient+"#"+userID+"#"+sku, skuDef.PriceCents),
 		Status:           wallet.SandboxPurchasePending,
 		RequestingClient: requestingClient,
 		CreatedAt:        now,
@@ -89,16 +90,27 @@ func (s *WalletService) PurchaseSandboxDirect(ctx context.Context, userID, sku, 
 		if gerr != nil {
 			return nil, nil, gerr
 		}
+		if (existing.RequestHash != "" && existing.RequestHash != p.RequestHash) ||
+			existing.UserID != userID || existing.SKU != sku || existing.RequestingClient != requestingClient {
+			return nil, nil, problem.IdempotencyConflict()
+		}
 		charge, qerr := s.pix.QueryCharge(ctx, purchaseID)
 		if qerr != nil {
-			return nil, nil, qerr
+			// Recover a crash/failure after the durable reservation but before
+			// CreateCharge. Inter's txid is unique, so retrying creation with the
+			// same deterministic txid cannot open a second charge.
+			charge, qerr = s.pix.CreateCharge(ctx, purchaseID, existing.AmountExpected, "")
+			if qerr != nil {
+				return nil, nil, qerr
+			}
 		}
 		return existing, charge, nil
 	}
 
 	charge, err := s.pix.CreateCharge(ctx, purchaseID, skuDef.PriceCents, "")
 	if err != nil {
-		return nil, nil, problem.InternalServer("falha ao criar cobrança PIX: " + err.Error())
+		slog.Error("sandbox purchase charge creation failed", "purchase_id", purchaseID, "err", err)
+		return nil, nil, problem.InternalServer("falha ao criar cobrança PIX")
 	}
 	return p, charge, nil
 }

@@ -28,8 +28,8 @@ leave a table is not bounded by their own buy-in — it also contains chips won 
 players' buy-ins. Modeling cash-out as "capture ≤ this player's own hold" is simply wrong for a game
 where money is redistributed among holds at the same table, not returned to the same party that put it
 up. The design below keeps the hold/release vocabulary for the parts where it's correct (buy-in
-reservation, full-refund abort) and replaces "capture" with an unbounded **cash-out credit** that
-poker's own table ledger — not the wallet — is authoritative for.
+reservation and full-refund abort). The original unbounded cash-out proposal is superseded by the
+security remediation below.
 
 ## Solution
 
@@ -126,38 +126,27 @@ for the stale-hold sweep, see below).
 |----------------------------------------------------------|--------------------------------|------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `POST /v1.0/internal/wallet/game/hold`                   | `internal:wallet:game-hold`    | `{user_id, amount, table_ref, idempotency_key}`                  | Debits `game` by `amount` (same `ConditionExpression: balance >= :amount` as every other debit — insufficient real money in the ring-fence is a normal `409`, not a special case). Creates a `Hold` row, `status=held`. Ledger entry `game_hold_debit`.               |
 | `POST /v1.0/internal/wallet/game/hold/{hold_id}/release` | `internal:wallet:game-hold`    | `{idempotency_key}`                                              | Only valid on a `held` hold. Credits `game` by the **full original amount**, marks the hold `released`. For a table/hand that never played (e.g. player leaves before any hand starts) — a plain refund, no poker-side settlement math involved.                      |
-| `POST /v1.0/internal/wallet/game/cashout`                | `internal:wallet:game-cashout` | `{user_id, amount, table_ref, hold_ids: [...], idempotency_key}` | Credits `game` by `amount` — **the player's final stack as computed by poker's own table ledger, independent of the sum of `hold_ids`.** Marks every listed hold `settled`. Ledger entry `game_cashout_credit`, `ref` includes the hold ids consumed for audit trail. |
+| `POST /v1.0/internal/wallet/game/cashout`                | `internal:wallet:game-cashout` | `{user_id, amount, table_ref, hold_ids: [...], idempotency_key}` | Atomically credits `game` and settles the listed holds. Every hold must be `held`, owned by the user and table, unique, and their aggregate must cover `amount`. |
 
 A deliberately separate scope for `hold` vs `cashout` (mirrors the existing `internal:wallet:debit` vs
 `internal:wallet:debit-real` separation) — `ctech-poker`'s M2M client is issued both, but the split keeps
 IAM/JWT scopes legible if a future skill game only ever needs one side.
 
-### Why cash-out isn't bounded by the hold
+### Security remediation: cash-out is bounded until zero-sum settlement exists
 
-Consider a heads-up hand: player A buys in for 100, player B buys in for 100 (two holds, 100 each, 200
-total debited from `game` across both wallets). A wins the whole pot and leaves: A's cash-out is 200, B's
-is 0. Neither number is "A's hold" or "B's hold" — they're the table's redistribution of the combined
-
-200. If cash-out were capped at the caller's own hold amount, A could never be credited their winnings
-     through this endpoint at all. `ctech-poker` is the sole authority on what a player's stack is worth when
-     they leave (same as it's the sole authority on hand outcomes, side pots, and showdown results per its own
-     `ARCHITECTURE.md` § 3) — the wallet's job is only to move the resulting number into `game`, atomically
-     and idempotently, never to validate it against the sum of holds. This is the same trust boundary that
-     already exists for `sandboxCredit`/`sandboxDebit`: the wallet does not re-derive whether a sandbox credit
-     "should" have been awarded, it just executes the M2M-authenticated instruction.
-
-**What the wallet still enforces:** total money conservation is not the wallet's invariant to hold
-per-table — it's poker's, via its own durable action log (`ctech-poker/ARCHITECTURE.md` § 3, § 7 —
-per-table audit log doubling as hand history is exactly the evidence needed if a cash-out total is ever
-disputed). The wallet's invariants (never-negative balance, append-only ledger, idempotent replay) are
-unchanged and still the only things it needs to guarantee.
+An M2M scope is not sufficient authority to mint arbitrary real money. The original per-player cash-out
+contract could credit any amount if a game client or credential were compromised. The current implementation
+therefore fails closed: a cash-out cannot exceed the aggregate value of that user's listed holds, and credit +
+hold settlement occur in one DynamoDB transaction. Supporting poker winners above their own reservations
+requires a separate table-wide, zero-sum settlement operation that atomically consumes every participant's
+holds and credits every participant's final stack after proving total inputs equal total outputs.
 
 ### Idempotency
 
-Same discipline as every other mutation (Invariant #3): `hold`/`release`/`cashout` all require an
-`idempotency_key` from the caller, namespaced the same way `sandboxOp` does
-(`entryType + "#" + idemKey`) so a retried hold and a retried cash-out can never collide with each other's
-GSI entry even if a caller reused a raw key across the two calls by mistake.
+Same discipline as every other mutation (Invariant #3): `hold` and `cashout` require a bounded
+`idempotency_key` and bind it to the full request. Release also requires the field for API compatibility,
+but persistence uses a deterministic key derived from the hold ID so no caller key can ever release the
+same hold twice. Guards are permanent and credit + hold-state changes share one DynamoDB transaction.
 
 ### Stale-hold reconciliation (Invariant #12 analog)
 
@@ -193,9 +182,9 @@ Implemented 2026-07-19: `HoldGame`/`ReleaseHold`/`CashoutGame` service methods, 
 (`CreateHold`/`GetHold`/`UpdateHoldStatus`/`ScanStaleHolds`), the three M2M routes under
 `/v1.0/internal/wallet/game/{hold,hold/:id/release,cashout}`, the `ScopeWalletGameHold` /
 `ScopeWalletGameCashout` scopes, the `SweepStaleHolds` reconciliation job (wired into `cmd/reconcile`),
-and the `wallet_holds` CDK table. Unit + integration tests cover the happy paths, idempotent replay,
-insufficient-balance, the not-activated gate, the "cash-out not bounded by hold" regression, a concurrent
-double-release race, and the stale-hold alarm never auto-resolving.
+and the `wallet_holds` CDK table. The 2026-07-31 remediation made release and cash-out atomic and permanently
+idempotent, bounded cash-out by owned held value, and added unit + integration regressions against fund minting,
+consumed-hold reuse, concurrent double release, and stale-hold auto-resolution.
 
 **Not done here (separate repo/process, tracked as plan task 8):** granting `ctech-poker`'s M2M client
 the two new scopes — that grant is seeded in `ctech-account` (per root `CLAUDE.md`'s M2M scope model),

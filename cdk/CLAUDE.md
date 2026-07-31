@@ -42,7 +42,7 @@ All tables env-prefixed (`TABLE_PREFIX=env` ⇒ `dev_wallets`). **OnDemand**
 |---------------|--------|-----------|
 | `wallets` | `gsi_user` | pk `WALLET#{id}`; authoritative balance |
 | `wallet_ledger_entries` | `gsi_idem` | pk+sk; **append-only** (Invariant #2) |
-| `wallet_idempotency` | — | `IDEM#{key}` guards; **TTL** 7d |
+| `wallet_idempotency` | — | Permanent `IDEM#{key}` guards; financial replay protection never expires |
 | `wallet_pix_deposits` | `gsi_status` | keyed by txid; **TTL** 60m |
 | `wallet_withdrawals` | `gsi_status` | `processing`/`completed`/… drives reconcile |
 | `wallet_users` | — | consent + responsible-gambling state |

@@ -11,6 +11,8 @@ import (
 // callers may want to treat them the same way.
 var ErrKeyNotFound = errors.New("asaas: destination key not registered")
 
+var ErrTransferNotFound = errors.New("asaas: transfer not found")
+
 // AsaasClient is the surface the wallet service depends on for Asaas custody
 // operations. One implementation per environment (fake for tests, Lambda-
 // backed for real — plan §2.1/§2.2), same DI shape as pix.PixClient.
@@ -19,7 +21,7 @@ var ErrKeyNotFound = errors.New("asaas: destination key not registered")
 // subaccount authenticates with its own key and the parent uses its own — a
 // single AsaasClient instance is safe to share across all users.
 type AsaasClient interface {
-	CreateAccount(ctx context.Context, req CreateAccountRequest) (*Account, error)
+	CreateAccount(ctx context.Context, parentAPIKey string, req CreateAccountRequest) (*Account, error)
 	UploadDocument(ctx context.Context, subaccountAPIKey, documentID string, file []byte) error
 	CreateStaticPixKey(ctx context.Context, subaccountAPIKey string) (*PixAddressKey, error)
 

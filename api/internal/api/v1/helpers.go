@@ -38,7 +38,7 @@ func sendProblem(c fiber.Ctx, err error) error {
 		return p.Send(c)
 	}
 	slog.ErrorContext(c.Context(), "unhandled error", "path", c.Path(), "err", err)
-	return problem.InternalServer(err.Error()).Send(c)
+	return problem.InternalServer("erro interno").Send(c)
 }
 
 // bindJSON strictly decodes the JSON body into dst (rejecting unknown fields)
@@ -64,6 +64,9 @@ func requireIdempotencyKey(c fiber.Ctx) (string, *problem.Problem) {
 	k := c.Get(HeaderIdempotencyKey)
 	if k == "" {
 		return "", problem.BadRequest("cabeçalho Idempotency-Key obrigatório")
+	}
+	if len(k) > MaxIdempotencyKeyLength {
+		return "", problem.BadRequest("Idempotency-Key excede o tamanho máximo")
 	}
 	return k, nil
 }

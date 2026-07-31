@@ -25,6 +25,8 @@ import (
 	"time"
 )
 
+var ErrTransferNotFound = errors.New("asaas: transfer not found")
+
 // AsaasClient is the production client talking to Asaas's v3 REST API over
 // plain HTTPS (no mTLS — Asaas authenticates via a per-call header, not a
 // client certificate).
@@ -293,7 +295,7 @@ func (c *AsaasClient) QueryTransfer(ctx context.Context, apiKey, externalReferen
 		return nil, err
 	}
 	if len(page.Data) == 0 {
-		return nil, fmt.Errorf("asaas: transfer with externalReference %q not found", externalReference)
+		return nil, fmt.Errorf("%w: externalReference %q", ErrTransferNotFound, externalReference)
 	}
 	return &page.Data[0], nil
 }

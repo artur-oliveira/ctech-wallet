@@ -39,6 +39,9 @@ func (f *fakeBaasRepo) GetBaasAccountByProviderID(_ context.Context, providerAcc
 	return nil, nil
 }
 func (f *fakeBaasRepo) PutBaasAccount(_ context.Context, a *wallet.BaasAccount) error {
+	if _, exists := f.accounts[a.UserID]; exists {
+		return repositories.ErrBaasAccountExists
+	}
 	f.accounts[a.UserID] = a
 	return nil
 }
@@ -55,6 +58,18 @@ func (f *fakeBaasRepo) UpdateBaasAccount(_ context.Context, userID string, updat
 	}
 	if v, ok := updates["evp_pix_key"].(string); ok {
 		a.EVPPixKey = v
+	}
+	if v, ok := updates["provider_account_id"].(string); ok {
+		a.ProviderAccountID = v
+	}
+	if v, ok := updates["provider_wallet_id"].(string); ok {
+		a.ProviderWalletID = v
+	}
+	if v, ok := updates["api_key_ciphertext"].([]byte); ok {
+		a.APIKeyCiphertext = v
+	}
+	if v, ok := updates["api_key_nonce"].([]byte); ok {
+		a.APIKeyNonce = v
 	}
 	return nil
 }
@@ -279,6 +294,29 @@ func TestCheckConservationZeroDriftWhenBalancesMatch(t *testing.T) {
 	}
 }
 
+func TestInitiateOnboardingReservesBeforeProviderCall(t *testing.T) {
+	repo := newFakeBaasRepo()
+	fake := asaas.NewFake()
+	fake.CreateAccountErr = errors.New("ambiguous provider timeout")
+	svc := NewBaasService(repo, &walletsWithBalances{}, fake, nil,
+		&stubKYC{rec: &kycclient.KYC{CPF: "12345678901", LegalName: "User"}},
+		make([]byte, 32), "wallet_parent", "parent-apikey")
+
+	if _, err := svc.InitiateOnboarding(context.Background(), "u1", wallet.KYCVerified, 1000); err == nil {
+		t.Fatal("expected provider failure")
+	}
+	row := repo.accounts["u1"]
+	if row == nil || row.Status != wallet.BaasOnboarding {
+		t.Fatalf("durable reservation missing: %+v", row)
+	}
+	if _, err := svc.InitiateOnboarding(context.Background(), "u1", wallet.KYCVerified, 1000); err != nil {
+		t.Fatalf("replay should return reservation: %v", err)
+	}
+	if len(fake.CreatedAccounts) != 1 {
+		t.Fatalf("ambiguous retry created %d provider accounts", len(fake.CreatedAccounts))
+	}
+}
+
 func TestCheckConservationNonZeroDriftWhenMismatched(t *testing.T) {
 	repo := newFakeBaasRepo()
 	fake := asaas.NewFake()
@@ -430,7 +468,7 @@ func TestReconcileTransferIntentsResubmitsUnknownTransfer(t *testing.T) {
 	repo.accounts["u1"].APIKeyCiphertext, repo.accounts["u1"].APIKeyNonce, _ = asaas.EncryptAPIKey(make([]byte, 32), "apikey1")
 	repo.intents["sbxg#idem1"] = &wallet.TransferIntent{
 		ExternalReference: "sbxg#idem1", Kind: wallet.IntentKindSandboxPurchaseSettle,
-		Status: wallet.IntentAwaitingAuthorization, UserID: "u1", Amount: 500, Destination: "wallet_parent",
+		Status: wallet.IntentAwaitingAuthorization, UserID: "u1", Amount: 500, Destination: "wallet_parent", DestinationType: wallet.TransferDestinationWallet,
 	}
 	// Never staged in fake.Transfers — QueryTransfer will report "not found".
 	svc := NewBaasService(repo, &walletsWithBalances{}, fake, nil, nil, make([]byte, 32), "wallet_parent", "parent-apikey")
@@ -444,6 +482,58 @@ func TestReconcileTransferIntentsResubmitsUnknownTransfer(t *testing.T) {
 	}
 	if len(fake.CreatedTransfers) != 1 {
 		t.Fatalf("expected 1 resubmission CreateTransfer call, got %d", len(fake.CreatedTransfers))
+	}
+}
+
+func TestReconcileTransferIntentsNeverResubmitsAfterAmbiguousQueryFailure(t *testing.T) {
+	repo := newFakeBaasRepo()
+	fake := asaas.NewFake()
+	fake.QueryTransferErr = errors.New("provider timeout")
+	repo.accounts["u1"] = &wallet.BaasAccount{UserID: "u1", Status: wallet.BaasApproved}
+	repo.accounts["u1"].APIKeyCiphertext, repo.accounts["u1"].APIKeyNonce, _ = asaas.EncryptAPIKey(make([]byte, 32), "apikey1")
+	repo.intents["withdraw#u1#idem1#payout"] = &wallet.TransferIntent{
+		ExternalReference: "withdraw#u1#idem1#payout", Kind: wallet.IntentKindWithdrawalPayout,
+		Status: wallet.IntentAwaitingAuthorization, UserID: "u1", Amount: 5000,
+		Destination: "12345678901", DestinationType: wallet.TransferDestinationPIX,
+	}
+	svc := NewBaasService(repo, &walletsWithBalances{}, fake, nil, nil, make([]byte, 32), "wallet_parent", "parent-apikey")
+
+	resolved, retried, alarmed, err := svc.ReconcileTransferIntents(context.Background())
+	if err != nil {
+		t.Fatalf("ReconcileTransferIntents: %v", err)
+	}
+	if resolved != 0 || retried != 0 || alarmed != 1 {
+		t.Fatalf("expected fail-closed alarm, got resolved=%d retried=%d alarmed=%d", resolved, retried, alarmed)
+	}
+	if len(fake.CreatedTransfers) != 0 {
+		t.Fatalf("ambiguous query failure resubmitted %d transfer(s)", len(fake.CreatedTransfers))
+	}
+}
+
+func TestReconcileFailedAsaasWithdrawalReversesLedgerDebit(t *testing.T) {
+	repo := newFakeBaasRepo()
+	fake := asaas.NewFake()
+	repo.accounts["u1"] = &wallet.BaasAccount{UserID: "u1", Status: wallet.BaasApproved}
+	repo.accounts["u1"].APIKeyCiphertext, repo.accounts["u1"].APIKeyNonce, _ = asaas.EncryptAPIKey(make([]byte, 32), "apikey1")
+	repo.intents["withdraw#u1#idem1#payout"] = &wallet.TransferIntent{
+		ExternalReference: "withdraw#u1#idem1#payout", Kind: wallet.IntentKindWithdrawalPayout,
+		Status: wallet.IntentProcessing, UserID: "u1", Amount: 5000, Ref: "withdraw#u1#idem1",
+		Destination: "12345678901", DestinationType: wallet.TransferDestinationPIX,
+	}
+	fake.StageTransferStatus("withdraw#u1#idem1#payout", asaas.TransferFailed)
+	svc := NewBaasService(repo, &walletsWithBalances{}, fake, nil, nil, make([]byte, 32), "wallet_parent", "parent-apikey")
+	var reversed string
+	svc.SetWithdrawalReverser(func(_ context.Context, id string) error { reversed = id; return nil })
+
+	_, _, alarmed, err := svc.ReconcileTransferIntents(context.Background())
+	if err != nil || alarmed != 0 {
+		t.Fatalf("reconcile failed: alarmed=%d err=%v", alarmed, err)
+	}
+	if reversed != "withdraw#u1#idem1" {
+		t.Fatalf("reversed %q", reversed)
+	}
+	if repo.intents["withdraw#u1#idem1#payout"].Status != wallet.IntentFailed {
+		t.Fatalf("intent not terminal")
 	}
 }
 
