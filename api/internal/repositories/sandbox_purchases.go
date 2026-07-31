@@ -56,9 +56,7 @@ func (r *SandboxPurchaseRepository) Get(ctx context.Context, purchaseID string) 
 }
 
 func (r *SandboxPurchaseRepository) Update(ctx context.Context, purchaseID string, updates map[string]any) error {
-	updates["updated_at"] = NowStr()
-	_, err := r.purchases.UpdateItem(ctx, purchaseID, nil, updates)
-	return err
+	return UpdateItemWithTimestamp(ctx, r.purchases, purchaseID, updates)
 }
 
 // ListPendingOlderThan is the sweep's work queue — the same shape as

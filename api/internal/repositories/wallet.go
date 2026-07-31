@@ -89,15 +89,7 @@ func (r *WalletRepository) GetWalletsByUser(ctx context.Context, userID string) 
 	if err != nil {
 		return nil, err
 	}
-	out := make([]wallet.Wallet, 0, len(res.Items))
-	for _, it := range res.Items {
-		w, err := Decode[wallet.Wallet](it)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *w)
-	}
-	return out, nil
+	return DecodeItems[wallet.Wallet](res.Items)
 }
 
 // LoadWallets returns the user's wallets by type. game and sandbox are nil until
@@ -623,9 +615,7 @@ func (r *WalletRepository) GetWithdrawal(ctx context.Context, withdrawalID strin
 }
 
 func (r *WalletRepository) UpdateWithdrawal(ctx context.Context, withdrawalID string, updates map[string]any) error {
-	updates["updated_at"] = NowStr()
-	_, err := r.withdrawal.UpdateItem(ctx, withdrawalID, nil, updates)
-	return err
+	return UpdateItemWithTimestamp(ctx, r.withdrawal, withdrawalID, updates)
 }
 
 // ListProcessingWithdrawals returns withdrawals still in the processing state,
@@ -635,15 +625,7 @@ func (r *WalletRepository) ListProcessingWithdrawals(ctx context.Context, limit 
 	if err != nil {
 		return nil, err
 	}
-	out := make([]wallet.Withdrawal, 0, len(res.Items))
-	for _, it := range res.Items {
-		w, err := Decode[wallet.Withdrawal](it)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *w)
-	}
-	return out, nil
+	return DecodeItems[wallet.Withdrawal](res.Items)
 }
 
 // --- shared transaction builders ---

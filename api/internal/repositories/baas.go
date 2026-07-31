@@ -67,9 +67,7 @@ func (r *BaasRepository) PutBaasAccount(ctx context.Context, a *wallet.BaasAccou
 var ErrBaasAccountExists = errors.New("repositories: baas account already exists")
 
 func (r *BaasRepository) UpdateBaasAccount(ctx context.Context, userID string, updates map[string]any) error {
-	updates["updated_at"] = NowStr()
-	_, err := r.accounts.UpdateItem(ctx, userID, nil, updates)
-	return err
+	return UpdateItemWithTimestamp(ctx, r.accounts, userID, updates)
 }
 
 // ListBaasAccountsByStatus returns accounts in the given status via the
@@ -81,15 +79,7 @@ func (r *BaasRepository) ListBaasAccountsByStatus(ctx context.Context, status st
 	if err != nil {
 		return nil, err
 	}
-	out := make([]wallet.BaasAccount, 0, len(res.Items))
-	for _, it := range res.Items {
-		a, err := Decode[wallet.BaasAccount](it)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *a)
-	}
-	return out, nil
+	return DecodeItems[wallet.BaasAccount](res.Items)
 }
 
 // --- wallet_transfer_intents ---
@@ -128,9 +118,7 @@ func (r *BaasRepository) GetTransferIntent(ctx context.Context, externalReferenc
 }
 
 func (r *BaasRepository) UpdateTransferIntent(ctx context.Context, externalReference string, updates map[string]any) error {
-	updates["updated_at"] = NowStr()
-	_, err := r.intents.UpdateItem(ctx, externalReference, nil, updates)
-	return err
+	return UpdateItemWithTimestamp(ctx, r.intents, externalReference, updates)
 }
 
 // GetTransferIntentByRef finds an intent by its Ref field (e.g. a sandbox
@@ -146,15 +134,7 @@ func (r *BaasRepository) ListTransferIntentsByStatus(ctx context.Context, status
 	if err != nil {
 		return nil, err
 	}
-	out := make([]wallet.TransferIntent, 0, len(res.Items))
-	for _, it := range res.Items {
-		t, err := Decode[wallet.TransferIntent](it)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *t)
-	}
-	return out, nil
+	return DecodeItems[wallet.TransferIntent](res.Items)
 }
 
 // --- wallet_med_receivables (plan §7.3) ---
@@ -180,9 +160,7 @@ func (r *BaasRepository) PutMedReceivableIfAbsent(ctx context.Context, m *wallet
 }
 
 func (r *BaasRepository) UpdateMedReceivable(ctx context.Context, receivableID string, updates map[string]any) error {
-	updates["updated_at"] = NowStr()
-	_, err := r.med.UpdateItem(ctx, receivableID, nil, updates)
-	return err
+	return UpdateItemWithTimestamp(ctx, r.med, receivableID, updates)
 }
 
 // ListOpenMedReceivablesForWallet returns every open receivable on walletID

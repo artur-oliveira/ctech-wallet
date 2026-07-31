@@ -46,13 +46,5 @@ func (r *AuditRepository) List(ctx context.Context, userID string, limit int) ([
 	if err != nil {
 		return nil, err
 	}
-	out := make([]wallet.AuditEvent, 0, len(res.Items))
-	for _, item := range res.Items {
-		e, err := Decode[wallet.AuditEvent](item)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *e)
-	}
-	return out, nil
+	return DecodeItems[wallet.AuditEvent](res.Items)
 }

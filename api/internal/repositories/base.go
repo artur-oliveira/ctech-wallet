@@ -8,12 +8,16 @@
 package repositories
 
 import (
+	"context"
+
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
 	"gopkg.aoctech.app/api-commons/dynamo"
 	"gopkg.aoctech.app/wallet/api/internal/config"
 )
+
+const attributeUpdatedAt = "updated_at"
 
 // Base provides common DynamoDB operations for all repositories.
 type Base = dynamo.Base
@@ -52,6 +56,37 @@ func NewBase(db *dynamodb.Client, cfg *config.Config, table string) Base {
 // Decode unmarshals DynamoDB attribute values into the target struct.
 func Decode[T any](item map[string]types.AttributeValue) (*T, error) {
 	return dynamo.Decode[T](item)
+}
+
+// DecodeItems unmarshals a DynamoDB result page while preserving item order.
+// A malformed item fails the whole read instead of returning partial data.
+func DecodeItems[T any](items []map[string]types.AttributeValue) ([]T, error) {
+	out := make([]T, 0, len(items))
+	for _, item := range items {
+		decoded, err := Decode[T](item)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *decoded)
+	}
+	return out, nil
+}
+
+// UpdateItemWithTimestamp updates a row without mutating the caller-owned map.
+// This matters for retryable service operations, where reusing an input map
+// must not silently carry repository-added state into a later attempt.
+func UpdateItemWithTimestamp(ctx context.Context, base Base, pk string, updates map[string]any) error {
+	_, err := base.UpdateItem(ctx, pk, nil, withUpdatedAt(updates, NowStr()))
+	return err
+}
+
+func withUpdatedAt(updates map[string]any, timestamp string) map[string]any {
+	cloned := make(map[string]any, len(updates)+1)
+	for key, value := range updates {
+		cloned[key] = value
+	}
+	cloned[attributeUpdatedAt] = timestamp
+	return cloned
 }
 
 // Encode marshals a value into DynamoDB attribute values, omitting nulls.
