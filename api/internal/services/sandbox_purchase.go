@@ -2,6 +2,8 @@ package services
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"log/slog"
 	"time"
@@ -17,6 +19,25 @@ import (
 // pending purchase is always re-queried before the row is TTL-deleted.
 const sandboxPurchaseTTLMinutes = depositTTLMinutes
 
+const (
+	sandboxPurchaseTxIDPrefix       = "sbxp"
+	sandboxPurchaseTxIDDigestLength = 31
+	sandboxPurchaseIDSeparator      = "\x00"
+)
+
+// sandboxPurchaseTxID returns the stable identifier used both as the purchase
+// primary key and as Inter's txid. Inter only accepts 26-35 ASCII
+// alphanumeric characters, so the caller-controlled values must never be
+// embedded verbatim. The sbxp prefix lets pix-gateway route the webhook while
+// the truncated SHA-256 digest keeps the user-direct and per-M2M-client
+// idempotency namespaces disjoint. NUL separators make the tuple encoding
+// unambiguous before hashing.
+func sandboxPurchaseTxID(userID, idemKey, requestingClient string) string {
+	identity := requestingClient + sandboxPurchaseIDSeparator + userID + sandboxPurchaseIDSeparator + idemKey
+	digest := sha256.Sum256([]byte(identity))
+	return sandboxPurchaseTxIDPrefix + hex.EncodeToString(digest[:])[:sandboxPurchaseTxIDDigestLength]
+}
+
 // PurchaseSandboxDirect sells a fixed sandbox-credit pack for a fixed PIX
 // price, charged via the existing Inter integration to CTech's own pooled
 // account — never a wallet-to-wallet transfer, never Asaas (custody is not
@@ -25,9 +46,9 @@ const sandboxPurchaseTTLMinutes = depositTTLMinutes
 // client-supplied, same "never trust the client with a money-shaped number"
 // posture as every other amount in this codebase.
 //
-// purchaseID is deterministic ("sbxp#"+userID+"#"+idemKey, or
-// "sbxp#"+requestingClient+"#"+userID+"#"+idemKey for an M2M-opened
-// purchase) and doubles as both the idempotency guard and the Inter txid —
+// purchaseID is a deterministic, Inter-compatible digest of the caller
+// namespace, userID, and idemKey. It doubles as both the idempotency guard and
+// the Inter txid —
 // reserved via a conditional write BEFORE any charge is opened (SEC-08-style:
 // a retried request can never open a second charge), same precondition
 // ReserveDepositIdem enforces for deposits via a separate guard table; here
@@ -45,10 +66,7 @@ func (s *WalletService) PurchaseSandboxDirect(ctx context.Context, userID, sku, 
 	if !ok {
 		return nil, nil, problem.BadRequest("sku inválido")
 	}
-	purchaseID := "sbxp#" + userID + "#" + idemKey
-	if requestingClient != "" {
-		purchaseID = "sbxp#" + requestingClient + "#" + userID + "#" + idemKey
-	}
+	purchaseID := sandboxPurchaseTxID(userID, idemKey, requestingClient)
 	now := repositories.NowStr()
 	p := &wallet.SandboxPurchase{
 		PurchaseID:       purchaseID,

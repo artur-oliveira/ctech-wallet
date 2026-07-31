@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"regexp"
 	"testing"
 	"time"
 
@@ -102,6 +103,12 @@ func TestPurchaseSandboxDirectOpensChargeForValidSKU(t *testing.T) {
 	}
 	if len(fakePix.CreatedCharges) != 1 {
 		t.Fatalf("expected 1 CreateCharge call, got %d", len(fakePix.CreatedCharges))
+	}
+	if got := fakePix.CreatedCharges[0]; !regexp.MustCompile(`^[a-zA-Z0-9]{26,35}$`).MatchString(got) {
+		t.Fatalf("Inter txid %q does not satisfy [a-zA-Z0-9]{26,35}", got)
+	}
+	if fakePix.CreatedCharges[0] != p.PurchaseID {
+		t.Fatalf("purchase id and Inter txid diverged: %q vs %q", p.PurchaseID, fakePix.CreatedCharges[0])
 	}
 }
 
@@ -275,6 +282,12 @@ func TestM2MPurchaseSandboxDirectNamespacesPurchaseID(t *testing.T) {
 	}
 	if direct.PurchaseID == poker.PurchaseID || poker.PurchaseID == domino.PurchaseID || direct.PurchaseID == domino.PurchaseID {
 		t.Fatalf("expected disjoint purchase IDs, got direct=%q poker=%q domino=%q", direct.PurchaseID, poker.PurchaseID, domino.PurchaseID)
+	}
+	validInterTxID := regexp.MustCompile(`^sbxp[a-f0-9]{31}$`)
+	for _, purchase := range []*wallet.SandboxPurchase{direct, poker, domino} {
+		if !validInterTxID.MatchString(purchase.PurchaseID) {
+			t.Fatalf("purchase ID %q is not an Inter-compatible sandbox txid", purchase.PurchaseID)
+		}
 	}
 }
 

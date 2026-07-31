@@ -17,9 +17,16 @@ All under `/v1.0/internal/wallet/sandbox-purchase`, gated by `middleware.Require
 
 ## Ownership & idempotency isolation
 
-`SandboxPurchase.RequestingClient` stores the caller's `AZP`. The purchase ID is namespaced by client
-(`"sbxp#"+client+"#"+userID+"#"+idemKey` vs. the user-direct `"sbxp#"+userID+"#"+idemKey`) so two different M2M
-clients — or an M2M client and the user-direct route — can never collide on the same `(userID, idemKey)` pair.
+`SandboxPurchase.RequestingClient` stores the caller's `AZP`. The purchase ID is also the Inter txid and is
+derived deterministically as `"sbxp" + first31(hex(SHA-256(client + NUL + userID + NUL + idemKey)))`, where
+`client` is empty for the user-direct route. The resulting 35-character value satisfies Inter's
+`[a-zA-Z0-9]{26,35}` rule without exposing or embedding caller-controlled identifiers. Including the client in
+the digest gives each M2M caller and the user-direct route a disjoint idempotency namespace, so a retry resolves
+to the conditionally reserved purchase row and never opens a second charge. The `sbxp` prefix is reserved for
+pix-gateway webhook dispatch to `POST /internal/pix/confirm-sandbox-purchase`.
+
+Changing the SKU while reusing the same caller/user idempotency tuple does not create another identifier or PIX
+charge; the original reserved purchase remains authoritative.
 `GetSandboxPurchase`/`RefundSandboxPurchase` reject a purchase whose `RequestingClient` doesn't match the caller
 with `404` (never `403`) — a purchase belonging to a different client does not exist as far as the caller is
 concerned.

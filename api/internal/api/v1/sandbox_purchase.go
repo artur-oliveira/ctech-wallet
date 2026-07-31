@@ -54,7 +54,7 @@ func (h *handlers) refundSandboxPurchase(c fiber.Ctx) error {
 }
 
 // confirmSandboxPurchase is called by pix-gateway's webhook Lambda after it
-// has already re-queried Inter, dispatched here via the "sbxp#" txid prefix
+// has already re-queried Inter, dispatched here via the "sbxp" txid prefix
 // instead of confirm-deposit (plan §9.3). Never trusts its own caller either:
 // ConfirmSandboxPurchase re-queries Inter itself (Invariant #11).
 func (h *handlers) confirmSandboxPurchase(c fiber.Ctx) error {

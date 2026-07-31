@@ -762,14 +762,15 @@ func (s *WalletService) ConfirmSandboxPurchase(ctx context.Context, txid string,
 - SKUs are a fixed, server-side table (price centavos → credits granted) — never client-supplied, same
   "never trust the client with a money-shaped number" posture as every other amount in this codebase.
 - `pix.CreateCharge(ctx, txid, amount, "")` — the exact same Inter integration `InitiateDeposit` already uses.
-  `txid = purchaseID`, generated with a distinguishing prefix (e.g. `sbxp#` vs. a deposit's bare ULID) so
+  `txid = purchaseID`, generated as the Inter-compatible deterministic form `sbxp` + 31 lowercase hex digest
+  characters (vs. a deposit's bare ULID) so
   `pix-gateway` can route the confirmation call correctly (see below). `externalReference` matching works exactly
   as it already does for deposits — no new matching logic.
 - Webhook path reuses the plumbing that already exists end-to-end: Inter → `pix-gateway`'s inbound webhook →
   re-query at Inter → `pix-gateway` calls `api`'s internal route. `POST /internal/pix/confirm-deposit` stays
   real-deposit-only (unchanged signature, unchanged behavior — do not overload it); add a sibling internal route
   `POST /internal/pix/confirm-sandbox-purchase` (same M2M caller, `pix-gateway`) → `ConfirmSandboxPurchase`. This
-  is the one small `pix-gateway` change this feature needs: dispatch on the `sbxp#` txid prefix to the new route
+  is the one small `pix-gateway` change this feature needs: dispatch on the `sbxp` txid prefix to the new route
   instead of the existing one — a one-line addition to logic that already exists, not a new integration.
 - **Nota fiscal**: this is a taxable sale of a digital good, unlike every other flow in this codebase (deposits
   and withdrawals move the user's own money; this is CTech revenue). Invoice emission is a new requirement — flag
@@ -868,7 +869,7 @@ doesn't apply to the shape this plan actually uses.
   no change to `GAMBLING_ENABLED`-related infra.
 - **pix-gateway** (sibling service, not in this repo — confirm location before starting): outbound Lambda extended
   with Asaas actions (§2.2) for custody — the one piece of this plan that touches code outside `ctech-wallet`.
-  Separately, the existing inbound Inter-webhook dispatch needs one small addition to route `sbxp#`-prefixed
+  Separately, the existing inbound Inter-webhook dispatch needs one small addition to route `sbxp`-prefixed
   txids to the new `POST /internal/pix/confirm-sandbox-purchase` instead of `confirm-deposit` (§9.3) — small,
   unrelated to the Asaas action set above.
 - **ctech-account**: internal KYC endpoint extended to return email/phone/address (§3.1).
