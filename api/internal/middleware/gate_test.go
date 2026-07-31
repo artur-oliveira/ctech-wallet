@@ -40,6 +40,18 @@ func TestRequireScope(t *testing.T) {
 	}
 }
 
+func TestRequireUser(t *testing.T) {
+	if got := gateApp(t, &Claims{SID: "session"}, RequireUser); got != 200 {
+		t.Errorf("user token: got %d want 200", got)
+	}
+	if got := gateApp(t, &Claims{SID: ""}, RequireUser); got != 403 {
+		t.Errorf("M2M token: got %d want 403", got)
+	}
+	if got := gateApp(t, nil, RequireUser); got != 401 {
+		t.Errorf("missing claims: got %d want 401", got)
+	}
+}
+
 func TestRequireKYC(t *testing.T) {
 	if got := gateApp(t, &Claims{KYCLevel: "enhanced"}, RequireKYC(KYCVerified)); got != 200 {
 		t.Errorf("verified: got %d want 200", got)

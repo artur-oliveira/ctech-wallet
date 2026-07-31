@@ -31,7 +31,7 @@ import (
 // wallet API mints txids with this prefix (PurchaseSandboxDirect) so this
 // Lambda can route the confirmation call correctly without a new inbound
 // integration, just this one dispatch check.
-const sandboxPurchaseTxidPrefix = "sbxp#"
+const sandboxPurchaseTxidPrefix = "sbxp"
 
 // confirmer is the subset of *walletclient.Client the handler depends on —
 // small enough to fake in tests.

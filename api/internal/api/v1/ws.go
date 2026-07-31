@@ -120,7 +120,7 @@ func RegisterWS(router fiber.Router, verifier *middleware.Verifier, reg ws.Regis
 			}
 
 			claims, err := verifier.VerifyClaims(ctx, token)
-			if err != nil || claims == nil || claims.Sub == "" {
+			if err != nil || claims == nil || claims.Sub == "" || claims.SID == "" {
 				send(map[string]any{"type": "error", "code": "unauthorized", "message": "Token inválido ou expirado"})
 				_ = conn.Close()
 				return

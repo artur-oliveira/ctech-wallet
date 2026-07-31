@@ -8,7 +8,8 @@ Auth model (not multi-tenant):
 
 - **User routes** — `Authorization: Bearer <user JWT>` (RS256, JWKS from
   `ctech-account`). Claims consumed: `sub` (user_id), `kyc_level`
-  (`""|basic|verified`), `last_mfa_at`, `sid` (empty ⇒ M2M). See
+  (`""|basic|enhanced`), `last_mfa_at`, `sid` (empty ⇒ M2M). User route
+  groups require a non-empty `sid`; client-credentials tokens are rejected. See
   `middleware/auth.go:28`, `middleware/claims.go`.
 - **Internal routes** — `client_credentials` M2M token carrying exactly one
   scope per route; a non‑empty `sid` is **rejected** even if the scope matches

@@ -219,6 +219,19 @@ func TestAuthorizeTransferRefusesDestinationMismatch(t *testing.T) {
 	}
 }
 
+func TestAuthorizeTransferRefusesMissingDestination(t *testing.T) {
+	repo := newFakeBaasRepo()
+	svc := NewBaasService(repo, fakeWallets{}, asaas.NewFake(), nil, nil, make([]byte, 32), "wallet_parent", "parent-apikey")
+	repo.intents["ref1"] = &wallet.TransferIntent{
+		ExternalReference: "ref1", Status: wallet.IntentAwaitingAuthorization, Amount: 1000, Destination: "wallet_parent",
+	}
+
+	approved, reason := svc.AuthorizeTransfer(context.Background(), "ref1", 1000, "")
+	if approved || reason != "mismatch" {
+		t.Fatalf("expected refused/mismatch, got approved=%v reason=%q", approved, reason)
+	}
+}
+
 func TestSubmitTransferWritesIntentAndCallsCreateTransfer(t *testing.T) {
 	repo := newFakeBaasRepo()
 	fake := asaas.NewFake()

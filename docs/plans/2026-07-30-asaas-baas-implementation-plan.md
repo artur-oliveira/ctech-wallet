@@ -28,6 +28,13 @@ Two independent gates, tracked separately because they resolve on different time
 | **Custody gate** | Any real user's `real` wallet being backed by an Asaas subaccount in production | Confirmation that the Asaas–CTech BaaS contract conforms to Res. Conj. 16/2025 (deadline 31/12/2026, audit §8 item 8) + the mandate/closure/MED contract text (spec §9.2, §9.9) is signed and shown to users |
 | **Games gate** | `GAMBLING_ENABLED=true` in production, i.e. any real-money poker/dominó table | Signed counsel opinion on habitualidade/classification (skill vs. chance, DL 3.688/1941 art. 50), on CC art. 814 caput enforceability, and — per the audit's new finding — awareness that Lei 15.358/2026 art. 21-A can force Asaas to freeze already-custodied balances retroactively if SPA later disagrees |
 
+> **Security hold (2026-07-31):** account-status and MED webhooks are wake-up
+> signals only and are quarantined because the current client has no
+> authoritative provider query for those records. Asaas deposit callbacks
+> ignore webhook-supplied payer CPF; a paid deposit remains pending until payer
+> identity comes from an independently authenticated provider query. Do not
+> enable custody until those queries and sandbox acceptance tests exist.
+
 Both gates are `false` by default in every environment except a dedicated Asaas-sandbox integration-test
 environment. Nothing in this plan asks anyone to flip either gate. The work here is: build the custody layer,
 the settlement layer, the new failure-mode handlers (frozen subaccount, closure, MED clawback, transfer
@@ -212,7 +219,7 @@ LGPD arts. 6º/9º/18. Add the field to the onboarding request DTO with a commen
 
 New route, new service method `InitiateBaasOnboarding(ctx, userID) (*BaasAccount, error)`:
 
-1. Require `kycLevel == verified` (mirrors `ActivateGambling`'s gate).
+1. Require `kycLevel == enhanced` (mirrors `ActivateGambling`'s gate).
 2. Idempotent on `user_id` — a second call while `status` is anything other than absent returns the existing
    record (mirrors `EnsureRealWallet`'s create-or-reuse pattern, never a second `POST /v3/accounts`).
 3. Conditionally reserve `wallet_baas_accounts` by user **before** the provider call, then call

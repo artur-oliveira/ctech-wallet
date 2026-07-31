@@ -49,12 +49,9 @@ type asaasWebhookPayload struct {
 		ID     string `json:"id"`
 		Status string `json:"status"`
 	} `json:"account"`
-	// Payment covers the deposit-confirmation family (plan §4.3). Payer.CPFCNPJ
-	// is the field the CPF anti-fraud gate reads — field name unverified against
-	// a live payload, same "confirm before build" posture as the rest of this
-	// struct; plan §4.3 itself flags that Asaas's payment RE-QUERY may not
-	// expose payer CPF at all, in which case the gate must come from here
-	// (the webhook body) exclusively, same as Inter today.
+	// Payment identifies which pending deposit should be re-queried. Payer data
+	// is decoded for schema compatibility only and is never trusted by the
+	// wallet's CPF anti-fraud gate.
 	Payment struct {
 		// PixQRCodeID reads Asaas's payment "id" field, not a distinct
 		// "pixQrCodeId" — the fetched PAYMENT_RECEIVED example payload
@@ -68,12 +65,8 @@ type asaasWebhookPayload struct {
 		// every other "confirm before build" item in this file.
 		PixQRCodeID       string `json:"id"`
 		ExternalReference string `json:"externalReference"`
-		// Payer is NOT confirmed present on the real payload (the fetched
-		// example carries no such object) — plan §4.3/§10 Q15 already flags
-		// this as open: if Asaas's payment query/webhook never exposes payer
-		// CPF, the anti-fraud gate has no source at all and needs a design
-		// decision, not a guessed field name. Left here as the design's
-		// original placeholder; do not trust it without live verification.
+		// Payer is deliberately ignored. A webhook access token is not
+		// independent evidence of payer ownership.
 		Payer struct {
 			CPFCNPJ string `json:"cpfCnpj"`
 			Name    string `json:"name"`
@@ -86,9 +79,9 @@ type asaasWebhookPayload struct {
 	// assumption, same "confirm before build" posture as the rest of this
 	// file). Field names/shape unverified against a live payload.
 	Transfer struct {
-		ID                string  `json:"id"`
-		Value             float64 `json:"value"`
-		ExternalReference string  `json:"externalReference"`
+		ID                string        `json:"id"`
+		Value             asaasCentavos `json:"value"`
+		ExternalReference string        `json:"externalReference"`
 	} `json:"transfer"`
 }
 
@@ -106,18 +99,18 @@ func (h *handlers) asaasWebhook(c fiber.Ctx) error {
 	}
 	switch {
 	case strings.HasPrefix(body.Event, "ACCOUNT_STATUS_"):
-		if err := h.baas.ProcessAccountStatusWebhook(c.Context(), body.Account.ID, body.Account.Status); err != nil {
-			return sendProblem(c, err)
-		}
+		// The current Asaas client has no authoritative account-status query.
+		// A static webhook token alone must never approve/reject custody. Keep the
+		// account pending and page operations until provider re-query exists.
+		slog.ErrorContext(c.Context(), "ALARM Asaas account-status webhook quarantined pending authoritative re-query", "event", body.Event, "account_id", body.Account.ID)
 	case body.Event == "PAYMENT_RECEIVED" || body.Event == "PAYMENT_CONFIRMED":
-		if err := h.svc.ConfirmAsaasDeposit(c.Context(), body.Payment.PixQRCodeID, body.Payment.Payer.CPFCNPJ, body.Payment.Payer.Name); err != nil {
+		if err := h.svc.ConfirmAsaasDeposit(c.Context(), body.Payment.PixQRCodeID); err != nil {
 			return sendProblem(c, err)
 		}
 	case body.Event == "TRANSFER_MED_CLAWBACK" || body.Event == "PIX_MED_RETURNED":
-		amount := centavosFromReais(body.Transfer.Value)
-		if err := h.svc.ProcessMedClawback(c.Context(), body.Account.ID, amount, body.Transfer.ExternalReference); err != nil {
-			return sendProblem(c, err)
-		}
+		// No provider-side MED query is implemented. Debiting from a bearer-token
+		// webhook would make that webhook the source of truth for money movement.
+		slog.ErrorContext(c.Context(), "ALARM Asaas MED webhook quarantined pending authoritative re-query", "account_id", body.Account.ID, "reference", body.Transfer.ExternalReference)
 	default:
 		slog.WarnContext(c.Context(), "asaas webhook: unhandled event", "event", body.Event)
 	}

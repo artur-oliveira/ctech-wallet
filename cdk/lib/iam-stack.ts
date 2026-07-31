@@ -10,6 +10,7 @@ import {
     S3_PREFIX,
     SERVICE,
     SSM_ACCOUNT,
+    SSM_SHARED,
     SSM_WALLET,
 } from './constants';
 
@@ -113,9 +114,9 @@ export class IAMStack extends cdk.Stack {
         }));
 
         // ── SSM ───────────────────────────────────────────────────────────────────
-        // api's role is scoped to exactly the two parameters it still reads —
-        // wallet-client-id/secret (for the internal:kyc M2M call to ctech-account) —
-        // plus ctech-account's own namespace and the shared /ctech/{env}/* values.
+        // api's role is scoped to the exact parameters it reads. Never grant
+        // whole account/shared namespaces: an API compromise must not become a
+        // cross-service secret compromise.
         // The Inter mTLS keypair, OAuth client secret, and webhook secret moved to
         // pix-gateway's own IAM role (see pix-gateway-stack.ts) — api no longer
         // talks to Inter at all (docs/specs/2026-07-13-pix-gateway-lambda-design.md).
@@ -129,8 +130,9 @@ export class IAMStack extends cdk.Stack {
                     resources: [
                         `arn:aws:ssm:*:*:parameter${walletSsm.walletClientId}`,
                         `arn:aws:ssm:*:*:parameter${walletSsm.walletClientSecret}`,
-                        `arn:aws:ssm:*:*:parameter${accountSsm.namespace}/*`,
-                        `arn:aws:ssm:*:*:parameter/ctech/${environment}/*`,
+                        `arn:aws:ssm:*:*:parameter${accountSsm.baseUrl}`,
+                        `arn:aws:ssm:*:*:parameter${accountSsm.jwksUrl}`,
+                        `arn:aws:ssm:*:*:parameter${SSM_SHARED(environment).valkeyUrl}`,
                         // Asaas BaaS custody — read in-process by api itself (unlike the
                         // inter/* SecureStrings above, which pix-gateway's own role reads).
                         // Inert until ASAAS_CUSTODY_ENABLED is flipped (an ops decision,

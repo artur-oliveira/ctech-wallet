@@ -446,8 +446,9 @@ func (b *BaasService) CreateDepositCharge(ctx context.Context, userID string, am
 // WalletService.ConfirmDeposit's Invariant #11 re-query stays
 // provider-agnostic (plan §4.3). Payer CPF/name are deliberately left unset —
 // the design research found Asaas's payment query does not reliably expose
-// the actual payer's CPF, so that anti-fraud gate must come from the webhook
-// body only, exactly like Inter's own payer fields today.
+// the actual payer's CPF. Therefore Asaas deposits remain quarantined after
+// payment until an authoritative identity query is implemented; webhook-only
+// payer fields are never promoted to trusted state.
 func (b *BaasService) QueryDepositPayment(ctx context.Context, userID, providerQRCodeID string) (*pix.Charge, error) {
 	acc, err := b.repo.GetBaasAccount(ctx, userID)
 	if err != nil {
@@ -493,7 +494,11 @@ func (b *BaasService) AuthorizeTransfer(ctx context.Context, externalReference s
 	if intent == nil {
 		return false, "unknown_reference"
 	}
-	if intent.Amount != amount || (intent.Destination != "" && destination != "" && intent.Destination != destination) {
+	// Destination is mandatory on both sides. Missing provider data is not a
+	// wildcard: payload/schema drift must refuse the transfer, never bypass the
+	// most important authorization comparison.
+	if externalReference == "" || amount <= 0 || intent.Amount != amount ||
+		intent.Destination == "" || destination == "" || intent.Destination != destination {
 		slog.Error("ALARM asaas transfer-authorization mismatch", "external_reference", externalReference,
 			"expected_amount", intent.Amount, "got_amount", amount, "expected_destination", intent.Destination, "got_destination", destination)
 		return false, "mismatch"

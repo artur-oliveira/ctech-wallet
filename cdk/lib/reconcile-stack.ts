@@ -165,7 +165,7 @@ export class ReconcileStack extends cdk.Stack {
             resources: [
                 `arn:aws:ssm:*:*:parameter${SSM_WALLET(environment).walletClientId}`,
                 `arn:aws:ssm:*:*:parameter${SSM_WALLET(environment).walletClientSecret}`,
-                `arn:aws:ssm:*:*:parameter${SSM_ACCOUNT(environment).namespace}/*`,
+                `arn:aws:ssm:*:*:parameter${SSM_ACCOUNT(environment).baseUrl}`,
                 `arn:aws:ssm:*:*:parameter${SSM_WALLET(environment).asaasApiKeyMaster}`,
                 `arn:aws:ssm:*:*:parameter${SSM_WALLET(environment).asaasWebhookToken}`,
                 `arn:aws:ssm:*:*:parameter${SSM_WALLET(environment).asaasParentApiKey}`,

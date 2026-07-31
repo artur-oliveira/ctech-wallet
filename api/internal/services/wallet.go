@@ -817,7 +817,7 @@ func (s *WalletService) ProcessMedClawback(ctx context.Context, providerAccountI
 // than trusting this webhook body for money movement (Invariant #11). An
 // unresolvable pixQrCodeId is an idempotent no-op, same as ConfirmDeposit's
 // own unknown-txid handling.
-func (s *WalletService) ConfirmAsaasDeposit(ctx context.Context, providerQRCodeID, payerCPF, payerName string) error {
+func (s *WalletService) ConfirmAsaasDeposit(ctx context.Context, providerQRCodeID string) error {
 	dep, err := s.repo.GetDepositByProviderQRCodeID(ctx, providerQRCodeID)
 	if err != nil {
 		return err
@@ -825,7 +825,11 @@ func (s *WalletService) ConfirmAsaasDeposit(ctx context.Context, providerQRCodeI
 	if dep == nil {
 		return nil
 	}
-	return s.ConfirmDeposit(ctx, dep.Txid, payerCPF, payerName, false)
+	// The current Asaas payment-query response does not provide payer identity.
+	// Never promote identity asserted only by the webhook into trusted deposit
+	// state. ConfirmDeposit will re-query status/amount and quarantine the paid
+	// deposit until authoritative payer evidence becomes available.
+	return s.ConfirmDeposit(ctx, dep.Txid, "", "", false)
 }
 
 // refunded reports whether the charge carries any completed devolução, per

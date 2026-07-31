@@ -59,6 +59,21 @@ func RequireScope(scope string) fiber.Handler {
 	}
 }
 
+// RequireUser rejects client_credentials tokens on user-facing routes. The
+// account contract uses an empty sid for M2M tokens; accepting one here would
+// blur the user/M2M trust boundary even when its sub cannot normally collide
+// with a user ID.
+func RequireUser(c fiber.Ctx) error {
+	cl := GetClaims(c)
+	if cl == nil {
+		return problem.Unauthorized("credenciais ausentes").Send(c)
+	}
+	if cl.SID == "" {
+		return problem.Forbidden("token de usuário obrigatório").Send(c)
+	}
+	return c.Next()
+}
+
 // RequireKYC gates a route on a minimum KYC level from the token's kyc_level claim.
 // min is KYCBasic (any verification started) or KYCVerified (fully verified).
 func RequireKYC(min string) fiber.Handler {

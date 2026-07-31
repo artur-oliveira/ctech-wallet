@@ -35,12 +35,12 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 	RegisterWS(v1, verifier, wsRegistry, cfg.CorsAllowedOrigins)
 
 	// Caller state + terms addendum acceptance.
-	a := v1.Group("/auth", auth)
+	a := v1.Group("/auth", auth, middleware.RequireUser)
 	a.Get("/me", h.getMe)
 	a.Post("/terms-addendum/accept", h.acceptTermsAddendum)
 
 	// User routes — Bearer user JWT.
-	w := v1.Group("/wallet", auth)
+	w := v1.Group("/wallet", auth, middleware.RequireUser)
 	w.Get("/", h.getWallet)
 	w.Post("/deposits", middleware.RequireKYC(middleware.KYCVerified), h.createDeposit)
 	w.Post("/withdrawals", middleware.RequireKYC(middleware.KYCVerified), middleware.RequireRecentMFA(middleware.StepUpMaxAge), h.createWithdrawal)
