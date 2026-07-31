@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"gopkg.aoctech.app/api-commons/cache"
+	"gopkg.aoctech.app/wallet/api/internal/lambdarpc"
 	"gopkg.aoctech.app/wallet/api/internal/lock"
 	rpccontract "gopkg.aoctech.app/wallet/rpc-contract"
 )
@@ -18,7 +19,7 @@ type countingInvoker struct {
 	token string
 }
 
-func (c *countingInvoker) invoke(_ context.Context, payload []byte) ([]byte, error) {
+func (c *countingInvoker) Invoke(_ context.Context, payload []byte) ([]byte, error) {
 	var req rpccontract.Request
 	if err := json.Unmarshal(payload, &req); err != nil {
 		return nil, err
@@ -49,7 +50,7 @@ func newTestManager(inv *countingInvoker) *InterTokenManager {
 
 // newTestTokenMgr builds a manager over an arbitrary invoker with cond
 // initialized (the production constructor does this too).
-func newTestTokenMgr(inv lambdaInvoker) *InterTokenManager {
+func newTestTokenMgr(inv lambdarpc.Invoker) *InterTokenManager {
 	m := &InterTokenManager{invoker: inv}
 	m.cond = sync.NewCond(&m.mu)
 	return m

@@ -6,44 +6,17 @@ package asaas
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
-	lambdatypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
+	"gopkg.aoctech.app/wallet/api/internal/lambdarpc"
 	rpccontract "gopkg.aoctech.app/wallet/rpc-contract"
 )
-
-// lambdaInvoker is the subset of *lambda.Client this client depends on —
-// mirrors pix.lambdaInvoker so both can be faked identically in tests.
-type lambdaInvoker interface {
-	invoke(ctx context.Context, payload []byte) ([]byte, error)
-}
-
-type awsLambdaInvoker struct {
-	client       *lambda.Client
-	functionName string
-}
-
-func (a *awsLambdaInvoker) invoke(ctx context.Context, payload []byte) ([]byte, error) {
-	out, err := a.client.Invoke(ctx, &lambda.InvokeInput{
-		FunctionName:   &a.functionName,
-		InvocationType: lambdatypes.InvocationTypeRequestResponse,
-		Payload:        payload,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("pix-gateway invoke: %w", err)
-	}
-	if out.FunctionError != nil {
-		return nil, fmt.Errorf("pix-gateway invoke: function error: %s: %s", *out.FunctionError, string(out.Payload))
-	}
-	return out.Payload, nil
-}
 
 // LambdaAsaasClient implements AsaasClient by invoking pix-gateway's outbound
 // Lambda. It never talks to Asaas directly.
 type LambdaAsaasClient struct {
-	invoker lambdaInvoker
+	invoker lambdarpc.Invoker
 }
 
 // NewLambdaAsaasClient builds the client. functionName is pix-gateway's
@@ -51,26 +24,12 @@ type LambdaAsaasClient struct {
 // invokes for Inter ops (config.PixGatewayFunctionName); the two Ops just
 // carry different op discriminators in the same wire contract (plan §2.2).
 func NewLambdaAsaasClient(client *lambda.Client, functionName string) *LambdaAsaasClient {
-	return &LambdaAsaasClient{invoker: &awsLambdaInvoker{client: client, functionName: functionName}}
+	return &LambdaAsaasClient{invoker: lambdarpc.NewAWSInvoker(client, functionName)}
 }
 
 func (c *LambdaAsaasClient) call(ctx context.Context, op rpccontract.Op, apiKey string, args any, out any) error {
-	argsJSON, err := json.Marshal(args)
+	resp, err := lambdarpc.Call(ctx, c.invoker, op, apiKey, args)
 	if err != nil {
-		return err
-	}
-	// Credentials travel only in OAuthToken and are never duplicated into the
-	// operation payload.
-	reqJSON, err := json.Marshal(rpccontract.Request{Op: op, OAuthToken: apiKey, Payload: argsJSON})
-	if err != nil {
-		return err
-	}
-	respJSON, err := c.invoker.invoke(ctx, reqJSON)
-	if err != nil {
-		return err
-	}
-	var resp rpccontract.Response
-	if err := json.Unmarshal(respJSON, &resp); err != nil {
 		return err
 	}
 	if resp.Error != "" {
@@ -79,10 +38,7 @@ func (c *LambdaAsaasClient) call(ctx context.Context, op rpccontract.Op, apiKey 
 		}
 		return fmt.Errorf("asaas: %s", resp.Error)
 	}
-	if out != nil && len(resp.Payload) > 0 {
-		return json.Unmarshal(resp.Payload, out)
-	}
-	return nil
+	return lambdarpc.DecodePayload(resp, out)
 }
 
 func (c *LambdaAsaasClient) CreateAccount(ctx context.Context, parentAPIKey string, req CreateAccountRequest) (*Account, error) {

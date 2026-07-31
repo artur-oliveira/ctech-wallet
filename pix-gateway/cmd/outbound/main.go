@@ -88,8 +88,8 @@ func (h *handler) handle(ctx context.Context, req rpc.Request) (rpc.Response, er
 func (h *handler) dispatch(ctx context.Context, req rpc.Request) rpc.Response {
 	switch req.Op {
 	case rpc.OpCreateCharge:
-		var a rpc.CreateChargeArgs
-		if err := json.Unmarshal(req.Payload, &a); err != nil {
+		a, err := decodePayload[rpc.CreateChargeArgs](req.Payload)
+		if err != nil {
 			return toResp(err)
 		}
 		c, err := h.pix.CreateCharge(ctx, a.Txid, a.Amount, a.PayerHintCPF)
@@ -99,8 +99,8 @@ func (h *handler) dispatch(ctx context.Context, req rpc.Request) rpc.Response {
 		return okResp(chargeResult(c))
 
 	case rpc.OpQueryCharge:
-		var a rpc.QueryChargeArgs
-		if err := json.Unmarshal(req.Payload, &a); err != nil {
+		a, err := decodePayload[rpc.QueryChargeArgs](req.Payload)
+		if err != nil {
 			return toResp(err)
 		}
 		c, err := h.pix.QueryCharge(ctx, a.Txid)
@@ -110,8 +110,8 @@ func (h *handler) dispatch(ctx context.Context, req rpc.Request) rpc.Response {
 		return okResp(chargeResult(c))
 
 	case rpc.OpTransfer:
-		var a rpc.TransferArgs
-		if err := json.Unmarshal(req.Payload, &a); err != nil {
+		a, err := decodePayload[rpc.TransferArgs](req.Payload)
+		if err != nil {
 			return toResp(err)
 		}
 		r, err := h.pix.Transfer(ctx, a.PixKey, a.Amount, a.IdemKey)
@@ -121,8 +121,8 @@ func (h *handler) dispatch(ctx context.Context, req rpc.Request) rpc.Response {
 		return okResp(transferResult(r))
 
 	case rpc.OpQueryTransfer:
-		var a rpc.QueryTransferArgs
-		if err := json.Unmarshal(req.Payload, &a); err != nil {
+		a, err := decodePayload[rpc.QueryTransferArgs](req.Payload)
+		if err != nil {
 			return toResp(err)
 		}
 		r, err := h.pix.QueryTransfer(ctx, a.IdemKey)
@@ -132,8 +132,8 @@ func (h *handler) dispatch(ctx context.Context, req rpc.Request) rpc.Response {
 		return okResp(transferResult(r))
 
 	case rpc.OpRefund:
-		var a rpc.RefundArgs
-		if err := json.Unmarshal(req.Payload, &a); err != nil {
+		a, err := decodePayload[rpc.RefundArgs](req.Payload)
+		if err != nil {
 			return toResp(err)
 		}
 		r, err := h.pix.Refund(ctx, a.E2EID, a.Amount, a.IdemKey)
@@ -156,8 +156,8 @@ func (h *handler) dispatch(ctx context.Context, req rpc.Request) rpc.Response {
 		return okResp(rpc.GetTokenResult{Token: t.Token, ExpiresIn: t.ExpiresIn})
 
 	case rpc.OpAsaasCreateAccount:
-		var a rpc.AsaasCreateAccountArgs
-		if err := json.Unmarshal(req.Payload, &a); err != nil {
+		a, err := decodePayload[rpc.AsaasCreateAccountArgs](req.Payload)
+		if err != nil {
 			return toResp(err)
 		}
 		// The parent account's own API key travels as req.OAuthToken — reusing
@@ -175,8 +175,8 @@ func (h *handler) dispatch(ctx context.Context, req rpc.Request) rpc.Response {
 		return okResp(rpc.AsaasAccountResult{ID: acc.ID, WalletID: acc.WalletID, APIKey: acc.APIKey, Status: acc.Status})
 
 	case rpc.OpAsaasUploadDocument:
-		var a rpc.AsaasUploadDocumentArgs
-		if err := json.Unmarshal(req.Payload, &a); err != nil {
+		a, err := decodePayload[rpc.AsaasUploadDocumentArgs](req.Payload)
+		if err != nil {
 			return toResp(err)
 		}
 		if err := h.asaas.UploadDocument(ctx, req.OAuthToken, a.DocumentID, a.File); err != nil {
@@ -185,8 +185,8 @@ func (h *handler) dispatch(ctx context.Context, req rpc.Request) rpc.Response {
 		return rpc.Response{}
 
 	case rpc.OpAsaasCreateStaticPixKey:
-		var a rpc.AsaasCreateStaticPixKeyArgs
-		if err := json.Unmarshal(req.Payload, &a); err != nil {
+		_, err := decodePayload[rpc.AsaasCreateStaticPixKeyArgs](req.Payload)
+		if err != nil {
 			return toResp(err)
 		}
 		k, err := h.asaas.CreateStaticPixKey(ctx, req.OAuthToken)
@@ -196,8 +196,8 @@ func (h *handler) dispatch(ctx context.Context, req rpc.Request) rpc.Response {
 		return okResp(rpc.AsaasPixAddressKeyResult{Key: k.Key, Status: k.Status})
 
 	case rpc.OpAsaasCreatePixQRCode:
-		var a rpc.AsaasCreatePixQRCodeArgs
-		if err := json.Unmarshal(req.Payload, &a); err != nil {
+		a, err := decodePayload[rpc.AsaasCreatePixQRCodeArgs](req.Payload)
+		if err != nil {
 			return toResp(err)
 		}
 		qr, err := h.asaas.CreatePixQRCode(ctx, req.OAuthToken, asaas.CreatePixQRCodeArgs{
@@ -213,8 +213,8 @@ func (h *handler) dispatch(ctx context.Context, req rpc.Request) rpc.Response {
 		})
 
 	case rpc.OpAsaasQueryPayment:
-		var a rpc.AsaasQueryPaymentArgs
-		if err := json.Unmarshal(req.Payload, &a); err != nil {
+		a, err := decodePayload[rpc.AsaasQueryPaymentArgs](req.Payload)
+		if err != nil {
 			return toResp(err)
 		}
 		p, err := h.asaas.QueryPayment(ctx, req.OAuthToken, a.PaymentID)
@@ -226,8 +226,8 @@ func (h *handler) dispatch(ctx context.Context, req rpc.Request) rpc.Response {
 		})
 
 	case rpc.OpAsaasCreateTransfer:
-		var a rpc.AsaasCreateTransferArgs
-		if err := json.Unmarshal(req.Payload, &a); err != nil {
+		a, err := decodePayload[rpc.AsaasCreateTransferArgs](req.Payload)
+		if err != nil {
 			return toResp(err)
 		}
 		t, err := h.asaas.CreateTransfer(ctx, req.OAuthToken, asaas.CreateTransferArgs{
@@ -237,13 +237,11 @@ func (h *handler) dispatch(ctx context.Context, req rpc.Request) rpc.Response {
 		if err != nil {
 			return errResp(err)
 		}
-		return okResp(rpc.AsaasTransferResult{
-			ID: t.ID, Status: t.Status, TransferFee: asaasCentavos(t.TransferFee), ExternalReference: t.ExternalReference,
-		})
+		return okResp(asaasTransferResult(t.ID, t.Status, t.TransferFee, t.ExternalReference))
 
 	case rpc.OpAsaasQueryTransfer:
-		var a rpc.AsaasQueryTransferArgs
-		if err := json.Unmarshal(req.Payload, &a); err != nil {
+		a, err := decodePayload[rpc.AsaasQueryTransferArgs](req.Payload)
+		if err != nil {
 			return toResp(err)
 		}
 		t, err := h.asaas.QueryTransfer(ctx, req.OAuthToken, a.ExternalReference)
@@ -253,13 +251,11 @@ func (h *handler) dispatch(ctx context.Context, req rpc.Request) rpc.Response {
 		if err != nil {
 			return errResp(err)
 		}
-		return okResp(rpc.AsaasTransferResult{
-			ID: t.ID, Status: t.Status, TransferFee: asaasCentavos(t.TransferFee), ExternalReference: t.ExternalReference,
-		})
+		return okResp(asaasTransferResult(t.ID, t.Status, t.TransferFee, t.ExternalReference))
 
 	case rpc.OpAsaasQueryAccountBalance:
-		var a rpc.AsaasQueryAccountBalanceArgs
-		if err := json.Unmarshal(req.Payload, &a); err != nil {
+		_, err := decodePayload[rpc.AsaasQueryAccountBalanceArgs](req.Payload)
+		if err != nil {
 			return toResp(err)
 		}
 		balance, err := h.asaas.QueryAccountBalance(ctx, req.OAuthToken)
@@ -273,12 +269,24 @@ func (h *handler) dispatch(ctx context.Context, req rpc.Request) rpc.Response {
 	}
 }
 
+func decodePayload[T any](payload json.RawMessage) (T, error) {
+	var value T
+	err := json.Unmarshal(payload, &value)
+	return value, err
+}
+
 // asaasCentavos rounds a decimal-reais float (as Asaas reports it on the
 // wire) to integer centavos — the one conversion point on the response side,
 // mirroring internal/asaas/money.go's reaisToCentavos without exporting it
 // across packages.
 func asaasCentavos(reais float64) int64 {
 	return int64(math.Round(reais * 100))
+}
+
+func asaasTransferResult(id, status string, transferFee float64, externalReference string) rpc.AsaasTransferResult {
+	return rpc.AsaasTransferResult{
+		ID: id, Status: status, TransferFee: asaasCentavos(transferFee), ExternalReference: externalReference,
+	}
 }
 
 func chargeResult(c *inter.Charge) rpc.ChargeResult {

@@ -7,47 +7,18 @@ package pix
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
-	lambdatypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
+	"gopkg.aoctech.app/wallet/api/internal/lambdarpc"
 	rpccontract "gopkg.aoctech.app/wallet/rpc-contract"
 )
-
-// lambdaInvoker is the subset of *lambda.Client LambdaPixClient depends on —
-// small enough to fake in tests without touching AWS.
-type lambdaInvoker interface {
-	invoke(ctx context.Context, payload []byte) ([]byte, error)
-}
-
-// awsLambdaInvoker adapts *lambda.Client to lambdaInvoker.
-type awsLambdaInvoker struct {
-	client       *lambda.Client
-	functionName string
-}
-
-func (a *awsLambdaInvoker) invoke(ctx context.Context, payload []byte) ([]byte, error) {
-	out, err := a.client.Invoke(ctx, &lambda.InvokeInput{
-		FunctionName:   &a.functionName,
-		InvocationType: lambdatypes.InvocationTypeRequestResponse,
-		Payload:        payload,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("pix-gateway invoke: %w", err)
-	}
-	if out.FunctionError != nil {
-		return nil, fmt.Errorf("pix-gateway invoke: function error: %s: %s", *out.FunctionError, string(out.Payload))
-	}
-	return out.Payload, nil
-}
 
 // LambdaPixClient implements PixClient by invoking pix-gateway's outbound
 // Lambda. It never talks to Inter directly. On every call it pulls a fresh
 // bearer from the InterTokenManager and passes it to pix-gateway on the wire.
 type LambdaPixClient struct {
-	invoker  lambdaInvoker
+	invoker  lambdarpc.Invoker
 	tokenMgr *InterTokenManager
 }
 
@@ -56,30 +27,18 @@ type LambdaPixClient struct {
 // supplies the OAuth bearer for each call.
 func NewLambdaPixClient(client *lambda.Client, functionName string, tokenMgr *InterTokenManager) *LambdaPixClient {
 	return &LambdaPixClient{
-		invoker:  &awsLambdaInvoker{client: client, functionName: functionName},
+		invoker:  lambdarpc.NewAWSInvoker(client, functionName),
 		tokenMgr: tokenMgr,
 	}
 }
 
 func (c *LambdaPixClient) call(ctx context.Context, op rpccontract.Op, args any, out any) error {
-	argsJSON, err := json.Marshal(args)
-	if err != nil {
-		return err
-	}
 	token, err := c.tokenMgr.Get(ctx, false)
 	if err != nil {
 		return err
 	}
-	reqJSON, err := json.Marshal(rpccontract.Request{Op: op, OAuthToken: token, Payload: argsJSON})
+	resp, err := lambdarpc.Call(ctx, c.invoker, op, token, args)
 	if err != nil {
-		return err
-	}
-	respJSON, err := c.invoker.invoke(ctx, reqJSON)
-	if err != nil {
-		return err
-	}
-	var resp rpccontract.Response
-	if err := json.Unmarshal(respJSON, &resp); err != nil {
 		return err
 	}
 	// Inter rejected the bearer (401). Drop the cached token and force-refresh
@@ -90,18 +49,8 @@ func (c *LambdaPixClient) call(ctx context.Context, op rpccontract.Op, args any,
 		if ferr != nil {
 			return errors.New(resp.Error)
 		}
-		reqJSON, err = json.Marshal(rpccontract.Request{Op: op, OAuthToken: newToken, Payload: argsJSON})
+		resp, err = lambdarpc.Call(ctx, c.invoker, op, newToken, args)
 		if err != nil {
-			return err
-		}
-		respJSON, err = c.invoker.invoke(ctx, reqJSON)
-		if err != nil {
-			return err
-		}
-		// Reset: json.Unmarshal leaves fields absent from the JSON intact, so the
-		// prior attempt's Error would otherwise leak into the retried response.
-		resp = rpccontract.Response{}
-		if err := json.Unmarshal(respJSON, &resp); err != nil {
 			return err
 		}
 	}
@@ -111,10 +60,7 @@ func (c *LambdaPixClient) call(ctx context.Context, op rpccontract.Op, args any,
 	if resp.Error != "" {
 		return errors.New(resp.Error)
 	}
-	if out != nil && len(resp.Payload) > 0 {
-		return json.Unmarshal(resp.Payload, out)
-	}
-	return nil
+	return lambdarpc.DecodePayload(resp, out)
 }
 
 func (c *LambdaPixClient) CreateCharge(ctx context.Context, txid string, amount int64, payerHintCPF string) (*Charge, error) {

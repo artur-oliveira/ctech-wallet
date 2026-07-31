@@ -20,6 +20,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"gopkg.aoctech.app/api-commons/cache"
 	"gopkg.aoctech.app/wallet/api/internal/config"
+	"gopkg.aoctech.app/wallet/api/internal/lambdarpc"
 	"gopkg.aoctech.app/wallet/api/internal/lock"
 	rpccontract "gopkg.aoctech.app/wallet/rpc-contract"
 )
@@ -60,7 +61,7 @@ type cachedToken struct {
 // InterTokenManager owns the Inter OAuth bearer. It is an fx provider; its
 // constructor registers startup prime + a background refresh loop.
 type InterTokenManager struct {
-	invoker lambdaInvoker
+	invoker lambdarpc.Invoker
 	locker  *lock.Locker
 	cache   cache.Backend // shared token store (Valkey in prod, in-memory in dev)
 
@@ -78,7 +79,7 @@ type InterTokenManager struct {
 // cross-replica single-flight guard; cache is the shared token store.
 func NewInterTokenManager(client *lambda.Client, cfg *config.Config, locker *lock.Locker, c cache.Backend) *InterTokenManager {
 	m := &InterTokenManager{
-		invoker: &awsLambdaInvoker{client: client, functionName: cfg.PixGatewayFunctionName},
+		invoker: lambdarpc.NewAWSInvoker(client, cfg.PixGatewayFunctionName),
 		locker:  locker,
 		cache:   c,
 	}
@@ -243,23 +244,15 @@ func (m *InterTokenManager) refresh(ctx context.Context, force bool) (string, er
 // fetch invokes pix-gateway's GetToken op and computes the local expiry from
 // Inter's expires_in (clock-skew floor so a skewed value can't persist).
 func (m *InterTokenManager) fetch(ctx context.Context) (string, time.Time, error) {
-	reqJSON, err := json.Marshal(rpccontract.Request{Op: rpccontract.OpGetToken})
+	resp, err := lambdarpc.Call(ctx, m.invoker, rpccontract.OpGetToken, "", struct{}{})
 	if err != nil {
-		return "", time.Time{}, err
-	}
-	respJSON, err := m.invoker.invoke(ctx, reqJSON)
-	if err != nil {
-		return "", time.Time{}, err
-	}
-	var resp rpccontract.Response
-	if err := json.Unmarshal(respJSON, &resp); err != nil {
 		return "", time.Time{}, err
 	}
 	if resp.Error != "" {
 		return "", time.Time{}, fmt.Errorf("inter token: %s", resp.Error)
 	}
 	var res rpccontract.GetTokenResult
-	if err := json.Unmarshal(resp.Payload, &res); err != nil {
+	if err := lambdarpc.DecodePayload(resp, &res); err != nil {
 		return "", time.Time{}, err
 	}
 	if res.Token == "" {

@@ -16,6 +16,7 @@ api/
 ├── cmd/server/main.go        # fx.New(app.Module).Run() — the HTTP API
 ├── cmd/reconcile/main.go     # scheduled Lambda / CLI: resolves stuck withdrawals
 ├── internal/
+│   ├── lambdarpc/             # shared Lambda RPC transport for Inter and Asaas
 │   ├── app/                  # fx wiring (DI), Fiber app, error handler
 │   ├── config/               # 12-Factor env (caarlos0/env)
 │   ├── problem/              # RFC 7807 Problem + wallet codes

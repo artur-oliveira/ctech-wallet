@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"testing"
 
+	"gopkg.aoctech.app/wallet/api/internal/lambdarpc"
 	rpccontract "gopkg.aoctech.app/wallet/rpc-contract"
 )
 
-// fakeLambdaInvoker stands in for *lambda.Client — LambdaPixClient depends on
-// a small interface (lambdaInvoker) so this test never touches AWS.
+// fakeLambdaInvoker stands in for *lambda.Client so this test never touches AWS.
 type fakeLambdaInvoker struct {
 	// respond is keyed by the decoded rpccontract.Request.Op string.
 	respond map[string]rpccontract.Response
@@ -17,7 +17,7 @@ type fakeLambdaInvoker struct {
 	calls map[string]int
 }
 
-func (f *fakeLambdaInvoker) invoke(_ context.Context, payload []byte) ([]byte, error) {
+func (f *fakeLambdaInvoker) Invoke(_ context.Context, payload []byte) ([]byte, error) {
 	var req rpccontract.Request
 	if err := json.Unmarshal(payload, &req); err != nil {
 		return nil, err
@@ -33,7 +33,7 @@ func (f *fakeLambdaInvoker) invoke(_ context.Context, payload []byte) ([]byte, e
 
 // newTestLambdaPixClient wires a LambdaPixClient + InterTokenManager over a
 // fake invoker (which must answer rpccontract.OpGetToken with a token).
-func newTestLambdaPixClient(f lambdaInvoker) *LambdaPixClient {
+func newTestLambdaPixClient(f lambdarpc.Invoker) *LambdaPixClient {
 	mgr := newTestTokenMgr(f) // nil locker: safe (skips cross-replica guard)
 	return &LambdaPixClient{invoker: f, tokenMgr: mgr}
 }
@@ -99,13 +99,13 @@ func TestLambdaPixClientUnauthorizedRetry(t *testing.T) {
 }
 
 // retryFake fails the first CreateCharge with unauthorized, then succeeds.
-// It implements lambdaInvoker directly (no embedding) so call counting is exact.
+// It implements lambdarpc.Invoker directly so call counting is exact.
 type retryFake struct {
 	okPayload json.RawMessage
 	calls     map[string]int
 }
 
-func (r *retryFake) invoke(_ context.Context, payload []byte) ([]byte, error) {
+func (r *retryFake) Invoke(_ context.Context, payload []byte) ([]byte, error) {
 	var req rpccontract.Request
 	if err := json.Unmarshal(payload, &req); err != nil {
 		return nil, err
