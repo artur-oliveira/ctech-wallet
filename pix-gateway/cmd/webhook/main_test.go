@@ -148,13 +148,14 @@ func TestHandleWebhookConfirmFailureReturns500(t *testing.T) {
 }
 
 // TestHandleRoutesSandboxPurchaseTxidToConfirmSandboxPurchase covers the
-// ctech-wallet-api plan's §9.3 dispatch fix: a "sbxp#"-prefixed txid must go
+// ctech-wallet-api plan's §9.3 dispatch fix: an alphanumeric "sbxp"-prefixed
+// txid must go
 // to ConfirmSandboxPurchase, never ConfirmDeposit, and payer CPF/name (which
 // this flow has no use for) must never even be looked at.
 func TestHandleRoutesSandboxPurchaseTxidToConfirmSandboxPurchase(t *testing.T) {
 	f := &fakeConfirmer{}
 	h := &handler{confirmer: f}
-	body := `{"txid":"sbxp#user1#idem1"}`
+	body := `{"txid":"sbxp546d65f027b9de5e1c7a3c4aaa519ed"}`
 	resp, err := h.handle(context.Background(), events.APIGatewayV2HTTPRequest{Body: body})
 	if err != nil {
 		t.Fatalf("handle: %v", err)
@@ -165,15 +166,15 @@ func TestHandleRoutesSandboxPurchaseTxidToConfirmSandboxPurchase(t *testing.T) {
 	if len(f.calls) != 0 {
 		t.Fatalf("ConfirmDeposit must never be called for a sandbox-purchase txid, got %v", f.calls)
 	}
-	if len(f.sandboxCalls) != 1 || f.sandboxCalls[0] != "sbxp#user1#idem1" {
-		t.Fatalf("expected 1 ConfirmSandboxPurchase call for the sbxp# txid, got %v", f.sandboxCalls)
+	if len(f.sandboxCalls) != 1 || f.sandboxCalls[0] != "sbxp546d65f027b9de5e1c7a3c4aaa519ed" {
+		t.Fatalf("expected 1 ConfirmSandboxPurchase call for the sbxp txid, got %v", f.sandboxCalls)
 	}
 }
 
 func TestHandleSandboxPurchaseConfirmFailureReturns500(t *testing.T) {
 	f := &fakeConfirmer{sandboxErr: context.DeadlineExceeded}
 	h := &handler{confirmer: f}
-	body := `{"txid":"sbxp#user1#idem2"}`
+	body := `{"txid":"sbxp646d65f027b9de5e1c7a3c4aaa519ed"}`
 	resp, err := h.handle(context.Background(), events.APIGatewayV2HTTPRequest{Body: body})
 	if err != nil {
 		t.Fatalf("handle: %v", err)
@@ -189,7 +190,7 @@ func TestHandleSandboxPurchaseConfirmFailureReturns500(t *testing.T) {
 func TestHandleMixedTxidsRouteIndependently(t *testing.T) {
 	f := &fakeConfirmer{}
 	h := &handler{confirmer: f}
-	body := `{"pix":[{"txid":"deposit-1"},{"txid":"sbxp#user1#idem3"}]}`
+	body := `{"pix":[{"txid":"deposit-1"},{"txid":"sbxp746d65f027b9de5e1c7a3c4aaa519ed"}]}`
 	resp, err := h.handle(context.Background(), events.APIGatewayV2HTTPRequest{Body: body})
 	if err != nil {
 		t.Fatalf("handle: %v", err)
@@ -200,7 +201,7 @@ func TestHandleMixedTxidsRouteIndependently(t *testing.T) {
 	if len(f.calls) != 1 || f.calls[0].txid != "deposit-1" {
 		t.Fatalf("expected 1 ConfirmDeposit call for deposit-1, got %v", f.calls)
 	}
-	if len(f.sandboxCalls) != 1 || f.sandboxCalls[0] != "sbxp#user1#idem3" {
-		t.Fatalf("expected 1 ConfirmSandboxPurchase call for the sbxp# txid, got %v", f.sandboxCalls)
+	if len(f.sandboxCalls) != 1 || f.sandboxCalls[0] != "sbxp746d65f027b9de5e1c7a3c4aaa519ed" {
+		t.Fatalf("expected 1 ConfirmSandboxPurchase call for the sbxp txid, got %v", f.sandboxCalls)
 	}
 }

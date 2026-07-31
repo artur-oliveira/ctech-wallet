@@ -11,6 +11,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"log/slog"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -31,7 +32,11 @@ import (
 // wallet API mints txids with this prefix (PurchaseSandboxDirect) so this
 // Lambda can route the confirmation call correctly without a new inbound
 // integration, just this one dispatch check.
-const sandboxPurchaseTxidPrefix = "sbxp"
+const (
+	sandboxPurchaseTxidPrefix         = "sbxp"
+	confirmDepositFailureBody         = "confirm-deposit failed"
+	confirmSandboxPurchaseFailureBody = "confirm-sandbox-purchase failed"
+)
 
 // confirmer is the subset of *walletclient.Client the handler depends on —
 // small enough to fake in tests.
@@ -161,20 +166,24 @@ func (h *handler) handle(ctx context.Context, req events.APIGatewayV2HTTPRequest
 		// PurchaseSandboxDirect) never carries a payer CPF/name gate, so it
 		// routes to a different confirmation call entirely (plan §9.3), not a
 		// variant of ConfirmDeposit.
-		if strings.HasPrefix(p.Txid, sandboxPurchaseTxidPrefix) {
-			if err := h.confirmer.ConfirmSandboxPurchase(ctx, p.Txid); err != nil {
-				slog.ErrorContext(ctx, "webhook response", "status", 500, "txid", p.Txid, "err", err)
-				return events.APIGatewayV2HTTPResponse{StatusCode: 500, Body: "confirm-sandbox-purchase failed"}, nil
-			}
-			continue
-		}
-		if err := h.confirmer.ConfirmDeposit(ctx, p.Txid, p.Pagador.CpfCnpj, p.Pagador.Nome); err != nil {
-			slog.ErrorContext(ctx, "webhook response", "status", 500, "txid", p.Txid, "err", err)
+		failureBody, err := h.confirm(ctx, p)
+		if err != nil {
+			slog.ErrorContext(ctx, "webhook response", "status", http.StatusInternalServerError, "txid", p.Txid, "err", err)
 			// Non-200 so Inter retries the whole payload later; ConfirmDeposit is
 			// idempotent per txid so a retry never double-credits.
-			return events.APIGatewayV2HTTPResponse{StatusCode: 500, Body: "confirm-deposit failed"}, nil
+			return events.APIGatewayV2HTTPResponse{StatusCode: http.StatusInternalServerError, Body: failureBody}, nil
 		}
 	}
 	slog.InfoContext(ctx, "webhook response", "status", resp.StatusCode, "txids", txids)
 	return resp, nil
+}
+
+// confirm routes one Inter wake-up to the owning API confirmation flow. The
+// returned body preserves the operation-specific failure response while the
+// caller owns the common retry status and logging policy.
+func (h *handler) confirm(ctx context.Context, detail pixWebhookPayloadDetail) (string, error) {
+	if strings.HasPrefix(detail.Txid, sandboxPurchaseTxidPrefix) {
+		return confirmSandboxPurchaseFailureBody, h.confirmer.ConfirmSandboxPurchase(ctx, detail.Txid)
+	}
+	return confirmDepositFailureBody, h.confirmer.ConfirmDeposit(ctx, detail.Txid, detail.Pagador.CpfCnpj, detail.Pagador.Nome)
 }

@@ -24,7 +24,7 @@ const (
 	// pathConfirmSandboxPurchase is the sibling route for the direct
 	// PIX→sandbox-credits sale (ctech-wallet-api plan
 	// docs/plans/2026-07-30-asaas-baas-implementation-plan.md §9.3) — same M2M
-	// caller/scope as confirm-deposit, dispatched on the "sbxp#" txid prefix
+	// caller/scope as confirm-deposit, dispatched on the "sbxp" txid prefix
 	// (see cmd/webhook/main.go) instead of a new scope.
 	pathConfirmSandboxPurchase = "/v1.0/internal/pix/confirm-sandbox-purchase"
 	scopeConfirmDeposit        = "internal:wallet:confirm-deposit"
