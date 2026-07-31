@@ -78,8 +78,7 @@ func (s *Store) LoadM2MClients(ctx context.Context) (string, error) {
 		WithDecryption: aws.Bool(true),
 	})
 	if err != nil {
-		var notFound *ssmtypes.ParameterNotFound
-		if errors.As(err, &notFound) {
+		if _, ok := errors.AsType[*ssmtypes.ParameterNotFound](err); ok {
 			return "", nil
 		}
 		return "", fmt.Errorf("ssm: get %s: %w", name, err)

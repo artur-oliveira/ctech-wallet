@@ -124,8 +124,8 @@ type SandboxPurchaseRepo interface {
 // outbound call at an arbitrary host (SSRF), same reasoning as why the PIX
 // deposit destination is always the caller's own KYC CPF, never a request body.
 type M2MClient struct {
-	WebhookURL string
-	HMACSecret string
+	WebhookURL string `json:"webhook_url"`
+	HMACSecret string `json:"hmac_secret"`
 }
 
 // BaasProvider is the per-user Asaas custody gate WalletService reads before
