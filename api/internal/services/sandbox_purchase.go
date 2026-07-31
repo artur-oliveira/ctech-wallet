@@ -152,12 +152,9 @@ func (s *WalletService) ConfirmSandboxPurchase(ctx context.Context, txid string,
 	if err != nil {
 		return err
 	}
-	release, ok, err := s.lock.Acquire(ctx, sandbox.WalletID)
+	release, err := acquireWallet(ctx, s.lock, sandbox.WalletID)
 	if err != nil {
 		return err
-	}
-	if !ok {
-		return problem.WalletBusy()
 	}
 	defer release()
 
@@ -214,12 +211,9 @@ func (s *WalletService) RefundSandboxPurchase(ctx context.Context, userID, purch
 		return nil, problem.SandboxPurchaseUsed()
 	}
 
-	release, ok, err := s.lock.Acquire(ctx, sandbox.WalletID)
+	release, err := acquireWallet(ctx, s.lock, sandbox.WalletID)
 	if err != nil {
 		return nil, err
-	}
-	if !ok {
-		return nil, problem.WalletBusy()
 	}
 	defer release()
 

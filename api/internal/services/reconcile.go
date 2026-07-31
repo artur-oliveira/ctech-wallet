@@ -8,7 +8,6 @@ import (
 
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/pix"
-	"gopkg.aoctech.app/wallet/api/internal/problem"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
 )
 
@@ -55,7 +54,7 @@ func (s *WalletService) ReconcileWithdrawals(ctx context.Context) (resolved, rev
 				slog.Error("reconcile: mark completed failed", "withdrawal_id", w.WithdrawalID, "err", err)
 				continue
 			}
-			s.broadcastWithdrawal(ctx, w.UserID, "withdraw_completed", w.WithdrawalID, w.Amount)
+			s.broadcastWithdrawal(ctx, w.UserID, eventWithdrawalComplete, w.WithdrawalID, w.Amount)
 			resolved++
 		case pix.TransferNotFound:
 			// Acquire the per-wallet lock for the reversal so it is serialized
@@ -96,12 +95,9 @@ func (s *WalletService) ReverseWithdrawal(ctx context.Context, withdrawalID stri
 	if w.Status == wallet.WithdrawReversed {
 		return nil
 	}
-	release, ok, err := s.lock.Acquire(ctx, w.WalletID)
+	release, err := acquireWallet(ctx, s.lock, w.WalletID)
 	if err != nil {
 		return err
-	}
-	if !ok {
-		return problem.WalletBusy()
 	}
 	defer release()
 	if !s.reverse(ctx, *w) {
@@ -127,13 +123,13 @@ func (s *WalletService) reverse(ctx context.Context, w wallet.Withdrawal) bool {
 	if err != nil {
 		slog.Error("ALARM withdrawal reversal credit-back failed", "withdrawal_id", w.WithdrawalID, "amount", total, "err", err)
 		_ = s.repo.UpdateWithdrawal(ctx, w.WithdrawalID, map[string]any{"status": wallet.WithdrawRefundFail})
-		s.broadcastWithdrawal(ctx, w.UserID, "withdraw_refund_failed", w.WithdrawalID, w.Amount)
+		s.broadcastWithdrawal(ctx, w.UserID, eventWithdrawalFailed, w.WithdrawalID, w.Amount)
 		return false
 	}
 	if err := s.repo.UpdateWithdrawal(ctx, w.WithdrawalID, map[string]any{"status": wallet.WithdrawReversed}); err != nil {
 		slog.Error("reconcile: mark reversed failed", "withdrawal_id", w.WithdrawalID, "err", err)
 	}
-	s.broadcastWithdrawal(ctx, w.UserID, "withdraw_reversed", w.WithdrawalID, w.Amount)
+	s.broadcastWithdrawal(ctx, w.UserID, eventWithdrawalReversed, w.WithdrawalID, w.Amount)
 	return true
 }
 

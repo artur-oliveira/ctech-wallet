@@ -16,21 +16,34 @@ import (
 // Asaas-custodied deposit (plan §4.2's own code snippet: 900s).
 const depositQRExpirationSeconds = 900
 
-// BaasRepo is the persistence surface BaasService depends on (plan §2.3,
-// §2.4) — dependency inversion, same shape as Repo above.
-type BaasRepo interface {
+// BaasAccountStore owns the custody account lifecycle.
+type BaasAccountStore interface {
 	GetBaasAccount(ctx context.Context, userID string) (*wallet.BaasAccount, error)
 	GetBaasAccountByProviderID(ctx context.Context, providerAccountID string) (*wallet.BaasAccount, error)
 	PutBaasAccount(ctx context.Context, a *wallet.BaasAccount) error
 	UpdateBaasAccount(ctx context.Context, userID string, updates map[string]any) error
 	ListBaasAccountsByStatus(ctx context.Context, status string, limit int) ([]wallet.BaasAccount, error)
+}
+
+// MedReceivableStore owns uncompensated MED clawback records.
+type MedReceivableStore interface {
 	PutMedReceivableIfAbsent(ctx context.Context, m *wallet.MedReceivable) error
 	ListOpenMedReceivablesForWallet(ctx context.Context, walletID string, limit int) ([]wallet.MedReceivable, error)
+}
 
+// TransferIntentStore owns idempotent Asaas settlement intents.
+type TransferIntentStore interface {
 	PutTransferIntentIfAbsent(ctx context.Context, t *wallet.TransferIntent) error
 	GetTransferIntent(ctx context.Context, externalReference string) (*wallet.TransferIntent, error)
 	UpdateTransferIntent(ctx context.Context, externalReference string, updates map[string]any) error
 	ListTransferIntentsByStatus(ctx context.Context, status string, limit int) ([]wallet.TransferIntent, error)
+}
+
+// BaasRepo composes the persistence capabilities BaasService orchestrates.
+type BaasRepo interface {
+	BaasAccountStore
+	MedReceivableStore
+	TransferIntentStore
 }
 
 // WalletReader is the narrow WalletRepository surface BaasService needs: to

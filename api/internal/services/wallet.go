@@ -32,7 +32,13 @@ import (
 // shorter than both Inter's validity and a realistic sweep interval, so a
 // payment landing late was lost (SEC-02). 60m gives the sweep (see
 // sweepAgeThreshold) a 50m window to run before the row disappears.
-const depositTTLMinutes = 60
+const (
+	depositTTLMinutes       = 60
+	eventDepositConfirmed   = "deposit_confirmed"
+	eventWithdrawalComplete = "withdraw_completed"
+	eventWithdrawalFailed   = "withdraw_refund_failed"
+	eventWithdrawalReversed = "withdraw_reversed"
+)
 
 // interWithdrawalNamespace namespaces the deterministic UUID sent to Inter as
 // x-id-idempotente for PIX payouts (Inter rejects any other format). Derived
@@ -45,30 +51,47 @@ func interIdemKey(withdrawalID string) string {
 	return uuid.NewSHA1(interWithdrawalNamespace, []byte(withdrawalID)).String()
 }
 
-// Repo is the persistence surface the service depends on (dependency inversion
-// so the service is unit-testable without DynamoDB).
-type Repo interface {
+// WalletStore owns wallet identity and balance reads.
+type WalletStore interface {
 	GetWallet(ctx context.Context, walletID string) (*wallet.Wallet, error)
 	EnsureRealWallet(ctx context.Context, userID string) (*wallet.Wallet, error)
 	EnsureSandboxWallet(ctx context.Context, userID string) (*wallet.Wallet, error)
 	EnsureGamblingWallets(ctx context.Context, userID string) (game, sandbox *wallet.Wallet, err error)
 	LoadWallets(ctx context.Context, userID string) (real, game, sandbox *wallet.Wallet, err error)
+}
+
+// LedgerStore owns atomic balance mutations and immutable ledger reads.
+type LedgerStore interface {
 	Credit(ctx context.Context, m repositories.Mutation) (*wallet.LedgerEntry, bool, error)
 	Debit(ctx context.Context, m repositories.Mutation) (*wallet.LedgerEntry, bool, error)
 	DebitWithFee(ctx context.Context, w *wallet.Withdrawal, amount, fee int64, idemKey, reqHash string) (*wallet.LedgerEntry, *wallet.LedgerEntry, bool, error)
 	Transfer(ctx context.Context, from, to string, amount, creditAmount int64, debitType, creditType, ref, idemKey, reqHash string, extra ...types.TransactWriteItem) (*wallet.LedgerEntry, *wallet.LedgerEntry, bool, error)
 	Statement(ctx context.Context, walletID string, limit int, startKey map[string]types.AttributeValue) (*repositories.QueryResult, error)
+	AnyDebitSince(ctx context.Context, walletID, sinceSK string) (bool, error)
+	AmountAtSK(ctx context.Context, walletID, sk string) (int64, error)
+}
+
+// DepositStore owns PIX deposit lifecycle persistence.
+type DepositStore interface {
 	PutDeposit(ctx context.Context, d *wallet.PixDeposit) error
 	GetDeposit(ctx context.Context, txid string) (*wallet.PixDeposit, error)
 	GetDepositByProviderQRCodeID(ctx context.Context, providerQRCodeID string) (*wallet.PixDeposit, error)
 	ReserveDepositIdem(ctx context.Context, guardPK, txid, userID, reqHash string) (reservedTxid string, existing *wallet.PixDeposit, conflict *problem.Problem, err error)
 	UpdateDepositStatus(ctx context.Context, txid, status, e2eID string) error
 	UpdateDepositPayer(ctx context.Context, txid, payerCPF, payerName string) error
+	ListPendingDepositsOlderThan(ctx context.Context, cutoff time.Time, limit int) ([]wallet.PixDeposit, error)
+}
+
+// WithdrawalStore owns withdrawal state-machine persistence.
+type WithdrawalStore interface {
 	PutWithdrawal(ctx context.Context, w *wallet.Withdrawal) error
 	GetWithdrawal(ctx context.Context, withdrawalID string) (*wallet.Withdrawal, error)
 	UpdateWithdrawal(ctx context.Context, withdrawalID string, updates map[string]any) error
 	ListProcessingWithdrawals(ctx context.Context, limit int) ([]wallet.Withdrawal, error)
-	ListPendingDepositsOlderThan(ctx context.Context, cutoff time.Time, limit int) ([]wallet.PixDeposit, error)
+}
+
+// HoldStore owns the game-funds reservation lifecycle.
+type HoldStore interface {
 	CreateHold(ctx context.Context, holdID, walletID, userID string, amount int64, tableRef, idemKey, reqHash string) (*wallet.Hold, bool, error)
 	GetHold(ctx context.Context, holdID string) (*wallet.Hold, error)
 	UpdateHoldStatus(ctx context.Context, holdID, fromStatus, toStatus string) (bool, error)
@@ -76,17 +99,45 @@ type Repo interface {
 	CashoutHoldsAtomic(ctx context.Context, walletID, userID string, amount int64, tableRef string, holds []*wallet.Hold, idemKey, reqHash string) (*wallet.LedgerEntry, bool, error)
 	ScanStaleHolds(ctx context.Context, cutoff time.Time, limit int) ([]wallet.Hold, error)
 	ListOpenHoldsForWallet(ctx context.Context, walletID string, limit int) ([]wallet.Hold, error)
-	// AnyDebitSince/AmountAtSK back §9.2's refund eligibility rule and §9.1a's
-	// reversal — reused verbatim by ReverseSandboxGamePurchase/
-	// RefundSandboxPurchase.
-	AnyDebitSince(ctx context.Context, walletID, sinceSK string) (bool, error)
-	AmountAtSK(ctx context.Context, walletID, sk string) (int64, error)
+}
+
+// Repo composes the persistence capabilities WalletService orchestrates. The
+// smaller interfaces keep collaborators reusable by flows that need only one
+// capability, while retaining the existing constructor contract.
+type Repo interface {
+	WalletStore
+	LedgerStore
+	DepositStore
+	WithdrawalStore
+	HoldStore
 }
 
 // Locker is the per-wallet lock surface.
 type Locker interface {
 	Acquire(ctx context.Context, walletID string) (func(), bool, error)
 	AcquireOrdered(ctx context.Context, walletIDs ...string) (func(), bool, error)
+}
+
+func acquireWallet(ctx context.Context, locker Locker, walletID string) (func(), error) {
+	release, acquired, err := locker.Acquire(ctx, walletID)
+	if err != nil {
+		return nil, err
+	}
+	if !acquired {
+		return nil, problem.WalletBusy()
+	}
+	return release, nil
+}
+
+func acquireWallets(ctx context.Context, locker Locker, walletIDs ...string) (func(), error) {
+	release, acquired, err := locker.AcquireOrdered(ctx, walletIDs...)
+	if err != nil {
+		return nil, err
+	}
+	if !acquired {
+		return nil, problem.WalletBusy()
+	}
+	return release, nil
 }
 
 // KYCClient is the account KYC surface.
@@ -649,12 +700,9 @@ func (s *WalletService) ConfirmDeposit(ctx context.Context, txid, payerCPF, paye
 		return s.rejectMismatch(ctx, dep, charge)
 	}
 
-	release, ok, err := s.lock.Acquire(ctx, dep.WalletID)
+	release, err := acquireWallet(ctx, s.lock, dep.WalletID)
 	if err != nil {
 		return err
-	}
-	if !ok {
-		return problem.WalletBusy()
 	}
 	defer release()
 
@@ -767,12 +815,9 @@ func (s *WalletService) ProcessMedClawback(ctx context.Context, providerAccountI
 	if err != nil {
 		return err
 	}
-	release, ok, err := s.lock.Acquire(ctx, realw.WalletID)
+	release, err := acquireWallet(ctx, s.lock, realw.WalletID)
 	if err != nil {
 		return err
-	}
-	if !ok {
-		return problem.WalletBusy()
 	}
 	defer release()
 
@@ -915,12 +960,9 @@ func (s *WalletService) processDepositRefund(ctx context.Context, dep *wallet.Pi
 // failure (balance already spent) never fails silently: it flags the deposit
 // for manual reconciliation and raises an alarm (Invariant 12).
 func (s *WalletService) reverseDeposit(ctx context.Context, dep *wallet.PixDeposit, r pix.Refund) error {
-	release, ok, err := s.lock.Acquire(ctx, dep.WalletID)
+	release, err := acquireWallet(ctx, s.lock, dep.WalletID)
 	if err != nil {
 		return err
-	}
-	if !ok {
-		return problem.WalletBusy()
 	}
 	defer release()
 
@@ -945,20 +987,12 @@ func (s *WalletService) reverseDeposit(ctx context.Context, dep *wallet.PixDepos
 // the deposit; the ledger credit already committed). A nil broadcaster (e.g.
 // cmd/reconcile, unit tests) is a silent no-op.
 func (s *WalletService) broadcastDepositConfirmed(ctx context.Context, userID, walletID, txid string, amount int64) {
-	if s.broadcaster == nil {
-		return
-	}
-	payload, err := json.Marshal(map[string]any{
-		"type":      "deposit_confirmed",
+	s.broadcastEvent(ctx, userID, eventDepositConfirmed, map[string]any{
+		"type":      eventDepositConfirmed,
 		"wallet_id": walletID,
 		"txid":      txid,
 		"amount":    amount,
 	})
-	if err != nil {
-		slog.Error("broadcast deposit_confirmed: marshal failed", "user_id", userID, "err", err)
-		return
-	}
-	s.broadcaster.Broadcast(ctx, userID, payload)
 }
 
 // broadcastWithdrawal pushes a real-time withdrawal-outcome event to the
@@ -966,14 +1000,18 @@ func (s *WalletService) broadcastDepositConfirmed(ctx context.Context, userID, w
 // broadcastDepositConfirmed. Shared by the synchronous Withdraw path and the
 // async reconciliation job (reconcile.go), so both notify the same way.
 func (s *WalletService) broadcastWithdrawal(ctx context.Context, userID, eventType, withdrawalID string, amount int64) {
-	if s.broadcaster == nil {
-		return
-	}
-	payload, err := json.Marshal(map[string]any{
+	s.broadcastEvent(ctx, userID, eventType, map[string]any{
 		"type":          eventType,
 		"withdrawal_id": withdrawalID,
 		"amount":        amount,
 	})
+}
+
+func (s *WalletService) broadcastEvent(ctx context.Context, userID, eventType string, event any) {
+	if s.broadcaster == nil {
+		return
+	}
+	payload, err := json.Marshal(event)
 	if err != nil {
 		slog.Error("broadcast "+eventType+": marshal failed", "user_id", userID, "err", err)
 		return
@@ -1045,12 +1083,9 @@ func (s *WalletService) executeWithdrawal(ctx context.Context, userID string, re
 	}
 	pixKey := kyc.CPF
 
-	release, ok, err := s.lock.Acquire(ctx, realw.WalletID)
+	release, err := acquireWallet(ctx, s.lock, realw.WalletID)
 	if err != nil {
 		return nil, err
-	}
-	if !ok {
-		return nil, problem.WalletBusy()
 	}
 	released := false
 	defer func() {
@@ -1163,7 +1198,7 @@ func (s *WalletService) executeWithdrawal(ctx context.Context, userID string, re
 	if err := s.repo.UpdateWithdrawal(ctx, withdrawalID, map[string]any{"status": wallet.WithdrawCompleted, "e2e_id": res.E2EID}); err != nil {
 		return nil, err
 	}
-	s.broadcastWithdrawal(ctx, userID, "withdraw_completed", withdrawalID, amount)
+	s.broadcastWithdrawal(ctx, userID, eventWithdrawalComplete, withdrawalID, amount)
 	return w, nil
 }
 
@@ -1214,12 +1249,9 @@ func (s *WalletService) ringTransfer(ctx context.Context, from, to *wallet.Walle
 	if err := s.requireNotFrozen(ctx, from.UserID); err != nil {
 		return nil, nil, err
 	}
-	release, ok, err := s.lock.AcquireOrdered(ctx, from.WalletID, to.WalletID)
+	release, err := acquireWallets(ctx, s.lock, from.WalletID, to.WalletID)
 	if err != nil {
 		return nil, nil, err
-	}
-	if !ok {
-		return nil, nil, problem.WalletBusy()
 	}
 	defer release()
 
@@ -1412,12 +1444,9 @@ func (s *WalletService) sandboxOp(ctx context.Context, userID string, amount int
 	if err != nil {
 		return nil, err
 	}
-	release, ok, err := s.lock.Acquire(ctx, sandbox.WalletID)
+	release, err := acquireWallet(ctx, s.lock, sandbox.WalletID)
 	if err != nil {
 		return nil, err
-	}
-	if !ok {
-		return nil, problem.WalletBusy()
 	}
 	defer release()
 
@@ -1446,12 +1475,9 @@ func (s *WalletService) DebitReal(ctx context.Context, userID string, amount int
 	if err != nil {
 		return nil, err
 	}
-	release, ok, err := s.lock.Acquire(ctx, realw.WalletID)
+	release, err := acquireWallet(ctx, s.lock, realw.WalletID)
 	if err != nil {
 		return nil, err
-	}
-	if !ok {
-		return nil, problem.WalletBusy()
 	}
 	defer release()
 
@@ -1493,12 +1519,9 @@ func (s *WalletService) HoldGame(ctx context.Context, userID string, amount int6
 			return nil, problem.AccountBlocked()
 		}
 	}
-	release, ok, err := s.lock.Acquire(ctx, game.WalletID)
+	release, err := acquireWallet(ctx, s.lock, game.WalletID)
 	if err != nil {
 		return nil, err
-	}
-	if !ok {
-		return nil, problem.WalletBusy()
 	}
 	defer release()
 
@@ -1532,12 +1555,9 @@ func (s *WalletService) ReleaseHold(ctx context.Context, userID, holdID, idemKey
 		return h, nil // already resolved — idempotent no-op
 	}
 
-	release, ok, err := s.lock.Acquire(ctx, h.WalletID)
+	release, err := acquireWallet(ctx, s.lock, h.WalletID)
 	if err != nil {
 		return nil, err
-	}
-	if !ok {
-		return nil, problem.WalletBusy()
 	}
 	defer release()
 
@@ -1568,12 +1588,9 @@ func (s *WalletService) CashoutGame(ctx context.Context, userID string, amount i
 	if err := s.requireNotFrozen(ctx, userID); err != nil { // plan §7.1 — money-out path
 		return nil, err
 	}
-	release, ok, err := s.lock.Acquire(ctx, game.WalletID)
+	release, err := acquireWallet(ctx, s.lock, game.WalletID)
 	if err != nil {
 		return nil, err
-	}
-	if !ok {
-		return nil, problem.WalletBusy()
 	}
 	defer release()
 
