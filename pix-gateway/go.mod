@@ -9,7 +9,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.73.2
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
-	gopkg.aoctech.app/api-commons v1.4.0
+	gopkg.aoctech.app/api-commons v1.4.1
 	gopkg.aoctech.app/wallet/rpc-contract v0.0.0
 )
 
@@ -27,7 +27,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.33.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.38.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.45.2 // indirect
-	github.com/aws/smithy-go v1.27.5 // indirect
+	github.com/aws/smithy-go v1.27.6 // indirect
 	github.com/valkey-io/valkey-go v1.0.76 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 )
