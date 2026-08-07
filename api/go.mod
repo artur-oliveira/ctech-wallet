@@ -4,13 +4,13 @@ go 1.26
 
 require (
 	github.com/aws/aws-lambda-go v1.54.0
-	github.com/aws/aws-sdk-go-v2 v1.43.2
+	github.com/aws/aws-sdk-go-v2 v1.43.3
 	github.com/aws/aws-sdk-go-v2/config v1.32.33
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.32
 	github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue v1.20.56
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.62.2
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.101.0
-	github.com/aws/aws-sdk-go-v2/service/ssm v1.73.2
+	github.com/aws/aws-sdk-go-v2/service/ssm v1.73.3
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/fasthttp/websocket v1.5.12
 	github.com/go-playground/validator/v10 v10.30.3
@@ -30,8 +30,8 @@ require (
 	github.com/andybalholm/brotli v1.2.2 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.15 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.33 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.33 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.33 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.34 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.34 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.34 // indirect
 	github.com/aws/aws-sdk-go-v2/service/dynamodbstreams v1.36.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.14 // indirect
