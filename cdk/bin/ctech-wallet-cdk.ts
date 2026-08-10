@@ -54,6 +54,12 @@ const INTER_PIX_KEY =
 
 const env = {account: AWS_ACCOUNT, region: AWS_REGION};
 
+// Cost allocation tags — applied to every resource in every stack.
+// Requires manual activation as a cost allocation tag in the Billing console
+// (Billing > Cost Allocation Tags) before it appears as a Cost Explorer group-by key.
+cdk.Tags.of(app).add('Project', 'ctech-wallet');
+cdk.Tags.of(app).add('Environment', ENVIRONMENT);
+
 const id = (name: string) =>
     `CtechWallet-${ENVIRONMENT.charAt(0).toUpperCase() + ENVIRONMENT.slice(1)}-${name}`;
 
