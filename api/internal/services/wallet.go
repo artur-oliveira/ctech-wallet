@@ -292,6 +292,7 @@ type WalletService struct {
 	baas             BaasProvider         // defaults to noopBaasProvider; see SetBaas
 	custodyEnabled   bool                 // defaults false; see SetCustodyEnabled — matches config.AsaasCustodyEnabled's own default
 	sandboxPurchases SandboxPurchaseRepo  // required for PurchaseSandboxDirect/RefundSandboxPurchase/ConfirmSandboxPurchase; see SetSandboxPurchases
+	productPurchases ProductPurchaseRepo  // required for PurchaseProductDirect/ConfirmProductPurchase/RefundProductPurchase; see SetProductPurchases
 	m2mClients       map[string]M2MClient // AZP → webhook config; nil/missing entry means "don't notify"; see SetM2MClients
 }
 
