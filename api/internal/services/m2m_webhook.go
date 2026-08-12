@@ -39,7 +39,12 @@ type m2mWebhookPayload struct {
 	SKU            string `json:"sku"`
 	Status         string `json:"status"`
 	AmountExpected int64  `json:"amount_expected"`
-	CreditsGranted int64  `json:"credits_granted"`
+	CreditsGranted int64  `json:"credits_granted,omitempty"`
+	// Kind distinguishes a sandbox-credits sale ("sandbox") from a generic
+	// product sale ("product") — lets a receiver registered for both flows
+	// (poker will be) route the callback without inspecting the SKU
+	// namespace (docs/specs/2026-08-12-product-purchase-skus.md).
+	Kind string `json:"kind,omitempty"`
 }
 
 // dispatchM2MWebhook notifies p.RequestingClient's registered webhook URL that
@@ -64,7 +69,7 @@ func (s *WalletService) dispatchM2MWebhook(ctx context.Context, p *wallet.Sandbo
 
 	body, err := json.Marshal(m2mWebhookPayload{
 		PurchaseID: p.PurchaseID, UserID: p.UserID, SKU: p.SKU, Status: p.Status,
-		AmountExpected: p.AmountExpected, CreditsGranted: p.CreditsGranted,
+		AmountExpected: p.AmountExpected, CreditsGranted: p.CreditsGranted, Kind: "sandbox",
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "m2m webhook: marshal failed", "purchase_id", p.PurchaseID, "err", err)
@@ -109,6 +114,67 @@ func (s *WalletService) dispatchM2MWebhook(ctx context.Context, p *wallet.Sandbo
 
 func (s *WalletService) markM2MWebhook(ctx context.Context, purchaseID, status string) {
 	if err := s.sandboxPurchases.Update(ctx, purchaseID, map[string]any{"webhook_status": status}); err != nil {
+		slog.ErrorContext(ctx, "m2m webhook: failed to record delivery status", "purchase_id", purchaseID, "err", err)
+	}
+}
+
+// dispatchM2MWebhookProduct mirrors dispatchM2MWebhook exactly but for a
+// *wallet.ProductPurchase — same delivery/retry machinery, Kind: "product"
+// lets a receiver registered for both flows route without inspecting the SKU
+// namespace.
+func (s *WalletService) dispatchM2MWebhookProduct(ctx context.Context, p *wallet.ProductPurchase) {
+	if p.RequestingClient == "" {
+		return
+	}
+	client, ok := s.m2mClients[p.RequestingClient]
+	if !ok || client.WebhookURL == "" {
+		slog.ErrorContext(ctx, "m2m webhook: no registered webhook for client", "client", p.RequestingClient, "purchase_id", p.PurchaseID)
+		s.markM2MWebhookProduct(ctx, p.PurchaseID, wallet.WebhookFailed)
+		return
+	}
+
+	body, err := json.Marshal(m2mWebhookPayload{
+		PurchaseID: p.PurchaseID, UserID: p.UserID, SKU: p.SKU, Status: p.Status,
+		AmountExpected: p.AmountExpected, Kind: "product",
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "m2m webhook: marshal failed", "purchase_id", p.PurchaseID, "err", err)
+		s.markM2MWebhookProduct(ctx, p.PurchaseID, wallet.WebhookFailed)
+		return
+	}
+
+	mac := hmac.New(sha256.New, []byte(client.HMACSecret))
+	mac.Write(body)
+	sig := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+
+	reqCtx, cancel := context.WithTimeout(ctx, m2mWebhookTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, client.WebhookURL, bytes.NewReader(body))
+	if err != nil {
+		slog.ErrorContext(ctx, "m2m webhook: build request failed", "purchase_id", p.PurchaseID, "err", err)
+		s.markM2MWebhookProduct(ctx, p.PurchaseID, wallet.WebhookFailed)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(HeaderM2MWebhookSignature, sig)
+
+	resp, err := m2mWebhookHTTPClient.Do(req)
+	if err != nil {
+		slog.WarnContext(ctx, "m2m webhook: delivery failed, will retry via reconcile sweep", "purchase_id", p.PurchaseID, "client", p.RequestingClient, "err", err)
+		s.markM2MWebhookProduct(ctx, p.PurchaseID, wallet.WebhookFailed)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		slog.WarnContext(ctx, "m2m webhook: non-2xx response, will retry via reconcile sweep", "purchase_id", p.PurchaseID, "client", p.RequestingClient, "status", resp.StatusCode)
+		s.markM2MWebhookProduct(ctx, p.PurchaseID, wallet.WebhookFailed)
+		return
+	}
+	s.markM2MWebhookProduct(ctx, p.PurchaseID, wallet.WebhookDelivered)
+}
+
+func (s *WalletService) markM2MWebhookProduct(ctx context.Context, purchaseID, status string) {
+	if err := s.productPurchases.Update(ctx, purchaseID, map[string]any{"webhook_status": status}); err != nil {
 		slog.ErrorContext(ctx, "m2m webhook: failed to record delivery status", "purchase_id", purchaseID, "err", err)
 	}
 }

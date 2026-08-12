@@ -111,6 +111,49 @@ func TestPurchaseProductDirectIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestConfirmProductPurchaseCreditsNothing(t *testing.T) {
+	svc, repo, fakePix := newTestWalletServiceForProduct()
+	ctx := context.Background()
+
+	p, _, err := svc.PurchaseProductDirect(ctx, "user-1", "poker_reaction_cold", "idem-2", "poker")
+	if err != nil {
+		t.Fatalf("purchase: %v", err)
+	}
+	fakePix.StageCharge(p.PurchaseID, p.AmountExpected, pix.ChargeCompleted, "", "e2e-"+p.PurchaseID)
+
+	if err := svc.ConfirmProductPurchase(ctx, p.PurchaseID, false); err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
+	confirmed, err := repo.Get(ctx, p.PurchaseID)
+	if err != nil || confirmed.Status != wallet.ProductPurchaseConfirmed {
+		t.Fatalf("expected confirmed status, got %+v (err=%v)", confirmed, err)
+	}
+
+	// Idempotent replay: already-confirmed is a no-op, not an error.
+	if err := svc.ConfirmProductPurchase(ctx, p.PurchaseID, false); err != nil {
+		t.Fatalf("replay confirm: %v", err)
+	}
+}
+
+func TestConfirmProductPurchaseAmountMismatchStaysPending(t *testing.T) {
+	svc, repo, fakePix := newTestWalletServiceForProduct()
+	ctx := context.Background()
+
+	p, _, err := svc.PurchaseProductDirect(ctx, "user-1", "poker_reaction_cold", "idem-3", "poker")
+	if err != nil {
+		t.Fatalf("purchase: %v", err)
+	}
+	fakePix.StageCharge(p.PurchaseID, p.AmountExpected+1, pix.ChargeCompleted, "", "e2e-"+p.PurchaseID) // wrong amount
+
+	if err := svc.ConfirmProductPurchase(ctx, p.PurchaseID, false); err == nil {
+		t.Fatal("expected an error on amount mismatch")
+	}
+	stillPending, err := repo.Get(ctx, p.PurchaseID)
+	if err != nil || stillPending.Status != wallet.ProductPurchasePending {
+		t.Fatalf("expected purchase to stay pending for manual reconciliation, got %+v (err=%v)", stillPending, err)
+	}
+}
+
 func TestPurchaseProductDirectUnknownSKU(t *testing.T) {
 	svc, _, _ := newTestWalletServiceForProduct()
 	_, _, err := svc.PurchaseProductDirect(context.Background(), "user-1", "no-such-sku", "idem-1", "poker")

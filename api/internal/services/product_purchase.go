@@ -98,6 +98,48 @@ func (s *WalletService) PurchaseProductDirect(ctx context.Context, userID, sku, 
 	return p, charge, nil
 }
 
+// ConfirmProductPurchase re-queries the PIX charge (never trusts the webhook
+// body — Invariant #11), and on success just transitions pending→confirmed
+// and dispatches the M2M webhook. No wallet lock, no Credit, no ledger entry
+// — this is the entire generalization versus ConfirmSandboxPurchase
+// (docs/specs/2026-08-12-product-purchase-skus.md).
+func (s *WalletService) ConfirmProductPurchase(ctx context.Context, txid string, sweep bool) error {
+	p, err := s.productPurchases.Get(ctx, txid)
+	if err != nil {
+		return err
+	}
+	if p == nil {
+		return nil
+	}
+	if p.Status != wallet.ProductPurchasePending {
+		return nil
+	}
+
+	charge, err := s.pix.QueryCharge(ctx, txid)
+	if err != nil {
+		return err
+	}
+	if charge.Status != pix.ChargeCompleted {
+		return nil
+	}
+	if charge.Amount != p.AmountExpected {
+		slog.Error("ALARM product purchase amount mismatch", "purchase_id", txid, "expected", p.AmountExpected, "paid", charge.Amount)
+		return problem.InternalServer("valor pago não corresponde ao esperado; reconciliação manual necessária")
+	}
+
+	changed, err := s.productPurchases.TransitionStatus(ctx, txid, wallet.ProductPurchasePending, wallet.ProductPurchaseConfirmed)
+	if err != nil {
+		return err
+	}
+	if !changed {
+		return nil // lost a race with a concurrent confirm — already handled
+	}
+	p.Status = wallet.ProductPurchaseConfirmed
+	p.E2EID = charge.E2EID
+	s.dispatchM2MWebhookProduct(ctx, p)
+	return nil
+}
+
 // SetProductPurchases wires the generic product-purchase repository after
 // construction — same setter pattern as SetSandboxPurchases. Unset,
 // PurchaseProductDirect/ConfirmProductPurchase/RefundProductPurchase panic on
