@@ -140,6 +140,61 @@ func (s *WalletService) ConfirmProductPurchase(ctx context.Context, txid string,
 	return nil
 }
 
+// RefundProductPurchase reverses a confirmed purchase. No usage-eligibility
+// check here — that is the caller's domain fact (docs/specs/2026-08-12-
+// product-purchase-skus.md Non-goals), unlike RefundSandboxPurchase's
+// AnyDebitSince check. requestingClient isolates cross-client access: a
+// purchase opened by a different client (or the user-direct route) is
+// reported as not-found, never leaked.
+func (s *WalletService) RefundProductPurchase(ctx context.Context, userID, purchaseID, idemKey, requestingClient string) (*wallet.ProductPurchase, error) {
+	p, err := s.productPurchases.Get(ctx, purchaseID)
+	if err != nil {
+		return nil, err
+	}
+	if p == nil || p.UserID != userID || (requestingClient != "" && p.RequestingClient != requestingClient) {
+		return nil, problem.NotFound("compra não encontrada")
+	}
+	if p.Status == wallet.ProductPurchaseRefunded {
+		return p, nil
+	}
+	if p.Status != wallet.ProductPurchaseConfirmed {
+		return nil, problem.Conflict("compra ainda não confirmada")
+	}
+
+	if _, err := s.pix.Refund(ctx, p.E2EID, p.AmountExpected, "product_refund#"+purchaseID); err != nil {
+		slog.Error("ALARM product purchase refund failed", "purchase_id", purchaseID, "e2e_id", p.E2EID, "err", err)
+		return nil, problem.InternalServer("estorno da compra falhou; nova tentativa agendada")
+	}
+	changed, err := s.productPurchases.TransitionStatus(ctx, purchaseID, wallet.ProductPurchaseConfirmed, wallet.ProductPurchaseRefunded)
+	if err != nil {
+		return nil, err
+	}
+	if !changed {
+		current, err := s.productPurchases.Get(ctx, purchaseID)
+		if err != nil {
+			return nil, err
+		}
+		return current, nil
+	}
+	p.Status = wallet.ProductPurchaseRefunded
+	s.dispatchM2MWebhookProduct(ctx, p)
+	return p, nil
+}
+
+// GetProductPurchase is the M2M poll endpoint's read path — never the
+// webhook body alone. Ownership enforced identically to
+// RefundProductPurchase.
+func (s *WalletService) GetProductPurchase(ctx context.Context, purchaseID, requestingClient string) (*wallet.ProductPurchase, error) {
+	p, err := s.productPurchases.Get(ctx, purchaseID)
+	if err != nil {
+		return nil, err
+	}
+	if p == nil || p.RequestingClient != requestingClient {
+		return nil, problem.NotFound("compra não encontrada")
+	}
+	return p, nil
+}
+
 // SetProductPurchases wires the generic product-purchase repository after
 // construction — same setter pattern as SetSandboxPurchases. Unset,
 // PurchaseProductDirect/ConfirmProductPurchase/RefundProductPurchase panic on

@@ -154,6 +154,67 @@ func TestConfirmProductPurchaseAmountMismatchStaysPending(t *testing.T) {
 	}
 }
 
+func TestRefundProductPurchaseHappyPath(t *testing.T) {
+	svc, _, fakePix := newTestWalletServiceForProduct()
+	ctx := context.Background()
+
+	p, _, err := svc.PurchaseProductDirect(ctx, "user-1", "poker_reaction_cold", "idem-4", "poker")
+	if err != nil {
+		t.Fatalf("purchase: %v", err)
+	}
+	fakePix.StageCharge(p.PurchaseID, p.AmountExpected, pix.ChargeCompleted, "", "e2e-"+p.PurchaseID)
+	if err := svc.ConfirmProductPurchase(ctx, p.PurchaseID, false); err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
+
+	refunded, err := svc.RefundProductPurchase(ctx, "user-1", p.PurchaseID, "idem-refund-1", "poker")
+	if err != nil {
+		t.Fatalf("refund: %v", err)
+	}
+	if refunded.Status != wallet.ProductPurchaseRefunded {
+		t.Fatalf("expected refunded status, got %+v", refunded)
+	}
+
+	// Idempotent replay.
+	again, err := svc.RefundProductPurchase(ctx, "user-1", p.PurchaseID, "idem-refund-2", "poker")
+	if err != nil || again.Status != wallet.ProductPurchaseRefunded {
+		t.Fatalf("replay refund: %v, %+v", err, again)
+	}
+}
+
+func TestRefundProductPurchaseCrossClientNotFound(t *testing.T) {
+	svc, _, fakePix := newTestWalletServiceForProduct()
+	ctx := context.Background()
+
+	p, _, err := svc.PurchaseProductDirect(ctx, "user-1", "poker_reaction_cold", "idem-5", "poker")
+	if err != nil {
+		t.Fatalf("purchase: %v", err)
+	}
+	fakePix.StageCharge(p.PurchaseID, p.AmountExpected, pix.ChargeCompleted, "", "e2e-"+p.PurchaseID)
+	if err := svc.ConfirmProductPurchase(ctx, p.PurchaseID, false); err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
+
+	if _, err := svc.RefundProductPurchase(ctx, "user-1", p.PurchaseID, "idem-x", "some-other-client"); err == nil {
+		t.Fatal("expected an error for a purchase opened by a different client")
+	}
+	if _, err := svc.GetProductPurchase(ctx, p.PurchaseID, "some-other-client"); err == nil {
+		t.Fatal("expected an error (not-found) for a purchase opened by a different client")
+	}
+}
+
+func TestRefundProductPurchaseNotYetConfirmed(t *testing.T) {
+	svc, _, _ := newTestWalletServiceForProduct()
+	ctx := context.Background()
+	p, _, err := svc.PurchaseProductDirect(ctx, "user-1", "poker_reaction_cold", "idem-6", "poker")
+	if err != nil {
+		t.Fatalf("purchase: %v", err)
+	}
+	if _, err := svc.RefundProductPurchase(ctx, "user-1", p.PurchaseID, "idem-refund-x", "poker"); err == nil {
+		t.Fatal("expected a conflict refunding a pending (never-confirmed) purchase")
+	}
+}
+
 func TestPurchaseProductDirectUnknownSKU(t *testing.T) {
 	svc, _, _ := newTestWalletServiceForProduct()
 	_, _, err := svc.PurchaseProductDirect(context.Background(), "user-1", "no-such-sku", "idem-1", "poker")
