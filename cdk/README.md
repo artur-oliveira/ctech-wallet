@@ -1,5 +1,9 @@
 # ctech-wallet CDK
 
+> HAProxy migration: the API ASG no longer creates an ALB target group or listener
+> rule. `ctech-lbalancer` discovers it through its `wallet` route; the retained
+> `/ctech/{env}/network/alb-sg-id` identifies the shared edge trusted by the API SG.
+
 AWS CDK (TypeScript) infrastructure for the wallet. Deploys: DynamoDB tables,
 the API on an EC2 ASG behind an ALB, the reconcile Lambda, the `pix-gateway`
 Lambdas, the static frontend (S3 + CloudFront), and the GitHub‑Actions OIDC

@@ -1,7 +1,8 @@
 import * as cdk from 'aws-cdk-lib';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as autoscaling from 'aws-cdk-lib/aws-autoscaling';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
-import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import {Construct} from 'constructs';
@@ -10,11 +11,9 @@ import {
   addDualStackSsmAgentCommands,
   addRealipRefreshCommands,
   addSwapCommands,
-  PrivateIpv4Ec2Service,
 } from '@aoctech/cdk';
 import {Environment} from './types';
 import {
-  ALB_LISTENER_PRIORITY,
   API_CURRENT_ARTIFACT_KEY,
   APP_PORT,
   asgName,
@@ -52,10 +51,10 @@ interface ApiStackProps extends cdk.StackProps {
 
 export class ApiStack extends cdk.Stack {
   public readonly asgName: string;
-
+  
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
-
+    
     const {
       environment,
       vpcId,
@@ -66,35 +65,27 @@ export class ApiStack extends cdk.Stack {
       logsBucketName,
       pixGatewayFunctionName,
     } = props;
-
+    
     const shared = SSM_SHARED(environment);
     const wallet = SSM_WALLET(environment);
     const account = SSM_ACCOUNT(environment);
-
+    
     // ── Shared infrastructure from ctech-cdk ──────────────────────────────────
     const vpc = ec2.Vpc.fromLookup(this, 'Vpc', {vpcId});
-
+    
     const albSgId = ssm.StringParameter.valueForStringParameter(this, shared.albSgId);
-    const albSg = ec2.SecurityGroup.fromSecurityGroupId(this, 'AlbSg', albSgId);
-
-    const httpsListenerArn = ssm.StringParameter.valueForStringParameter(
-      this, shared.httpsListenerArn,
-    );
-    const httpsListener = elbv2.ApplicationListener.fromApplicationListenerAttributes(
-      this, 'HttpsListener',
-      {listenerArn: httpsListenerArn, securityGroup: albSg},
-    );
-
+    const edgeSg = ec2.SecurityGroup.fromSecurityGroupId(this, 'EdgeSg', albSgId);
+    
     const isProd = environment === 'prod';
-    const svcName = `${SERVICE}-v2`
+    const svcName = `${SERVICE}`
     this.asgName = asgName(environment);
     const logRetention: logs.RetentionDays = isProd ? logs.RetentionDays.ONE_MONTH : logs.RetentionDays.ONE_WEEK;
     const logGroupApp = `/${svcName}/${environment}/app`;
     const logGroupNginx = `/${svcName}/${environment}/nginx`;
-
+    
     // ── User Data ─────────────────────────────────────────────────────────────
     const userData = ec2.UserData.forLinux();
-
+    
     userData.addCommands(
       // ── Packages + directories ───────────────────────────────────────────────
       'dnf install -y nginx amazon-cloudwatch-agent amazon-ssm-agent cronie unzip jq',
@@ -106,10 +97,10 @@ export class ApiStack extends cdk.Stack {
       'systemctl enable crond',
       'systemctl start crond',
     );
-
+    
     addSwapCommands(userData);
     addDualStackSsmAgentCommands(userData);
-
+    
     userData.addCommands(
       // ── nginx: listens :8080, proxies to app :8000 ───────────────────────────
       // Quoted delimiter prevents bash from expanding nginx $variables.
@@ -263,16 +254,16 @@ export class ApiStack extends cdk.Stack {
       `}`,
       `NGINX`,
     );
-
+    
     addRealipRefreshCommands(userData, vpc.vpcCidrBlock);
-
+    
     userData.addCommands(
       'systemctl enable nginx',
       'systemctl start nginx',
     );
-
+    
     addCloudWatchAgentDualStackOverride(userData);
-
+    
     userData.addCommands(
       // {instance_id} is resolved by the CW agent at runtime, not by bash.
       `cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << 'CWA'`,
@@ -291,7 +282,7 @@ export class ApiStack extends cdk.Stack {
       `}`,
       `CWA`,
       `/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json -s`,
-
+      
       // ── Static env file (loaded by systemd EnvironmentFile=) ─────────────────
       // CDK tokens are substituted at synthesis time; bash does not expand them.
       // Only non-secret values live here. Secrets come from SSM in start.sh.
@@ -308,7 +299,7 @@ export class ApiStack extends cdk.Stack {
       `TRUSTED_PROXIES=127.0.0.1`,
       `CORS_ALLOWED_ORIGINS=https://${appDomainName}`,
       `ENV`,
-
+      
       // ── start.sh: fetches secrets from SSM then exec-replaces into the binary
       // $ENVIRONMENT comes from systemd EnvironmentFile at runtime.
       //
@@ -335,7 +326,7 @@ export class ApiStack extends cdk.Stack {
       `exec /opt/app/current/app`,
       `START`,
       `chmod +x /opt/app/start.sh`,
-
+      
       // ── systemd app.service ──────────────────────────────────────────────────
       `cat > /etc/systemd/system/app.service << 'SVC'`,
       `[Unit]`,
@@ -362,7 +353,7 @@ export class ApiStack extends cdk.Stack {
       `SVC`,
       `systemctl daemon-reload`,
       `systemctl enable app`,
-
+      
       // ── deploy.sh: called by SSM RunCommand from GitHub Actions ──────────────
       // Expects a zip containing a pre-built `app` binary (linux/arm64).
       // __BUCKET__ is replaced by sed so bash $variables are not expanded at write
@@ -401,7 +392,7 @@ export class ApiStack extends cdk.Stack {
       `DEPLOY`,
       `sed -i 's|__BUCKET__|${deploymentsBucketName}|g' /opt/app/deploy.sh`,
       `chmod +x /opt/app/deploy.sh`,
-
+      
       // ── upload-logs.sh: bundles rotated logs and ships to S3 ─────────────────
       // IMDSv2 token required (requireImdsv2 is enforced on this instance).
       `cat > /opt/app/upload-logs.sh << 'UPLOAD'`,
@@ -422,7 +413,7 @@ export class ApiStack extends cdk.Stack {
       `UPLOAD`,
       `sed -i 's|__LOG_BUCKET__|${logsBucketName}|g' /opt/app/upload-logs.sh`,
       `chmod +x /opt/app/upload-logs.sh`,
-
+      
       // ── logrotate: daily, gzip, copytruncate, ship to S3 ─────────────────────
       `cat > /etc/logrotate.d/${SERVICE} << 'LOGROTATE'`,
       `/var/log/app/app.log`,
@@ -442,52 +433,82 @@ export class ApiStack extends cdk.Stack {
       `    endscript`,
       `}`,
       `LOGROTATE`,
-
+      
       // ── Bootstrap: deploy current.zip if it already exists in S3 ─────────────
       `aws s3api head-object --bucket "${deploymentsBucketName}" --key "${API_CURRENT_ARTIFACT_KEY}" 2>/dev/null && /opt/app/deploy.sh ${API_CURRENT_ARTIFACT_KEY} || echo "No bootstrap artifact, waiting for first deploy"`,
     );
-
-    // ── Shared no-NAT-Gateway EC2/ASG pattern (@aoctech/cdk) ───────────────────
-    // Priority must be unique across services: 10=dfe, 20=accounts, 30=wallet.
-    const service = new PrivateIpv4Ec2Service(this, 'ApiService', {
+    
+    // HAProxy discovers this ASG through its ctech-lbalancer bootstrap route.
+    const serviceSg = new ec2.SecurityGroup(this, 'ApiServiceSg', {
       vpc,
-      albSg,
-      httpsListener,
       securityGroupName: `${environment}-${svcName}-api-sg`,
-      securityGroupDescription: 'ctech-wallet API instances',
-      appPort: NGINX_PORT,
-      instanceProfileName,
+      description: 'ctech-wallet API instances', allowAllOutbound: true, allowAllIpv6Outbound: true,
+    });
+    serviceSg.addIngressRule(edgeSg, ec2.Port.tcp(NGINX_PORT), 'HAProxy edge to app');
+    const appLogGroup = new logs.LogGroup(this, 'ApiServiceAppLogGroup', {
+      logGroupName: logGroupApp,
+      retention: logRetention,
+      removalPolicy: isProd ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY
+    });
+    const nginxLogGroup = new logs.LogGroup(this, 'ApiServiceNginxLogGroup', {
+      logGroupName: logGroupNginx,
+      retention: logRetention,
+      removalPolicy: isProd ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY
+    });
+    const launchTemplate = new ec2.LaunchTemplate(this, 'ApiServiceLaunchTemplate', {
+      launchTemplateName: `${this.asgName}-lt`,
+      instanceType: ec2.InstanceType.of(ec2.InstanceClass.T4G, ec2.InstanceSize.MICRO),
+      machineImage: ec2.MachineImage.latestAmazonLinux2023({
+        cpuType: ec2.AmazonLinuxCpuType.ARM_64,
+        edition: ec2.AmazonLinuxEdition.MINIMAL
+      }),
+      blockDevices: [{
+        deviceName: '/dev/xvda',
+        volume: ec2.BlockDeviceVolume.ebs(3, {volumeType: ec2.EbsDeviceVolumeType.GP3, deleteOnTermination: true})
+      }],
       userData,
-      logGroupAppName: logGroupApp,
-      logGroupNginxName: logGroupNginx,
-      logRetention,
-      logRemovalPolicy: isProd ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
-      metricNamespace: `CtechWallet/${environment}`,
-      targetGroupName: `${this.asgName}-tg`,
-      healthCheckPath: HEALTH_CHECK_PATH,
-      healthyHttpCodes: '200,207',
-      asgName: this.asgName,
+      instanceProfile: iam.InstanceProfile.fromInstanceProfileName(this, 'ApiServiceInstanceProfile', instanceProfileName),
+      requireImdsv2: true,
+      securityGroup: serviceSg
+    });
+    const cfnLaunchTemplate = launchTemplate.node.defaultChild as ec2.CfnLaunchTemplate;
+    cfnLaunchTemplate.addPropertyDeletionOverride('LaunchTemplateData.SecurityGroupIds');
+    cfnLaunchTemplate.addPropertyOverride('LaunchTemplateData.NetworkInterfaces', [{
+      DeviceIndex: 0,
+      Groups: [serviceSg.securityGroupId],
+      AssociatePublicIpAddress: false,
+      Ipv6AddressCount: 1
+    }]);
+    const asg = new autoscaling.AutoScalingGroup(this, 'ApiServiceASG', {
+      autoScalingGroupName: this.asgName,
+      vpc,
+      vpcSubnets: {subnetType: ec2.SubnetType.PUBLIC},
+      launchTemplate,
       minCapacity: 1,
       maxCapacity: isProd ? 3 : 1,
-      domainName,
-      listenerRulePriority: ALB_LISTENER_PRIORITY,
+      cooldown: cdk.Duration.seconds(120),
+      healthChecks: autoscaling.HealthChecks.ec2({gracePeriod: cdk.Duration.seconds(120)}),
     });
-
+    if (isProd) asg.scaleOnCpuUtilization('ApiServiceCpuTargetTracking', {
+      targetUtilizationPercent: 60,
+      cooldown: cdk.Duration.minutes(3)
+    });
+    
     // ── Outputs ───────────────────────────────────────────────────────────────
-    new cdk.CfnOutput(this, 'AsgName', {value: service.asgName, exportName: `${id}-asg-name`});
+    new cdk.CfnOutput(this, 'AsgName', {value: asg.autoScalingGroupName, exportName: `${id}-asg-name`});
     new cdk.CfnOutput(this, 'AppLogGroupName', {
-      value: service.appLogGroup.logGroupName,
+      value: appLogGroup.logGroupName,
       exportName: `${id}-app-log-group`,
     });
     new cdk.CfnOutput(this, 'NginxLogGroupName', {
-      value: service.nginxLogGroup.logGroupName,
+      value: nginxLogGroup.logGroupName,
       exportName: `${id}-nginx-log-group`,
     });
-
+    
     // slog ALARM lines (refund/reversal failures, deposit amount mismatches,
     // excess-payment refund failures) previously paged nobody — this fires a
     // CloudWatch alarm the moment one is emitted.
-    const alarmMetricFilter = service.appLogGroup.addMetricFilter('AlarmLogFilter', {
+    const alarmMetricFilter = appLogGroup.addMetricFilter('AlarmLogFilter', {
       filterPattern: logs.FilterPattern.literal('"ALARM"'),
       metricNamespace: `CtechWallet/${environment}`,
       metricName: 'AlarmLogLines',
