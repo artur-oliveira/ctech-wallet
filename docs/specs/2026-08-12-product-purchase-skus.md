@@ -115,9 +115,13 @@ All under `/v1.0/internal/wallet/product-purchase`, gated by
 ## Notify-back
 
 Reuses the existing per-client webhook registration (`/ctech-wallet/{env}/m2m-clients` SSM blob,
-`WalletService.m2mClients`) and `dispatchM2MWebhook` delivery/retry machinery unchanged. Body adds a
-`kind: "product"` field alongside the existing `kind: "sandbox"` so a receiver registered for both
-flows (poker will be) can route the callback without inspecting the SKU namespace.
+`WalletService.m2mClients`) and delivery/retry machinery (`markM2MWebhook`, `HeaderM2MWebhookSignature`)
+unchanged. `m2mWebhookPayload` (`internal/services/m2m_webhook.go`) gains a `Kind string
+\`json:"kind,omitempty"\`` field — today's dispatch sets nothing (implicitly "sandbox" to every
+existing receiver); the sandbox path is updated to set `Kind: "sandbox"` explicitly and a new
+`dispatchM2MWebhookProduct` sets `Kind: "product"` (its own payload, no `CreditsGranted`, since a
+product purchase never has one). A receiver registered for both flows (poker will be) can route the
+callback on `Kind` without inspecting the SKU namespace.
 
 ## New scope
 
