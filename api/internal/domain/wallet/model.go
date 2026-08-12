@@ -399,6 +399,39 @@ type SandboxPurchase struct {
 	TTL           int64  `dynamodbav:"expires_at,omitempty" json:"-"` // business expiry; row is retained for idempotency
 }
 
+const TableProductPurchases = "wallet_product_purchases"
+
+const (
+	GSIProductPurchaseStatus        = "gsi_product_purchase_status"
+	GSIProductPurchaseWebhookStatus = "gsi_product_purchase_webhook_status"
+)
+
+const (
+	ProductPurchasePending   = "pending"
+	ProductPurchaseConfirmed = "confirmed"
+	ProductPurchaseRefunded  = "refunded"
+)
+
+// ProductPurchase mirrors SandboxPurchase's shape minus everything about
+// credits: no CreditSK, no CreditsGranted, no ledger entry type. There is no
+// refund_pending status — a refund has nothing to resume except the PIX
+// provider call itself, which is idempotent on E2EID
+// (docs/specs/2026-08-12-product-purchase-skus.md).
+type ProductPurchase struct {
+	PurchaseID       string `dynamodbav:"pk" json:"purchase_id"`
+	UserID           string `dynamodbav:"user_id" json:"user_id"`
+	SKU              string `dynamodbav:"sku" json:"sku"`
+	AmountExpected   int64  `dynamodbav:"amount_expected" json:"amount_expected"`
+	RequestHash      string `dynamodbav:"request_hash" json:"-"`
+	Status           string `dynamodbav:"status" json:"status"`
+	E2EID            string `dynamodbav:"e2e_id,omitempty" json:"e2e_id,omitempty"`
+	RequestingClient string `dynamodbav:"requesting_client,omitempty" json:"-"`
+	WebhookStatus    string `dynamodbav:"webhook_status,omitempty" json:"-"`
+	CreatedAt        string `dynamodbav:"created_at" json:"created_at"`
+	UpdatedAt        string `dynamodbav:"updated_at" json:"updated_at"`
+	TTL              int64  `dynamodbav:"expires_at,omitempty" json:"-"`
+}
+
 // MED receivable statuses (plan §7.3).
 const (
 	MedReceivableOpen    = "open"
