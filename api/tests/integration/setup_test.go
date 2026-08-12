@@ -129,6 +129,16 @@ func createTables(ctx context.Context) error {
 			GlobalSecondaryIndexes: []dtypes.GlobalSecondaryIndex{gsi(wallet.GSIHoldStatus, "status")},
 			BillingMode:            dtypes.BillingModePayPerRequest,
 		},
+		{
+			TableName:            aws.String(table(wallet.TableProductPurchases)),
+			AttributeDefinitions: []dtypes.AttributeDefinition{s("pk"), s("status"), s("webhook_status")},
+			KeySchema:            []dtypes.KeySchemaElement{hashKey("pk")},
+			GlobalSecondaryIndexes: []dtypes.GlobalSecondaryIndex{
+				gsi(wallet.GSIProductPurchaseStatus, "status"),
+				gsi(wallet.GSIProductPurchaseWebhookStatus, "webhook_status"),
+			},
+			BillingMode: dtypes.BillingModePayPerRequest,
+		},
 	}
 	for _, in := range defs {
 		if _, err := db.CreateTable(ctx, in); err != nil {
@@ -146,7 +156,7 @@ func dropTables(ctx context.Context) error {
 	for _, t := range []string{
 		wallet.TableWallets, wallet.TableLedger, wallet.TableIdempotency,
 		wallet.TablePixDeposits, wallet.TableWithdrawals, wallet.TableUsers,
-		wallet.TableAudit, wallet.TableHolds,
+		wallet.TableAudit, wallet.TableHolds, wallet.TableProductPurchases,
 	} {
 		_, _ = db.DeleteTable(ctx, &dynamodb.DeleteTableInput{TableName: aws.String(table(t))})
 	}
