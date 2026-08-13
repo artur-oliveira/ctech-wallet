@@ -10,15 +10,16 @@ import {PixGatewayStack} from '../lib/pix-gateway-stack';
 import {OidcStack} from '../lib/oidc-stack';
 import {Environment} from '../lib/types';
 import {
-    ACCOUNTS_DOMAIN_PREFIX,
-    API_DOMAIN_PREFIX,
-    APP_DOMAIN_PREFIX,
-    AWS_ACCOUNT,
-    AWS_REGION,
-    CERT_ARN,
-    domainForEnv,
-    GITHUB_REPO_DEFAULT, PIX_CERT_ARN,
-    tablePrefix,
+  ACCOUNTS_DOMAIN_PREFIX,
+  API_DOMAIN_PREFIX,
+  APP_DOMAIN_PREFIX,
+  AWS_ACCOUNT,
+  AWS_REGION,
+  CERT_ARN,
+  domainForEnv,
+  GITHUB_REPO_DEFAULT,
+  PIX_CERT_ARN,
+  tablePrefix,
 } from '../lib/constants';
 
 const app = new cdk.App();
@@ -44,13 +45,13 @@ const CTECH_LOGS_BUCKET = process.env.CTECH_LOGS_BUCKET || `${ENVIRONMENT}-ctech
 // The default matches api/internal/config/config.go (production Inter) — dev and
 // stage MUST override it, or they would create charges against the real bank.
 const INTER_BASE_URL =
-    process.env.INTER_BASE_URL
-    || (app.node.tryGetContext('interBaseUrl') as string | undefined)
-    || 'https://cdpj.partners.bancointer.com.br';
+  process.env.INTER_BASE_URL
+  || (app.node.tryGetContext('interBaseUrl') as string | undefined)
+  || 'https://cdpj.partners.bancointer.com.br';
 const INTER_PIX_KEY =
-    process.env.INTER_PIX_KEY
-    || (app.node.tryGetContext('interPixKey') as string | undefined)
-    || '61555ce6-da51-4a80-9012-0c18576e5111';
+  process.env.INTER_PIX_KEY
+  || (app.node.tryGetContext('interPixKey') as string | undefined)
+  || '61555ce6-da51-4a80-9012-0c18576e5111';
 
 const env = {account: AWS_ACCOUNT, region: AWS_REGION};
 
@@ -61,49 +62,49 @@ cdk.Tags.of(app).add('Project', 'ctech-wallet');
 cdk.Tags.of(app).add('Environment', ENVIRONMENT);
 
 const id = (name: string) =>
-    `CtechWallet-${ENVIRONMENT.charAt(0).toUpperCase() + ENVIRONMENT.slice(1)}-${name}`;
+  `CtechWallet-${ENVIRONMENT.charAt(0).toUpperCase() + ENVIRONMENT.slice(1)}-${name}`;
 
 // =====================
 // Global stack (GitHub Actions OIDC roles)
 // =====================
 new OidcStack(app, 'CtechWallet-Global-OIDC', {
-    env,
-    githubRepo: GITHUB_REPO,
-    deploymentsBucket: CTECH_DEPLOYMENTS_BUCKET,
-    description: 'CTech Wallet GitHub Actions deployment roles (global)',
+  env,
+  githubRepo: GITHUB_REPO,
+  deploymentsBucket: CTECH_DEPLOYMENTS_BUCKET,
+  description: 'CTech Wallet GitHub Actions deployment roles (global)',
 });
 
 // =====================
 // Base infrastructure
 // =====================
 const dynamodbStack = new DynamoDBStack(app, id('DynamoDB'), {
-    env,
-    environment: ENVIRONMENT,
-    tablePrefix: tablePrefix(ENVIRONMENT),
-    description: `CTech Wallet DynamoDB - ${ENVIRONMENT}`,
+  env,
+  environment: ENVIRONMENT,
+  tablePrefix: tablePrefix(ENVIRONMENT),
+  description: `CTech Wallet DynamoDB - ${ENVIRONMENT}`,
 });
 
 // =====================
 // pix-gateway (2 Lambdas + mTLS HTTP API custom domain)
 // =====================
 const pixGatewayStack = new PixGatewayStack(app, id('PixGateway'), {
-    env,
-    environment: ENVIRONMENT,
-    certificateArn: PIX_CERT_ARN,
-    interBaseUrl: INTER_BASE_URL,
-    interPixKey: INTER_PIX_KEY,
-    walletApiUrl: `https://${domainForEnv(ENVIRONMENT, APP_DOMAIN_PREFIX)}`,
-    description: `CTech Wallet pix-gateway (Inter integration Lambdas) - ${ENVIRONMENT}`,
+  env,
+  environment: ENVIRONMENT,
+  certificateArn: PIX_CERT_ARN,
+  interBaseUrl: INTER_BASE_URL,
+  interPixKey: INTER_PIX_KEY,
+  walletApiUrl: `https://${domainForEnv(ENVIRONMENT, APP_DOMAIN_PREFIX)}`,
+  description: `CTech Wallet pix-gateway (Inter integration Lambdas) - ${ENVIRONMENT}`,
 });
 
 const iamStack = new IAMStack(app, id('IAM'), {
-    env,
-    environment: ENVIRONMENT,
-    deploymentsBucketArn: `arn:aws:s3:::${CTECH_DEPLOYMENTS_BUCKET}`,
-    logsBucketArn: `arn:aws:s3:::${CTECH_LOGS_BUCKET}`,
-    dynamoDBTables: dynamodbStack.tables,
-    pixGatewayOutboundFunctionArn: pixGatewayStack.outboundFunctionArn,
-    description: `CTech Wallet IAM Roles - ${ENVIRONMENT}`,
+  env,
+  environment: ENVIRONMENT,
+  deploymentsBucketArn: `arn:aws:s3:::${CTECH_DEPLOYMENTS_BUCKET}`,
+  logsBucketArn: `arn:aws:s3:::${CTECH_LOGS_BUCKET}`,
+  dynamoDBTables: dynamodbStack.tables,
+  pixGatewayOutboundFunctionArn: pixGatewayStack.outboundFunctionArn,
+  description: `CTech Wallet IAM Roles - ${ENVIRONMENT}`,
 });
 iamStack.addDependency(dynamodbStack);
 iamStack.addDependency(pixGatewayStack);
@@ -112,16 +113,16 @@ iamStack.addDependency(pixGatewayStack);
 // API (EC2 + ASG, shared ALB from ctech-cdk)
 // =====================
 const apiStack = new ApiStack(app, id('API'), {
-    env,
-    environment: ENVIRONMENT,
-    vpcId: CTECH_VPC_ID,
-    domainName: domainForEnv(ENVIRONMENT, API_DOMAIN_PREFIX),
-    appDomainName: domainForEnv(ENVIRONMENT, APP_DOMAIN_PREFIX),
-    instanceProfileName: iamStack.instanceProfileName,
-    deploymentsBucketName: CTECH_DEPLOYMENTS_BUCKET,
-    logsBucketName: CTECH_LOGS_BUCKET,
-    pixGatewayFunctionName: pixGatewayStack.outboundFunctionName,
-    description: `CTech Wallet API (EC2 + ASG + ALB) - ${ENVIRONMENT}`,
+  env,
+  environment: ENVIRONMENT,
+  vpcId: CTECH_VPC_ID,
+  domainName: domainForEnv(ENVIRONMENT, API_DOMAIN_PREFIX),
+  appDomainName: domainForEnv(ENVIRONMENT, APP_DOMAIN_PREFIX),
+  instanceProfileName: iamStack.instanceProfileName,
+  deploymentsBucketName: CTECH_DEPLOYMENTS_BUCKET,
+  logsBucketName: CTECH_LOGS_BUCKET,
+  pixGatewayFunctionName: pixGatewayStack.outboundFunctionName,
+  description: `CTech Wallet API (EC2 + ASG + ALB) - ${ENVIRONMENT}`,
 });
 // instanceProfileName is a plain string, not a CFN token — CDK cannot infer the
 // dependency. Force it so the instance profile exists before the ASG validates
@@ -138,12 +139,12 @@ apiStack.addDependency(pixGatewayStack);
 // calling [PixClient] exactly as today. Only the implementation swaps" — the
 // swap is not scoped to cmd/server only).
 const reconcileStack = new ReconcileStack(app, id('Reconcile'), {
-    env,
-    environment: ENVIRONMENT,
-    dynamoDBTables: dynamodbStack.tables,
-    pixGatewayOutboundFunctionArn: pixGatewayStack.outboundFunctionArn,
-    pixGatewayOutboundFunctionName: pixGatewayStack.outboundFunctionName,
-    description: `CTech Wallet withdrawal reconciliation - ${ENVIRONMENT}`,
+  env,
+  environment: ENVIRONMENT,
+  dynamoDBTables: dynamodbStack.tables,
+  pixGatewayOutboundFunctionArn: pixGatewayStack.outboundFunctionArn,
+  pixGatewayOutboundFunctionName: pixGatewayStack.outboundFunctionName,
+  description: `CTech Wallet withdrawal reconciliation - ${ENVIRONMENT}`,
 });
 reconcileStack.addDependency(dynamodbStack);
 reconcileStack.addDependency(pixGatewayStack);
@@ -152,11 +153,12 @@ reconcileStack.addDependency(pixGatewayStack);
 // Frontend (S3 + CloudFront)
 // =====================
 new FrontendStack(app, id('Frontend'), {
-    env,
-    environment: ENVIRONMENT,
-    certificateArn: CERT_ARN,
-    domainName: domainForEnv(ENVIRONMENT, APP_DOMAIN_PREFIX),
-    apiDomainName: domainForEnv(ENVIRONMENT, API_DOMAIN_PREFIX),
-    authDomainName: domainForEnv(ENVIRONMENT, ACCOUNTS_DOMAIN_PREFIX),
-    description: `CTech Wallet Frontend (S3 + CloudFront) - ${ENVIRONMENT}`,
+  env,
+  environment: ENVIRONMENT,
+  certificateArn: CERT_ARN,
+  domainName: domainForEnv(ENVIRONMENT, APP_DOMAIN_PREFIX),
+  apiDomainName: domainForEnv(ENVIRONMENT, API_DOMAIN_PREFIX),
+  authDomainName: domainForEnv(ENVIRONMENT, ACCOUNTS_DOMAIN_PREFIX),
+  description: `CTech Wallet Frontend (S3 + CloudFront) - ${ENVIRONMENT}`,
+  extraConnectSrc: [],
 });

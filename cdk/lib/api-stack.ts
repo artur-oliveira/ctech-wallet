@@ -51,10 +51,10 @@ interface ApiStackProps extends cdk.StackProps {
 
 export class ApiStack extends cdk.Stack {
   public readonly asgName: string;
-  
+
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
-    
+
     const {
       environment,
       vpcId,
@@ -65,27 +65,27 @@ export class ApiStack extends cdk.Stack {
       logsBucketName,
       pixGatewayFunctionName,
     } = props;
-    
+
     const shared = SSM_SHARED(environment);
     const wallet = SSM_WALLET(environment);
     const account = SSM_ACCOUNT(environment);
-    
+
     // ── Shared infrastructure from ctech-cdk ──────────────────────────────────
     const vpc = ec2.Vpc.fromLookup(this, 'Vpc', {vpcId});
-    
+
     const albSgId = ssm.StringParameter.valueForStringParameter(this, shared.albSgId);
     const edgeSg = ec2.SecurityGroup.fromSecurityGroupId(this, 'EdgeSg', albSgId);
-    
+
     const isProd = environment === 'prod';
     const svcName = `${SERVICE}`
     this.asgName = asgName(environment);
     const logRetention: logs.RetentionDays = isProd ? logs.RetentionDays.ONE_MONTH : logs.RetentionDays.ONE_WEEK;
     const logGroupApp = `/${svcName}/${environment}/app`;
     const logGroupNginx = `/${svcName}/${environment}/nginx`;
-    
+
     // ── User Data ─────────────────────────────────────────────────────────────
     const userData = ec2.UserData.forLinux();
-    
+
     userData.addCommands(
       // ── Packages + directories ───────────────────────────────────────────────
       'dnf install -y nginx amazon-cloudwatch-agent amazon-ssm-agent cronie unzip jq',
@@ -97,10 +97,10 @@ export class ApiStack extends cdk.Stack {
       'systemctl enable crond',
       'systemctl start crond',
     );
-    
+
     addSwapCommands(userData);
     addDualStackSsmAgentCommands(userData);
-    
+
     userData.addCommands(
       // ── nginx: listens :8080, proxies to app :8000 ───────────────────────────
       // Quoted delimiter prevents bash from expanding nginx $variables.
@@ -254,16 +254,16 @@ export class ApiStack extends cdk.Stack {
       `}`,
       `NGINX`,
     );
-    
+
     addRealipRefreshCommands(userData, vpc.vpcCidrBlock);
-    
+
     userData.addCommands(
       'systemctl enable nginx',
       'systemctl start nginx',
     );
-    
+
     addCloudWatchAgentDualStackOverride(userData);
-    
+
     userData.addCommands(
       // {instance_id} is resolved by the CW agent at runtime, not by bash.
       `cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << 'CWA'`,
@@ -282,7 +282,7 @@ export class ApiStack extends cdk.Stack {
       `}`,
       `CWA`,
       `/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json -s`,
-      
+
       // ── Static env file (loaded by systemd EnvironmentFile=) ─────────────────
       // CDK tokens are substituted at synthesis time; bash does not expand them.
       // Only non-secret values live here. Secrets come from SSM in start.sh.
@@ -299,7 +299,7 @@ export class ApiStack extends cdk.Stack {
       `TRUSTED_PROXIES=127.0.0.1`,
       `CORS_ALLOWED_ORIGINS=https://${appDomainName}`,
       `ENV`,
-      
+
       // ── start.sh: fetches secrets from SSM then exec-replaces into the binary
       // $ENVIRONMENT comes from systemd EnvironmentFile at runtime.
       //
@@ -326,7 +326,7 @@ export class ApiStack extends cdk.Stack {
       `exec /opt/app/current/app`,
       `START`,
       `chmod +x /opt/app/start.sh`,
-      
+
       // ── systemd app.service ──────────────────────────────────────────────────
       `cat > /etc/systemd/system/app.service << 'SVC'`,
       `[Unit]`,
@@ -353,7 +353,7 @@ export class ApiStack extends cdk.Stack {
       `SVC`,
       `systemctl daemon-reload`,
       `systemctl enable app`,
-      
+
       // ── deploy.sh: called by SSM RunCommand from GitHub Actions ──────────────
       // Expects a zip containing a pre-built `app` binary (linux/arm64).
       // __BUCKET__ is replaced by sed so bash $variables are not expanded at write
@@ -392,7 +392,7 @@ export class ApiStack extends cdk.Stack {
       `DEPLOY`,
       `sed -i 's|__BUCKET__|${deploymentsBucketName}|g' /opt/app/deploy.sh`,
       `chmod +x /opt/app/deploy.sh`,
-      
+
       // ── upload-logs.sh: bundles rotated logs and ships to S3 ─────────────────
       // IMDSv2 token required (requireImdsv2 is enforced on this instance).
       `cat > /opt/app/upload-logs.sh << 'UPLOAD'`,
@@ -413,7 +413,7 @@ export class ApiStack extends cdk.Stack {
       `UPLOAD`,
       `sed -i 's|__LOG_BUCKET__|${logsBucketName}|g' /opt/app/upload-logs.sh`,
       `chmod +x /opt/app/upload-logs.sh`,
-      
+
       // ── logrotate: daily, gzip, copytruncate, ship to S3 ─────────────────────
       `cat > /etc/logrotate.d/${SERVICE} << 'LOGROTATE'`,
       `/var/log/app/app.log`,
@@ -433,11 +433,11 @@ export class ApiStack extends cdk.Stack {
       `    endscript`,
       `}`,
       `LOGROTATE`,
-      
+
       // ── Bootstrap: deploy current.zip if it already exists in S3 ─────────────
       `aws s3api head-object --bucket "${deploymentsBucketName}" --key "${API_CURRENT_ARTIFACT_KEY}" 2>/dev/null && /opt/app/deploy.sh ${API_CURRENT_ARTIFACT_KEY} || echo "No bootstrap artifact, waiting for first deploy"`,
     );
-    
+
     // HAProxy discovers this ASG through its ctech-lbalancer bootstrap route.
     const serviceSg = new ec2.SecurityGroup(this, 'ApiServiceSg', {
       vpc,
@@ -493,7 +493,7 @@ export class ApiStack extends cdk.Stack {
       targetUtilizationPercent: 60,
       cooldown: cdk.Duration.minutes(3)
     });
-    
+
     // ── Outputs ───────────────────────────────────────────────────────────────
     new cdk.CfnOutput(this, 'AsgName', {value: asg.autoScalingGroupName, exportName: `${id}-asg-name`});
     new cdk.CfnOutput(this, 'AppLogGroupName', {
@@ -504,7 +504,7 @@ export class ApiStack extends cdk.Stack {
       value: nginxLogGroup.logGroupName,
       exportName: `${id}-nginx-log-group`,
     });
-    
+
     // slog ALARM lines (refund/reversal failures, deposit amount mismatches,
     // excess-payment refund failures) previously paged nobody — this fires a
     // CloudWatch alarm the moment one is emitted.
