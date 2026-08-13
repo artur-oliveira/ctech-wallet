@@ -20,6 +20,7 @@ func TestLoadSucceedsWithValkeyURLInProd(t *testing.T) {
 	t.Setenv("ENVIRONMENT", "prod")
 	t.Setenv("SERVICE_AUDIENCE", "https://wallet.aoctech.app")
 	t.Setenv("CTECH_URL", "https://account.aoctech.app")
+	t.Setenv("CTECH_ISSUER_URL", "https://account.aoctech.app")
 	t.Setenv("CORS_ALLOWED_ORIGINS", "https://wallet.aoctech.app")
 	t.Setenv("TABLE_PREFIX", "prod")
 	t.Setenv("PIX_GATEWAY_FUNCTION_NAME", "prod-pix-gateway-outbound")
