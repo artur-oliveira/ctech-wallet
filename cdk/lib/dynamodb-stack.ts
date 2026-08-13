@@ -31,7 +31,8 @@ export type TableName = (
     'wallet_transfer_intents' |
     'wallet_settlement_legs' |
     'wallet_med_receivables' |
-    'wallet_sandbox_purchases'
+    'wallet_sandbox_purchases' |
+    'wallet_product_purchases'
     );
 
 // GSI names — must match internal/domain/wallet/model.go.
@@ -47,6 +48,8 @@ const GSI_BATCH_STATUS = 'gsi_batch_status';
 const GSI_MED_STATUS = 'gsi_med_status';
 const GSI_SANDBOX_PURCHASE_STATUS = 'gsi_sandbox_purchase_status';
 const GSI_SANDBOX_PURCHASE_WEBHOOK_STATUS = 'gsi_sandbox_purchase_webhook_status';
+const GSI_PRODUCT_PURCHASE_STATUS = 'gsi_product_purchase_status';
+const GSI_PRODUCT_PURCHASE_WEBHOOK_STATUS = 'gsi_product_purchase_webhook_status';
 
 // DynamoDB attribute names (single source of truth).
 const ATTR_PK = 'pk';
@@ -207,6 +210,14 @@ export class DynamoDBStack extends cdk.Stack {
         // a purchase opened by an M2M client (e.g. ctech-poker) whose last
         // notify-back attempt failed. Empty/unset for user-direct purchases.
         gsi(sandboxPurchasesTable, GSI_SANDBOX_PURCHASE_WEBHOOK_STATUS, ATTR_WEBHOOK_STATUS);
+
+        // wallet_product_purchases: pk = purchase_id — generic PIX product sale,
+        // deliberately decoupled from every ledger table: no credit ever lands on
+        // this purchase (docs/specs/2026-08-12-product-purchase-skus.md).
+        // gsi_product_purchase_status backs the pending-purchase sweep.
+        const productPurchasesTable = table('wallet_product_purchases');
+        gsi(productPurchasesTable, GSI_PRODUCT_PURCHASE_STATUS, ATTR_STATUS);
+        gsi(productPurchasesTable, GSI_PRODUCT_PURCHASE_WEBHOOK_STATUS, ATTR_WEBHOOK_STATUS);
 
         // ── Outputs ───────────────────────────────────────────────────────────────
         new cdk.CfnOutput(this, 'WalletsTableName', {
