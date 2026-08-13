@@ -215,6 +215,33 @@ func TestRefundProductPurchaseNotYetConfirmed(t *testing.T) {
 	}
 }
 
+func TestSweepPendingProductPurchasesConfirmsAgedOnes(t *testing.T) {
+	svc, repo, fakePix := newTestWalletServiceForProduct()
+	ctx := context.Background()
+
+	p, _, err := svc.PurchaseProductDirect(ctx, "user-1", "poker_reaction_cold", "idem-7", "poker")
+	if err != nil {
+		t.Fatalf("purchase: %v", err)
+	}
+	fakePix.StageCharge(p.PurchaseID, p.AmountExpected, pix.ChargeCompleted, "", "e2e-"+p.PurchaseID)
+	// Backdate CreatedAt past the sweep's age threshold so it's picked up.
+	if err := repo.Update(ctx, p.PurchaseID, map[string]any{"created_at": "2020-01-01T00:00:00Z"}); err != nil {
+		t.Fatalf("backdate: %v", err)
+	}
+
+	swept, err := svc.SweepPendingProductPurchases(ctx)
+	if err != nil {
+		t.Fatalf("sweep: %v", err)
+	}
+	if swept != 1 {
+		t.Fatalf("expected 1 swept purchase, got %d", swept)
+	}
+	confirmed, err := repo.Get(ctx, p.PurchaseID)
+	if err != nil || confirmed.Status != wallet.ProductPurchaseConfirmed {
+		t.Fatalf("expected confirmed after sweep, got %+v (err=%v)", confirmed, err)
+	}
+}
+
 func TestPurchaseProductDirectUnknownSKU(t *testing.T) {
 	svc, _, _ := newTestWalletServiceForProduct()
 	_, _, err := svc.PurchaseProductDirect(context.Background(), "user-1", "no-such-sku", "idem-1", "poker")

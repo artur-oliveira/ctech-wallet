@@ -195,6 +195,28 @@ func (s *WalletService) GetProductPurchase(ctx context.Context, purchaseID, requ
 	return p, nil
 }
 
+// SweepPendingProductPurchases re-queries the PIX provider once for every
+// pending purchase approaching its TTL — mirrors SweepPendingSandboxPurchases,
+// reusing ConfirmProductPurchase's own idempotent confirm logic. No
+// SweepRefundPendingProductPurchases counterpart exists: a refund has no
+// pending stage to resume (docs/specs/2026-08-12-product-purchase-skus.md).
+func (s *WalletService) SweepPendingProductPurchases(ctx context.Context) (swept int, err error) {
+	cutoff := time.Now().Add(-sweepAgeThreshold)
+	purchases, err := s.productPurchases.ListPendingOlderThan(ctx, cutoff, reconcileBatch)
+	if err != nil {
+		return 0, err
+	}
+	for i := range purchases {
+		p := purchases[i]
+		if err := s.ConfirmProductPurchase(ctx, p.PurchaseID, true); err != nil {
+			slog.Warn("sweep: confirm-product-purchase failed, will retry next run", "purchase_id", p.PurchaseID, "err", err)
+			continue
+		}
+		swept++
+	}
+	return swept, nil
+}
+
 // SetProductPurchases wires the generic product-purchase repository after
 // construction — same setter pattern as SetSandboxPurchases. Unset,
 // PurchaseProductDirect/ConfirmProductPurchase/RefundProductPurchase panic on

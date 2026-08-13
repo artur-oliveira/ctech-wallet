@@ -40,6 +40,7 @@ type Result struct {
 	RetriedDepositRefunds int `json:"retried_deposit_refunds"`
 	SweptSandboxPurchases int `json:"swept_sandbox_purchases"`
 	RetriedSandboxRefunds int `json:"retried_sandbox_refunds"`
+	SweptProductPurchases int `json:"swept_product_purchases"`
 	RetriedM2MWebhooks    int `json:"retried_m2m_webhooks"`
 	StaleHolds            int `json:"stale_holds_alarmed"`
 	TransfersResolved     int `json:"asaas_transfers_resolved"`
@@ -109,6 +110,7 @@ func run(ctx context.Context) (*Result, error) {
 	svc := services.NewWalletService(repo, users, audit, lock.NewLocker(cache.NewMemoryBackend(16)), pixClient, kycclient.New(cfg))
 	svc.SetBroadcaster(newBroadcaster(cfg))
 	svc.SetSandboxPurchases(repositories.NewSandboxPurchaseRepository(clients.DynamoDB, cfg))
+	svc.SetProductPurchases(repositories.NewProductPurchaseRepository(clients.DynamoDB, cfg))
 	m2mClients, err := newM2MClients(ctx, cfg, clients)
 	if err != nil {
 		return nil, err
@@ -135,6 +137,10 @@ func run(ctx context.Context) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	sweptProducts, err := svc.SweepPendingProductPurchases(ctx)
+	if err != nil {
+		return nil, err
+	}
 	retriedWebhooks, err := svc.RetryFailedM2MWebhooks(ctx)
 	if err != nil {
 		return nil, err
@@ -147,7 +153,8 @@ func run(ctx context.Context) (*Result, error) {
 	res := &Result{
 		Resolved: resolved, Reversed: reversed, Alarmed: alarmed, SweptDeposits: swept,
 		RetriedDepositRefunds: retriedDepositRefunds, SweptSandboxPurchases: sweptSandbox,
-		RetriedSandboxRefunds: retriedSandboxRefunds, RetriedM2MWebhooks: retriedWebhooks, StaleHolds: staleHolds,
+		RetriedSandboxRefunds: retriedSandboxRefunds, SweptProductPurchases: sweptProducts,
+		RetriedM2MWebhooks: retriedWebhooks, StaleHolds: staleHolds,
 	}
 	if cfg.AsaasCustodyEnabled {
 		baasSvc, err := newBaasService(ctx, cfg, clients, repo, audit, kycclient.New(cfg))
