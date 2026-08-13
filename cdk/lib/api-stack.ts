@@ -322,7 +322,7 @@ export class ApiStack extends cdk.Stack {
       // Wallet's own M2M client — used to call ctech-account internal:kyc.
       `WALLET_CLIENT_ID=$(aws ssm get-parameter --name "${wallet.walletClientId}" --with-decryption --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
       `WALLET_CLIENT_SECRET=$(aws ssm get-parameter --name "${wallet.walletClientSecret}" --with-decryption --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
-      `export VALKEY_URL CTECH_URL CTECH_JWKS_URL`,
+      `export VALKEY_URL CTECH_URL CTECH_JWKS_URL CTECH_ISSUER_URL`,
       `export WALLET_CLIENT_ID WALLET_CLIENT_SECRET`,
       `exec /opt/app/current/app`,
       `START`,
