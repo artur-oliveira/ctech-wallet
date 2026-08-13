@@ -127,4 +127,12 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 	sp.Post("/", h.m2mPurchaseSandbox)
 	sp.Get("/:id", h.m2mGetSandboxPurchase)
 	sp.Post("/:id/refund", h.m2mRefundSandboxPurchase)
+	// M2M generic PIX product sale, opened on a user's behalf (e.g.
+	// ctech-poker premium reactions) — no ledger effect whatsoever, unlike sp
+	// above (docs/specs/2026-08-12-product-purchase-skus.md).
+	pp := internal.Group("/wallet/product-purchase", middleware.RequireScope(middleware.ScopeWalletProductPurchase))
+	pp.Get("/skus", h.m2mListProductSKUs)
+	pp.Post("/", h.m2mPurchaseProduct)
+	pp.Get("/:id", h.m2mGetProductPurchase)
+	pp.Post("/:id/refund", h.m2mRefundProductPurchase)
 }

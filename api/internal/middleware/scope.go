@@ -38,6 +38,12 @@ const (
 	// from ScopeWalletCredit: this creates a PIX charge and a purchase
 	// record, not a bare ledger credit.
 	ScopeWalletSandboxPurchase = "internal:wallet:sandbox-purchase"
+
+	// ScopeWalletProductPurchase lets an M2M client sell a generic digital
+	// product for real PIX money with no ledger effect — deliberately its
+	// own scope, not reused from ScopeWalletSandboxPurchase: materially
+	// different blast radius (docs/specs/2026-08-12-product-purchase-skus.md).
+	ScopeWalletProductPurchase = "internal:wallet:product-purchase"
 )
 
 // KYC levels are defined once, in the domain — services gate on them too.
