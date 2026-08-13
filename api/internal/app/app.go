@@ -51,6 +51,7 @@ var Module = fx.Options(
 		repositories.NewAuditRepository,
 		repositories.NewBaasRepository,
 		repositories.NewSandboxPurchaseRepository,
+		repositories.NewProductPurchaseRepository,
 		newAsaasSecrets,
 		newAsaasClient,
 		newBaasService,
@@ -213,11 +214,12 @@ func newBaasService(repo *repositories.BaasRepository, walletRepo *repositories.
 	return services.NewBaasService(repo, walletRepo, asaasClient, audit, kyc, s.MasterKey, cfg.AsaasParentWalletID, s.ParentAPIKey)
 }
 
-func newWalletService(repo *repositories.WalletRepository, users *repositories.UserRepository, audit *repositories.AuditRepository, l *lock.Locker, p pix.PixClient, k services.KYCClient, baas *services.BaasService, sandboxPurchases *repositories.SandboxPurchaseRepository, m2mClients map[string]services.M2MClient, cfg *config.Config) *services.WalletService {
+func newWalletService(repo *repositories.WalletRepository, users *repositories.UserRepository, audit *repositories.AuditRepository, l *lock.Locker, p pix.PixClient, k services.KYCClient, baas *services.BaasService, sandboxPurchases *repositories.SandboxPurchaseRepository, productPurchases *repositories.ProductPurchaseRepository, m2mClients map[string]services.M2MClient, cfg *config.Config) *services.WalletService {
 	svc := services.NewWalletService(repo, users, audit, l, p, k)
 	svc.SetBaas(baas)
 	svc.SetCustodyEnabled(cfg.AsaasCustodyEnabled)
 	svc.SetSandboxPurchases(sandboxPurchases)
+	svc.SetProductPurchases(productPurchases)
 	svc.SetM2MClients(m2mClients)
 	baas.SetWithdrawalReverser(svc.ReverseWithdrawal)
 	return svc
