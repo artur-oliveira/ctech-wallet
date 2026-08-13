@@ -4,7 +4,7 @@ import "testing"
 
 func TestLoadFailsClosedWithoutValkeyURLInProd(t *testing.T) {
 	t.Setenv("ENVIRONMENT", "prod")
-	t.Setenv("SERVICE_AUDIENCE", "https://wallet-api.aoctech.app")
+	t.Setenv("SERVICE_AUDIENCE", "https://wallet.aoctech.app")
 	t.Setenv("CTECH_URL", "https://account.aoctech.app")
 	t.Setenv("CORS_ALLOWED_ORIGINS", "https://wallet.aoctech.app")
 	t.Setenv("TABLE_PREFIX", "prod")
@@ -18,7 +18,7 @@ func TestLoadFailsClosedWithoutValkeyURLInProd(t *testing.T) {
 
 func TestLoadSucceedsWithValkeyURLInProd(t *testing.T) {
 	t.Setenv("ENVIRONMENT", "prod")
-	t.Setenv("SERVICE_AUDIENCE", "https://wallet-api.aoctech.app")
+	t.Setenv("SERVICE_AUDIENCE", "https://wallet.aoctech.app")
 	t.Setenv("CTECH_URL", "https://account.aoctech.app")
 	t.Setenv("CORS_ALLOWED_ORIGINS", "https://wallet.aoctech.app")
 	t.Setenv("TABLE_PREFIX", "prod")
