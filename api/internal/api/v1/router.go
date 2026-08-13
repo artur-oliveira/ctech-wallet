@@ -23,7 +23,7 @@ type handlers struct {
 // Register mounts all wallet routes under /v1.0.
 func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsclient.Clients, pixClient pix.PixClient, svc *services.WalletService, userSvc *services.UserService, baasSvc *services.BaasService, asaasWebhookToken string, wsRegistry ws.Registry) {
 	h := &handlers{svc: svc, userSvc: userSvc, baas: baasSvc}
-	verifier := middleware.NewVerifier(cfg.CtechJWKSURL, cfg.ServiceAudience, cfg.CtechURL, c)
+	verifier := middleware.NewVerifier(cfg.CtechJWKSURL, cfg.ServiceAudience, cfg.CtechIssuerURL, c)
 	auth := verifier.Middleware()
 
 	v1 := app.Group("/v1.0")

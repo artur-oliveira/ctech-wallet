@@ -54,6 +54,7 @@ type Config struct {
 
 	// Auth (ctech-account)
 	CtechURL        string `env:"CTECH_URL"`
+	CtechIssuerURL  string `env:"CTECH_ISSUER_URL"`
 	CtechJWKSURL    string `env:"CTECH_JWKS_URL"`
 	ServiceAudience string `env:"SERVICE_AUDIENCE" envDefault:"https://wallet.aoctech.app"` // expected aud claim; empty = no audience check (transition only)
 
@@ -84,11 +85,11 @@ func Load() (*Config, error) {
 		// provider signs for any client would be accepted here. Never safe in prod.
 		return nil, fmt.Errorf("config: SERVICE_AUDIENCE must be set in production so the aud claim is verified")
 	}
-	if cfg.CtechURL == "" && cfg.Env == "prod" {
+	if cfg.CtechIssuerURL == "" && cfg.Env == "prod" {
 		// Fail closed: without an issuer check, any RS256 token the identity
 		// provider signs (for any audience) would be accepted here if its aud
 		// happens to match. Never safe in prod — mirror the ServiceAudience guard.
-		return nil, fmt.Errorf("config: CTECH_URL must be set in production so the iss claim is verified")
+		return nil, fmt.Errorf("config: CTECH_ISSUER_URL must be set in production so the iss claim is verified")
 	}
 	if len(cfg.CorsAllowedOrigins) == 0 && cfg.Env == "prod" {
 		return nil, fmt.Errorf("config: CORS_ALLOWED_ORIGINS must be set in production")

@@ -317,6 +317,7 @@ export class ApiStack extends cdk.Stack {
       // Falls back to empty → the app uses the in-memory cache backend instead of crashing.
       `if [ -n "$VALKEY_BASE" ]; then VALKEY_URL="\${VALKEY_BASE%/}/${VALKEY_DB}"; else VALKEY_URL=""; fi`,
       `CTECH_URL=$(aws ssm get-parameter --name "${account.baseUrl}" --with-decryption --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
+      `CTECH_ISSUER_URL=$(aws ssm get-parameter --name "${account.appUrl}" --with-decryption --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
       `CTECH_JWKS_URL=$(aws ssm get-parameter --name "${account.jwksUrl}" --with-decryption --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
       // Wallet's own M2M client — used to call ctech-account internal:kyc.
       `WALLET_CLIENT_ID=$(aws ssm get-parameter --name "${wallet.walletClientId}" --with-decryption --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,

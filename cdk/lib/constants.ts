@@ -149,6 +149,7 @@ export const SSM_WALLET = (env: Environment) => ({
 export const SSM_ACCOUNT = (env: Environment) => ({
   namespace: `/ctech-account/${env}`,
   baseUrl: `/ctech-account/${env}/base-url`,
+  appUrl: `/ctech-account/${env}/app-url`,
   jwksUrl: `/ctech-account/${env}/jwks-url`,
 });
 
