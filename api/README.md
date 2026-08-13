@@ -72,7 +72,7 @@ account KYC). `GAMBLING_ENABLED` (default `false`) gates the entire
 | `wallets`               | `TableWallets` (`model.go:74`) | authoritative balance (centavos for real/game, credits for sandbox)   |
 | `wallet_ledger_entries` | `TableLedger` (`:75`)          | append‑only audit; GSI `gsi_idem` for replay                          |
 | `wallet_idempotency`    | `TableIdempotency` (`:76`)     | Permanent `IDEM#{key}` guard rows; financial replays never expire     |
-| `wallet_pix_deposits`   | `TablePixDeposits` (`:77`)     | durable charge records; GSI `gsi_status` for pending sweep             |
+| `wallet_pix_deposits`   | `TablePixDeposits` (`:77`)     | durable charge records; GSI `gsi_status` for pending sweep            |
 | `wallet_withdrawals`    | `TableWithdrawals` (`:78`)     | `processing`/`completed`/`reversed`/`refund_failed`; GSI `gsi_status` |
 | `wallet_users`          | `TableUsers` (`:79`)           | consent + responsible‑gambling state                                  |
 | `wallet_audit`          | `TableAudit` (`:80`)           | append‑only non‑money events                                          |
@@ -124,12 +124,13 @@ Tracked in [ENDPOINTS.md §7](ENDPOINTS.md#7-known-divergences-documented-not-fi
 (B1 IAM `TransactWriteItems`, B2/B3 scope strings, B7 Valkey fail‑closed,
 B18 money‑constant mirror). See also root `CLAUDE.md` "Open divergences".
 
+### Concurrency
+
+Wallet balance mutations condition on the persisted wallet version and increment it in the same transaction. This keeps
+each committed `ledger_entries.balance_after` snapshot tied to the exact balance state it updates, even if a distributed
+lock expires.
 
 ### Concurrency
 
-Wallet balance mutations condition on the persisted wallet version and increment it in the same transaction. This keeps each committed `ledger_entries.balance_after` snapshot tied to the exact balance state it updates, even if a distributed lock expires.
-
-
-### Concurrency
-
-Each wallet mutation conditions on the persisted wallet version and increments it in the same transaction. Therefore a committed ledger balance_after snapshot corresponds to the exact wallet state it changes.
+Each wallet mutation conditions on the persisted wallet version and increments it in the same transaction. Therefore a
+committed ledger balance_after snapshot corresponds to the exact wallet state it changes.

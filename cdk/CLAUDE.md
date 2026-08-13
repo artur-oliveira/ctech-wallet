@@ -1,7 +1,7 @@
 # CLAUDE.md — cdk (ctech-wallet-cdk)
 
 AWS CDK (TypeScript) infrastructure for the wallet. Deploys the DynamoDB
-tables, the API on an EC2 ASG behind an ALB, the reconcile Lambda, the
+tables, the API on an EC2 ASG behind the CTech HAProxy edge, the reconcile Lambda, the
 `pix-gateway` Lambdas, the static frontend (S3 + CloudFront), and the
 GitHub-Actions OIDC deploy roles.
 
@@ -23,13 +23,13 @@ enforced here wherever they can be (IAM, table shape), and the rest in `api`.
 |-------|------|-----------|
 | `DynamoDBStack` | `lib/dynamodb-stack.ts` | 13 tables + GSIs (OnDemand) |
 | `IAMStack` | `lib/iam-stack.ts` | EC2 instance role for the API |
-| `ApiStack` | `lib/api-stack.ts` | EC2 ASG + ALB + nginx + CloudWatch alarm |
+| `ApiStack` | `lib/api-stack.ts` | EC2 ASG + HAProxy route + nginx + CloudWatch alarm |
 | `ReconcileStack` | `lib/reconcile-stack.ts` | reconcile Lambda + EventBridge Scheduler (5 min) |
 | `PixGatewayStack` | `lib/pix-gateway-stack.ts` | outbound + webhook Lambdas, mTLS HTTP API |
 | `FrontendStack` | `lib/frontend-stack.ts` | S3 + CloudFront + URL-rewrite Function + KVS route store |
 | `OidcStack` | `lib/oidc-stack.ts` | GitHub Actions deploy roles (OIDC, no keys) |
 
-Shared infra (VPC, ALB, Valkey) is owned by `ctech-cdk` and referenced
+Shared infra (VPC, retained edge SG, Valkey) is owned by `ctech-cdk` and referenced
 via SSM (`lib/constants.ts` `SSM_SHARED`).
 
 ## DynamoDB (`lib/dynamodb-stack.ts`)

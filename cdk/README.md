@@ -3,9 +3,12 @@
 > HAProxy migration: the API ASG no longer creates an ALB target group or listener
 > rule. `ctech-lbalancer` discovers it through its `wallet` route; the retained
 > `/ctech/{env}/network/alb-sg-id` identifies the shared edge trusted by the API SG.
+> `PrivateIpv4Ec2Service` cannot be used for this stack because its current contract
+> always creates the retired ALB target group and listener rule. CI permits the
+> private-IPv4 launch-template override only in `lib/api-stack.ts`.
 
 AWS CDK (TypeScript) infrastructure for the wallet. Deploys: DynamoDB tables,
-the API on an EC2 ASG behind an ALB, the reconcile Lambda, the `pix-gateway`
+the API on an EC2 ASG behind the CTech HAProxy edge, the reconcile Lambda, the `pix-gateway`
 Lambdas, the static frontend (S3 + CloudFront), and the GitHub‑Actions OIDC
 deploy roles.
 
@@ -19,7 +22,7 @@ owned by `ctech-cdk` and referenced via SSM.
 |-------|------|-----------|
 | `DynamoDBStack` | `lib/dynamodb-stack.ts` | 8 tables + GSIs (OnDemand) |
 | `IAMStack` | `lib/iam-stack.ts` | EC2 instance role for the API |
-| `ApiStack` | `lib/api-stack.ts` | EC2 ASG + ALB + nginx + deploy scripts + CloudWatch alarm |
+| `ApiStack` | `lib/api-stack.ts` | EC2 ASG + HAProxy route + nginx + deploy scripts + CloudWatch alarm |
 | `ReconcileStack` | `lib/reconcile-stack.ts` | reconcile Lambda + EventBridge Scheduler (5 min) |
 | `PixGatewayStack` | `lib/pix-gateway-stack.ts` | outbound + webhook Lambdas, mTLS HTTP API |
 | `FrontendStack` | `lib/frontend-stack.ts` | S3 + CloudFront + URL‑rewrite Function + KVS route store |
@@ -64,10 +67,10 @@ and they are — the underlying item actions are present. No IAM change needed.
 
 ## ApiStack — EC2 ASG + ALB (`api-stack.ts`)
 
-- Reuses `@aoctech/cdk`'s `PrivateIpv4Ec2Service` (shared VPC, no NAT). ALB
-  listener priority **35** (`constants.ts:41`); health path
-  `/v1.0/health-check`, healthy codes **200,207** (`:463`) — matches the API's
-  degraded‑`207` contract.
+- Defines the private-IPv4 EC2 ASG locally because `@aoctech/cdk`'s
+  `PrivateIpv4Ec2Service` still owns ALB routing. The shared HAProxy edge discovers
+  the ASG through its `wallet` route and probes `/v1.0/health-check`; the API's
+  degraded `207` response remains part of that route's health contract.
 - Instances: min 1, max 3 (prod). nginx `:8080` → app `:8000`
   (`constants.ts:44-48`). Rate limit `100r/s` by real viewer IP
   (`limit_req_zone`, `:182`). WebSocket `/v1.0/ws` upgrade proxied

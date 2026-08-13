@@ -10,10 +10,10 @@ third-party money** — the 12 Financial Safety Invariants in the repo root
 ## Stacks (`lib/*.ts`)
 
 `DynamoDBStack` (8 tables + GSIs, OnDemand), `IAMStack` (API instance
-role), `ApiStack` (EC2 ASG + ALB + nginx + alarm), `ReconcileStack`
+role), `ApiStack` (EC2 ASG + HAProxy route + nginx + alarm), `ReconcileStack`
 (reconcile Lambda + EventBridge 5 min), `PixGatewayStack` (outbound +
 webhook Lambdas, mTLS HTTP API), `FrontendStack` (S3 + CloudFront),
-`OidcStack` (GitHub Actions OIDC roles). Shared VPC/ALB/Valkey come from
+`OidcStack` (GitHub Actions OIDC roles). Shared VPC/retained edge SG/Valkey come from
 `ctech-cdk` via SSM.
 
 ## Rules (MUST follow)
