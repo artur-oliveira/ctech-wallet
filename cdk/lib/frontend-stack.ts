@@ -150,10 +150,13 @@ async function handler(event) {
 
 
     const extraConnectSrcStr: string = [
-      apiDomainName,
-      authDomainName,
-      ...extraConnectSrc
-    ].map(it => `https://${it}`).join(' ')
+      ...[
+        apiDomainName,
+        authDomainName,
+        ...extraConnectSrc
+      ].map(it => `https://${it}`),
+      `wss://${apiDomainName}`
+    ].join(' ')
 
     // Security response headers (HSTS, X-Frame-Options, X-Content-Type-Options,
     // Referrer-Policy, CSP) for the statically generated frontend. These MUST live
