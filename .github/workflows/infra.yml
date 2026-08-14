@@ -26,7 +26,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version-file: pix-gateway/go.mod
+          go-version: '1.26.6'
           cache-dependency-path: pix-gateway/go.sum
 
       - name: Run tests
@@ -50,7 +50,7 @@ jobs:
             *)       echo "name=dev"   >> "$GITHUB_OUTPUT" ;;
           esac
 
-      # Go is required: the Reconcile stack bundles api/cmd/reconcile at synth time.
+      # CDK synth bundles both api/cmd/reconcile and pix-gateway Lambdas.
       - uses: actions/setup-go@v7
         with:
           # setup-go currently normalizes a go-version-file patch directive to
@@ -58,7 +58,9 @@ jobs:
           # pix-gateway locally; Docker fallback cannot resolve the sibling
           # rpc-contract replacement from its isolated module mount.
           go-version: '1.26.6'
-          cache-dependency-path: pix-gateway/go.sum
+          cache-dependency-path: |
+            api/go.sum
+            pix-gateway/go.sum
 
       - uses: actions/setup-node@v7
         with:
@@ -146,11 +148,13 @@ jobs:
             *)       echo "name=dev"   >> "$GITHUB_OUTPUT" ;;
           esac
 
-      # Go is required: the Reconcile stack bundles api/cmd/reconcile at synth time.
+      # CDK synth bundles both api/cmd/reconcile and pix-gateway Lambdas.
       - uses: actions/setup-go@v7
         with:
-          go-version-file: api/go.mod
-          cache-dependency-path: api/go.sum
+          go-version: '1.26.6'
+          cache-dependency-path: |
+            api/go.sum
+            pix-gateway/go.sum
 
       - uses: actions/setup-node@v7
         with:
