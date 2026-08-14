@@ -91,7 +91,11 @@ own in‑memory locker; only needs DynamoDB + Inter‑via‑pix‑gateway + acco
 `EventBridge Scheduler` every **5 min** (`RECONCILE_RATE_MINUTES`, `:34`) —
 must stay well below the API's `sweepAgeThreshold` (10m) and `depositTTLMinutes`
 (60m). Role touches `wallets, wallet_ledger_entries, wallet_idempotency,
-wallet_withdrawals` (+indexes) and invokes pix‑gateway's outbound Lambda.
+wallet_withdrawals, wallet_sandbox_purchases, wallet_product_purchases`
+(+indexes) and invokes pix‑gateway's outbound Lambda. The purchase tables back
+the lost-webhook fallback sweeps. The process uses `config.LoadReconcile`, so
+API-only JWT issuer/CORS/Valkey startup guards do not prevent this non-HTTP job
+from running.
 
 ## PixGatewayStack (`pix-gateway-stack.ts`)
 

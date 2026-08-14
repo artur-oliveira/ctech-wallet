@@ -78,12 +78,14 @@ Payload}` with sentinels `key_not_found`, `unauthorized`, and
    `secrets/ssm.go:71`).
 3. Parses `txid`(s) from the body (supports the `pix[]` list or a bare detail
    object, `main.go:123`).
-4. For each txid, calls `api`'s `POST /v1.0/internal/pix/confirm-deposit` with
-   scope `internal:wallet:confirm-deposit` and the **payer CPF/name** from the
-   webhook body (`walletclient/walletclient.go:23`, `:55`). api then re‑queries
-   Inter itself before crediting (Invariant #11).
-5. Any `ConfirmDeposit` error ⇒ `500` so Inter **retries** the whole payload
-   (idempotent per txid, `main.go:149`).
+4. Dispatches by reserved txid prefix using the same narrow
+   `internal:wallet:confirm-deposit` scope: `sbxp` →
+   `/confirm-sandbox-purchase`, `prdp` → `/confirm-product-purchase`, and every
+   other txid → `/confirm-deposit`. Only ordinary deposits forward the
+   **payer CPF/name** from the webhook body. Every API handler re-queries Inter
+   before changing durable state (Invariant #11).
+5. Any confirmation error ⇒ `500` so Inter **retries** the whole payload. All
+   three confirmation flows are idempotent per txid.
 
 > **CPF anti‑fraud:** Inter's charge re‑query no longer returns the payer, so
 > the webhook body is the **only** source of payer CPF/name. api persists it and

@@ -104,6 +104,10 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 	// covers "pix-gateway telling api a PIX charge resolved," which is
 	// exactly what this is too, just for a sale instead of a deposit.
 	internal.Post("/pix/confirm-sandbox-purchase", middleware.RequireScope(middleware.ScopePixConfirmDeposit), h.confirmSandboxPurchase)
+	// Generic digital-product sales use the same narrow wake-up scope and the
+	// reserved "prdp" prefix, but transition their own purchase table and never
+	// touch a wallet balance or ledger.
+	internal.Post("/pix/confirm-product-purchase", middleware.RequireScope(middleware.ScopePixConfirmDeposit), h.confirmProductPurchase)
 	sb := internal.Group("/wallet/sandbox")
 	sb.Post("/credit", middleware.RequireScope(middleware.ScopeWalletCredit), h.sandboxCredit)
 	sb.Post("/debit", middleware.RequireScope(middleware.ScopeWalletDebit), h.sandboxDebit)

@@ -97,3 +97,31 @@ func TestConfirmSandboxPurchaseSendsBearerAndTxid(t *testing.T) {
 		t.Fatalf("request auth=%q path=%q txid=%q", gotAuth, gotPath, gotTxid)
 	}
 }
+
+func TestConfirmProductPurchaseSendsBearerAndTxid(t *testing.T) {
+	accountSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "tok-abc", "expires_in": 3600})
+	}))
+	defer accountSrv.Close()
+
+	var gotAuth, gotTxid, gotPath string
+	walletSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get(headerAuthorization)
+		gotPath = r.URL.Path
+		var body map[string]string
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		gotTxid = body["txid"]
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer walletSrv.Close()
+
+	c := New(&config.Config{
+		CtechURL: accountSrv.URL, PixGatewayClientID: "pix-gateway", WalletAPIURL: walletSrv.URL,
+	}, "secret")
+	if err := c.ConfirmProductPurchase(context.Background(), "prdp123"); err != nil {
+		t.Fatalf("ConfirmProductPurchase: %v", err)
+	}
+	if gotAuth != bearerPrefix+"tok-abc" || gotPath != pathConfirmProductPurchase || gotTxid != "prdp123" {
+		t.Fatalf("request auth=%q path=%q txid=%q", gotAuth, gotPath, gotTxid)
+	}
+}

@@ -1,7 +1,7 @@
-// Package walletclient calls api's internal confirm-deposit endpoint using
+// Package walletclient calls api's internal PIX-confirmation endpoints using
 // pix-gateway's own M2M client_credentials token (scope
-// internal:wallet:confirm-deposit). This is the only way money moves as a result
-// of the webhook: pix-gateway itself never touches the ledger.
+// internal:wallet:confirm-deposit). This is the only way durable state changes
+// as a result of the webhook: pix-gateway itself never touches wallet storage.
 package walletclient
 
 import (
@@ -27,6 +27,9 @@ const (
 	// caller/scope as confirm-deposit, dispatched on the "sbxp" txid prefix
 	// (see cmd/webhook/main.go) instead of a new scope.
 	pathConfirmSandboxPurchase = "/v1.0/internal/pix/confirm-sandbox-purchase"
+	// pathConfirmProductPurchase is the generic digital-product counterpart,
+	// selected by the reserved "prdp" txid prefix.
+	pathConfirmProductPurchase = "/v1.0/internal/pix/confirm-product-purchase"
 	scopeConfirmDeposit        = "internal:wallet:confirm-deposit"
 	headerAuthorization        = "Authorization"
 	headerContentType          = "Content-Type"
@@ -74,6 +77,13 @@ func (c *Client) ConfirmDeposit(ctx context.Context, txid, payerCPF, payerName s
 // unlike ConfirmDeposit, this flow has no CPF/KYC gate to feed (plan §9.1).
 func (c *Client) ConfirmSandboxPurchase(ctx context.Context, txid string) error {
 	return c.postJSON(ctx, pathConfirmSandboxPurchase, map[string]string{"txid": txid})
+}
+
+// ConfirmProductPurchase wakes the generic product-sale confirmation flow.
+// The API re-queries Inter and validates the fixed catalog price before
+// transitioning the purchase; this call carries no trusted payment facts.
+func (c *Client) ConfirmProductPurchase(ctx context.Context, txid string) error {
+	return c.postJSON(ctx, pathConfirmProductPurchase, map[string]string{"txid": txid})
 }
 
 // postJSON is the single authenticated transport path for wallet API wake-up

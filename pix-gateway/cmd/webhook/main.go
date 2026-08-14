@@ -1,9 +1,8 @@
 // Command webhook receives Inter's PIX payment callback over the mTLS-verified
 // API Gateway HTTP API custom domain (pix.wallet.aoctech.app). It never trusts
 // the payload for money movement (Financial Safety Invariant 11) — it only
-// extracts the txid(s) and asks api to re-derive and credit the deposit via
-// WalletService.ConfirmDeposit, which re-queries Inter itself through
-// LambdaPixClient. This Lambda carries no Inter mTLS credentials at all.
+// extracts txids and wakes the owning API confirmation flow, which re-queries
+// Inter through LambdaPixClient. This Lambda carries no Inter mTLS credentials.
 package main
 
 import (
@@ -26,16 +25,16 @@ import (
 	"gopkg.aoctech.app/wallet/pix-gateway/internal/walletclient"
 )
 
-// sandboxPurchaseTxidPrefix marks a txid as belonging to the direct
-// PIX→sandbox-credits sale rather than a real-wallet deposit (ctech-wallet-api
-// plan docs/plans/2026-07-30-asaas-baas-implementation-plan.md §9.3) — the
-// wallet API mints txids with this prefix (PurchaseSandboxDirect) so this
-// Lambda can route the confirmation call correctly without a new inbound
-// integration, just this one dispatch check.
+// Direct-sale prefixes distinguish sandbox-credit and generic-product charges
+// from real-wallet deposits. The API mints these deterministic txids so one
+// Inter webhook integration can route each wake-up to its owning confirmation
+// flow without trusting any payment fact from the callback body.
 const (
 	sandboxPurchaseTxidPrefix         = "sbxp"
+	productPurchaseTxidPrefix         = "prdp"
 	confirmDepositFailureBody         = "confirm-deposit failed"
 	confirmSandboxPurchaseFailureBody = "confirm-sandbox-purchase failed"
+	confirmProductPurchaseFailureBody = "confirm-product-purchase failed"
 )
 
 // confirmer is the subset of *walletclient.Client the handler depends on —
@@ -43,6 +42,7 @@ const (
 type confirmer interface {
 	ConfirmDeposit(ctx context.Context, txid, payerCPF, payerName string) error
 	ConfirmSandboxPurchase(ctx context.Context, txid string) error
+	ConfirmProductPurchase(ctx context.Context, txid string) error
 }
 
 type handler struct {
@@ -184,6 +184,9 @@ func (h *handler) handle(ctx context.Context, req events.APIGatewayV2HTTPRequest
 func (h *handler) confirm(ctx context.Context, detail pixWebhookPayloadDetail) (string, error) {
 	if strings.HasPrefix(detail.Txid, sandboxPurchaseTxidPrefix) {
 		return confirmSandboxPurchaseFailureBody, h.confirmer.ConfirmSandboxPurchase(ctx, detail.Txid)
+	}
+	if strings.HasPrefix(detail.Txid, productPurchaseTxidPrefix) {
+		return confirmProductPurchaseFailureBody, h.confirmer.ConfirmProductPurchase(ctx, detail.Txid)
 	}
 	return confirmDepositFailureBody, h.confirmer.ConfirmDeposit(ctx, detail.Txid, detail.Pagador.CpfCnpj, detail.Pagador.Nome)
 }

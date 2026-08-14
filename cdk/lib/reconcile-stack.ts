@@ -23,11 +23,18 @@ const API_DIR = path.join(__dirname, '../../api');
 
 /**
  * Tables the reconciliation job touches unconditionally (wallet_-prefixed
- * names). wallet_sandbox_purchases is here because SweepPendingSandboxPurchases
- * runs on every invocation regardless of AsaasCustodyEnabled (implementation
- * plan §9 ships with no flag) — omitting it would AccessDenied every run.
+ * names). The sandbox/product purchase tables are here because their pending
+ * sweeps run on every invocation regardless of AsaasCustodyEnabled — omitting
+ * either table makes the entire reconciliation invocation fail AccessDenied.
  */
-const RECONCILE_TABLES = ['wallets', 'wallet_ledger_entries', 'wallet_idempotency', 'wallet_withdrawals', 'wallet_sandbox_purchases'];
+const RECONCILE_TABLES = [
+  'wallets',
+  'wallet_ledger_entries',
+  'wallet_idempotency',
+  'wallet_withdrawals',
+  'wallet_sandbox_purchases',
+  'wallet_product_purchases',
+];
 
 /**
  * Asaas BaaS custody tables the reconcile job touches ONLY inside its

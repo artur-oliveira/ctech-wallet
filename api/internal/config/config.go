@@ -71,14 +71,32 @@ type Config struct {
 	RedisURL string `env:"VALKEY_URL"` // Redis/Valkey URL — optional; falls back to in-memory
 }
 
-// Load reads config from environment variables.
-func Load() (*Config, error) {
+// load parses the shared process configuration and enforces requirements that
+// apply to both the HTTP server and the scheduled reconciler.
+func load() (*Config, error) {
 	cfg := &Config{}
 	if err := env.Parse(cfg); err != nil {
 		return nil, fmt.Errorf("config: %w", err)
 	}
 	if cfg.CtechJWKSURL == "" && cfg.CtechURL != "" {
 		cfg.CtechJWKSURL = cfg.CtechURL + "/.well-known/jwks.json"
+	}
+	if cfg.AsaasCustodyEnabled && cfg.AsaasParentWalletID == "" {
+		// Fail closed: with custody on, every settlement/fee-sweep leg needs a
+		// destination — an empty parent wallet ID would either panic deep in a
+		// money-out path or (worse) submit a transfer with an empty WalletID.
+		return nil, fmt.Errorf("config: ASAAS_PARENT_WALLET_ID must be set when ASAAS_CUSTODY_ENABLED is true")
+	}
+	return cfg, nil
+}
+
+// Load reads and validates the HTTP API's configuration. Auth, CORS, and
+// fleet-wide Valkey locking are server concerns and remain fail-closed in
+// production.
+func Load() (*Config, error) {
+	cfg, err := load()
+	if err != nil {
+		return nil, err
 	}
 	if cfg.ServiceAudience == "" && cfg.Env == "prod" {
 		// Fail closed: without an audience check, any RS256 token the identity
@@ -94,12 +112,6 @@ func Load() (*Config, error) {
 	if len(cfg.CorsAllowedOrigins) == 0 && cfg.Env == "prod" {
 		return nil, fmt.Errorf("config: CORS_ALLOWED_ORIGINS must be set in production")
 	}
-	if cfg.AsaasCustodyEnabled && cfg.AsaasParentWalletID == "" {
-		// Fail closed: with custody on, every settlement/fee-sweep leg needs a
-		// destination — an empty parent wallet ID would either panic deep in a
-		// money-out path or (worse) submit a transfer with an empty WalletID.
-		return nil, fmt.Errorf("config: ASAAS_PARENT_WALLET_ID must be set when ASAAS_CUSTODY_ENABLED is true")
-	}
 	if cfg.RedisURL == "" && cfg.Env == "prod" {
 		// Fail closed: an empty VALKEY_URL in prod means per-wallet locking
 		// silently degrades to an in-memory store that is NOT shared across
@@ -109,4 +121,14 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("config: VALKEY_URL must be set in production so wallet locking is fleet-shared")
 	}
 	return cfg, nil
+}
+
+// LoadReconcile reads configuration for the scheduled reconciliation process.
+// It deliberately skips HTTP-only issuer/audience/CORS validation and the
+// API's fleet-wide Valkey requirement: this process verifies no JWTs, serves
+// no browser requests, and constructs its financial-operation locker in
+// memory. If VALKEY_URL is present it is used only for best-effort WebSocket
+// broadcasts.
+func LoadReconcile() (*Config, error) {
+	return load()
 }

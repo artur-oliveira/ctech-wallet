@@ -43,6 +43,24 @@ func TestConfirmDepositRequiresScope(t *testing.T) {
 	}
 }
 
+func TestConfirmProductPurchaseRouteRegistered(t *testing.T) {
+	app := fiber.New()
+	app.Use(recover.New())
+	h := &handlers{}
+	app.Post("/internal/pix/confirm-product-purchase", h.confirmProductPurchase)
+
+	body, _ := json.Marshal(ConfirmPurchaseRequest{Txid: "prdp123"})
+	req := httptest.NewRequest(http.MethodPost, "/internal/pix/confirm-product-purchase", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		t.Fatal("route not registered")
+	}
+}
+
 // TestRealDebitRouteRegistered proves the /internal/wallet/real/debit route is
 // wired to realDebit, mirroring TestConfirmDepositRequiresScope's style.
 func TestRealDebitRouteRegistered(t *testing.T) {

@@ -53,10 +53,17 @@ binary at `/app`, `EXPOSE 8000`. The deployed binary **must** be named `app`
 ### Environment (`config.Load`, `.env.example`)
 
 Required: `TABLE_PREFIX`, `PIX_GATEWAY_FUNCTION_NAME`. Set in prod:
-`SERVICE_AUDIENCE`, `CTECH_URL`, `VALKEY_URL` (fail‑closed if absent — see B7),
+`SERVICE_AUDIENCE`, `CTECH_URL`, `CTECH_ISSUER_URL`, `CORS_ALLOWED_ORIGINS`,
+`VALKEY_URL` (fail‑closed if absent — see B7),
 `WALLET_CLIENT_ID`/`WALLET_CLIENT_SECRET` (wallet's own M2M client to call
 account KYC). `GAMBLING_ENABLED` (default `false`) gates the entire
 `real→game` funding + activation surface (routes 404 when off).
+
+`cmd/reconcile` uses `config.LoadReconcile`: it shares required storage/PIX
+configuration and custody validation, but deliberately skips HTTP-only
+issuer/audience/CORS checks and the API server's fleet-wide Valkey requirement.
+It verifies no JWTs, serves no browser traffic, and uses its in-memory locker;
+an optional `VALKEY_URL` is only used for best-effort WebSocket broadcasts.
 
 > **Drift note:** `.env.example` still lists `INTER_*` vars
 > (`INTER_BASE_URL`, `INTER_CLIENT_ID`, `INTER_CLIENT_SECRET`, `INTER_PIX_KEY`,

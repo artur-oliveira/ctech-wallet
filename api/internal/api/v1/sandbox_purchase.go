@@ -58,7 +58,7 @@ func (h *handlers) refundSandboxPurchase(c fiber.Ctx) error {
 // instead of confirm-deposit (plan §9.3). Never trusts its own caller either:
 // ConfirmSandboxPurchase re-queries Inter itself (Invariant #11).
 func (h *handlers) confirmSandboxPurchase(c fiber.Ctx) error {
-	var body ConfirmSandboxPurchaseRequest
+	var body ConfirmPurchaseRequest
 	if p := bindJSON(c, &body); p != nil {
 		return sendProblem(c, p)
 	}

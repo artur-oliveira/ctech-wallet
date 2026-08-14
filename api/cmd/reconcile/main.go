@@ -91,7 +91,7 @@ func handler(ctx context.Context) (*Result, error) {
 }
 
 func run(ctx context.Context) (*Result, error) {
-	cfg, err := config.Load()
+	cfg, err := config.LoadReconcile()
 	if err != nil {
 		return nil, fmt.Errorf("config: %w", err)
 	}

@@ -43,10 +43,11 @@ type M2MRefundSandboxPurchaseRequest struct {
 	IdempotencyKey string `json:"idempotency_key" validate:"required,max=128"`
 }
 
-// ConfirmSandboxPurchaseRequest is pix-gateway's webhook-Lambda call for the
-// direct-purchase rail (plan §9.3) — mirrors ConfirmDepositRequest's shape
-// but with no payer CPF/name: this flow has no KYC/CPF gate to feed (§9.1).
-type ConfirmSandboxPurchaseRequest struct {
+// ConfirmPurchaseRequest is pix-gateway's webhook-Lambda call for either
+// direct-sale rail (sandbox credits or a generic product). It mirrors
+// ConfirmDepositRequest's txid but has no payer identity because these sales
+// have no KYC/CPF gate.
+type ConfirmPurchaseRequest struct {
 	Txid string `json:"txid" validate:"required"`
 }
 

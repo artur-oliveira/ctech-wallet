@@ -14,8 +14,10 @@ type confirmCall struct {
 type fakeConfirmer struct {
 	calls        []confirmCall
 	sandboxCalls []string
+	productCalls []string
 	err          error
 	sandboxErr   error
+	productErr   error
 }
 
 func (f *fakeConfirmer) ConfirmDeposit(_ context.Context, txid, payerCPF, payerName string) error {
@@ -26,6 +28,11 @@ func (f *fakeConfirmer) ConfirmDeposit(_ context.Context, txid, payerCPF, payerN
 func (f *fakeConfirmer) ConfirmSandboxPurchase(_ context.Context, txid string) error {
 	f.sandboxCalls = append(f.sandboxCalls, txid)
 	return f.sandboxErr
+}
+
+func (f *fakeConfirmer) ConfirmProductPurchase(_ context.Context, txid string) error {
+	f.productCalls = append(f.productCalls, txid)
+	return f.productErr
 }
 
 func TestHandleWebhookForwardsEveryTxid(t *testing.T) {
@@ -175,6 +182,42 @@ func TestHandleSandboxPurchaseConfirmFailureReturns500(t *testing.T) {
 	f := &fakeConfirmer{sandboxErr: context.DeadlineExceeded}
 	h := &handler{confirmer: f}
 	body := `{"txid":"sbxp646d65f027b9de5e1c7a3c4aaa519ed"}`
+	resp, err := h.handle(context.Background(), events.APIGatewayV2HTTPRequest{Body: body})
+	if err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+	if resp.StatusCode != 500 {
+		t.Fatalf("expected 500, got %d", resp.StatusCode)
+	}
+}
+
+// Regression: generic product-sale txids use the reserved "prdp" prefix and
+// must never fall through to ConfirmDeposit, whose unknown-txid behavior is an
+// idempotent 200 no-op. That fallthrough leaves a paid purchase pending.
+func TestHandleRoutesProductPurchaseTxidToConfirmProductPurchase(t *testing.T) {
+	f := &fakeConfirmer{}
+	h := &handler{confirmer: f}
+	txid := "prdp1438ef8e2c78b69b09ca9b4d16ab305"
+	body := `{"txid":"` + txid + `"}`
+	resp, err := h.handle(context.Background(), events.APIGatewayV2HTTPRequest{Body: body})
+	if err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if len(f.calls) != 0 || len(f.sandboxCalls) != 0 {
+		t.Fatalf("product txid reached the wrong confirmer: deposit=%v sandbox=%v", f.calls, f.sandboxCalls)
+	}
+	if len(f.productCalls) != 1 || f.productCalls[0] != txid {
+		t.Fatalf("expected 1 ConfirmProductPurchase call for %s, got %v", txid, f.productCalls)
+	}
+}
+
+func TestHandleProductPurchaseConfirmFailureReturns500(t *testing.T) {
+	f := &fakeConfirmer{productErr: context.DeadlineExceeded}
+	h := &handler{confirmer: f}
+	body := `{"txid":"prdp2438ef8e2c78b69b09ca9b4d16ab305"}`
 	resp, err := h.handle(context.Background(), events.APIGatewayV2HTTPRequest{Body: body})
 	if err != nil {
 		t.Fatalf("handle: %v", err)

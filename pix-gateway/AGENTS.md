@@ -40,9 +40,11 @@ source of truth — Invariant #11 — and the CPF gate is anti-fraud only).
    APIGW, not code).
 2. **B35:** auth is `?hmac=` query param constant-time-compared vs SSM
    secret (`cmd/webhook/main.go:114`) — **not** a body signature.
-3. For each txid, calls `api` `POST /v1.0/internal/pix/confirm-deposit`
-   (scope `internal:wallet:confirm-deposit`) with the payer CPF/name from
-   the webhook body; `api` re-queries Inter before crediting.
+3. Dispatches with scope `internal:wallet:confirm-deposit` by reserved txid
+   prefix: `sbxp` → `/confirm-sandbox-purchase`, `prdp` →
+   `/confirm-product-purchase`, otherwise `/confirm-deposit`. Only deposits
+   forward payer identity; every API path re-queries Inter before changing
+   durable state.
 
 ## Known divergences (documented, NOT fixed here)
 

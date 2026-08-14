@@ -125,6 +125,10 @@ same secret. Rotate by updating both sides together; there is no versioning/over
 Run `cmd/reconcile` on a schedule (e.g. EventBridge every 5 min). It resolves
 withdrawals stuck in `processing` (completes or reverses) and exits non-zero when a
 reversal's credit-back fails (`refund_failed`) so the scheduler raises an alarm.
+It also re-queries aged pending PIX deposits, sandbox purchases, and product
+purchases as a lost-webhook fallback. The Lambda role must include each purchase
+table and its status GSI. `cmd/reconcile` uses `config.LoadReconcile`; it does
+not require the API server's JWT issuer, CORS, or fleet-wide Valkey settings.
 
 ## 6. `GAMBLING_ENABLED` — do not turn this on yet
 

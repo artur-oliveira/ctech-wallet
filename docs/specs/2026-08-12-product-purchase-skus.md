@@ -112,6 +112,20 @@ All under `/v1.0/internal/wallet/product-purchase`, gated by
 | `GET /:id`         | —                                 | Status poll — caller's mandated confirm-before-unlocking path |
 | `POST /:id/refund` | `{user_id, idempotency_key}`      | No usage check — see Non-goals                                |
 
+PIX webhook wake-ups whose deterministic txid starts with `prdp` are routed by
+`pix-gateway` to `POST /v1.0/internal/pix/confirm-product-purchase`, guarded by
+the existing `internal:wallet:confirm-deposit` scope. The endpoint accepts only
+`{txid}` and invokes `ConfirmProductPurchase`; payment status and amount still
+come exclusively from the API's Inter re-query (Invariant #11). A confirmation
+failure returns non-2xx so Inter retries the idempotent wake-up.
+
+The scheduled reconciler remains the fallback for a missing webhook. It uses a
+process-specific configuration loader because it serves no HTTP, verifies no
+JWTs, and uses no fleet-wide wallet lock; API-only issuer/CORS/Valkey startup
+guards therefore do not apply. Its IAM role includes `wallet_product_purchases`
+and the table's GSIs so `SweepPendingProductPurchases` can query and transition
+aged `pending` rows.
+
 ## Notify-back
 
 Reuses the existing per-client webhook registration (`/ctech-wallet/{env}/m2m-clients` SSM blob,

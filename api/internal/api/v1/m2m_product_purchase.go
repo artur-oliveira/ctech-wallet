@@ -72,3 +72,18 @@ func (h *handlers) m2mRefundProductPurchase(c fiber.Ctx) error {
 	}
 	return c.JSON(withProductExpiry(purchase))
 }
+
+// confirmProductPurchase is the "prdp" webhook wake-up path. The caller's
+// body is never payment authority: ConfirmProductPurchase re-queries Inter,
+// validates completed status and the catalog-owned amount, then transitions
+// the purchase and notifies its M2M owner.
+func (h *handlers) confirmProductPurchase(c fiber.Ctx) error {
+	var body ConfirmPurchaseRequest
+	if p := bindJSON(c, &body); p != nil {
+		return sendProblem(c, p)
+	}
+	if err := h.svc.ConfirmProductPurchase(c.Context(), body.Txid, false); err != nil {
+		return sendProblem(c, err)
+	}
+	return c.SendStatus(fiber.StatusOK)
+}

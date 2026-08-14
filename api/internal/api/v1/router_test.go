@@ -105,3 +105,10 @@ func TestRingFenceRoutesRequireAuth(t *testing.T) {
 		}
 	}
 }
+
+func TestProductPurchaseConfirmationRouteIsRegistered(t *testing.T) {
+	const path = "/v1.0/internal/pix/confirm-product-purchase"
+	if !registeredPaths(routerApp(t, false))[path] {
+		t.Fatalf("%s is missing", path)
+	}
+}
