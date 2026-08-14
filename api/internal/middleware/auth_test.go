@@ -61,6 +61,7 @@ func TestVerifier_VerifyClaimsExtractsAllFields(t *testing.T) {
 		"azp":         "poker",
 		"kyc_level":   "enhanced",
 		"last_mfa_at": now,
+		"token_use":   "access",
 		"aud":         "https://wallet-api.aoctech.app",
 		"iss":         "https://accounts.aoctech.app",
 		"exp":         now + 900,
