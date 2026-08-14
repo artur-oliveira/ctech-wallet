@@ -1,16 +1,17 @@
 import * as cdk from 'aws-cdk-lib';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
-import * as autoscaling from 'aws-cdk-lib/aws-autoscaling';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
-import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import {Construct} from 'constructs';
 import {
+  addCloudflareOriginCaCommands,
   addCloudWatchAgentDualStackOverride,
   addDualStackSsmAgentCommands,
   addRealipRefreshCommands,
   addSwapCommands,
+  buildCloudWatchAgentConfig,
+  HaproxyEc2Service,
 } from '@aoctech/cdk';
 import {Environment} from './types';
 import {
@@ -34,10 +35,6 @@ interface ApiStackProps extends cdk.StackProps {
   // subnet/AZ metadata at synthesis time. CI reads /ctech/{env}/network/vpc-id
   // from SSM into CTECH_VPC_ID before running cdk deploy.
   vpcId: string;
-  /** ALB host header, e.g. wallet-api-dev.aoctech.app */
-  domainName: string;
-  /** CloudFront host, e.g. wallet-dev.aoctech.app — used for CORS. */
-  appDomainName: string;
   instanceProfileName: string;
   deploymentsBucketName: string;
   logsBucketName: string;
@@ -58,8 +55,6 @@ export class ApiStack extends cdk.Stack {
     const {
       environment,
       vpcId,
-      domainName,
-      appDomainName,
       instanceProfileName,
       deploymentsBucketName,
       logsBucketName,
@@ -100,6 +95,7 @@ export class ApiStack extends cdk.Stack {
 
     addSwapCommands(userData);
     addDualStackSsmAgentCommands(userData);
+    addCloudflareOriginCaCommands(userData);
 
     userData.addCommands(
       // ── nginx: listens :8080, proxies to app :8000 ───────────────────────────
@@ -267,30 +263,15 @@ export class ApiStack extends cdk.Stack {
     userData.addCommands(
       // {instance_id} is resolved by the CW agent at runtime, not by bash.
       `cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << 'CWA'`,
-      `{`,
-      `  "agent": {"metrics_collection_interval": 60},`,
-      `  "metrics": {`,
-      `    "namespace": "CtechWallet/${environment}/Host",`,
-      '    "append_dimensions": {"InstanceId": "${aws:InstanceId}"},',
-      `    "metrics_collected": {`,
-      `      "mem": {"measurement":["used_percent"],"metrics_collection_interval":60},`,
-      `      "swap": {"measurement":["used_percent"],"metrics_collection_interval":60},`,
-      `      "disk": {"measurement":["used_percent"],"resources":["/"],"drop_device":true,"metrics_collection_interval":60},`,
-      `      "procstat": [{"pattern":"/opt/app/current/(app|bootstrap)","measurement":["memory_rss"],"metrics_collection_interval":60}]`,
-      `    }`,
-      `  },`,
-      `  "logs": {`,
-      `    "logs_collected": {`,
-      `      "files": {`,
-      `        "collect_list": [`,
-      `          {"file_path":"/var/log/app/app.log","log_group_name":"${logGroupApp}","log_stream_name":"{instance_id}"},`,
-      `          {"file_path":"/var/log/nginx/access.log","log_group_name":"${logGroupNginx}","log_stream_name":"{instance_id}/access"},`,
-      `          {"file_path":"/var/log/nginx/error.log","log_group_name":"${logGroupNginx}","log_stream_name":"{instance_id}/error"}`,
-      `        ]`,
-      `      }`,
-      `    }`,
-      `  }`,
-      `}`,
+      buildCloudWatchAgentConfig({
+        metricNamespace: `CtechWallet/${environment}/Host`,
+        appProcessPattern: '/opt/app/current/(app|bootstrap)',
+        logFiles: [
+          {filePath: '/var/log/app/app.log', logGroupName: logGroupApp, logStreamName: '{instance_id}'},
+          {filePath: '/var/log/nginx/access.log', logGroupName: logGroupNginx, logStreamName: '{instance_id}/access'},
+          {filePath: '/var/log/nginx/error.log', logGroupName: logGroupNginx, logStreamName: '{instance_id}/error'},
+        ],
+      }),
       `CWA`,
       `/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json -s`,
 
@@ -305,10 +286,8 @@ export class ApiStack extends cdk.Stack {
       `AWS_USE_DUALSTACK_ENDPOINT=true`,
       `PORT=${APP_PORT}`,
       `GAMBLING_ENABLED=true`,
-      `SERVICE_AUDIENCE=https://${appDomainName}`,
       `PIX_GATEWAY_FUNCTION_NAME=${pixGatewayFunctionName}`,
       `TRUSTED_PROXIES=127.0.0.1`,
-      `CORS_ALLOWED_ORIGINS=https://${appDomainName}`,
       `ENV`,
 
       // ── start.sh: fetches secrets from SSM then exec-replaces into the binary
@@ -327,13 +306,15 @@ export class ApiStack extends cdk.Stack {
       `VALKEY_BASE=$(aws ssm get-parameter --name "${shared.valkeyUrl}" --with-decryption --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
       // Falls back to empty → the app uses the in-memory cache backend instead of crashing.
       `if [ -n "$VALKEY_BASE" ]; then VALKEY_URL="\${VALKEY_BASE%/}/${VALKEY_DB}"; else VALKEY_URL=""; fi`,
-      `CTECH_URL=$(aws ssm get-parameter --name "${account.baseUrl}" --with-decryption --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
+      `CTECH_URL=$(aws ssm get-parameter --name "${account.internalBaseUrl}" --with-decryption --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
       `CTECH_ISSUER_URL=$(aws ssm get-parameter --name "${account.appUrl}" --with-decryption --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
-      `CTECH_JWKS_URL=$(aws ssm get-parameter --name "${account.jwksUrl}" --with-decryption --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
+      `CTECH_JWKS_URL=$(aws ssm get-parameter --name "${account.internalJwksUrl}" --with-decryption --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
+      `SERVICE_AUDIENCE=$(aws ssm get-parameter --name "${wallet.appUrl}" --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
+      `CORS_ALLOWED_ORIGINS="$SERVICE_AUDIENCE"`,
       // Wallet's own M2M client — used to call ctech-account internal:kyc.
       `WALLET_CLIENT_ID=$(aws ssm get-parameter --name "${wallet.walletClientId}" --with-decryption --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
       `WALLET_CLIENT_SECRET=$(aws ssm get-parameter --name "${wallet.walletClientSecret}" --with-decryption --query Parameter.Value --output text --region ${this.region} 2>/dev/null || echo "")`,
-      `export VALKEY_URL CTECH_URL CTECH_JWKS_URL CTECH_ISSUER_URL`,
+      `export VALKEY_URL CTECH_URL CTECH_JWKS_URL CTECH_ISSUER_URL SERVICE_AUDIENCE CORS_ALLOWED_ORIGINS`,
       `export WALLET_CLIENT_ID WALLET_CLIENT_SECRET`,
       `exec /opt/app/current/app`,
       `START`,
@@ -450,77 +431,39 @@ export class ApiStack extends cdk.Stack {
       `aws s3api head-object --bucket "${deploymentsBucketName}" --key "${API_CURRENT_ARTIFACT_KEY}" 2>/dev/null && /opt/app/deploy.sh ${API_CURRENT_ARTIFACT_KEY} || echo "No bootstrap artifact, waiting for first deploy"`,
     );
 
-    // HAProxy discovers this ASG through its ctech-lbalancer bootstrap route.
-    const serviceSg = new ec2.SecurityGroup(this, 'ApiServiceSg', {
+    // ctech-lbalancer still owns the bootstrap route and private CNAME.
+    const service = new HaproxyEc2Service(this, 'ApiService', {
       vpc,
-      securityGroupName: `${environment}-${svcName}-api-sg`,
-      description: 'ctech-wallet API instances', allowAllOutbound: true, allowAllIpv6Outbound: true,
-    });
-    serviceSg.addIngressRule(edgeSg, ec2.Port.tcp(NGINX_PORT), 'HAProxy edge to app');
-    const appLogGroup = new logs.LogGroup(this, 'ApiServiceAppLogGroup', {
-      logGroupName: logGroupApp,
-      retention: logRetention,
-      removalPolicy: isProd ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY
-    });
-    const nginxLogGroup = new logs.LogGroup(this, 'ApiServiceNginxLogGroup', {
-      logGroupName: logGroupNginx,
-      retention: logRetention,
-      removalPolicy: isProd ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY
-    });
-    const launchTemplate = new ec2.LaunchTemplate(this, 'ApiServiceLaunchTemplate', {
-      launchTemplateName: `${this.asgName}-lt`,
-      instanceType: ec2.InstanceType.of(ec2.InstanceClass.T4G, ec2.InstanceSize.MICRO),
-      machineImage: ec2.MachineImage.latestAmazonLinux2023({
-        cpuType: ec2.AmazonLinuxCpuType.ARM_64,
-        edition: ec2.AmazonLinuxEdition.MINIMAL
-      }),
-      blockDevices: [{
-        deviceName: '/dev/xvda',
-        volume: ec2.BlockDeviceVolume.ebs(3, {volumeType: ec2.EbsDeviceVolumeType.GP3, deleteOnTermination: true})
-      }],
+      edgeSecurityGroup: edgeSg,
+      appPort: NGINX_PORT,
       userData,
-      instanceProfile: iam.InstanceProfile.fromInstanceProfileName(this, 'ApiServiceInstanceProfile', instanceProfileName),
-      requireImdsv2: true,
-      securityGroup: serviceSg
-    });
-    const cfnLaunchTemplate = launchTemplate.node.defaultChild as ec2.CfnLaunchTemplate;
-    cfnLaunchTemplate.addPropertyDeletionOverride('LaunchTemplateData.SecurityGroupIds');
-    cfnLaunchTemplate.addPropertyOverride('LaunchTemplateData.NetworkInterfaces', [{
-      DeviceIndex: 0,
-      Groups: [serviceSg.securityGroupId],
-      AssociatePublicIpAddress: false,
-      Ipv6AddressCount: 1
-    }]);
-    const asg = new autoscaling.AutoScalingGroup(this, 'ApiServiceASG', {
-      autoScalingGroupName: this.asgName,
-      vpc,
-      vpcSubnets: {subnetType: ec2.SubnetType.PUBLIC},
-      launchTemplate,
+      instanceProfileName,
+      securityGroupName: `${environment}-${svcName}-api-sg`,
+      securityGroupDescription: 'ctech-wallet API instances',
+      appLogGroupName: logGroupApp,
+      nginxLogGroupName: logGroupNginx,
+      logRetention,
+      logRemovalPolicy: isProd ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
+      asgName: this.asgName,
       minCapacity: 1,
       maxCapacity: isProd ? 3 : 1,
-      cooldown: cdk.Duration.seconds(120),
-      healthChecks: autoscaling.HealthChecks.ec2({gracePeriod: cdk.Duration.seconds(120)}),
-    });
-    if (isProd) asg.scaleOnCpuUtilization('ApiServiceCpuTargetTracking', {
-      targetUtilizationPercent: 60,
-      cooldown: cdk.Duration.minutes(3)
     });
 
     // ── Outputs ───────────────────────────────────────────────────────────────
-    new cdk.CfnOutput(this, 'AsgName', {value: asg.autoScalingGroupName, exportName: `${id}-asg-name`});
+    new cdk.CfnOutput(this, 'AsgName', {value: service.autoScalingGroup.autoScalingGroupName, exportName: `${id}-asg-name`});
     new cdk.CfnOutput(this, 'AppLogGroupName', {
-      value: appLogGroup.logGroupName,
+      value: service.appLogGroup.logGroupName,
       exportName: `${id}-app-log-group`,
     });
     new cdk.CfnOutput(this, 'NginxLogGroupName', {
-      value: nginxLogGroup.logGroupName,
+      value: service.nginxLogGroup!.logGroupName,
       exportName: `${id}-nginx-log-group`,
     });
 
     // slog ALARM lines (refund/reversal failures, deposit amount mismatches,
     // excess-payment refund failures) previously paged nobody — this fires a
     // CloudWatch alarm the moment one is emitted.
-    const alarmMetricFilter = appLogGroup.addMetricFilter('AlarmLogFilter', {
+    const alarmMetricFilter = service.appLogGroup.addMetricFilter('AlarmLogFilter', {
       filterPattern: logs.FilterPattern.literal('"ALARM"'),
       metricNamespace: `CtechWallet/${environment}`,
       metricName: 'AlarmLogLines',

@@ -130,8 +130,10 @@ export class IAMStack extends cdk.Stack {
           resources: [
             `arn:aws:ssm:*:*:parameter${walletSsm.walletClientId}`,
             `arn:aws:ssm:*:*:parameter${walletSsm.walletClientSecret}`,
-            `arn:aws:ssm:*:*:parameter${accountSsm.baseUrl}`,
-            `arn:aws:ssm:*:*:parameter${accountSsm.jwksUrl}`,
+            `arn:aws:ssm:*:*:parameter${accountSsm.internalBaseUrl}`,
+            `arn:aws:ssm:*:*:parameter${accountSsm.appUrl}`,
+            `arn:aws:ssm:*:*:parameter${accountSsm.internalJwksUrl}`,
+            `arn:aws:ssm:*:*:parameter${walletSsm.appUrl}`,
             `arn:aws:ssm:*:*:parameter${SSM_SHARED(environment).valkeyUrl}`,
             // Asaas BaaS custody — read in-process by api itself (unlike the
             // inter/* SecureStrings above, which pix-gateway's own role reads).

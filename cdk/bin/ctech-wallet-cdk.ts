@@ -106,8 +106,8 @@ const iamStack = new IAMStack(app, id('IAM'), {
   pixGatewayOutboundFunctionArn: pixGatewayStack.outboundFunctionArn,
   description: `CTech Wallet IAM Roles - ${ENVIRONMENT}`,
 });
-iamStack.addDependency(dynamodbStack);
-iamStack.addDependency(pixGatewayStack);
+iamStack.addStackDependency(dynamodbStack);
+iamStack.addStackDependency(pixGatewayStack);
 
 // =====================
 // API (EC2 + ASG, shared ALB from ctech-cdk)
@@ -116,8 +116,6 @@ const apiStack = new ApiStack(app, id('API'), {
   env,
   environment: ENVIRONMENT,
   vpcId: CTECH_VPC_ID,
-  domainName: domainForEnv(ENVIRONMENT, API_DOMAIN_PREFIX),
-  appDomainName: domainForEnv(ENVIRONMENT, APP_DOMAIN_PREFIX),
   instanceProfileName: iamStack.instanceProfileName,
   deploymentsBucketName: CTECH_DEPLOYMENTS_BUCKET,
   logsBucketName: CTECH_LOGS_BUCKET,
@@ -127,8 +125,8 @@ const apiStack = new ApiStack(app, id('API'), {
 // instanceProfileName is a plain string, not a CFN token — CDK cannot infer the
 // dependency. Force it so the instance profile exists before the ASG validates
 // the launch template.
-apiStack.addDependency(iamStack);
-apiStack.addDependency(pixGatewayStack);
+apiStack.addStackDependency(iamStack);
+apiStack.addStackDependency(pixGatewayStack);
 
 // =====================
 // Withdrawal reconciliation (Lambda + EventBridge Scheduler)
@@ -146,8 +144,8 @@ const reconcileStack = new ReconcileStack(app, id('Reconcile'), {
   pixGatewayOutboundFunctionName: pixGatewayStack.outboundFunctionName,
   description: `CTech Wallet withdrawal reconciliation - ${ENVIRONMENT}`,
 });
-reconcileStack.addDependency(dynamodbStack);
-reconcileStack.addDependency(pixGatewayStack);
+reconcileStack.addStackDependency(dynamodbStack);
+reconcileStack.addStackDependency(pixGatewayStack);
 
 // =====================
 // Frontend (S3 + CloudFront)

@@ -3,6 +3,20 @@
 Out-of-band steps that live in **ctech-account**, not in this repo. The wallet API
 needs them before it can promote KYC or accept sandbox M2M traffic.
 
+## 0. Create/update service URL parameters
+
+Before deploying the EC2 API, run the shared idempotent helper from `ctech-cdk`:
+
+```bash
+CTECH_AWS_PROFILE=ctech ./scripts/configure-service-url-parameters.sh prod
+```
+
+It writes wallet/account/poker/DFE URL parameters with the private
+`*.internal.aoctech.app` hosts for EC2-to-EC2 transport and JWKS retrieval.
+Public application URLs remain public because they are OAuth issuer, audience,
+CORS and browser contracts. After changing a URL parameter, restart the service
+or refresh the instance; a CDK template change is not needed.
+
 ## 1. Seed the wallet scopes into the global catalog
 
 The wallet defines two internal scopes its callers (poker/dominó, future billing)

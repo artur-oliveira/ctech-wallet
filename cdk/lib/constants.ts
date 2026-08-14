@@ -120,6 +120,8 @@ export const VALKEY_DB = 2;
  */
 export const SSM_WALLET = (env: Environment) => ({
   namespace: `/${SERVICE}/${env}`,
+  appUrl: `/${SERVICE}/${env}/app-url`,
+  internalBaseUrl: `/${SERVICE}/${env}/internal-base-url`,
   walletClientId: `/${SERVICE}/${env}/wallet-client-id`,
   walletClientSecret: `/${SERVICE}/${env}/wallet-client-secret`, // SecureString
   interClientId: `/${SERVICE}/${env}/inter/client-id`,
@@ -149,8 +151,10 @@ export const SSM_WALLET = (env: Environment) => ({
 export const SSM_ACCOUNT = (env: Environment) => ({
   namespace: `/ctech-account/${env}`,
   baseUrl: `/ctech-account/${env}/base-url`,
+  internalBaseUrl: `/ctech-account/${env}/internal-base-url`,
   appUrl: `/ctech-account/${env}/app-url`,
   jwksUrl: `/ctech-account/${env}/jwks-url`,
+  internalJwksUrl: `/ctech-account/${env}/internal-jwks-url`,
 });
 
 /** pix-gateway-owned SSM namespace (seeded operationally; never written by CDK). */

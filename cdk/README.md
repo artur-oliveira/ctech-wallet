@@ -3,9 +3,9 @@
 > HAProxy migration: the API ASG no longer creates an ALB target group or listener
 > rule. `ctech-lbalancer` discovers it through its `wallet` route; the retained
 > `/ctech/{env}/network/alb-sg-id` identifies the shared edge trusted by the API SG.
-> `PrivateIpv4Ec2Service` cannot be used for this stack because its current contract
-> always creates the retired ALB target group and listener rule. CI permits the
-> private-IPv4 launch-template override only in `lib/api-stack.ts`.
+> `HaproxyEc2Service` from `@aoctech/cdk` now owns the common ASG resources.
+> Route creation remains disabled because the existing `wallet` route parameter is
+> owned by `ctech-lbalancer`.
 
 AWS CDK (TypeScript) infrastructure for the wallet. Deploys: DynamoDB tables,
 the API on an EC2 ASG behind the CTech HAProxy edge, the reconcile Lambda, the `pix-gateway`
@@ -67,9 +67,9 @@ and they are — the underlying item actions are present. No IAM change needed.
 
 ## ApiStack — EC2 ASG + HAProxy (`api-stack.ts`)
 
-- Defines the private-IPv4 EC2 ASG locally because `@aoctech/cdk`'s
-  `PrivateIpv4Ec2Service` still owns ALB routing. The shared HAProxy edge discovers
-  the ASG through its `wallet` route and probes `/v1.0/health-check`; the API's
+- Uses `HaproxyEc2Service` for the private-IPv4 security group, encrypted launch
+  template, log groups, ASG and CPU target tracking. The shared HAProxy edge discovers
+  the ASG through its existing `wallet` route and probes `/v1.0/health-check`; the API's
   degraded `207` response remains part of that route's health contract.
 - Instances: min 1, max 3 (prod). nginx `:8080` → app `:8000`
   (`constants.ts:44-48`). Rate limit `100r/s` by real viewer IP
@@ -77,13 +77,17 @@ and they are — the underlying item actions are present. No IAM change needed.
   (`:223`). Real‑IP resolved via `update-realip.sh`.
 - **User data** (`api-stack.ts:96`) writes nginx.conf, systemd `app.service`,
   `start.sh` (fetches non‑secret env + reads secrets from SSM at boot:
-  `VALKEY_URL` DB **2**, `CTECH_URL`/`CTECH_JWKS_URL`, `WALLET_CLIENT_ID`/
+  `VALKEY_URL` DB **2**, internal `CTECH_URL`/`CTECH_JWKS_URL`, public issuer,
+  service audience/CORS, `WALLET_CLIENT_ID`/
   `SECRET`), `deploy.sh` (SSM RunCommand rolling deploy invoked by GitHub
   Actions), `upload-logs.sh`, logrotate.
+- User data downloads only the official Cloudflare Origin CA RSA root, verifies
+  its pinned SHA-256 and installs it into the system trust store for verified
+  `*.internal.aoctech.app` calls.
 - CloudWatch **alarm on `"ALARM"` log lines** (`:485`) — fires on refund/
   reversal failures, deposit amount mismatch, excess‑payment refund failure
   (the money‑in‑limbo sentinel).
-- CloudWatch Agent publishes four bounded 60-second host series under
+- `buildCloudWatchAgentConfig` publishes four bounded 60-second host series under
   `CtechWallet/<env>/Host`: memory %, swap %, root-disk %, and application RSS.
   EC2's native `CPUUtilization`/`CPUCreditBalance` remain the CPU source.
 
@@ -117,9 +121,9 @@ from running.
 
 ## FrontendStack (`frontend-stack.ts`)
 
-S3 (OAC, block‑public) + CloudFront. Next.js static export served at the edge;
-a CloudFront Function rewrites clean URLs to `.html` using a **KeyValueStore**
-route manifest published by the frontend workflow. `API_PATH_PATTERNS`
+`createNextjsStaticFrontend` from `@aoctech/cdk` creates S3 (OAC, block-public),
+CloudFront, the rewrite function, KVS and security headers. The wallet stack adds
+its locale negotiation rewrite. `API_PATH_PATTERNS`
 (`/v1.0/*`) forwards to the HAProxy API origin **same‑origin** (no CORS needed);
 `ALL_VIEWER_EXCEPT_HOST_HEADER` so the API gets the real `Authorization`/body.
 Security response headers + CSP (`connect-src 'self' https://<accounts>`).
@@ -133,10 +137,20 @@ isolation); the infra role gets `AdministratorAccess`.
 ## Deploy flow
 
 ```bash
-cd cdk && npm ci
+cd ../../ctech-cdk
+CTECH_AWS_PROFILE=ctech ./scripts/configure-service-url-parameters.sh <env>
+cd ../ctech-wallet/cdk
+npm ci
 npx cdk deploy CtechWallet-<Env>-DynamoDB      # then IAM, Api, Reconcile, PixGateway, Frontend
 # (or the whole app) — per environment
 ```
+
+The EC2 API resolves account transport/JWKS and wallet audience/CORS URLs from
+SSM whenever the service starts. Updating them therefore requires an SSM change
+plus service restart/instance refresh, not a template change. Internal transport
+uses `*.internal.aoctech.app`; the OIDC issuer and browser URLs stay public.
+Reconcile and pix-gateway Lambdas stay on public endpoints because they run
+outside the shared VPC/private hosted zone.
 
 CI: `.github/workflows/{api,frontend,infra,deploy}.yml`.
 
