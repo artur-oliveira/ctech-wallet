@@ -13,7 +13,7 @@ Lambdas, the static frontend (S3 + CloudFront), and the GitHub‑Actions OIDC
 deploy roles.
 
 Entry: `bin/ctech-wallet-cdk.ts` (`cdk.json` → `npx ts-node --prefer-ts-exts
-bin/ctech-wallet-cdk.ts`). Per‑environment; shared infra (VPC, ALB, Valkey) is
+bin/ctech-wallet-cdk.ts`). Per‑environment; shared infra (VPC, edge SG, Valkey) is
 owned by `ctech-cdk` and referenced via SSM.
 
 ## Stacks
@@ -65,7 +65,7 @@ which the wallet IAM role **already grants**. Monetary transactions
 `iam-stack.ts:88` asserts the mutations are conditional `TransactWriteItems`,
 and they are — the underlying item actions are present. No IAM change needed.
 
-## ApiStack — EC2 ASG + ALB (`api-stack.ts`)
+## ApiStack — EC2 ASG + HAProxy (`api-stack.ts`)
 
 - Defines the private-IPv4 EC2 ASG locally because `@aoctech/cdk`'s
   `PrivateIpv4Ec2Service` still owns ALB routing. The shared HAProxy edge discovers
@@ -83,6 +83,9 @@ and they are — the underlying item actions are present. No IAM change needed.
 - CloudWatch **alarm on `"ALARM"` log lines** (`:485`) — fires on refund/
   reversal failures, deposit amount mismatch, excess‑payment refund failure
   (the money‑in‑limbo sentinel).
+- CloudWatch Agent publishes four bounded 60-second host series under
+  `CtechWallet/<env>/Host`: memory %, swap %, root-disk %, and application RSS.
+  EC2's native `CPUUtilization`/`CPUCreditBalance` remain the CPU source.
 
 ## ReconcileStack (`reconcile-stack.ts`)
 
@@ -117,7 +120,7 @@ from running.
 S3 (OAC, block‑public) + CloudFront. Next.js static export served at the edge;
 a CloudFront Function rewrites clean URLs to `.html` using a **KeyValueStore**
 route manifest published by the frontend workflow. `API_PATH_PATTERNS`
-(`/v1.0/*`) forwards to the ALB origin **same‑origin** (no CORS needed);
+(`/v1.0/*`) forwards to the HAProxy API origin **same‑origin** (no CORS needed);
 `ALL_VIEWER_EXCEPT_HOST_HEADER` so the API gets the real `Authorization`/body.
 Security response headers + CSP (`connect-src 'self' https://<accounts>`).
 

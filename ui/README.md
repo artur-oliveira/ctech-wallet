@@ -1,7 +1,7 @@
 # ctech-wallet UI
 
-Next.js 16 **static-export SPA** (React 19) for the `ctech-wallet` API. Consumes
-`api` over `/v1.0/*` **same-origin** (CloudFront forwards to the ALB; `next dev`
+Next.js 16.3.1 **static-export SPA** (React 19.2.8) for the `ctech-wallet` API. Consumes
+`api` over `/v1.0/*` **same-origin** (CloudFront forwards to HAProxy; `next dev`
 proxies). Auth via `@aoctech/auth-client` (OAuth2 PKCE, OIDC). All money is
 **integer centavos** end-to-end — formatted for display only.
 
@@ -84,6 +84,8 @@ money constants.
 ```bash
 npm ci && npm run build     # static export → out/
 npx eslint src --ext .ts,.tsx   # MUST pass: zero errors, zero warnings
+npm test
+npm audit --omit=dev        # MUST report zero production vulnerabilities
 ```
 
 ## Cross-links
