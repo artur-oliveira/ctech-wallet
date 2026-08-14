@@ -127,8 +127,10 @@ withdrawals stuck in `processing` (completes or reverses) and exits non-zero whe
 reversal's credit-back fails (`refund_failed`) so the scheduler raises an alarm.
 It also re-queries aged pending PIX deposits, sandbox purchases, and product
 purchases as a lost-webhook fallback. The Lambda role must include each purchase
-table and its status GSI. `cmd/reconcile` uses `config.LoadReconcile`; it does
-not require the API server's JWT issuer, CORS, or fleet-wide Valkey settings.
+table, the PIX deposit table, and their status GSIs. It also queries the holds
+table status GSI for stale game holds.
+`cmd/reconcile` uses `config.LoadReconcile`; it does not require the API server's
+JWT issuer, CORS, or fleet-wide Valkey settings.
 
 ## 6. `GAMBLING_ENABLED` — do not turn this on yet
 

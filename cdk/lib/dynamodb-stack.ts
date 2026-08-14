@@ -3,6 +3,7 @@ import {RemovalPolicy} from 'aws-cdk-lib';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import {Billing} from 'aws-cdk-lib/aws-dynamodb';
 import {Construct} from 'constructs';
+import {TABLE_HOLDS, TABLE_PIX_DEPOSITS} from './constants';
 import {Environment} from './types';
 
 /**
@@ -20,10 +21,10 @@ export type TableName = (
   'wallet_audit' |
   'wallet_ledger_entries' |
   'wallet_idempotency' |
-  'wallet_pix_deposits' |
+  typeof TABLE_PIX_DEPOSITS |
   'wallet_withdrawals' |
   'wallet_users' |
-  'wallet_holds' |
+  typeof TABLE_HOLDS |
   // Asaas BaaS custody tables (docs/plans/2026-07-30-asaas-baas-implementation-plan.md
   // §2.4). Names are provider-neutral on purpose — Asaas is today's provider,
   // not a permanent commitment.
@@ -143,7 +144,7 @@ export class DynamoDBStack extends cdk.Stack {
     // belongs to (plan §4.3: "the webhook resolves payment.pixQrCodeId → txid,
     // not the other way round") — Asaas-opened deposits only, empty for every
     // Inter-opened row.
-    const depositsTable = table('wallet_pix_deposits');
+    const depositsTable = table(TABLE_PIX_DEPOSITS);
     gsi(depositsTable, GSI_STATUS, ATTR_STATUS);
     gsi(depositsTable, GSI_DEPOSIT_PROVIDER_QR, ATTR_PROVIDER_QR_CODE_ID);
 
@@ -157,7 +158,7 @@ export class DynamoDBStack extends cdk.Stack {
     // ── wallet_holds: open game-wallet reservations (skill-game integration,
     // e.g. ctech-poker buy-ins). gsi_hold_status drives the stale-hold
     // reconciliation sweep (24h ceiling, alarm-only — see reconcile.go).
-    const holdsTable = table('wallet_holds');
+    const holdsTable = table(TABLE_HOLDS);
     gsi(holdsTable, GSI_HOLD_STATUS, ATTR_STATUS);
 
     // ── wallet_audit: append-only record of actions that move NO money ─────────

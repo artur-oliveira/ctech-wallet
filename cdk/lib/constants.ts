@@ -179,6 +179,15 @@ export const domainForEnv = (environment: Environment, prefix: string) => {
 export const TABLE_LEDGER = 'wallet_ledger_entries';
 
 /**
+ * Durable PIX charge records. The reconciliation Lambda queries this table's
+ * status index to recover paid deposits whose webhook was missed.
+ */
+export const TABLE_PIX_DEPOSITS = 'wallet_pix_deposits';
+
+/** Open game-wallet reservations queried by the stale-hold sweep. */
+export const TABLE_HOLDS = 'wallet_holds';
+
+/**
  * The append-only audit table: consent, gambling activation, and every change to
  * a personal gambling limit. The ledger proves what happened to the money; this
  * proves what the user agreed to.

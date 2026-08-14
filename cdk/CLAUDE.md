@@ -73,8 +73,10 @@ Names/keys/GSIs mirror `api/internal/domain/wallet/model.go` exactly
   `../api/ENDPOINTS.md` §6). CDK only provisions the tables the code needs.
 - **#12 (no money in limbo):** `ReconcileStack` EventBridge every 5 min
   (`RECONCILE_RATE_MINUTES`, `reconcile-stack.ts`); role touches `wallets,
-  wallet_ledger_entries, wallet_idempotency, wallet_withdrawals` (+indexes)
-  and invokes pix-gateway's outbound Lambda.
+  wallet_ledger_entries, wallet_idempotency, wallet_pix_deposits,
+  wallet_withdrawals, wallet_holds, wallet_sandbox_purchases,
+  wallet_product_purchases` (+indexes) and invokes pix-gateway's outbound
+  Lambda. Deposit grants are read/update/query; holds are query-only.
 
 ## Engineering Rules
 

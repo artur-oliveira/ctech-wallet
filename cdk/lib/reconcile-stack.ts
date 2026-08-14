@@ -15,7 +15,9 @@ import {
   SERVICE,
   SSM_ACCOUNT,
   SSM_WALLET,
+  TABLE_HOLDS,
   TABLE_LEDGER,
+  TABLE_PIX_DEPOSITS,
   tablePrefix,
 } from './constants';
 
@@ -27,14 +29,17 @@ const API_DIR = path.join(__dirname, '../../api');
  * sweeps run on every invocation regardless of AsaasCustodyEnabled — omitting
  * either table makes the entire reconciliation invocation fail AccessDenied.
  */
-const RECONCILE_TABLES = [
+export const RECONCILE_TABLES = [
   'wallets',
-  'wallet_ledger_entries',
+  TABLE_LEDGER,
   'wallet_idempotency',
   'wallet_withdrawals',
   'wallet_sandbox_purchases',
   'wallet_product_purchases',
-];
+] as const;
+
+export const RECONCILE_DEPOSIT_TABLES = [TABLE_PIX_DEPOSITS] as const;
+export const RECONCILE_HOLD_TABLES = [TABLE_HOLDS] as const;
 
 /**
  * Asaas BaaS custody tables the reconcile job touches ONLY inside its
@@ -46,6 +51,22 @@ const RECONCILE_TABLES = [
  * dynamodb-stack.ts's own note on that table).
  */
 const RECONCILE_ASAAS_TABLES = ['wallet_baas_accounts', 'wallet_transfer_intents', 'wallet_med_receivables'];
+
+interface TableResource {
+  readonly tableArn: string;
+}
+
+/** Expands every table grant to cover both the table and all of its GSIs. */
+export function tableAndIndexArns(
+  tableNames: readonly string[],
+  dynamoDBTables: ReadonlyMap<string, TableResource>,
+): string[] {
+  return tableNames.flatMap(name => {
+    const table = dynamoDBTables.get(name);
+    if (!table) throw new Error(`reconcile-stack: table ${name} not found in DynamoDBStack`);
+    return [table.tableArn, `${table.tableArn}/index/*`];
+  });
+}
 
 // How often the reconcile job runs (withdrawal reconciliation + pending-deposit
 // sweep). SEC-02 invariant: this MUST stay well below `sweepAgeThreshold` (10m,
@@ -100,18 +121,15 @@ export class ReconcileStack extends cdk.Stack {
       ],
     });
 
-    // ── DynamoDB: read/write on the four tables the job touches (+ their indexes;
-    // it scans gsi_status to find processing withdrawals). Not pix_deposits/users.
+    // ── DynamoDB: read/write on the mutable tables the job touches (+ their
+    // indexes). It queries gsi_status on both withdrawals and PIX deposits;
+    // wallet_users remains intentionally excluded.
     // The ledger is append-only (Financial Safety Invariant 2). The job credits a
     // reversal entry, so it needs PutItem — but never UpdateItem/DeleteItem on the
     // ledger. Denying those in IAM means even a compromised reconcile job cannot
     // rewrite or erase the audit trail of the money it moves.
     const ledgerArn = dynamoDBTables.get(TABLE_LEDGER)!.tableArn;
-    const mutableArns = RECONCILE_TABLES.filter(n => n !== TABLE_LEDGER).flatMap(name => {
-      const t = dynamoDBTables.get(name);
-      if (!t) throw new Error(`reconcile-stack: table ${name} not found in DynamoDBStack`);
-      return [t.tableArn, `${t.tableArn}/index/*`];
-    });
+    const mutableArns = tableAndIndexArns(RECONCILE_TABLES.filter(n => n !== TABLE_LEDGER), dynamoDBTables);
 
     role.addToPolicy(new iam.PolicyStatement({
       actions: [
@@ -126,6 +144,21 @@ export class ReconcileStack extends cdk.Stack {
       ],
       resources: mutableArns,
     }));
+
+    // Deposit recovery reads/updates durable charge state and queries its
+    // status GSI. It never creates or deletes deposits.
+    role.addToPolicy(new iam.PolicyStatement({
+      actions: ['dynamodb:GetItem', 'dynamodb:UpdateItem', 'dynamodb:Query'],
+      resources: tableAndIndexArns(RECONCILE_DEPOSIT_TABLES, dynamoDBTables),
+    }));
+
+    // The stale-hold sweep is alarm-only: it may query held rows but must never
+    // mutate or release a hold (see SweepStaleHolds' race-safety contract).
+    role.addToPolicy(new iam.PolicyStatement({
+      actions: ['dynamodb:Query'],
+      resources: tableAndIndexArns(RECONCILE_HOLD_TABLES, dynamoDBTables),
+    }));
+
     role.addToPolicy(new iam.PolicyStatement({
       actions: [
         'dynamodb:GetItem',
@@ -144,11 +177,7 @@ export class ReconcileStack extends cdk.Stack {
 
     // ── Asaas BaaS custody tables (implementation plan §6) — read/write, no
     // DeleteItem: nothing in cmd/reconcile deletes from any of these.
-    const asaasArns = RECONCILE_ASAAS_TABLES.flatMap(name => {
-      const t = dynamoDBTables.get(name);
-      if (!t) throw new Error(`reconcile-stack: table ${name} not found in DynamoDBStack`);
-      return [t.tableArn, `${t.tableArn}/index/*`];
-    });
+    const asaasArns = tableAndIndexArns(RECONCILE_ASAAS_TABLES, dynamoDBTables);
     role.addToPolicy(new iam.PolicyStatement({
       actions: [
         'dynamodb:GetItem',

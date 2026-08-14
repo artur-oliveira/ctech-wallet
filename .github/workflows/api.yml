@@ -15,9 +15,9 @@ jobs:
     runs-on: ubuntu-24.04-arm
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: api/go.mod
           cache-dependency-path: api/go.sum
@@ -32,9 +32,9 @@ jobs:
     needs: test
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: api/go.mod
           cache-dependency-path: api/go.sum
