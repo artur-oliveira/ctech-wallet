@@ -154,7 +154,7 @@ Flat by default. A surface earns a shadow only when it lifts (card hover) or ove
 - **Internal Padding:** 24px (balance cards), 20px (ledger panel), 24px (dialog).
 
 ### Navigation
-- **Style:** a single top bar, white with a 1px bottom Line, max-width 4xl, 24px vertical padding. The brand mark is a violet rounded square (violet-600 fill, white glyph) beside "CTech Wallet".
+- **Style:** a single top bar, white with a 1px bottom Line, max-width 4xl, 24px vertical padding. The canonical `public/app.svg` concentric-circle mark sits beside “CTech Wallet” on both the public entry page and authenticated top bar; generic wallet glyphs are reserved for actions or content, never product identity.
 - **States:** the user name (hidden under sm) and a ghost logout icon on the right. No tab rail on the dashboard; the ledger switches via in-panel text tabs, not nav.
 
 ### [Signature Component] Balance Hierarchy
