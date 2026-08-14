@@ -66,6 +66,10 @@
       "loadMore": "Carregar movimentações anteriores",
       "loadingMore": "Carregando movimentações anteriores…",
       "loadMoreError": "Não foi possível carregar movimentações anteriores. Tente de novo.",
+      "readOnly": {
+        "title": "Histórico disponível somente para consulta",
+        "description": "Você ainda não ativou a carteira de jogo. Aqui aparecem suas partidas sandbox e compras de créditos anteriores, sem liberar operações com dinheiro real."
+      },
       "empty": {
         "real": "Nenhuma movimentação no saldo real. Faça um depósito PIX para começar.",
         "game": "Nenhuma movimentação no saldo de jogo. Envie dinheiro do saldo real quando quiser usá-lo em jogos.",
@@ -199,6 +203,44 @@
       "refund_failed": "O PIX não foi concluído e o estorno automático ainda precisa de conciliação. Nossa equipe já foi avisada; guarde a referência acima se falar com o suporte."
     }
   },
+  "purchases": {
+    "title": "Histórico de compras",
+    "description": "Compras de créditos sandbox e produtos digitais, separadas dos extratos das carteiras.",
+    "loading": "Carregando compras…",
+    "error": "Não foi possível carregar seu histórico de compras. Tente de novo.",
+    "empty": {
+      "sandbox": "Nenhuma compra de créditos sandbox encontrada.",
+      "product": "Nenhuma compra de produto digital encontrada."
+    },
+    "loadMore": "Carregar compras anteriores",
+    "loadingMore": "Carregando compras anteriores…",
+    "credits": "{{credits}} créditos",
+    "kind": {
+      "sandbox": "Créditos sandbox",
+      "product": "Produto digital"
+    },
+    "sku": {
+      "pack_100": "Pacote de 1.000 créditos",
+      "pack_500": "Pacote de 5.500 créditos",
+      "pack_1000": "Pacote de 12.000 créditos",
+      "pack_2000": "Pacote de 27.000 créditos",
+      "pack_5000": "Pacote de 75.000 créditos",
+      "pack_10000": "Pacote de 200.000 créditos",
+      "poker_reaction_cold": "Reação premium: Frio",
+      "poker_reaction_fire": "Reação premium: Fogo",
+      "poker_reaction_poop": "Reação premium: Cocô",
+      "poker_reaction_rofl": "Reação premium: Gargalhada",
+      "poker_reaction_knife": "Reação premium: Faca",
+      "poker_reaction_turtle": "Reação premium: Tartaruga"
+    },
+    "status": {
+      "pending": "Aguardando PIX",
+      "confirmed": "Confirmada",
+      "refund_pending": "Estorno em andamento",
+      "refunded": "Estornada",
+      "expired": "Expirada"
+    }
+  },
   "toast": {
     "depositConfirmed": "Depósito confirmado",
     "realtimeDeposit": "Depósito de {{amount}} confirmado",
@@ -318,6 +360,10 @@
       "game_credit": "Prêmio",
       "sandbox_purchase": "Compra de créditos",
       "sandbox_credit": "Créditos recebidos",
+      "sandbox_direct_purchase": "Compra de créditos via PIX",
+      "sandbox_purchase_reversal": "Estorno de compra de créditos",
+      "sandbox_refund_reversal": "Créditos devolvidos em estorno",
+      "game_fund_reversal": "Estorno recebido da compra",
       "reversal": "Estorno de saque",
       "game_fund_debit": "Envio para o jogo",
       "game_fund_credit": "Recebido do saldo real",

@@ -39,6 +39,18 @@ func (h *handlers) purchaseSandboxDirect(c fiber.Ctx) error {
 	})
 }
 
+// listSandboxPurchases returns the caller's purchase records, not ledger
+// entries. It is read-only and deliberately has no gambling-activation gate.
+func (h *handlers) listSandboxPurchases(c fiber.Ctx) error {
+	page, err := h.svc.SandboxPurchaseHistory(
+		c.Context(), middleware.GetUserID(c), historyLimit(c), decodeCursor(c.Query(queryParamCursor)),
+	)
+	if err != nil {
+		return sendProblem(c, err)
+	}
+	return sendPage(c, page)
+}
+
 // refundSandboxPurchase reverses an unused direct-purchase pack (plan §9.2).
 func (h *handlers) refundSandboxPurchase(c fiber.Ctx) error {
 	idemKey, p := requireIdempotencyKey(c)

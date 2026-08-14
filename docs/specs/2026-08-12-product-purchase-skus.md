@@ -112,6 +112,11 @@ All under `/v1.0/internal/wallet/product-purchase`, gated by
 | `GET /:id`         | —                                 | Status poll — caller's mandated confirm-before-unlocking path |
 | `POST /:id/refund` | `{user_id, idempotency_key}`      | No usage check — see Non-goals                                |
 
+The user-facing wallet adds `GET /v1.0/wallet/product-purchases`, returning an ownership-scoped, newest-first,
+cursor-paginated history of product purchase records. It includes purchases opened by an M2M client on the
+user's behalf but omits `requesting_client`, request hashes, and webhook-delivery metadata. A `gsi_user` index
+(`user_id` partition, `created_at` sort) backs the query; no scan or ledger join is used.
+
 PIX webhook wake-ups whose deterministic txid starts with `prdp` are routed by
 `pix-gateway` to `POST /v1.0/internal/pix/confirm-product-purchase`, guarded by
 the existing `internal:wallet:confirm-deposit` scope. The endpoint accepts only

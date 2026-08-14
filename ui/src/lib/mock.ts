@@ -10,6 +10,9 @@ import type {
   LedgerEntry,
   LedgerPage,
   MeResponse,
+  ProductPurchase,
+  PurchasePage,
+  SandboxPurchase,
   Transfer,
   Wallet,
   WalletType,
@@ -70,7 +73,47 @@ const state = {
       balance_after: 2_000_00,
       created_at: new Date(Date.now() - 3 * 86_400_000).toISOString()
     },
+    {
+      entry_id: 's2',
+      wallet_id: 'w_sandbox',
+      type: 'game_debit',
+      amount: -300,
+      balance_after: 1200,
+      created_at: new Date(Date.now() - 12 * 60 * 60_000).toISOString()
+    },
+    {
+      entry_id: 's1',
+      wallet_id: 'w_sandbox',
+      type: 'sandbox_credit',
+      amount: 1500,
+      balance_after: 1500,
+      ref: 'sbxpmockpurchase',
+      created_at: new Date(Date.now() - 2 * 86_400_000).toISOString()
+    },
   ] as LedgerEntry[],
+  sandboxPurchases: [
+    {
+      purchase_id: 'sbxpmockpurchase',
+      user_id: 'mock_user',
+      sku: 'pack_500',
+      amount_expected: 500,
+      credits_granted: 5500,
+      status: 'confirmed',
+      created_at: new Date(Date.now() - 2 * 86_400_000).toISOString(),
+      updated_at: new Date(Date.now() - 2 * 86_400_000).toISOString(),
+    },
+  ] as SandboxPurchase[],
+  productPurchases: [
+    {
+      purchase_id: 'prdpmockpurchase',
+      user_id: 'mock_user',
+      sku: 'poker_reaction_fire',
+      amount_expected: 100,
+      status: 'refunded',
+      created_at: new Date(Date.now() - 4 * 86_400_000).toISOString(),
+      updated_at: new Date(Date.now() - 3 * 86_400_000).toISOString(),
+    },
+  ] as ProductPurchase[],
 }
 
 function addEntry(wallet: Wallet, type: string, amount: number): LedgerEntry {
@@ -201,5 +244,13 @@ export class MockApiClient {
   async getLedger(type: WalletType): Promise<LedgerPage> {
     const items = state.ledger.filter((e) => e.wallet_id === `w_${type}`)
     return {items, next_cursor: null, has_next: false}
+  }
+
+  async getSandboxPurchases(): Promise<PurchasePage<SandboxPurchase>> {
+    return {items: state.sandboxPurchases, next_cursor: null, has_next: false}
+  }
+
+  async getProductPurchases(): Promise<PurchasePage<ProductPurchase>> {
+    return {items: state.productPurchases, next_cursor: null, has_next: false}
   }
 }

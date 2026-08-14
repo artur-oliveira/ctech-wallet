@@ -17,13 +17,24 @@ import (
 	"gopkg.aoctech.app/wallet/api/internal/config"
 )
 
-const attributeUpdatedAt = "updated_at"
+const (
+	attributeCreatedAt = "created_at"
+	attributeUpdatedAt = "updated_at"
+	attributeUserID    = "user_id"
+)
 
 // Base provides common DynamoDB operations for all repositories.
 type Base = dynamo.Base
 
 // QueryResult holds paginated query results.
 type QueryResult = dynamo.QueryResult
+
+// Page is a decoded, ownership-scoped query page. It preserves DynamoDB's
+// opaque continuation key without exposing raw attribute maps to handlers.
+type Page[T any] struct {
+	Items            []T
+	LastEvaluatedKey map[string]types.AttributeValue
+}
 
 // QueryOpts configures a Query call.
 type QueryOpts = dynamo.QueryOpts
@@ -70,6 +81,16 @@ func DecodeItems[T any](items []map[string]types.AttributeValue) ([]T, error) {
 		out = append(out, *decoded)
 	}
 	return out, nil
+}
+
+// DecodePage applies the model's json tags at the HTTP boundary by keeping
+// handlers on typed domain values instead of raw DynamoDB maps.
+func DecodePage[T any](result *QueryResult) (*Page[T], error) {
+	items, err := DecodeItems[T](result.Items)
+	if err != nil {
+		return nil, err
+	}
+	return &Page[T]{Items: items, LastEvaluatedKey: result.LastEvaluatedKey}, nil
 }
 
 // UpdateItemWithTimestamp updates a row without mutating the caller-owned map.

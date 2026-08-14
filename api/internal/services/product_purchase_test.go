@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/pix"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
@@ -30,6 +32,16 @@ func (r *stubProductPurchaseRepo) PutIfAbsent(_ context.Context, p *wallet.Produ
 
 func (r *stubProductPurchaseRepo) Get(_ context.Context, purchaseID string) (*wallet.ProductPurchase, error) {
 	return r.purchases[purchaseID], nil
+}
+
+func (r *stubProductPurchaseRepo) ListByUser(_ context.Context, userID string, limit int, _ map[string]types.AttributeValue) (*repositories.Page[wallet.ProductPurchase], error) {
+	items := make([]wallet.ProductPurchase, 0, limit)
+	for _, purchase := range r.purchases {
+		if purchase.UserID == userID && len(items) < limit {
+			items = append(items, *purchase)
+		}
+	}
+	return &repositories.Page[wallet.ProductPurchase]{Items: items}, nil
 }
 
 func (r *stubProductPurchaseRepo) TransitionStatus(_ context.Context, purchaseID, fromStatus, toStatus string) (bool, error) {

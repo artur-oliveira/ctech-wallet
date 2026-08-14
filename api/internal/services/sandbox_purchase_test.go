@@ -41,6 +41,16 @@ func (r *stubSandboxPurchaseRepo) Get(_ context.Context, purchaseID string) (*wa
 	return r.purchases[purchaseID], nil
 }
 
+func (r *stubSandboxPurchaseRepo) ListByUser(_ context.Context, userID string, limit int, _ map[string]types.AttributeValue) (*repositories.Page[wallet.SandboxPurchase], error) {
+	items := make([]wallet.SandboxPurchase, 0, limit)
+	for _, purchase := range r.purchases {
+		if purchase.UserID == userID && len(items) < limit {
+			items = append(items, *purchase)
+		}
+	}
+	return &repositories.Page[wallet.SandboxPurchase]{Items: items}, nil
+}
+
 func (r *stubSandboxPurchaseRepo) Update(_ context.Context, purchaseID string, updates map[string]any) error {
 	p := r.purchases[purchaseID]
 	if p == nil {

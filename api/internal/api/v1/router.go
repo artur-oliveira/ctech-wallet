@@ -50,7 +50,9 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 	// path to avoid colliding with /sandbox/purchase above (see
 	// purchaseSandboxDirect's own comment).
 	w.Post("/sandbox/purchases", h.purchaseSandboxDirect)
+	w.Get("/sandbox/purchases", h.listSandboxPurchases)
 	w.Post("/sandbox/purchases/:id/refund", h.refundSandboxPurchase)
+	w.Get("/product-purchases", h.listProductPurchases)
 	w.Get("/:type/ledger", h.getLedger)
 
 	// Returning money OUT of the ring-fence is ALWAYS available — never behind the

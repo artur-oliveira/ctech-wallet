@@ -56,6 +56,21 @@ func (r *SandboxPurchaseRepository) Get(ctx context.Context, purchaseID string) 
 	return Decode[wallet.SandboxPurchase](item)
 }
 
+// ListByUser returns newest-first purchase records owned by one user. The
+// user_id equality is the GSI partition condition, never a post-query filter,
+// so records belonging to another user cannot enter the result page.
+func (r *SandboxPurchaseRepository) ListByUser(ctx context.Context, userID string, limit int, startKey map[string]types.AttributeValue) (*Page[wallet.SandboxPurchase], error) {
+	result, err := r.purchases.Query(ctx, QueryOpts{
+		PK: userID, PKField: attributeUserID, SKField: attributeCreatedAt,
+		IndexName: wallet.GSIUser, ScanIndexForward: false,
+		Limit: limit, ExclusiveStartKey: startKey,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return DecodePage[wallet.SandboxPurchase](result)
+}
+
 const (
 	sandboxStatusConditionExpression = "#status = :from"
 	sandboxStatusUpdateExpression    = "SET #status = :to, " + attributeUpdatedAt + " = :now"

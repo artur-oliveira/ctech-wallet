@@ -33,4 +33,5 @@ test('ledger tabs expose complete keyboard and ARIA relationships', () => {
     assert.match(ledgerTabsSource, /role="tabpanel"/)
     assert.match(ledgerTabsSource, /aria-labelledby=/)
     assert.match(ledgerTabsSource, /onKeyDown=/)
+    assert.match(ledgerTabsSource, /hasSandbox/)
 })

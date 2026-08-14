@@ -96,8 +96,10 @@ func (r *WalletRepository) GetWalletsByUser(ctx context.Context, userID string) 
 	return DecodeItems[wallet.Wallet](res.Items)
 }
 
-// LoadWallets returns the user's wallets by type. game and sandbox are nil until
-// the user activates gambling — their absence IS the "not activated" signal.
+// LoadWallets returns the user's wallets by type. game is nil until activation;
+// sandbox may exist independently after an M2M credit/debit or direct purchase.
+// Callers must use game presence, never sandbox presence, as the activation
+// signal.
 func (r *WalletRepository) LoadWallets(ctx context.Context, userID string) (real, game, sandbox *wallet.Wallet, err error) {
 	byType, err := r.loadByMarkers(ctx, userID, wallet.TypeReal, wallet.TypeGame, wallet.TypeSandbox)
 	if err != nil {

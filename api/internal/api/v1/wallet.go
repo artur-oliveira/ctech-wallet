@@ -10,10 +10,10 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// getWallet returns the caller's balances. game and sandbox are omitted entirely
-// until the user activates gambling — the frontend reads their absence to decide
-// whether to show any gambling surface at all, so a subscriptions-only user never
-// sees one.
+// getWallet returns the caller's balances. The presence of game alone is the
+// activation signal. An independently-created sandbox wallet is returned before
+// activation so its immutable transaction history remains readable; that must
+// never be interpreted as gambling consent or used to expose game actions.
 func (h *handlers) getWallet(c fiber.Ctx) error {
 	userID := middleware.GetUserID(c)
 	realw, gamew, sandboxw, custodyStatus, err := h.svc.GetBalances(c.Context(), userID)
@@ -26,15 +26,21 @@ func (h *handlers) getWallet(c fiber.Ctx) error {
 	if custodyStatus != "" && custodyStatus != wallet.BaasApproved {
 		return c.JSON(fiber.Map{"custody_status": custodyStatus, "activated": false})
 	}
+	return c.JSON(walletBalancesResponse(realw, gamew, sandboxw, custodyStatus))
+}
+
+func walletBalancesResponse(realw, gamew, sandboxw *wallet.Wallet, custodyStatus string) fiber.Map {
 	out := fiber.Map{"real": realw, "activated": gamew != nil}
 	if custodyStatus == wallet.BaasApproved {
 		out["custody_status"] = custodyStatus
 	}
 	if gamew != nil {
 		out["game"] = gamew
+	}
+	if sandboxw != nil {
 		out["sandbox"] = sandboxw
 	}
-	return c.JSON(out)
+	return out
 }
 
 // createDeposit opens a PIX charge for the caller's real wallet.
@@ -156,8 +162,9 @@ func (h *handlers) walletTransfer(c fiber.Ctx, op transferOp, amount int64) erro
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"debit": debit, "credit": credit})
 }
 
-// getLedger returns a paginated statement for one wallet type. The game and
-// sandbox statements exist only once the user has activated gambling.
+// getLedger returns a paginated statement for one wallet type. game exists only
+// after activation; sandbox may exist independently and remains readable before
+// activation so a player can inspect their complete virtual-credit history.
 func (h *handlers) getLedger(c fiber.Ctx) error {
 	walletType := c.Params("type")
 	userID := middleware.GetUserID(c)
@@ -180,11 +187,8 @@ func (h *handlers) getLedger(c fiber.Ctx) error {
 	if target == nil {
 		return sendProblem(c, problem.GamblingNotActivated())
 	}
-	limit := intQuery(c, "limit", 50)
-	if limit > 200 {
-		limit = 200 // cap page size so a client cannot force a large scan
-	}
-	startKey := decodeCursor(c.Query("cursor"))
+	limit := historyLimit(c)
+	startKey := decodeCursor(c.Query(queryParamCursor))
 	res, err := h.svc.Statement(c.Context(), target.WalletID, limit, startKey)
 	if err != nil {
 		return sendProblem(c, err)

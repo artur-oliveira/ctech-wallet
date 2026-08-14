@@ -50,6 +50,21 @@ func (r *ProductPurchaseRepository) Get(ctx context.Context, purchaseID string) 
 	return Decode[wallet.ProductPurchase](item)
 }
 
+// ListByUser returns newest-first generic product purchases for exactly one
+// owner through gsi_user. It includes M2M-opened purchases because the user,
+// not the requesting client, owns the history shown in their wallet.
+func (r *ProductPurchaseRepository) ListByUser(ctx context.Context, userID string, limit int, startKey map[string]types.AttributeValue) (*Page[wallet.ProductPurchase], error) {
+	result, err := r.purchases.Query(ctx, QueryOpts{
+		PK: userID, PKField: attributeUserID, SKField: attributeCreatedAt,
+		IndexName: wallet.GSIUser, ScanIndexForward: false,
+		Limit: limit, ExclusiveStartKey: startKey,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return DecodePage[wallet.ProductPurchase](result)
+}
+
 const (
 	productStatusConditionExpression = "#status = :from"
 	productStatusUpdateExpression    = "SET #status = :to, " + attributeUpdatedAt + " = :now"

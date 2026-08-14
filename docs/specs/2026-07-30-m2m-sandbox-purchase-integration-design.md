@@ -15,6 +15,11 @@ All under `/v1.0/internal/wallet/sandbox-purchase`, gated by `middleware.Require
 | `GET /:id` | — | Status poll — the client's mandated confirm-before-credit path |
 | `POST /:id/refund` | `{user_id, idempotency_key}` | Mirrors the user-facing refund |
 
+The authenticated user's wallet also exposes `GET /v1.0/wallet/sandbox/purchases` as a read-only,
+newest-first history of the purchase records themselves. It includes user-direct and M2M-opened purchases owned
+by that user, is paginated by an opaque cursor, and is intentionally separate from the sandbox ledger. A
+`gsi_user` index with `created_at` sort key provides this view without a table scan.
+
 ## Ownership & idempotency isolation
 
 `SandboxPurchase.RequestingClient` stores the caller's `AZP`. The purchase ID is also the Inter txid and is

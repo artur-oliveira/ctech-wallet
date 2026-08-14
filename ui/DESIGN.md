@@ -162,10 +162,14 @@ The three balances are deliberately **not** a symmetric card set — the visual 
 - **Real — money:** solid filled Signal Violet card, white text, R$ prefix, bold mono balance, primary Deposit/Withdraw actions.
 - **Game — real money, ring-fenced:** outlined card (2px Signal Violet border, white fill), R$ prefix, violet "GAME" tag. Spendable only on games, subject to the user's personal limit.
 - **Sandbox — not money:** dashed-border card, **no currency symbol**, explicit "não vira dinheiro" line; it has no monetary value and can never convert back.
-- **Not activated:** the gambling surface is absent; one quiet link ("activate") stands in, never a banner or upsell.
+- **Not activated:** balance and action surfaces stay absent; one quiet activation link stands in. If a sandbox wallet already exists, its statement remains available as an explicitly read-only history surface so prior play and credit purchases are never hidden.
 
 ### [Signature Component] Ledger Row
 A divided list (`divide-gray-100`) of entries: left side is the localized type label (title weight, ink) over a muted timestamp; right side is the signed amount in Geist Mono — violet (#6d28d9 / brand-700) when inflow, muted gray when outflow. Loading and empty states are explicit, centered, and teach the interface ("nothing here yet") rather than spinner-in-content.
+
+### Purchase History
+
+Purchase records remain a separate, read-only surface below wallet statements because a product sale is not a ledger movement. Sandbox-credit and generic digital-product purchases use distinct newest-first groups so each independently paginated history remains chronologically correct. Rows show lifecycle status, human-readable SKU, PIX price, and—only for sandbox packs—credits granted. This history remains available regardless of gambling activation and never exposes purchase actions.
 
 ## 6. Do's and Don'ts
 

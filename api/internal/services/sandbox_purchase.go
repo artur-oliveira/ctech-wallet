@@ -27,6 +27,13 @@ const (
 	sandboxPurchaseIDSeparator      = "\x00"
 )
 
+// SandboxPurchaseHistory is the ownership-scoped read path used by the
+// caller's wallet UI. It remains available without gambling activation and
+// performs no wallet creation or mutation.
+func (s *WalletService) SandboxPurchaseHistory(ctx context.Context, userID string, limit int, startKey map[string]types.AttributeValue) (*repositories.Page[wallet.SandboxPurchase], error) {
+	return s.sandboxPurchases.ListByUser(ctx, userID, limit, startKey)
+}
+
 // sandboxPurchaseTxID returns the stable identifier used both as the purchase
 // primary key and as Inter's txid. Inter only accepts 26-35 ASCII
 // alphanumeric characters, so the caller-controlled values must never be

@@ -74,6 +74,14 @@ func gsi(name, key string) dtypes.GlobalSecondaryIndex {
 	}
 }
 
+func gsiWithSort(name, key, sort string) dtypes.GlobalSecondaryIndex {
+	return dtypes.GlobalSecondaryIndex{
+		IndexName:  aws.String(name),
+		KeySchema:  []dtypes.KeySchemaElement{hashKey(key), rangeKey(sort)},
+		Projection: &dtypes.Projection{ProjectionType: dtypes.ProjectionTypeAll},
+	}
+}
+
 func createTables(ctx context.Context) error {
 	defs := []*dynamodb.CreateTableInput{
 		{
@@ -130,12 +138,26 @@ func createTables(ctx context.Context) error {
 			BillingMode:            dtypes.BillingModePayPerRequest,
 		},
 		{
+			TableName: aws.String(table(wallet.TableSandboxPurchases)),
+			AttributeDefinitions: []dtypes.AttributeDefinition{
+				s("pk"), s("status"), s("webhook_status"), s("user_id"), s("created_at"),
+			},
+			KeySchema: []dtypes.KeySchemaElement{hashKey("pk")},
+			GlobalSecondaryIndexes: []dtypes.GlobalSecondaryIndex{
+				gsi(wallet.GSISandboxPurchaseStatus, "status"),
+				gsi(wallet.GSISandboxPurchaseWebhookStatus, "webhook_status"),
+				gsiWithSort(wallet.GSIUser, "user_id", "created_at"),
+			},
+			BillingMode: dtypes.BillingModePayPerRequest,
+		},
+		{
 			TableName:            aws.String(table(wallet.TableProductPurchases)),
-			AttributeDefinitions: []dtypes.AttributeDefinition{s("pk"), s("status"), s("webhook_status")},
+			AttributeDefinitions: []dtypes.AttributeDefinition{s("pk"), s("status"), s("webhook_status"), s("user_id"), s("created_at")},
 			KeySchema:            []dtypes.KeySchemaElement{hashKey("pk")},
 			GlobalSecondaryIndexes: []dtypes.GlobalSecondaryIndex{
 				gsi(wallet.GSIProductPurchaseStatus, "status"),
 				gsi(wallet.GSIProductPurchaseWebhookStatus, "webhook_status"),
+				gsiWithSort(wallet.GSIUser, "user_id", "created_at"),
 			},
 			BillingMode: dtypes.BillingModePayPerRequest,
 		},
@@ -156,7 +178,7 @@ func dropTables(ctx context.Context) error {
 	for _, t := range []string{
 		wallet.TableWallets, wallet.TableLedger, wallet.TableIdempotency,
 		wallet.TablePixDeposits, wallet.TableWithdrawals, wallet.TableUsers,
-		wallet.TableAudit, wallet.TableHolds, wallet.TableProductPurchases,
+		wallet.TableAudit, wallet.TableHolds, wallet.TableSandboxPurchases, wallet.TableProductPurchases,
 	} {
 		_, _ = db.DeleteTable(ctx, &dynamodb.DeleteTableInput{TableName: aws.String(table(t))})
 	}

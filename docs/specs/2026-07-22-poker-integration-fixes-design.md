@@ -90,6 +90,10 @@ deciding to fund `game` with real money.
   `PurchaseSandbox` still needs `game` (real money) to exist and is correctly unaffected by this change.
 - No `wallet_audit` entry is written for lazy sandbox creation — it is not a consent event, only `wallet_audit`-worthy
   events (`ActivateGambling`, limit changes) remain audited (invariant #10).
+- The user-facing `GET /wallet` response includes an already-existing `sandbox` wallet even when `activated` is
+  false. This is a read contract only: `activated` remains derived exclusively from `game` presence, and the UI
+  may use the sandbox identifier to show its append-only ledger (including play and credit purchases) without
+  exposing a sandbox balance card, gambling controls, or implying consent.
 - Effect on `DebitSandbox` when sandbox has just been lazily created (balance 0) and the debit amount is
   positive: the conditional debit's `balance >= :amount` fails → `409 insufficient-balance`, not
   `gambling-not-activated`. This is the correct error for "spend more sandbox credits than you have."
@@ -115,4 +119,5 @@ deciding to fund `game` with real money.
 | `DebitSandbox` on a freshly lazy-created (zero-balance) sandbox wallet → `409 insufficient-balance` | Unit |
 | Repeated `CreditSandbox`/`DebitSandbox` calls don't duplicate the sandbox wallet row (idempotent ensure) | Unit |
 | Balance endpoint: zero-state for a brand-new user, correct values after a sandbox credit and after a game fund, `403` without the scope | Integration |
+| User balances expose an existing sandbox before activation while keeping `activated=false` and omitting `game` | Unit |
 | `TestSandboxPurchaseNeverDebitsRealWallet` still green, unmodified | Regression (existing test, no change expected) |

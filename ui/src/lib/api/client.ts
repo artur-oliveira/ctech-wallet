@@ -7,6 +7,9 @@ import type {
   GameLimitsStatus,
   LedgerPage,
   MeResponse,
+  ProductPurchase,
+  PurchasePage,
+  SandboxPurchase,
   Transfer,
   Wallet,
   WalletType,
@@ -18,6 +21,8 @@ import {MockApiClient, USE_MOCK} from '@/lib/mock'
 // environments, and `next dev` proxies it locally (next.config.ts). Either way
 // the browser never makes a cross-origin request, so CORS never applies.
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? ''
+const SANDBOX_PURCHASES_PATH = '/v1.0/wallet/sandbox/purchases'
+const PRODUCT_PURCHASES_PATH = '/v1.0/wallet/product-purchases'
 
 // Access token held in memory only — never written to localStorage.
 let _accessToken: string | null = null
@@ -205,6 +210,18 @@ class ApiClient {
     const params = new URLSearchParams({limit: String(limit)})
     if (cursor) params.set('cursor', cursor)
     return (await this.http.get<LedgerPage>(`/v1.0/wallet/${type}/ledger?${params}`)).data
+  }
+
+  async getSandboxPurchases(cursor?: string, limit = 50): Promise<PurchasePage<SandboxPurchase>> {
+    const params = new URLSearchParams({limit: String(limit)})
+    if (cursor) params.set('cursor', cursor)
+    return (await this.http.get<PurchasePage<SandboxPurchase>>(`${SANDBOX_PURCHASES_PATH}?${params}`)).data
+  }
+
+  async getProductPurchases(cursor?: string, limit = 50): Promise<PurchasePage<ProductPurchase>> {
+    const params = new URLSearchParams({limit: String(limit)})
+    if (cursor) params.set('cursor', cursor)
+    return (await this.http.get<PurchasePage<ProductPurchase>>(`${PRODUCT_PURCHASES_PATH}?${params}`)).data
   }
 }
 

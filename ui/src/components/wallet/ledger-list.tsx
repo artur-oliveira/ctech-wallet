@@ -9,6 +9,15 @@ import type {WalletType} from '@/lib/types/api'
 import {Button} from '@/components/ui/button'
 import {QueryErrorState} from '@/components/query-error-state'
 
+const SANDBOX_PURCHASE_REFERENCE_PREFIX = 'sbxp'
+
+function ledgerType(type: WalletType, entryType: string, ref?: string): string {
+  if (type === 'sandbox' && entryType === 'sandbox_credit' && ref?.startsWith(SANDBOX_PURCHASE_REFERENCE_PREFIX)) {
+    return 'sandbox_direct_purchase'
+  }
+  return entryType
+}
+
 export function LedgerList({type}: { type: WalletType }) {
   const {t, i18n} = useTranslation()
   const monetary = walletHasMonetaryValue(type)
@@ -70,7 +79,9 @@ export function LedgerList({type}: { type: WalletType }) {
         {items.map((entry) => (
           <li key={entry.entry_id} className="flex items-center justify-between gap-4 px-5 py-3.5">
             <div className="min-w-0">
-              <p className="text-sm font-medium text-foreground">{t(`ledger.type.${entry.type}`, entry.type)}</p>
+              <p className="text-sm font-medium text-foreground">
+                {t(`ledger.type.${ledgerType(type, entry.type, entry.ref)}`, entry.type)}
+              </p>
               <p className="mt-0.5 text-xs text-muted-foreground">{dateFmt.format(new Date(entry.created_at))}</p>
             </div>
             <p

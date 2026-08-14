@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/pix"
 	"gopkg.aoctech.app/wallet/api/internal/problem"
@@ -39,10 +41,17 @@ func productPurchaseTxID(userID, idemKey, requestingClient string) string {
 type ProductPurchaseRepo interface {
 	PutIfAbsent(ctx context.Context, p *wallet.ProductPurchase) error
 	Get(ctx context.Context, purchaseID string) (*wallet.ProductPurchase, error)
+	ListByUser(ctx context.Context, userID string, limit int, startKey map[string]types.AttributeValue) (*repositories.Page[wallet.ProductPurchase], error)
 	TransitionStatus(ctx context.Context, purchaseID, fromStatus, toStatus string) (bool, error)
 	Update(ctx context.Context, purchaseID string, updates map[string]any) error
 	ListPendingOlderThan(ctx context.Context, cutoff time.Time, limit int) ([]wallet.ProductPurchase, error)
 	ListWebhookFailedOlderThan(ctx context.Context, cutoff time.Time, limit int) ([]wallet.ProductPurchase, error)
+}
+
+// ProductPurchaseHistory is the ownership-scoped read path used by the
+// caller's wallet UI. It never creates a wallet or changes purchase state.
+func (s *WalletService) ProductPurchaseHistory(ctx context.Context, userID string, limit int, startKey map[string]types.AttributeValue) (*repositories.Page[wallet.ProductPurchase], error) {
+	return s.productPurchases.ListByUser(ctx, userID, limit, startKey)
 }
 
 // PurchaseProductDirect sells a fixed-price digital good for real PIX money —

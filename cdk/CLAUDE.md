@@ -21,7 +21,7 @@ enforced here wherever they can be (IAM, table shape), and the rest in `api`.
 
 | Stack | File | Provisions |
 |-------|------|-----------|
-| `DynamoDBStack` | `lib/dynamodb-stack.ts` | 13 tables + GSIs (OnDemand) |
+| `DynamoDBStack` | `lib/dynamodb-stack.ts` | 15 tables + GSIs (OnDemand) |
 | `IAMStack` | `lib/iam-stack.ts` | EC2 instance role for the API |
 | `ApiStack` | `lib/api-stack.ts` | EC2 ASG + HAProxy route + nginx + CloudWatch alarm |
 | `ReconcileStack` | `lib/reconcile-stack.ts` | reconcile Lambda + EventBridge Scheduler (5 min) |
@@ -52,7 +52,8 @@ All tables env-prefixed (`TABLE_PREFIX=env` ⇒ `dev_wallets`). **OnDemand**
 | `wallet_transfer_intents` | `gsi_intent_status` | pk `external_reference`; transfer-authorization webhook lookup (plan §2.3) |
 | `wallet_settlement_legs` | `gsi_batch_status` | pk `batch_id`; **no application code touches this table yet** — no settlement caller exists (plan §6) |
 | `wallet_med_receivables` | `gsi_med_status` | pk `receivable_id`; MED clawback shortfall debt (plan §7.3) |
-| `wallet_sandbox_purchases` | `gsi_sandbox_purchase_status`, `gsi_sandbox_purchase_webhook_status` | pk `purchase_id`; **TTL**; direct PIX→sandbox sale, decoupled from `wallet_pix_deposits` (plan §9.1/§9.3); webhook GSI backs the M2M notify-back retry sweep (`docs/specs/2026-07-30-m2m-sandbox-purchase-integration-design.md`) |
+| `wallet_sandbox_purchases` | `gsi_sandbox_purchase_status`, `gsi_sandbox_purchase_webhook_status`, `gsi_user` (`created_at` sort) | pk `purchase_id`; direct PIX→sandbox sale, decoupled from `wallet_pix_deposits` (plan §9.1/§9.3); user GSI backs newest-first purchase history without scans |
+| `wallet_product_purchases` | `gsi_product_purchase_status`, `gsi_product_purchase_webhook_status`, `gsi_user` (`created_at` sort) | pk `purchase_id`; generic digital-product PIX sales with no ledger effect; user GSI backs ownership-scoped history |
 
 `wallet_pix_deposits` also gained `gsi_deposit_provider_qr` (Asaas payment-webhook `pixQrCodeId` → txid resolution, plan §4.3).
 

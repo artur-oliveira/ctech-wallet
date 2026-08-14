@@ -8,6 +8,19 @@ import (
 	"gopkg.aoctech.app/wallet/api/internal/middleware"
 )
 
+// listProductPurchases returns every generic product purchase owned by the
+// authenticated user, including purchases opened on their behalf by an M2M
+// game client. It exposes no client secret or webhook-delivery metadata.
+func (h *handlers) listProductPurchases(c fiber.Ctx) error {
+	page, err := h.svc.ProductPurchaseHistory(
+		c.Context(), middleware.GetUserID(c), historyLimit(c), decodeCursor(c.Query(queryParamCursor)),
+	)
+	if err != nil {
+		return sendProblem(c, err)
+	}
+	return sendPage(c, page)
+}
+
 func productExpiresAtRFC3339(ttl int64) string {
 	return time.Unix(ttl, 0).UTC().Format(time.RFC3339)
 }

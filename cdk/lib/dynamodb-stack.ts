@@ -61,6 +61,7 @@ const ATTR_TTL = 'ttl';
 const ATTR_PROVIDER_ACCOUNT_ID = 'provider_account_id';
 const ATTR_PROVIDER_QR_CODE_ID = 'provider_qr_code_id';
 const ATTR_WEBHOOK_STATUS = 'webhook_status';
+const ATTR_CREATED_AT = 'created_at';
 
 interface DynamoDBStackProps extends cdk.StackProps {
   tablePrefix: string;
@@ -111,10 +112,11 @@ export class DynamoDBStack extends cdk.Stack {
       return t;
     };
 
-    const gsi = (t: dynamodb.TableV2, indexName: string, hashKey: string) => {
+    const gsi = (t: dynamodb.TableV2, indexName: string, hashKey: string, sortKey?: string) => {
       t.addGlobalSecondaryIndex({
         indexName,
         partitionKey: {name: hashKey, type: dynamodb.AttributeType.STRING},
+        sortKey: sortKey ? {name: sortKey, type: dynamodb.AttributeType.STRING} : undefined,
         projectionType: dynamodb.ProjectionType.ALL,
         warmThroughput: undefined,
         maxReadRequestUnits: 1000,
@@ -206,6 +208,10 @@ export class DynamoDBStack extends cdk.Stack {
     // backs the pending-purchase sweep.
     const sandboxPurchasesTable = table('wallet_sandbox_purchases');
     gsi(sandboxPurchasesTable, GSI_SANDBOX_PURCHASE_STATUS, ATTR_STATUS);
+    // Ownership-scoped, newest-first user purchase history. Reuses gsi_user's
+    // established name; indexes are table-local and this one adds created_at
+    // ordering without changing the wallets table's own hash-only index.
+    gsi(sandboxPurchasesTable, GSI_USER, ATTR_USER_ID, ATTR_CREATED_AT);
     // Backs the M2M webhook notify-back retry sweep (RetryFailedM2MWebhooks) —
     // a purchase opened by an M2M client (e.g. ctech-poker) whose last
     // notify-back attempt failed. Empty/unset for user-direct purchases.
@@ -217,6 +223,7 @@ export class DynamoDBStack extends cdk.Stack {
     // gsi_product_purchase_status backs the pending-purchase sweep.
     const productPurchasesTable = table('wallet_product_purchases');
     gsi(productPurchasesTable, GSI_PRODUCT_PURCHASE_STATUS, ATTR_STATUS);
+    gsi(productPurchasesTable, GSI_USER, ATTR_USER_ID, ATTR_CREATED_AT);
     gsi(productPurchasesTable, GSI_PRODUCT_PURCHASE_WEBHOOK_STATUS, ATTR_WEBHOOK_STATUS);
 
     // ── Outputs ───────────────────────────────────────────────────────────────

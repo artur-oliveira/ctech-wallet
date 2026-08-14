@@ -20,9 +20,9 @@ export interface Wallet {
   updated_at: string
 }
 
-// game and sandbox are ABSENT until the user activates gambling. Their absence is
-// the signal — not a separate boolean that could drift out of sync with reality.
-// `activated` mirrors it for readability at the call site.
+// game is absent until the user activates gambling. sandbox may exist before
+// activation after virtual-credit play or a direct credit purchase. `activated`
+// therefore mirrors game presence only; sandbox presence must never imply consent.
 export interface Balances {
   real: Wallet
   activated: boolean
@@ -72,6 +72,35 @@ export interface LedgerEntry {
 
 export interface LedgerPage {
   items: LedgerEntry[]
+  next_cursor: string | null
+  has_next: boolean
+}
+
+export type PurchaseStatus = 'pending' | 'confirmed' | 'refund_pending' | 'refunded' | 'expired'
+
+export interface SandboxPurchase {
+  purchase_id: string
+  user_id: string
+  sku: string
+  amount_expected: number
+  credits_granted: number
+  status: PurchaseStatus
+  created_at: string
+  updated_at: string
+}
+
+export interface ProductPurchase {
+  purchase_id: string
+  user_id: string
+  sku: string
+  amount_expected: number
+  status: PurchaseStatus
+  created_at: string
+  updated_at: string
+}
+
+export interface PurchasePage<T> {
+  items: T[]
   next_cursor: string | null
   has_next: boolean
 }

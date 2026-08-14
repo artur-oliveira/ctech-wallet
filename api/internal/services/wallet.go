@@ -168,6 +168,7 @@ type Broadcaster interface {
 type SandboxPurchaseRepo interface {
 	PutIfAbsent(ctx context.Context, p *wallet.SandboxPurchase) error
 	Get(ctx context.Context, purchaseID string) (*wallet.SandboxPurchase, error)
+	ListByUser(ctx context.Context, userID string, limit int, startKey map[string]types.AttributeValue) (*repositories.Page[wallet.SandboxPurchase], error)
 	Update(ctx context.Context, purchaseID string, updates map[string]any) error
 	BuildConfirmTx(purchaseID, e2eID, creditSK string) types.TransactWriteItem
 	BuildRefundClaimTx(purchaseID string) types.TransactWriteItem
@@ -401,9 +402,9 @@ func (s *WalletService) ActivateGambling(ctx context.Context, userID, kycLevel, 
 }
 
 // GetBalances returns the caller's wallets. The real wallet is created on first
-// access; game and sandbox are nil until the user activates gambling, and their
-// absence is what the frontend reads to decide whether to show a gambling surface
-// at all.
+// access; game is nil until activation. sandbox may already exist independently
+// and is returned so its read-only history remains accessible. Its presence is
+// never evidence of gambling consent; callers derive activation from game only.
 //
 // custodyStatus is only meaningful when AsaasCustodyEnabled (plan §4.1): if the
 // caller's Asaas subaccount is absent or not yet approved, real/game/sandbox

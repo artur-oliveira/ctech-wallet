@@ -66,6 +66,10 @@
       "loadMore": "Load older transactions",
       "loadingMore": "Loading older transactions…",
       "loadMoreError": "We couldn't load older transactions. Try again.",
+      "readOnly": {
+        "title": "History available for viewing only",
+        "description": "You haven't activated the game wallet. Your previous sandbox play and credit purchases appear here without enabling real-money operations."
+      },
       "empty": {
         "real": "No real-balance transactions yet. Make a PIX deposit to get started.",
         "game": "No game-balance transactions yet. Send money from your real balance when you want to use it in games.",
@@ -199,6 +203,44 @@
       "refund_failed": "The PIX was not completed and the automatic refund still needs reconciliation. Our team has been notified; keep the reference above if you contact support."
     }
   },
+  "purchases": {
+    "title": "Purchase history",
+    "description": "Sandbox credit and digital product purchases, kept separate from wallet statements.",
+    "loading": "Loading purchases…",
+    "error": "We couldn't load your purchase history. Try again.",
+    "empty": {
+      "sandbox": "No sandbox credit purchases found.",
+      "product": "No digital product purchases found."
+    },
+    "loadMore": "Load older purchases",
+    "loadingMore": "Loading older purchases…",
+    "credits": "{{credits}} credits",
+    "kind": {
+      "sandbox": "Sandbox credits",
+      "product": "Digital product"
+    },
+    "sku": {
+      "pack_100": "1,000 credit pack",
+      "pack_500": "5,500 credit pack",
+      "pack_1000": "12,000 credit pack",
+      "pack_2000": "27,000 credit pack",
+      "pack_5000": "75,000 credit pack",
+      "pack_10000": "200,000 credit pack",
+      "poker_reaction_cold": "Premium reaction: Cold",
+      "poker_reaction_fire": "Premium reaction: Fire",
+      "poker_reaction_poop": "Premium reaction: Poop",
+      "poker_reaction_rofl": "Premium reaction: ROFL",
+      "poker_reaction_knife": "Premium reaction: Knife",
+      "poker_reaction_turtle": "Premium reaction: Turtle"
+    },
+    "status": {
+      "pending": "Awaiting PIX",
+      "confirmed": "Confirmed",
+      "refund_pending": "Refund in progress",
+      "refunded": "Refunded",
+      "expired": "Expired"
+    }
+  },
   "toast": {
     "depositConfirmed": "Deposit confirmed",
     "realtimeDeposit": "Deposit of {{amount}} confirmed",
@@ -318,6 +360,10 @@
       "game_credit": "Prize",
       "sandbox_purchase": "Credit purchase",
       "sandbox_credit": "Credits received",
+      "sandbox_direct_purchase": "PIX credit purchase",
+      "sandbox_purchase_reversal": "Credit purchase reversal",
+      "sandbox_refund_reversal": "Credits returned for refund",
+      "game_fund_reversal": "Purchase reversal received",
       "reversal": "Withdrawal reversal",
       "game_fund_debit": "Sent to game wallet",
       "game_fund_credit": "Received from real balance",

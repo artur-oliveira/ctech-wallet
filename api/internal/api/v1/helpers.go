@@ -20,6 +20,13 @@ import (
 // HeaderIdempotencyKey is the client-supplied idempotency header on user mutations.
 const HeaderIdempotencyKey = "Idempotency-Key"
 
+const (
+	queryParamCursor    = "cursor"
+	queryParamLimit     = "limit"
+	defaultHistoryLimit = 50
+	maxHistoryLimit     = 200
+)
+
 // PaginatedResponse is the standard envelope for list endpoints.
 type PaginatedResponse struct {
 	Items      any     `json:"items"`
@@ -83,6 +90,17 @@ func intQuery(c fiber.Ctx, key string, def int) int {
 	return v
 }
 
+func historyLimit(c fiber.Ctx) int {
+	limit := intQuery(c, queryParamLimit, defaultHistoryLimit)
+	if limit < 1 {
+		return defaultHistoryLimit
+	}
+	if limit > maxHistoryLimit {
+		return maxHistoryLimit
+	}
+	return limit
+}
+
 // buildNextCursor encodes a DynamoDB LastEvaluatedKey as an opaque next-page cursor.
 func buildNextCursor(key map[string]types.AttributeValue) *string {
 	if len(key) == 0 {
@@ -134,5 +152,13 @@ func sendStatement(c fiber.Ctx, result *repositories.QueryResult) error {
 		Items:      items,
 		NextCursor: buildNextCursor(result.LastEvaluatedKey),
 		HasNext:    len(result.LastEvaluatedKey) > 0,
+	})
+}
+
+func sendPage[T any](c fiber.Ctx, page *repositories.Page[T]) error {
+	return c.JSON(PaginatedResponse{
+		Items:      page.Items,
+		NextCursor: buildNextCursor(page.LastEvaluatedKey),
+		HasNext:    len(page.LastEvaluatedKey) > 0,
 	})
 }

@@ -9,8 +9,9 @@ import {nextLedgerTab} from '@/lib/utils/ledger-tabs'
 const TAB_ID_PREFIX = 'ledger-tab-'
 const PANEL_ID_PREFIX = 'ledger-panel-'
 
-function ledgerTabs(activated: boolean): WalletType[] {
-  return activated ? ['real', 'game', 'sandbox'] : ['real']
+export function availableLedgerTabs(activated: boolean, hasSandbox: boolean): WalletType[] {
+  if (activated) return ['real', 'game', 'sandbox']
+  return hasSandbox ? ['real', 'sandbox'] : ['real']
 }
 
 function tabID(type: WalletType): string {
@@ -21,11 +22,11 @@ function panelID(type: WalletType): string {
   return `${PANEL_ID_PREFIX}${type}`
 }
 
-export function LedgerTabs({activated}: { activated: boolean }) {
+export function LedgerTabs({activated, hasSandbox}: { activated: boolean; hasSandbox: boolean }) {
   const {t} = useTranslation()
   const [tab, setTab] = useState<WalletType>('real')
   const tabRefs = useRef<Partial<Record<WalletType, HTMLButtonElement | null>>>({})
-  const tabs = ledgerTabs(activated)
+  const tabs = availableLedgerTabs(activated, hasSandbox)
   const selectedTab = tabs.includes(tab) ? tab : tabs[0]
 
   function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>, current: WalletType) {
@@ -69,6 +70,15 @@ export function LedgerTabs({activated}: { activated: boolean }) {
           </button>
         ))}
       </div>
+
+      {!activated && hasSandbox && selectedTab === 'sandbox' && (
+        <div className="border-b border-border bg-muted/40 px-5 py-3">
+          <p className="text-sm font-medium text-foreground">{t('dashboard.ledger.readOnly.title')}</p>
+          <p className="mt-0.5 max-w-[70ch] text-xs leading-relaxed text-muted-foreground">
+            {t('dashboard.ledger.readOnly.description')}
+          </p>
+        </div>
+      )}
 
       {tabs.map((type) => (
         <div
