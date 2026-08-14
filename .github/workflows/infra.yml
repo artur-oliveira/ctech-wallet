@@ -53,10 +53,11 @@ jobs:
       # Go is required: the Reconcile stack bundles api/cmd/reconcile at synth time.
       - uses: actions/setup-go@v7
         with:
-          # CDK synth bundles pix-gateway Lambdas locally; use that module's
-          # exact toolchain so bundling does not fall back to an isolated Docker
-          # mount that cannot resolve the sibling rpc-contract replacement.
-          go-version-file: pix-gateway/go.mod
+          # setup-go currently normalizes a go-version-file patch directive to
+          # the minor line. Pin the patched toolchain because CDK synth bundles
+          # pix-gateway locally; Docker fallback cannot resolve the sibling
+          # rpc-contract replacement from its isolated module mount.
+          go-version: '1.26.6'
           cache-dependency-path: pix-gateway/go.sum
 
       - uses: actions/setup-node@v7
