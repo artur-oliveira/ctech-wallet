@@ -46,7 +46,9 @@ blocks the app until the current terms addendum is accepted.
 - **`src/lib/providers/QueryProvider.tsx`** — TanStack Query cache.
 - **`src/lib/providers/I18nProvider.tsx`** — i18n.
 - **`src/lib/auth/oauth.ts`** — wraps `@aoctech/auth-client`:
-  - `scope: 'openid profile kyc'` (`:11`).
+  - requests `openid profile kyc` plus every public active `wallet:*` scope
+    defined in `src/lib/auth/scopes.ts`; a contract test pins that list to the
+    API's Resource Server manifest.
   - `startOAuthFlow` (`:26`), `startStepUpFlow` (`:36`) → `startOAuthFlow(returnTo,{maxAge:0})`
     for withdrawal step-up (forces ctech-account to re-prove MFA, see root CLAUDE.md §Cross-project).
   - `doRefresh` (`:57`): refresh token is the **HttpOnly + SameSite `ctech_rt` cookie**

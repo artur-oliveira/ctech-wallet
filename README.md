@@ -10,11 +10,30 @@ dormente enquanto `GAMBLING_ENABLED=false` (padrão), até a revisão legal do a
 Consome autenticação (OAuth 2.0 / OIDC, JWT via JWKS) e KYC do [`ctech-account`](../ctech-account). Ledger
 append-only, transacional, idempotente, sem saldo negativo.
 
+## Registro de scopes OAuth
+
+A Wallet é dona do manifesto versionado
+`api/internal/oauthresource/scope-manifest.json`, atualmente com 13 permissões
+públicas `wallet:*` e 10 permissões M2M `internal:wallet:*`. O teste de contrato
+compara o manifesto com as constantes realmente usadas pelo middleware. O deploy
+o publica no CTech Account depois do CDK e antes da API usando um client
+confidencial vinculado somente ao Resource Server `wallet`; o papel OIDC lê
+apenas os três parâmetros necessários.
+
+`GET /.well-known/oauth-protected-resource` implementa RFC 9728 e anuncia apenas
+os 13 scopes públicos. Tokens delegados que carregam qualquer `wallet:*` são
+limitados ao scope exato de cada rota; os scopes internos nunca são anunciados.
+A UI solicita os 13 scopes junto de `openid profile kyc`. Durante a migração,
+tokens first-party já emitidos sem `wallet:*` mantêm o acesso atual. Publicar
+o manifesto também acrescenta os scopes públicos ao `allowed_scopes` do OAuth
+Client first-party `wallet`, sem alterar redirects, audience ou outros clients
+(consulte `OPERATIONS.md`).
+
 ## Documentação
 
 | Documento                                                                              | Descrição                                              |
 |----------------------------------------------------------------------------------------|--------------------------------------------------------|
-| [`docs/specs/2026-07-10-wallet-design.md`](docs/specs/2026-07-10-wallet-design.md)     | Design aprovado — ledger, PIX, sandbox, escopos M2M    |
+| [`docs/specs/2026-07-10-wallet-design.md`](docs/specs/2026-07-10-wallet-design.md)     | Design aprovado — ledger, PIX, sandbox, escopos OAuth  |
 | [`docs/legal/wallet-terms-addendum.md`](docs/legal/wallet-terms-addendum.md)           | Aditivo aos Termos de Uso (rascunho)                   |
 | [`CLAUDE.md`](CLAUDE.md)                                                                | Instruções para Claude Code                            |
 | [`AGENTS.md`](AGENTS.md)                                                                | Contexto para agentes de IA (idêntico ao `CLAUDE.md`)  |

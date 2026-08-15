@@ -11,6 +11,12 @@ Auth model (not multi-tenant):
   (`""|basic|enhanced`), `last_mfa_at`, `sid` (empty ⇒ M2M). User route
   groups require a non-empty `sid`; client-credentials tokens are rejected. See
   `middleware/auth.go:28`, `middleware/claims.go`.
+- **Delegated user scopes** — a user token carrying any `wallet:*` is narrowed
+  to the exact capability assigned to the route. The Wallet SPA requests every
+  public scope; previously issued first-party tokens without `wallet:*` retain
+  their existing access during the migration. A scope from another Resource
+  Server does not opt a token into this narrowing. `GET /v1.0/ws` uses
+  `wallet:balances:read` because it streams the same balance state.
 - **Internal routes** — `client_credentials` M2M token carrying exactly one
   scope per route; a non‑empty `sid` is **rejected** even if the scope matches
   (`middleware/scope.go:39`).
@@ -40,6 +46,27 @@ All errors are RFC 7807 Problem JSON (`problem/*`); never raw errors or
 ---
 
 ## 3. Wallet user routes (Bearer user JWT)
+
+Public scope map:
+
+| Scope | Operations |
+|---|---|
+| `wallet:state:read` | Read Wallet-side caller state (`GET /auth/me`). |
+| `wallet:terms:write` | Accept the Wallet terms addendum. |
+| `wallet:balances:read` | Read balances and connect to the balance-update WebSocket. |
+| `wallet:ledger:read` | Read statements for real, game, and sandbox wallets. |
+| `wallet:deposits:write` | Open a PIX deposit. |
+| `wallet:withdrawals:write` | Create a PIX withdrawal; KYC and step-up MFA still apply. |
+| `wallet:sandbox-purchases:read` | Read sandbox-credit purchase history. |
+| `wallet:sandbox-purchases:write` | Buy sandbox credits or refund an eligible purchase. |
+| `wallet:product-purchases:read` | Read digital-product purchase history. |
+| `wallet:game:write` | Move value `real↔game`; feature/KYC/limit gates still apply. |
+| `wallet:gambling:read` | Read responsible-gambling limits and status. |
+| `wallet:gambling:write` | Activate gambling and manage limits or self-exclusion. |
+| `wallet:custody:write` | Start custody onboarding or account closure. |
+
+Scopes add a permission gate; they never bypass KYC, recent-MFA, feature flags,
+idempotency, responsible-gambling limits, ownership, or financial invariants.
 
 | Method | Path                                        | Handler         | Extra gate                                               | Body                                                           | Side‑effects / business rules                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 |--------|---------------------------------------------|-----------------|----------------------------------------------------------|----------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|

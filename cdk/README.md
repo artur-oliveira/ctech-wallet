@@ -123,8 +123,9 @@ from running.
 
 `createNextjsStaticFrontend` from `@aoctech/cdk` creates S3 (OAC, block-public),
 CloudFront, the rewrite function, KVS and security headers. The wallet stack adds
-its locale negotiation rewrite. `API_PATH_PATTERNS`
-(`/v1.0/*`) forwards to the HAProxy API origin **same‑origin** (no CORS needed);
+its locale negotiation rewrite. `API_PATH_PATTERNS` (`/v1.0/*`,
+`/.well-known/*`) forwards API and OAuth resource metadata to the HAProxy API
+origin **same‑origin** (no CORS needed);
 `ALL_VIEWER_EXCEPT_HOST_HEADER` so the API gets the real `Authorization`/body.
 Security response headers + CSP (`connect-src 'self' https://<accounts>`).
 
@@ -132,7 +133,9 @@ Security response headers + CSP (`connect-src 'self' https://<accounts>`).
 
 One‑time global stack: GitHub Actions deploy roles via OIDC (`repo:*`), **no
 long‑lived keys**. Separate roles for frontend / api / reconcile (blast‑radius
-isolation); the infra role gets `AdministratorAccess`.
+isolation); the infra role gets `AdministratorAccess`. The additional
+`ctech-wallet-gha-scopes` role reads only Account's app URL and Wallet's bound
+publisher client ID/secret.
 
 ## Deploy flow
 

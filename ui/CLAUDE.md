@@ -14,6 +14,9 @@ Next.js 16 (static export) + React 19 frontend for the ctech-wallet API.
 
 - OAuth **PKCE** (`Authorization Code + code_challenge`). `src/lib/auth/oauth.ts` wraps
   the SDK's `startOAuthFlow` / `startStepUpFlow` (`maxAge: 0` for step-up).
+- The authorization request includes `openid profile kyc` and all public active
+  `wallet:*` scopes from `src/lib/auth/scopes.ts`; its contract test reads the
+  API manifest so the UI cannot silently drift from the Resource Server.
 - **Refresh token** lives only in the HttpOnly + SameSite `ctech_rt` cookie set by
   `ctech-account`; JS never sees it.
 - **Access token** is held **in memory only** (never persisted, never in a cookie).

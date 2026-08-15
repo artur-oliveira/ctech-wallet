@@ -1,14 +1,31 @@
 package middleware
 
 import (
+	"strings"
+
 	"github.com/gofiber/fiber/v3"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/problem"
 )
 
-// Scopes the wallet defines for its own internal callers (poker/dominó/billing,
-// and pix-gateway's webhook Lambda).
+// Scopes the wallet defines for user-delegated and internal callers. Public
+// wallet:* scopes describe capabilities a user may delegate to another OAuth
+// client. internal:wallet:* scopes remain service-to-service only.
 const (
+	ScopeWalletStateRead             = "wallet:state:read"
+	ScopeWalletTermsWrite            = "wallet:terms:write"
+	ScopeWalletBalancesRead          = "wallet:balances:read"
+	ScopeWalletLedgerRead            = "wallet:ledger:read"
+	ScopeWalletDepositsWrite         = "wallet:deposits:write"
+	ScopeWalletWithdrawalsWrite      = "wallet:withdrawals:write"
+	ScopeWalletSandboxPurchasesRead  = "wallet:sandbox-purchases:read"
+	ScopeWalletSandboxPurchasesWrite = "wallet:sandbox-purchases:write"
+	ScopeWalletProductPurchasesRead  = "wallet:product-purchases:read"
+	ScopeWalletGameWrite             = "wallet:game:write"
+	ScopeWalletGamblingRead          = "wallet:gambling:read"
+	ScopeWalletGamblingWrite         = "wallet:gambling:write"
+	ScopeWalletCustodyWrite          = "wallet:custody:write"
+
 	ScopeWalletCredit      = "internal:wallet:credit"     // sandbox only
 	ScopeWalletDebit       = "internal:wallet:debit"      // sandbox only
 	ScopeWalletRealDebit   = "internal:wallet:debit-real" // real wallet — deliberately separate from sandbox debit
@@ -45,6 +62,61 @@ const (
 	// different blast radius (docs/specs/2026-08-12-product-purchase-skus.md).
 	ScopeWalletProductPurchase = "internal:wallet:product-purchase"
 )
+
+const walletPublicScopePrefix = "wallet:"
+
+var walletPublicScopes = []string{
+	ScopeWalletStateRead,
+	ScopeWalletTermsWrite,
+	ScopeWalletBalancesRead,
+	ScopeWalletLedgerRead,
+	ScopeWalletDepositsWrite,
+	ScopeWalletWithdrawalsWrite,
+	ScopeWalletSandboxPurchasesRead,
+	ScopeWalletSandboxPurchasesWrite,
+	ScopeWalletProductPurchasesRead,
+	ScopeWalletGameWrite,
+	ScopeWalletGamblingRead,
+	ScopeWalletGamblingWrite,
+	ScopeWalletCustodyWrite,
+}
+
+// WalletPublicScopes returns every public capability enforced by this API.
+// Returning a copy keeps tests and callers from mutating the policy table.
+func WalletPublicScopes() []string {
+	return append([]string(nil), walletPublicScopes...)
+}
+
+// AllowsUserScope applies delegated-scope authorization while preserving the
+// existing first-party Wallet SPA during migration. Its legacy tokens carry no
+// wallet:* scopes and keep their current access; as soon as a token carries any
+// wallet:* scope, it is constrained to the exact capability requested here.
+func AllowsUserScope(cl *Claims, required string) bool {
+	if cl == nil {
+		return false
+	}
+	delegated := false
+	for _, scope := range cl.Scopes() {
+		if strings.HasPrefix(scope, walletPublicScopePrefix) {
+			delegated = true
+			if scope == required {
+				return true
+			}
+		}
+	}
+	return !delegated
+}
+
+// RequireUserScope narrows user/session tokens that carry delegated wallet:*
+// permissions. Register it after RequireUser so M2M tokens never reach it.
+func RequireUserScope(required string) fiber.Handler {
+	return func(c fiber.Ctx) error {
+		if !AllowsUserScope(GetClaims(c), required) {
+			return problem.Forbidden("scope insuficiente para esta operação da carteira").Send(c)
+		}
+		return c.Next()
+	}
+}
 
 // KYC levels are defined once, in the domain — services gate on them too.
 const (

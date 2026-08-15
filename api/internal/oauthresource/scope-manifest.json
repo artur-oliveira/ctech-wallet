@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "resource_server_id": "wallet",
+  "display_name": "CTech Wallet",
+  "scopes": [
+    { "name": "wallet:state:read", "descriptions": { "pt-BR": "Consultar o estado do usuario na Wallet.", "en": "Read the user's Wallet state." }, "visibility": "public", "status": "active" },
+    { "name": "wallet:terms:write", "descriptions": { "pt-BR": "Aceitar os termos da Wallet.", "en": "Accept the Wallet terms." }, "visibility": "public", "status": "active" },
+    { "name": "wallet:balances:read", "descriptions": { "pt-BR": "Consultar os saldos da propria carteira e receber suas atualizacoes.", "en": "Read the user's own wallet balances and receive their updates." }, "visibility": "public", "status": "active" },
+    { "name": "wallet:ledger:read", "descriptions": { "pt-BR": "Consultar o extrato das proprias carteiras.", "en": "Read the user's own wallet statements." }, "visibility": "public", "status": "active" },
+    { "name": "wallet:deposits:write", "descriptions": { "pt-BR": "Criar depositos PIX na carteira real.", "en": "Create PIX deposits into the real-money wallet." }, "visibility": "public", "status": "active" },
+    { "name": "wallet:withdrawals:write", "descriptions": { "pt-BR": "Criar saques PIX da carteira real.", "en": "Create PIX withdrawals from the real-money wallet." }, "visibility": "public", "status": "active" },
+    { "name": "wallet:sandbox-purchases:read", "descriptions": { "pt-BR": "Consultar as proprias compras de creditos sandbox.", "en": "Read the user's own sandbox-credit purchases." }, "visibility": "public", "status": "active" },
+    { "name": "wallet:sandbox-purchases:write", "descriptions": { "pt-BR": "Criar e estornar compras de creditos sandbox.", "en": "Create and refund sandbox-credit purchases." }, "visibility": "public", "status": "active" },
+    { "name": "wallet:product-purchases:read", "descriptions": { "pt-BR": "Consultar as proprias compras de produtos digitais.", "en": "Read the user's own digital-product purchases." }, "visibility": "public", "status": "active" },
+    { "name": "wallet:game:write", "descriptions": { "pt-BR": "Mover saldo entre as carteiras real e de jogos.", "en": "Move value between the real-money and game wallets." }, "visibility": "public", "status": "active" },
+    { "name": "wallet:gambling:read", "descriptions": { "pt-BR": "Consultar limites e estado de jogo responsavel.", "en": "Read responsible-gambling limits and status." }, "visibility": "public", "status": "active" },
+    { "name": "wallet:gambling:write", "descriptions": { "pt-BR": "Ativar jogos e gerenciar limites e autoexclusao.", "en": "Activate gambling and manage limits and self-exclusion." }, "visibility": "public", "status": "active" },
+    { "name": "wallet:custody:write", "descriptions": { "pt-BR": "Iniciar onboarding ou encerramento da conta de custodia.", "en": "Start custody-account onboarding or closure." }, "visibility": "public", "status": "active" },
+    { "name": "internal:wallet:credit", "descriptions": { "pt-BR": "Creditar saldo sandbox.", "en": "Credit sandbox balance." }, "visibility": "internal", "status": "active" },
+    { "name": "internal:wallet:debit", "descriptions": { "pt-BR": "Debitar saldo sandbox.", "en": "Debit sandbox balance." }, "visibility": "internal", "status": "active" },
+    { "name": "internal:wallet:debit-real", "descriptions": { "pt-BR": "Debitar saldo real.", "en": "Debit real-money balance." }, "visibility": "internal", "status": "active" },
+    { "name": "internal:wallet:confirm-deposit", "descriptions": { "pt-BR": "Confirmar resolucao de cobranca PIX.", "en": "Confirm PIX charge resolution." }, "visibility": "internal", "status": "active" },
+    { "name": "internal:wallet:game-hold", "descriptions": { "pt-BR": "Reservar e liberar saldo para jogos.", "en": "Hold and release game balance." }, "visibility": "internal", "status": "active" },
+    { "name": "internal:wallet:game-cashout", "descriptions": { "pt-BR": "Liquidar ganhos de jogos.", "en": "Settle game winnings." }, "visibility": "internal", "status": "active" },
+    { "name": "internal:wallet:game-status", "descriptions": { "pt-BR": "Consultar elegibilidade de dinheiro real.", "en": "Read real-money eligibility." }, "visibility": "internal", "status": "active" },
+    { "name": "internal:wallet:balance", "descriptions": { "pt-BR": "Consultar saldos sandbox e de jogos.", "en": "Read sandbox and game balances." }, "visibility": "internal", "status": "active" },
+    { "name": "internal:wallet:sandbox-purchase", "descriptions": { "pt-BR": "Gerenciar compras PIX de creditos sandbox.", "en": "Manage PIX purchases of sandbox credits." }, "visibility": "internal", "status": "active" },
+    { "name": "internal:wallet:product-purchase", "descriptions": { "pt-BR": "Gerenciar vendas PIX de produtos digitais.", "en": "Manage PIX sales of digital products." }, "visibility": "internal", "status": "active" }
+  ]
+}

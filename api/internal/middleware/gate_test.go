@@ -52,6 +52,24 @@ func TestRequireUser(t *testing.T) {
 	}
 }
 
+func TestRequireUserScope(t *testing.T) {
+	if got := gateApp(t, &Claims{SID: "session", Scope: "openid profile"}, RequireUserScope(ScopeWalletBalancesRead)); got != 200 {
+		t.Errorf("legacy first-party session: got %d want 200", got)
+	}
+	if got := gateApp(t, &Claims{SID: "session", Scope: ScopeWalletBalancesRead}, RequireUserScope(ScopeWalletBalancesRead)); got != 200 {
+		t.Errorf("delegated token with matching scope: got %d want 200", got)
+	}
+	if got := gateApp(t, &Claims{SID: "session", Scope: ScopeWalletLedgerRead}, RequireUserScope(ScopeWalletBalancesRead)); got != 403 {
+		t.Errorf("delegated token with different Wallet scope: got %d want 403", got)
+	}
+	if got := gateApp(t, &Claims{SID: "session", Scope: "poker:stats:read"}, RequireUserScope(ScopeWalletBalancesRead)); got != 200 {
+		t.Errorf("unrelated resource scope must not opt into Wallet narrowing: got %d want 200", got)
+	}
+	if got := gateApp(t, nil, RequireUserScope(ScopeWalletBalancesRead)); got != 403 {
+		t.Errorf("missing claims: got %d want 403", got)
+	}
+}
+
 func TestRequireKYC(t *testing.T) {
 	if got := gateApp(t, &Claims{KYCLevel: "enhanced"}, RequireKYC(KYCVerified)); got != 200 {
 		t.Errorf("verified: got %d want 200", got)

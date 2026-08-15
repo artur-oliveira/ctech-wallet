@@ -175,6 +175,21 @@ via `cmd/seedscopes` do account (catálogo é global, cross-service). Client M2M
 o subset necessário via `AllowedScopes`. Client M2M da própria wallet (chamando `internal:account:kyc`) já previsto no plano
 do KYC.
 
+**Extensão de 2026-08-14 — autorização delegada:** a Wallet também publica
+scopes públicos para todas as suas capacidades de usuário:
+`wallet:state:read`, `wallet:terms:write`, `wallet:balances:read`,
+`wallet:ledger:read`, `wallet:deposits:write`,
+`wallet:withdrawals:write`, `wallet:sandbox-purchases:read`,
+`wallet:sandbox-purchases:write`, `wallet:product-purchases:read`,
+`wallet:game:write`, `wallet:gambling:read`, `wallet:gambling:write` e
+`wallet:custody:write`. Um token que carregue qualquer `wallet:*` é limitado ao
+scope exato da rota; KYC, MFA, feature flags, ownership, idempotência e limites
+financeiros continuam sendo gates adicionais. A sessão first-party legada sem
+`wallet:*` permanece compatível durante a migração. O manifesto versionado é
+`api/internal/oauthresource/scope-manifest.json` e a descoberta pública usa
+`GET /.well-known/oauth-protected-resource` (RFC 9728), sem anunciar scopes
+`internal:*`.
+
 ## H. Testes
 
 - **Unit**: cálculo de taxa (fronteiras min/max), lock ordenado cross-wallet, saldo nunca negativo, idempotência

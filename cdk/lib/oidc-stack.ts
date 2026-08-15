@@ -6,6 +6,7 @@ import {
   GHA_FRONTEND_ROLE,
   GHA_INFRA_ROLE,
   GHA_RECONCILE_ROLE,
+  GHA_SCOPES_ROLE,
   OIDC_PROVIDER_ARN,
   S3_PREFIX,
   SERVICE,
@@ -53,6 +54,21 @@ export class OidcStack extends cdk.Stack {
       `arn:aws:s3:::${deploymentsBucket}/${S3_PREFIX}`,
       `arn:aws:s3:::${deploymentsBucket}/${S3_PREFIX}/*`,
     ];
+
+    // Dedicated least-privilege role for the reusable scope publisher. It can
+    // read only Account's base URL and this resource's OAuth credentials.
+    const scopesRole = new iam.Role(this, 'ScopePublisherRole', {
+      roleName: GHA_SCOPES_ROLE,
+      assumedBy: trust,
+    });
+    scopesRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['ssm:GetParameter'],
+      resources: [
+        'arn:aws:ssm:*:*:parameter/ctech-account/*/app-url',
+        'arn:aws:ssm:*:*:parameter/ctech-account/*/scope-publishers/wallet/client-id',
+        'arn:aws:ssm:*:*:parameter/ctech-account/*/scope-publishers/wallet/client-secret',
+      ],
+    }));
 
     // ── Frontend deploy role ────────────────────────────────────────────────
     const frontendRole = new iam.Role(this, 'FrontendDeployRole', {
@@ -156,5 +172,6 @@ export class OidcStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'ApiRoleArn', {value: apiRole.roleArn});
     new cdk.CfnOutput(this, 'ReconcileRoleArn', {value: reconcileRole.roleArn});
     new cdk.CfnOutput(this, 'InfraRoleArn', {value: infraRole.roleArn});
+    new cdk.CfnOutput(this, 'ScopePublisherRoleArn', {value: scopesRole.roleArn});
   }
 }

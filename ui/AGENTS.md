@@ -13,7 +13,8 @@ convenience.
 - `next.config.ts` → `output: 'export'` in prod; `rewrites()` (DEV_API_ORIGIN
   proxy) only under `next dev`. The two are mutually exclusive by design.
 - Auth: `@aoctech/auth-client` (OAuth2 PKCE). `src/lib/auth/oauth.ts`:
-  scope `openid profile kyc` (`:11`); `startOAuthFlow` (`:26`);
+  scope assembled from the identity scopes plus every public `wallet:*` scope
+  in `src/lib/auth/scopes.ts`; `startOAuthFlow` (`:26`);
   `startStepUpFlow` (`:36`) → `startOAuthFlow(returnTo,{maxAge:0})` for the
   withdrawal step-up. Refresh token is the **HttpOnly + SameSite `ctech_rt`
   cookie** (`:48-50,57`); the **access token is in-memory only**

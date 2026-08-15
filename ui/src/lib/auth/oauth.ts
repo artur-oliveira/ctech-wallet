@@ -1,5 +1,6 @@
 import type {UnverifiedIdTokenClaims} from '@aoctech/auth-client'
 import {decodeIdToken as sdkDecodeIdToken, OAuthClient} from '@aoctech/auth-client'
+import {OAUTH_SCOPE} from './scopes'
 
 const CTECH_URL = process.env.NEXT_PUBLIC_CTECH_URL!
 const CLIENT_ID = process.env.NEXT_PUBLIC_CTECH_CLIENT_ID!
@@ -8,7 +9,7 @@ const client = new OAuthClient({
   baseUrl: CTECH_URL,
   clientId: CLIENT_ID,
   redirectUri: typeof window !== 'undefined' ? `${window.location.origin}/callback` : '',
-  scope: 'openid profile kyc',
+  scope: OAUTH_SCOPE,
 })
 
 export type {UnverifiedIdTokenClaims}

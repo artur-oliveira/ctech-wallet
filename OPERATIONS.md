@@ -17,22 +17,48 @@ Public application URLs remain public because they are OAuth issuer, audience,
 CORS and browser contracts. After changing a URL parameter, restart the service
 or refresh the instance; a CDK template change is not needed.
 
-## 1. Seed the wallet scopes into the global catalog
+## 1. Publish the Wallet Resource Server manifest
 
-The wallet defines two internal scopes its callers (poker/dominó, future billing)
-use. They must exist in the global cross-service scope catalog.
+The Wallet owns `api/internal/oauthresource/scope-manifest.json`. The deploy
+workflow publishes it to CTech Account through the Wallet-bound confidential
+scope publisher before deploying the API. The manifest currently contains 13
+public `wallet:*` permissions and 10 service-only `internal:wallet:*`
+permissions; no Account source-code edit or legacy `seedscopes` execution is
+required.
 
-1. Add them to `ctech-account/internal/scopes/catalog.go` in the `internal` family
-   (`Internal: true`), alongside `internal:account:kyc`:
-    - `internal:wallet:credit` — "grant sandbox currency"
-    - `internal:wallet:debit` — "spend sandbox currency"
-2. Run the account seeder:
-   ```bash
-   AWS_REGION=<r> TABLE_PREFIX=<env>_ VALKEY_URL=<url> \
-     go run ./cmd/seedscopes   # from ctech-account
-   ```
-   It writes the catalog to `{env}_ctech_scopes` and invalidates the `scope_catalog`
-   Valkey cache.
+### 1a. First-party UI client grant
+
+The Account registry automatically appends every active public manifest scope
+to an existing first-party public OAuth client whose ID equals the Resource
+Server ID. Consequently, publishing `wallet` reconciles the standard `wallet`
+client while preserving its redirect URIs, audience and existing identity
+grants. Its resulting `allowed_scopes` contains:
+
+```text
+openid
+profile
+kyc
+wallet:state:read
+wallet:terms:write
+wallet:balances:read
+wallet:ledger:read
+wallet:deposits:write
+wallet:withdrawals:write
+wallet:sandbox-purchases:read
+wallet:sandbox-purchases:write
+wallet:product-purchases:read
+wallet:game:write
+wallet:gambling:read
+wallet:gambling:write
+wallet:custody:write
+```
+
+The client must already exist as `public` + `first_party`; the publisher never
+creates/promotes clients and never grants scopes to any differently named
+client or API key. CTech Account clamps `/authorize` to `allowed_scopes`, so
+deploy order remains scopes before UI. After publication, start a fresh
+authorization flow (not only a refresh) so an existing browser session receives
+an access token containing `wallet:*`.
 
 ## 2. Seed the wallet's own M2M client
 

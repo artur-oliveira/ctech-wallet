@@ -7,6 +7,7 @@ import (
 	"gopkg.aoctech.app/wallet/api/internal/awsclient"
 	"gopkg.aoctech.app/wallet/api/internal/config"
 	"gopkg.aoctech.app/wallet/api/internal/middleware"
+	"gopkg.aoctech.app/wallet/api/internal/oauthresource"
 	"gopkg.aoctech.app/wallet/api/internal/pix"
 	"gopkg.aoctech.app/wallet/api/internal/services"
 
@@ -25,6 +26,7 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 	h := &handlers{svc: svc, userSvc: userSvc, baas: baasSvc}
 	verifier := middleware.NewVerifier(cfg.CtechJWKSURL, cfg.ServiceAudience, cfg.CtechIssuerURL, c)
 	auth := verifier.Middleware()
+	oauthresource.Register(app, cfg.ServiceAudience, cfg.CtechIssuerURL)
 
 	v1 := app.Group("/v1.0")
 
@@ -36,24 +38,24 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 
 	// Caller state + terms addendum acceptance.
 	a := v1.Group("/auth", auth, middleware.RequireUser)
-	a.Get("/me", h.getMe)
-	a.Post("/terms-addendum/accept", h.acceptTermsAddendum)
+	a.Get("/me", middleware.RequireUserScope(middleware.ScopeWalletStateRead), h.getMe)
+	a.Post("/terms-addendum/accept", middleware.RequireUserScope(middleware.ScopeWalletTermsWrite), h.acceptTermsAddendum)
 
 	// User routes — Bearer user JWT.
 	w := v1.Group("/wallet", auth, middleware.RequireUser)
-	w.Get("/", h.getWallet)
-	w.Post("/deposits", middleware.RequireKYC(middleware.KYCVerified), h.createDeposit)
-	w.Post("/withdrawals", middleware.RequireKYC(middleware.KYCVerified), middleware.RequireRecentMFA(middleware.StepUpMaxAge), h.createWithdrawal)
-	w.Post("/sandbox/purchase", h.purchaseSandbox)
+	w.Get("/", middleware.RequireUserScope(middleware.ScopeWalletBalancesRead), h.getWallet)
+	w.Post("/deposits", middleware.RequireUserScope(middleware.ScopeWalletDepositsWrite), middleware.RequireKYC(middleware.KYCVerified), h.createDeposit)
+	w.Post("/withdrawals", middleware.RequireUserScope(middleware.ScopeWalletWithdrawalsWrite), middleware.RequireKYC(middleware.KYCVerified), middleware.RequireRecentMFA(middleware.StepUpMaxAge), h.createWithdrawal)
+	w.Post("/sandbox/purchase", middleware.RequireUserScope(middleware.ScopeWalletSandboxPurchasesWrite), h.purchaseSandbox)
 	// Direct PIX→sandbox-credits sale (plan §9.1/§9.3) — decoupled from the
 	// ring-fence entirely, no KYC gate, no feature flag: ships live. Plural
 	// path to avoid colliding with /sandbox/purchase above (see
 	// purchaseSandboxDirect's own comment).
-	w.Post("/sandbox/purchases", h.purchaseSandboxDirect)
-	w.Get("/sandbox/purchases", h.listSandboxPurchases)
-	w.Post("/sandbox/purchases/:id/refund", h.refundSandboxPurchase)
-	w.Get("/product-purchases", h.listProductPurchases)
-	w.Get("/:type/ledger", h.getLedger)
+	w.Post("/sandbox/purchases", middleware.RequireUserScope(middleware.ScopeWalletSandboxPurchasesWrite), h.purchaseSandboxDirect)
+	w.Get("/sandbox/purchases", middleware.RequireUserScope(middleware.ScopeWalletSandboxPurchasesRead), h.listSandboxPurchases)
+	w.Post("/sandbox/purchases/:id/refund", middleware.RequireUserScope(middleware.ScopeWalletSandboxPurchasesWrite), h.refundSandboxPurchase)
+	w.Get("/product-purchases", middleware.RequireUserScope(middleware.ScopeWalletProductPurchasesRead), h.listProductPurchases)
+	w.Get("/:type/ledger", middleware.RequireUserScope(middleware.ScopeWalletLedgerRead), h.getLedger)
 
 	// Returning money OUT of the ring-fence is ALWAYS available — never behind the
 	// flag. game holds real money (Invariant #9), so a route out must exist no
@@ -61,17 +63,17 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 	// user's own money in a game wallet with no way to get it back. Reducing
 	// exposure is never something we block. A user who never activated simply gets
 	// 409 gambling-not-activated.
-	w.Post("/game/withdraw", h.gameWithdraw)
+	w.Post("/game/withdraw", middleware.RequireUserScope(middleware.ScopeWalletGameWrite), h.gameWithdraw)
 
 	// Responsible gambling — ALWAYS registered, never behind the flag: self-
 	// excluding and lowering limits reduce exposure (same principle as
 	// game/withdraw above). The deposit door itself stays flag-gated.
-	w.Post("/gambling/self-exclude", h.selfExclude)
-	w.Post("/gambling/self-exclude/revoke", h.revokeSelfExclusion)
-	w.Get("/gambling/limits", h.getGameLimits)
-	w.Put("/gambling/limits", h.putGameLimits)
-	w.Delete("/gambling/limits/pending", h.cancelPendingLimits)
-	w.Post("/gambling/activate", middleware.RequireKYC(middleware.KYCVerified), h.activateGambling)
+	w.Post("/gambling/self-exclude", middleware.RequireUserScope(middleware.ScopeWalletGamblingWrite), h.selfExclude)
+	w.Post("/gambling/self-exclude/revoke", middleware.RequireUserScope(middleware.ScopeWalletGamblingWrite), h.revokeSelfExclusion)
+	w.Get("/gambling/limits", middleware.RequireUserScope(middleware.ScopeWalletGamblingRead), h.getGameLimits)
+	w.Put("/gambling/limits", middleware.RequireUserScope(middleware.ScopeWalletGamblingWrite), h.putGameLimits)
+	w.Delete("/gambling/limits/pending", middleware.RequireUserScope(middleware.ScopeWalletGamblingWrite), h.cancelPendingLimits)
+	w.Post("/gambling/activate", middleware.RequireUserScope(middleware.ScopeWalletGamblingWrite), middleware.RequireKYC(middleware.KYCVerified), h.activateGambling)
 
 	// Everything that moves money INTO the ring-fence is flag-gated: with
 	// GAMBLING_ENABLED off these routes do not exist (404). An absent route cannot
@@ -80,7 +82,7 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 	// wallet with no limits configured. /sandbox/purchase stays registered above
 	// because the service already refuses it for a non-activated user.
 	if cfg.GamblingEnabled {
-		w.Post("/game/deposit", middleware.RequireKYC(middleware.KYCVerified), h.gameDeposit)
+		w.Post("/game/deposit", middleware.RequireUserScope(middleware.ScopeWalletGameWrite), middleware.RequireKYC(middleware.KYCVerified), h.gameDeposit)
 	}
 
 	// Asaas webhooks — gated on the static asaas-access-token header (plan §2.3),
@@ -93,8 +95,8 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 		asaasGroup.Post("/transfer-authorization", h.asaasTransferAuthorization)
 		asaasGroup.Post("/webhook", h.asaasWebhook)
 
-		w.Post("/onboarding", middleware.RequireKYC(middleware.KYCVerified), h.initiateOnboarding)
-		w.Post("/closure", middleware.RequireRecentMFA(middleware.StepUpMaxAge), h.initiateClosure)
+		w.Post("/onboarding", middleware.RequireUserScope(middleware.ScopeWalletCustodyWrite), middleware.RequireKYC(middleware.KYCVerified), h.initiateOnboarding)
+		w.Post("/closure", middleware.RequireUserScope(middleware.ScopeWalletCustodyWrite), middleware.RequireRecentMFA(middleware.StepUpMaxAge), h.initiateClosure)
 	}
 
 	// Internal routes — all M2M client_credentials + scope, gated after auth.

@@ -52,7 +52,7 @@ export const HEALTH_CHECK_PATH = '/v1.0/health-check';
  * talks to the API same-origin (wallet.aoctech.app/v1.0/...) and never needs
  * CORS; wallet-api.aoctech.app stays reachable directly for API clients.
  */
-export const API_PATH_PATTERNS = ['/v1.0/*'];
+export const API_PATH_PATTERNS = ['/v1.0/*', '/.well-known/*'];
 
 /** Public routes negotiated to a pre-rendered locale at the edge. */
 export const LOCALE_COOKIE_NAME = 'wallet_locale';
@@ -89,6 +89,7 @@ export const GHA_API_ROLE = `${SERVICE}-gha-api`;
 export const GHA_FRONTEND_ROLE = `${SERVICE}-gha-frontend`;
 export const GHA_INFRA_ROLE = `${SERVICE}-gha-infra`;
 export const GHA_RECONCILE_ROLE = `${SERVICE}-gha-reconcile`;
+export const GHA_SCOPES_ROLE = `${SERVICE}-gha-scopes`;
 export const GHA_PIX_GATEWAY_ROLE = `${SERVICE}-gha-pix-gateway`;
 
 // ── SSM parameter paths ─────────────────────────────────────────────────────
