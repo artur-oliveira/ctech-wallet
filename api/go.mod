@@ -20,7 +20,7 @@ require (
 	github.com/oklog/ulid/v2 v2.1.2
 	github.com/valyala/fasthttp v1.73.0
 	go.uber.org/fx v1.24.0
-	gopkg.aoctech.app/api-commons v1.5.0
+	gopkg.aoctech.app/api-commons v1.6.0
 	gopkg.aoctech.app/wallet/rpc-contract v0.0.0
 )
 
