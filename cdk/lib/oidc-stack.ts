@@ -64,7 +64,7 @@ export class OidcStack extends cdk.Stack {
     scopesRole.addToPolicy(new iam.PolicyStatement({
       actions: ['ssm:GetParameter'],
       resources: [
-        'arn:aws:ssm:*:*:parameter/ctech-account/*/app-url',
+        'arn:aws:ssm:*:*:parameter/ctech-account/*/base-url',
         'arn:aws:ssm:*:*:parameter/ctech-account/*/scope-publishers/wallet/client-id',
         'arn:aws:ssm:*:*:parameter/ctech-account/*/scope-publishers/wallet/client-secret',
       ],
