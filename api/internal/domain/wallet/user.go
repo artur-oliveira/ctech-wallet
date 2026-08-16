@@ -6,7 +6,7 @@ package wallet
 // against this constant, never a stored boolean, so a bump takes effect at once.
 //
 // The UI page renders this same version — keep the two in sync when bumping.
-const CurrentTermsAddendumVersion = "2.1"
+const CurrentTermsAddendumVersion = "2.2"
 
 // KYC levels, mirrored from ctech-account's `kyc_level` claim. They live in the
 // domain (not the middleware) because services gate on them too: activation

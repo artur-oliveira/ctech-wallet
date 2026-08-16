@@ -10,6 +10,14 @@ dormente enquanto `GAMBLING_ENABLED=false` (padrão), até a revisão legal do a
 Consome autenticação (OAuth 2.0 / OIDC, JWT via JWKS) e KYC do [`ctech-account`](../ctech-account). Ledger
 append-only, transacional, idempotente, sem saldo negativo.
 
+## Documentação jurídica vigente
+
+Os Termos da Wallet publicados pela Central Jurídica do CTech estão na versão
+**2.2**; o termo separado de jogo responsável permanece na versão **2.1**. As
+constantes de aceite em `api/internal/domain/wallet/user.go` devem acompanhar
+essas versões. A fonte pública de verdade é
+`https://accounts.aoctech.app/products/wallet`.
+
 ## Registro de scopes OAuth
 
 A Wallet é dona do manifesto versionado
