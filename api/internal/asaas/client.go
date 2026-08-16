@@ -28,6 +28,10 @@ type AsaasClient interface {
 	CreatePixQRCode(ctx context.Context, subaccountAPIKey string, req QRCodeRequest) (*QRCode, error)
 	QueryPayment(ctx context.Context, apiKey, paymentID string) (*Payment, error)
 	QueryCustomer(ctx context.Context, apiKey, customerID string) (*Customer, error)
+	// RefundPayment returns a received PIX payment to its original payer.
+	// Callers observe REFUNDED with QueryPayment before retrying because Asaas
+	// supports multiple partial refunds for the same payment.
+	RefundPayment(ctx context.Context, apiKey, paymentID string, amount int64, description string) error
 
 	CreateTransfer(ctx context.Context, apiKey string, req TransferRequest) (*Transfer, error)
 	// QueryTransfer looks a transfer up by its ExternalReference (real Asaas:

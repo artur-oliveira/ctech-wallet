@@ -223,7 +223,29 @@ func (h *handler) dispatch(ctx context.Context, req rpc.Request) rpc.Response {
 		}
 		return okResp(rpc.AsaasPaymentResult{
 			ID: p.ID, Value: asaasCentavos(p.Value), Status: p.Status, ExternalReference: p.ExternalReference,
+			CustomerID: p.CustomerID,
 		})
+
+	case rpc.OpAsaasQueryCustomer:
+		a, err := decodePayload[rpc.AsaasQueryCustomerArgs](req.Payload)
+		if err != nil {
+			return toResp(err)
+		}
+		customer, err := h.asaas.QueryCustomer(ctx, req.OAuthToken, a.CustomerID)
+		if err != nil {
+			return errResp(err)
+		}
+		return okResp(rpc.AsaasCustomerResult{ID: customer.ID, Name: customer.Name, CPFCNPJ: customer.CPFCNPJ})
+
+	case rpc.OpAsaasRefundPayment:
+		a, err := decodePayload[rpc.AsaasRefundPaymentArgs](req.Payload)
+		if err != nil {
+			return toResp(err)
+		}
+		if err := h.asaas.RefundPayment(ctx, req.OAuthToken, a.PaymentID, a.Amount, a.Description); err != nil {
+			return errResp(err)
+		}
+		return rpc.Response{}
 
 	case rpc.OpAsaasCreateTransfer:
 		a, err := decodePayload[rpc.AsaasCreateTransferArgs](req.Payload)

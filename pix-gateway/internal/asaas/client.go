@@ -49,6 +49,8 @@ const (
 	pathAddressKeys   = "/v3/pix/addressKeys"                // POST — create a new EVP static PIX key for the calling account
 	pathQRCodesStatic = "/v3/pix/qrCodes/static"             // POST — VERIFY: response shape (id/payload/encodedImage field names) not confirmed from public docs excerpt
 	pathPayments      = "/v3/payments/%s"                    // GET — query a payment by id
+	pathPaymentRefund = "/v3/payments/%s/refund"             // POST — returns a received PIX payment to its original payer
+	pathCustomers     = "/v3/customers/%s"                   // GET
 	pathTransfers     = "/v3/transfers"                      // POST — both PIX-key and Asaas-wallet transfers use this same endpoint
 	pathTransfersList = "/v3/transfers?externalReference=%s" // GET — list/filter, used for QueryTransfer (no GET-by-externalReference on the single-transfer endpoint)
 	pathBalance       = "/v3/finance/balance"                // GET
@@ -226,6 +228,7 @@ type wirePayment struct {
 	Value             float64 `json:"value"`
 	Status            string  `json:"status"`
 	ExternalReference string  `json:"externalReference"`
+	CustomerID        string  `json:"customer"`
 }
 
 func (c *AsaasClient) QueryPayment(ctx context.Context, apiKey, paymentID string) (*wirePayment, error) {
@@ -234,6 +237,32 @@ func (c *AsaasClient) QueryPayment(ctx context.Context, apiKey, paymentID string
 		return nil, err
 	}
 	return &out, nil
+}
+
+// wireCustomer mirrors GET /v3/customers/{id}. Its CPF/CNPJ is used only by
+// api's server-side deposit CPF gate; it is never logged or returned to a
+// browser.
+type wireCustomer struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	CPFCNPJ string `json:"cpfCnpj"`
+}
+
+func (c *AsaasClient) QueryCustomer(ctx context.Context, apiKey, customerID string) (*wireCustomer, error) {
+	var out wireCustomer
+	if err := c.do(ctx, http.MethodGet, fmt.Sprintf(pathCustomers, customerID), apiKey, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// RefundPayment sends the full received PIX value back through Asaas. The
+// payment must be queried by the caller before each retry: Asaas accepts
+// multiple partial refunds and does not accept our internal idempotency key.
+// Description is a fixed system reason, never an untrusted request field.
+func (c *AsaasClient) RefundPayment(ctx context.Context, apiKey, paymentID string, amount int64, description string) error {
+	body := map[string]any{"value": centavosToReais(amount), "description": description}
+	return c.do(ctx, http.MethodPost, fmt.Sprintf(pathPaymentRefund, paymentID), apiKey, body, nil)
 }
 
 // CreateTransferArgs mirrors rpccontract.AsaasCreateTransferArgs (minus APIKey).

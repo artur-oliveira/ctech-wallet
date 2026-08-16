@@ -13,7 +13,8 @@ supplied per call.
 ## Two functions
 
 - **`cmd/outbound`** — performs the actual Inter calls (CreateCharge,
-  QueryCharge, Transfer, QueryTransfer, Refund, Ping, GetToken). Dispatches
+  QueryCharge, Transfer, QueryTransfer, Refund, Ping, GetToken) and the Asaas
+  custody calls. Dispatches
   on the `rpc-contract` `Op` enum (`cmd/outbound/main.go:89`); returns
   `Response{Error,Payload}` with sentinels `key_not_found`/`unauthorized`/
   `transfer_not_found`; logs operation metadata only.
@@ -52,6 +53,16 @@ and request/response payloads **must never be logged**.
   logged and left empty — the EMV text still reaches the client.
 - **Money:** integer **centavos** internally; `centavosToReais` /
   `reaisToCentavos` convert to Inter's R$ decimal strings (`inter.go:386-408`).
+
+## Outbound — Asaas custody client (`internal/asaas`)
+
+- `AsaasQueryPayment` returns the payment's `customer` ID; `AsaasQueryCustomer`
+  reads its CPF/CNPJ for the Wallet's server-side KYC comparison.
+- `AsaasRefundPayment` calls `POST /v3/payments/{id}/refund` on the receiving
+  subaccount. Values cross RPC as integer centavos and are converted only at
+  this HTTP boundary. The caller must query before retrying: Asaas permits
+  multiple partial refunds, so its `REFUNDED` payment status is the replay
+  observation. Neither API keys nor customer data are logged.
 
 ## Webhook — deposit wake-up (`cmd/webhook`)
 

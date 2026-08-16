@@ -99,6 +99,11 @@ func (c *LambdaAsaasClient) QueryCustomer(ctx context.Context, apiKey, customerI
 	return &Customer{ID: res.ID, Name: res.Name, CPFCNPJ: res.CPFCNPJ}, nil
 }
 
+func (c *LambdaAsaasClient) RefundPayment(ctx context.Context, apiKey, paymentID string, amount int64, description string) error {
+	return c.call(ctx, rpccontract.OpAsaasRefundPayment, apiKey,
+		rpccontract.AsaasRefundPaymentArgs{PaymentID: paymentID, Amount: amount, Description: description}, nil)
+}
+
 func (c *LambdaAsaasClient) CreateTransfer(ctx context.Context, apiKey string, req TransferRequest) (*Transfer, error) {
 	var res rpccontract.AsaasTransferResult
 	args := rpccontract.AsaasCreateTransferArgs{

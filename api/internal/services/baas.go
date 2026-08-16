@@ -478,6 +478,13 @@ func (b *BaasService) QueryDepositPayment(ctx context.Context, userID, paymentID
 		status = pix.ChargeCompleted
 	}
 	charge := &pix.Charge{Txid: payment.ExternalReference, Amount: payment.Value, Status: status, E2EID: payment.ID}
+	if payment.Status == asaas.PaymentRefunded {
+		// The Asaas payment status is authoritative that its full PIX payment
+		// was returned. The synthetic stable ID is only a local ledger replay
+		// key and is never sent back to the provider.
+		charge.Status = pix.ChargeCompleted
+		charge.Refunds = []pix.Refund{{RtrID: "asaas#" + payment.ID, Amount: payment.Value, Status: pix.RefundCompleted}}
+	}
 	if payment.CustomerID == "" {
 		return charge, nil
 	}
@@ -487,6 +494,24 @@ func (b *BaasService) QueryDepositPayment(ctx context.Context, userID, paymentID
 	}
 	charge.PayerCPF = customer.CPFCNPJ
 	return charge, nil
+}
+
+// RefundDepositPayment returns a paid Asaas PIX charge from the receiving
+// subaccount, not CTech's parent account. The caller persists refund_pending
+// first and reconciles retry decisions via QueryPayment's REFUNDED state.
+func (b *BaasService) RefundDepositPayment(ctx context.Context, userID, paymentID string, amount int64, reason string) error {
+	acc, err := b.repo.GetBaasAccount(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if acc == nil || acc.Status != wallet.BaasApproved {
+		return errors.New("asaas: subaccount not approved")
+	}
+	apiKey, err := b.DecryptAPIKey(acc)
+	if err != nil {
+		return err
+	}
+	return b.asaas.RefundPayment(ctx, apiKey, paymentID, amount, reason)
 }
 
 // DecryptAPIKey recovers a subaccount's plaintext Asaas API key from its

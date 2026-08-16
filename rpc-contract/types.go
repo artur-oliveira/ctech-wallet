@@ -29,6 +29,7 @@ const (
 	OpAsaasCreatePixQRCode     Op = "AsaasCreatePixQRCode"
 	OpAsaasQueryPayment        Op = "AsaasQueryPayment"
 	OpAsaasQueryCustomer       Op = "AsaasQueryCustomer"
+	OpAsaasRefundPayment       Op = "AsaasRefundPayment"
 	OpAsaasCreateTransfer      Op = "AsaasCreateTransfer"
 	OpAsaasQueryTransfer       Op = "AsaasQueryTransfer"
 	OpAsaasQueryAccountBalance Op = "AsaasQueryAccountBalance"
@@ -203,6 +204,15 @@ type AsaasPaymentResult struct {
 
 type AsaasQueryCustomerArgs struct {
 	CustomerID string `json:"customer_id"`
+}
+
+// AsaasRefundPaymentArgs refunds the PIX payment that originally received the
+// money. Amount stays in centavos across the RPC boundary; pix-gateway
+// converts it to Asaas's decimal-reais API format.
+type AsaasRefundPaymentArgs struct {
+	PaymentID   string `json:"payment_id"`
+	Amount      int64  `json:"amount"`
+	Description string `json:"description"`
 }
 
 type AsaasCustomerResult struct {

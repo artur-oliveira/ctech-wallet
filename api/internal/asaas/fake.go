@@ -32,6 +32,13 @@ type FakeAsaasClient struct {
 	CreatedAccounts  []CreateAccountRequest
 	CreatedTransfers []TransferRequest
 	QueriedTransfers []string
+	RefundedPayments []RefundPaymentRequest
+}
+
+type RefundPaymentRequest struct {
+	PaymentID   string
+	Amount      int64
+	Description string
 }
 
 // NewFake returns an initialized FakeAsaasClient.
@@ -121,6 +128,18 @@ func (f *FakeAsaasClient) QueryPayment(_ context.Context, _ string, paymentID st
 		return nil, fmt.Errorf("asaas: payment %s not found", paymentID)
 	}
 	return p, nil
+}
+
+func (f *FakeAsaasClient) RefundPayment(_ context.Context, _ string, paymentID string, amount int64, description string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	p, ok := f.Payments[paymentID]
+	if !ok {
+		return fmt.Errorf("asaas: payment %s not found", paymentID)
+	}
+	f.RefundedPayments = append(f.RefundedPayments, RefundPaymentRequest{PaymentID: paymentID, Amount: amount, Description: description})
+	p.Status = PaymentRefunded
+	return nil
 }
 
 func (f *FakeAsaasClient) CreateTransfer(_ context.Context, _ string, req TransferRequest) (*Transfer, error) {

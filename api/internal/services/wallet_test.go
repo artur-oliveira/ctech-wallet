@@ -341,6 +341,8 @@ type fakeDepositBaas struct {
 	lastSetStatus     string
 	settlementCalls   int
 	reversalCalls     int
+	refundCalls       int
+	refundErr         error
 }
 
 func (s *stubRepo) ListRefundableDepositsOlderThan(_ context.Context, _ time.Time, _ int) ([]wallet.PixDeposit, error) {
@@ -383,6 +385,10 @@ func (f *fakeDepositBaas) QueryDepositPayment(context.Context, string, string) (
 		return f.queryChargeStub, nil
 	}
 	return &pix.Charge{Status: pix.ChargeActive}, nil
+}
+func (f *fakeDepositBaas) RefundDepositPayment(context.Context, string, string, int64, string) error {
+	f.refundCalls++
+	return f.refundErr
 }
 func (f *fakeDepositBaas) SubmitWithdrawalPayout(context.Context, string, int64, string, string) error {
 	f.payoutCalls++
@@ -1184,6 +1190,45 @@ func TestConfirmAsaasDepositUsesRequeriedCustomerCPF(t *testing.T) {
 	}
 	if repo.deposit.ProviderPaymentID != "pay_1" || len(repo.creditCalls) != 1 {
 		t.Fatalf("expected persisted payment id and one credit, deposit=%+v credits=%+v", repo.deposit, repo.creditCalls)
+	}
+}
+
+func TestConfirmAsaasDepositRejectsCPFMismatchByRefundingAsaasPayment(t *testing.T) {
+	repo := newStubRepo()
+	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{CPF: "12345678901"}})
+	repo.deposit = &wallet.PixDeposit{Txid: "tx-asaas-refund", WalletID: repo.real.WalletID, UserID: "u1", AmountExpected: 1000, Status: wallet.DepositPending, Provider: wallet.ProviderAsaas}
+	baas := &fakeDepositBaas{queryChargeStub: &pix.Charge{Txid: "tx-asaas-refund", Amount: 1000, Status: pix.ChargeCompleted, PayerCPF: "99999999999", E2EID: "pay_asaas_refund"}}
+	svc.SetBaas(baas)
+
+	if err := svc.ConfirmAsaasDeposit(context.Background(), "pay_asaas_refund", "tx-asaas-refund"); err != nil {
+		t.Fatalf("ConfirmAsaasDeposit: %v", err)
+	}
+	if baas.refundCalls != 1 {
+		t.Fatalf("expected exactly one Asaas refund, got %d", baas.refundCalls)
+	}
+	if repo.depositStatus != wallet.DepositRefunded || len(repo.creditCalls) != 0 {
+		t.Fatalf("mismatch must be refunded without credit, status=%s credits=%+v", repo.depositStatus, repo.creditCalls)
+	}
+}
+
+func TestConfirmAsaasDepositClosesAlreadyRefundedMismatchWithoutSecondRefund(t *testing.T) {
+	repo := newStubRepo()
+	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{CPF: "12345678901"}})
+	repo.deposit = &wallet.PixDeposit{Txid: "tx-asaas-replayed-refund", WalletID: repo.real.WalletID, UserID: "u1", AmountExpected: 1000, Status: wallet.DepositRefundPending, Provider: wallet.ProviderAsaas, ProviderPaymentID: "pay_asaas_already_refunded"}
+	baas := &fakeDepositBaas{queryChargeStub: &pix.Charge{
+		Txid: "tx-asaas-replayed-refund", Amount: 1000, Status: pix.ChargeCompleted, E2EID: "pay_asaas_already_refunded",
+		Refunds: []pix.Refund{{RtrID: "asaas#pay_asaas_already_refunded", Amount: 1000, Status: pix.RefundCompleted}},
+	}}
+	svc.SetBaas(baas)
+
+	if err := svc.ConfirmDeposit(context.Background(), "tx-asaas-replayed-refund", "", "", true); err != nil {
+		t.Fatalf("ConfirmDeposit: %v", err)
+	}
+	if baas.refundCalls != 0 {
+		t.Fatalf("already refunded payment must not be refunded again, got %d calls", baas.refundCalls)
+	}
+	if repo.depositStatus != wallet.DepositRefunded {
+		t.Fatalf("status = %s, want %s", repo.depositStatus, wallet.DepositRefunded)
 	}
 }
 

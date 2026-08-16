@@ -238,6 +238,10 @@ type BaasProvider interface {
 	// code ID, normalized into a pix.Charge so ConfirmDeposit's Invariant #11
 	// re-query stays provider-agnostic (plan §4.3).
 	QueryDepositPayment(ctx context.Context, userID, providerQRCodeID string) (*pix.Charge, error)
+	// RefundDepositPayment returns an Asaas PIX payment to its original payer.
+	// QueryDepositPayment is always called first and REFUNDED is the replay
+	// observation, because Asaas allows more than one partial refund.
+	RefundDepositPayment(ctx context.Context, userID, paymentID string, amount int64, reason string) error
 	// SubmitWithdrawalPayout fires leg 1 of a custodied withdrawal (plan §5.2):
 	// a PIX transfer from the user's own subaccount to their own registered CPF
 	// key. Submission failure is non-fatal — the withdrawal stays `processing`
@@ -278,6 +282,10 @@ func (noopBaasProvider) CreateDepositCharge(context.Context, string, int64, stri
 
 func (noopBaasProvider) QueryDepositPayment(context.Context, string, string) (*pix.Charge, error) {
 	return nil, errors.New("baas: custody disabled")
+}
+
+func (noopBaasProvider) RefundDepositPayment(context.Context, string, string, int64, string) error {
+	return errors.New("baas: custody disabled")
 }
 
 func (noopBaasProvider) SubmitWithdrawalPayout(context.Context, string, int64, string, string) error {
@@ -1121,7 +1129,24 @@ func (s *WalletService) refundMismatch(ctx context.Context, dep *wallet.PixDepos
 			}
 		}
 	}
-	if _, refundErr := s.pix.Refund(ctx, charge.E2EID, charge.Amount, "refund#"+dep.Txid); refundErr != nil {
+	// The provider is authoritative for whether the money already went back.
+	// In particular, Asaas permits partial refunds, so replaying an opaque
+	// timeout without observing REFUNDED could create another refund.
+	if refunded(charge) {
+		return s.markDepositRefunded(ctx, dep)
+	}
+
+	var refundErr error
+	if dep.Provider == wallet.ProviderAsaas {
+		if dep.ProviderPaymentID == "" {
+			refundErr = errors.New("asaas: paid deposit has no provider payment id")
+		} else {
+			refundErr = s.baas.RefundDepositPayment(ctx, dep.UserID, dep.ProviderPaymentID, charge.Amount, "CPF do pagador divergente do CPF cadastrado")
+		}
+	} else {
+		_, refundErr = s.pix.Refund(ctx, charge.E2EID, charge.Amount, "refund#"+dep.Txid)
+	}
+	if refundErr != nil {
 		changed, stateErr := s.repo.TransitionDepositStatus(ctx, dep.Txid, wallet.DepositRefundPending, wallet.DepositRefundFailed, charge.E2EID)
 		if stateErr != nil {
 			slog.Error("ALARM deposit refund and durable failure transition both failed", "txid", dep.Txid, "refund_err", refundErr, "state_err", stateErr)
@@ -1141,7 +1166,11 @@ func (s *WalletService) refundMismatch(ctx context.Context, dep *wallet.PixDepos
 		slog.Error("ALARM deposit refund failed; scheduled retry retained", "txid", dep.Txid, "e2e_id", charge.E2EID, "amount", charge.Amount, "err", refundErr)
 		return problem.InternalServer("estorno do depósito falhou; nova tentativa agendada")
 	}
-	changed, err := s.repo.TransitionDepositStatus(ctx, dep.Txid, wallet.DepositRefundPending, wallet.DepositRefunded, charge.E2EID)
+	return s.markDepositRefunded(ctx, dep)
+}
+
+func (s *WalletService) markDepositRefunded(ctx context.Context, dep *wallet.PixDeposit) error {
+	changed, err := s.repo.TransitionDepositStatus(ctx, dep.Txid, wallet.DepositRefundPending, wallet.DepositRefunded, dep.E2EID)
 	if err != nil {
 		return err
 	}

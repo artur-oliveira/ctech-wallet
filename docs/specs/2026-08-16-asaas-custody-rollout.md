@@ -40,12 +40,27 @@ O webhook `PAYMENT_RECEIVED` só acorda o processamento. Ele contém
 
 Valor, status e CPF presentes apenas no webhook não são usados para crédito.
 
+## Divergência de CPF e devolução
+
+Se o CPF do cliente retornado pelo Asaas divergir do CPF KYC da carteira, a
+Wallet persiste `refund_pending` sem creditar saldo e solicita o estorno integral
+com `POST /v3/payments/{payment_id}/refund`, pela mesma subconta que recebeu o
+PIX. Portanto este caminho devolve ao pagador via Asaas e nunca chama a API do
+Inter. Nenhuma taxa CTech é descontada do valor devolvido.
+
+Antes de cada repetição, a Wallet consulta o pagamento. O estado `REFUNDED`
+encerra o estado local sem nova chamada de estorno. Essa observação é necessária
+porque o Asaas suporta múltiplos estornos parciais; após falha de rede a saga
+permanece em `refund_pending`/`refund_failed` e o reconciliador consulta antes
+de decidir uma nova tentativa.
+
 ## Dependência de implantação
 
-O contrato RPC compartilhado ganhou `AsaasQueryCustomer` e `customer_id` em
-`AsaasPaymentResult`. O `ctech-pix-gateway`, que executa as chamadas externas
-para o Asaas, precisa implementar esse novo opcode com `GET /v3/customers/{id}`
-e preencher `customer_id` da consulta de pagamento. Não habilite
+O contrato RPC compartilhado ganhou `AsaasQueryCustomer`, `AsaasRefundPayment`
+e `customer_id` em `AsaasPaymentResult`. O `ctech-pix-gateway`, que executa as
+chamadas externas para o Asaas, precisa implementar `GET /v3/customers/{id}` e
+`POST /v3/payments/{id}/refund`, preenchendo `customer_id` da consulta de
+pagamento e convertendo centavos para reais no estorno. Não habilite
 `ASAAS_CUSTODY_ENABLED` em produção antes de publicar esse componente junto com
 o `ctech-wallet`.
 
