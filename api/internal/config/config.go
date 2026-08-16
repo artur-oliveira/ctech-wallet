@@ -22,21 +22,14 @@ type Config struct {
 	// With it off, those routes are not registered at all and 404.
 	GamblingEnabled bool `env:"GAMBLING_ENABLED" envDefault:"false"`
 
-	// AsaasCustodyEnabled gates the entire Asaas onboarding/deposit/withdrawal/
-	// settlement surface (docs/plans/2026-07-30-asaas-baas-implementation-plan.md).
-	// With it off, a user's real wallet is created and backed exactly as today
-	// (Inter PJ pooled account) — no behavior change. Turning it on requires the
-	// custody gate (plan §0) to be cleared; nothing in code enforces that legal
-	// precondition, so do not flip it in prod without it.
+	// AsaasCustodyEnabled enables the Asaas custody capability and its webhooks.
+	// It does not migrate every user: Wallet.CustodyEnabled is the separate,
+	// admin-only per-real-wallet rollout allowlist. Non-enrolled wallets remain
+	// on Inter even while this capability is on.
 	AsaasCustodyEnabled bool `env:"ASAAS_CUSTODY_ENABLED" envDefault:"false"`
 
-	// AsaasWithdrawalFeeEnabled gates charging the 2% withdrawal fee on
-	// Asaas-custodied wallets — a live legal blocker independent of custody
-	// (plan §0, §5.1). Withdrawals stay fee-free while this is false.
-	AsaasWithdrawalFeeEnabled bool `env:"ASAAS_WITHDRAWAL_FEE_ENABLED" envDefault:"false"`
-
 	// AsaasParentWalletID is Asaas's walletId for CTech's own parent/master
-	// account — the settlement destination for every fee sweep and game-funded
+	// account — the settlement destination for game-funded
 	// sandbox-purchase settlement leg (plan §5.2, §9.1a). Required once
 	// AsaasCustodyEnabled is true.
 	AsaasParentWalletID string `env:"ASAAS_PARENT_WALLET_ID"`

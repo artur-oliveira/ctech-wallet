@@ -408,53 +408,48 @@ func (r *WalletRepository) putMedReceivableIfAbsent(ctx context.Context, userID,
 	return err
 }
 
-// DebitWithFee debits amount+fee in one transaction, writing a withdraw entry and
-// a fee entry plus the idempotency guard. Used by the withdrawal flow.
-// DebitWithFee commits the real-wallet balance debit, the withdraw + fee ledger
-// entries, the idempotency guard, AND the processing withdrawal record (w) in a
+// DebitWithdrawal commits the real-wallet balance debit, withdraw ledger entry,
+// idempotency guard, AND processing withdrawal record (w) in a
 // single TransactWriteItems. Co-writing the record with the debit is what keeps
 // money from being left in limbo: a debit is never committed without the row the
 // reconciliation job scans (SEC-01, Invariant #12). On replay the guard already
 // exists, so we return the prior entry and the caller returns the existing record.
-func (r *WalletRepository) DebitWithFee(ctx context.Context, w *wallet.Withdrawal, amount, fee int64, idemKey, reqHash string) (withdrawEntry, feeEntry *wallet.LedgerEntry, replayed bool, err error) {
+func (r *WalletRepository) DebitWithdrawal(ctx context.Context, w *wallet.Withdrawal, amount int64, idemKey, reqHash string) (withdrawEntry *wallet.LedgerEntry, replayed bool, err error) {
 	prior, conflict, e := r.checkReplay(ctx, idemKey, reqHash)
 	if e != nil {
-		return nil, nil, false, e
+		return nil, false, e
 	}
 	if conflict != nil {
-		return nil, nil, false, conflict
+		return nil, false, conflict
 	}
 	if prior != nil {
 		// On replay we return the withdraw entry as the primary; the fee entry is audit-only.
-		return prior, nil, true, nil
+		return prior, true, nil
 	}
 	wl, err := r.GetWallet(ctx, w.WalletID)
 	if err != nil {
-		return nil, nil, false, err
+		return nil, false, err
 	}
 	if wl == nil {
-		return nil, nil, false, problem.NotFound("carteira não encontrada")
+		return nil, false, problem.NotFound("carteira não encontrada")
 	}
-	total := amount + fee
-	wEntry := r.newEntry(w.WalletID, wallet.EntryWithdraw, -amount, wl.Balance-total, idemKey, w.WithdrawalID)
-	fEntry := r.newEntry(w.WalletID, wallet.EntryFee, -fee, wl.Balance-total, idemKey, w.WithdrawalID)
+	wEntry := r.newEntry(w.WalletID, wallet.EntryWithdraw, -amount, wl.Balance-amount, idemKey, w.WithdrawalID)
 
-	walletTx, err := r.balanceTx(w.WalletID, total, -1, wl.Version)
+	walletTx, err := r.balanceTx(w.WalletID, amount, -1, wl.Version)
 	if err != nil {
-		return nil, nil, false, err
+		return nil, false, err
 	}
 	wLedger := r.ledger.BuildPutTxItemIfAbsent(mustEncode(wEntry))
-	fLedger := r.ledger.BuildPutTxItemIfAbsent(mustEncode(fEntry))
 	guardTx, err := r.guardTx(w.WalletID, wEntry.SK, idemKey, reqHash)
 	if err != nil {
-		return nil, nil, false, err
+		return nil, false, err
 	}
 	withdrawalTx := r.withdrawal.BuildPutTxItemIfAbsent(mustEncode(w))
-	if err := r.wallets.TransactWrite(ctx, []types.TransactWriteItem{walletTx, wLedger, fLedger, guardTx, withdrawalTx}); err != nil {
+	if err := r.wallets.TransactWrite(ctx, []types.TransactWriteItem{walletTx, wLedger, guardTx, withdrawalTx}); err != nil {
 		e, _, err2 := r.resolveTxErr(ctx, idemKey, reqHash, -1, err)
-		return e, nil, e != nil, err2
+		return e, e != nil, err2
 	}
-	return wEntry, fEntry, false, nil
+	return wEntry, false, nil
 }
 
 // Transfer atomically debits fromWalletID and credits toWalletID by the same
@@ -685,6 +680,11 @@ func (r *WalletRepository) UpdateDepositPayer(ctx context.Context, txid, payerCP
 		"payer_cpf":  payerCPF,
 		"payer_name": payerName,
 	})
+	return err
+}
+
+func (r *WalletRepository) UpdateDepositProviderPaymentID(ctx context.Context, txid, providerPaymentID string) error {
+	_, err := r.deposits.UpdateItem(ctx, txid, nil, map[string]any{"provider_payment_id": providerPaymentID})
 	return err
 }
 

@@ -111,7 +111,7 @@ func (s *WalletService) ReverseWithdrawal(ctx context.Context, withdrawalID stri
 // asynchronously (ReconcileWithdrawals: the payout never went through) — same
 // idempotent reversal either way, so both notify the user identically.
 func (s *WalletService) reverse(ctx context.Context, w wallet.Withdrawal) bool {
-	total := w.Amount + w.Fee
+	total := w.Amount
 	_, _, err := s.repo.Credit(ctx, repositories.Mutation{
 		WalletID:       w.WalletID,
 		Amount:         total,

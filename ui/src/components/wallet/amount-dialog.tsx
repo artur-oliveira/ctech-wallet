@@ -14,7 +14,6 @@ import {
   MAX_AMOUNT_DIGITS,
   toCredits
 } from '@/lib/utils/money'
-import {maxWithdrawable, withdrawalFee, type WithdrawalFeeConfig} from '@/lib/utils/fee'
 import {Dialog, DialogContent, DialogDescription, DialogTitle} from '@/components/ui/dialog'
 
 type Flow = 'deposit' | 'withdraw' | 'credits' | 'fund-game' | 'return-game'
@@ -31,8 +30,6 @@ interface AmountDialogProps {
   flow: Flow
   /** Caps the amount at the available balance (withdraw, fund-game, credits, return-game). */
   maxCents?: number
-  /** Effective fee fields from the real wallet; used only by the withdrawal flow. */
-  feeConfig?: WithdrawalFeeConfig
   pending?: boolean
   onSubmit?: (amount: number) => void
   /** When set, replaces the mutation: the amount is handed to a confirm step instead of committing. */
@@ -41,7 +38,7 @@ interface AmountDialogProps {
 }
 
 /** Shared amount entry used by deposit, withdrawal, and credit purchase. */
-export function AmountDialog({flow, maxCents, feeConfig, pending, onSubmit, onProceed, onClose}: AmountDialogProps) {
+export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onClose}: AmountDialogProps) {
   const {t} = useTranslation()
   const flowKey = FLOW_KEY[flow]
 
@@ -52,14 +49,7 @@ export function AmountDialog({flow, maxCents, feeConfig, pending, onSubmit, onPr
   const capMillion = flow === 'deposit' || flow === 'fund-game'
   const balanceCap = maxCents ?? Number.POSITIVE_INFINITY
   const millionCap = capMillion ? MAX_AMOUNT_CENTS : Number.POSITIVE_INFINITY
-  // A withdrawal also pays the fee, so the largest amount that can leave the
-  // wallet without tripping insufficient-balance is balance − fee. Credits,
-  // returns, and real↔game transfers carry no fee, so their cap is raw balance.
-  const feeAwareCap =
-    flow === 'withdraw' && maxCents != null
-      ? maxWithdrawable(maxCents, feeConfig)
-      : balanceCap
-  const effectiveMax = Math.min(feeAwareCap, millionCap)
+  const effectiveMax = Math.min(balanceCap, millionCap)
   // Sandbox credits carry no currency symbol (contract + invariant #7) — every
   // amount shown to the user in the credits flow must go through formatCredits.
   const fmt = flow === 'credits' ? formatCredits : formatBRL
@@ -173,12 +163,6 @@ export function AmountDialog({flow, maxCents, feeConfig, pending, onSubmit, onPr
         )}
         {maxCents != null && (
           <p className="mt-1.5 text-xs text-muted-foreground">{t('dialog.available', {amount: fmt(maxCents)})}</p>
-        )}
-
-        {flow === 'withdraw' && amount > 0 && (
-          <p className="mt-1.5 text-xs text-muted-foreground">
-            {t('dialog.amount.feePreview', {fee: formatBRL(withdrawalFee(amount, feeConfig))})}
-          </p>
         )}
 
         {errors.amount && (

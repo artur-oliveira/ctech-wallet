@@ -108,6 +108,16 @@ type Payment struct {
 	Value             int64
 	Status            string
 	ExternalReference string
+	CustomerID        string
+}
+
+// Customer is the Asaas customer record referenced by a confirmed payment.
+// Its CPF is retrieved from Asaas after the payment re-query; the webhook's
+// customer field is used only as a routing hint and is never credited directly.
+type Customer struct {
+	ID      string
+	Name    string
+	CPFCNPJ string
 }
 
 // TransferRequest sends money out of a subaccount (or the parent account) —

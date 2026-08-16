@@ -27,6 +27,7 @@ type AsaasClient interface {
 
 	CreatePixQRCode(ctx context.Context, subaccountAPIKey string, req QRCodeRequest) (*QRCode, error)
 	QueryPayment(ctx context.Context, apiKey, paymentID string) (*Payment, error)
+	QueryCustomer(ctx context.Context, apiKey, customerID string) (*Customer, error)
 
 	CreateTransfer(ctx context.Context, apiKey string, req TransferRequest) (*Transfer, error)
 	// QueryTransfer looks a transfer up by its ExternalReference (real Asaas:

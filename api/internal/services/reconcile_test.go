@@ -39,7 +39,7 @@ func newReconSvc(repo Repo, pc pix.PixClient) *WalletService {
 
 func TestReconcileCompletesDonePayout(t *testing.T) {
 	repo := &reconRepo{stubRepo: newStubRepo(), processing: []wallet.Withdrawal{
-		{WithdrawalID: "wd1", WalletID: "w-real", Amount: 5000, Fee: 100, Status: wallet.WithdrawProcessing},
+		{WithdrawalID: "wd1", WalletID: "w-real", Amount: 5000, Status: wallet.WithdrawProcessing},
 	}}
 	fake := pix.NewFake()
 	fake.StageTransferStatus(interIdemKey("wd1"), pix.TransferDone)
@@ -59,7 +59,7 @@ func TestReconcileCompletesDonePayout(t *testing.T) {
 
 func TestReconcileReversesMissingPayout(t *testing.T) {
 	repo := &reconRepo{stubRepo: newStubRepo(), processing: []wallet.Withdrawal{
-		{WithdrawalID: "wd2", WalletID: "w-real", Amount: 5000, Fee: 100, Status: wallet.WithdrawProcessing},
+		{WithdrawalID: "wd2", WalletID: "w-real", Amount: 5000, Status: wallet.WithdrawProcessing},
 	}}
 	repo.withdrawals["wd2"] = &repo.processing[0]
 	fake := pix.NewFake() // no staged status → NAO_ENCONTRADO
@@ -81,7 +81,7 @@ func TestReconcileReversesMissingPayout(t *testing.T) {
 
 func TestReconcileAlarmsOnFailedReversal(t *testing.T) {
 	repo := &reconRepo{stubRepo: newStubRepo(), creditErr: errors.New("dynamo down"), processing: []wallet.Withdrawal{
-		{WithdrawalID: "wd3", WalletID: "w-real", Amount: 5000, Fee: 100, Status: wallet.WithdrawProcessing},
+		{WithdrawalID: "wd3", WalletID: "w-real", Amount: 5000, Status: wallet.WithdrawProcessing},
 	}}
 	repo.withdrawals["wd3"] = &repo.processing[0]
 	fake := pix.NewFake()
@@ -104,7 +104,7 @@ func TestReconcileAlarmsOnFailedReversal(t *testing.T) {
 // what happened just because the outcome was resolved out-of-band.
 func TestReconcileBroadcastsOnComplete(t *testing.T) {
 	repo := &reconRepo{stubRepo: newStubRepo(), processing: []wallet.Withdrawal{
-		{WithdrawalID: "wd1", WalletID: "w-real", UserID: "u1", Amount: 5000, Fee: 100, Status: wallet.WithdrawProcessing},
+		{WithdrawalID: "wd1", WalletID: "w-real", UserID: "u1", Amount: 5000, Status: wallet.WithdrawProcessing},
 	}}
 	fake := pix.NewFake()
 	fake.StageTransferStatus(interIdemKey("wd1"), pix.TransferDone)
@@ -131,7 +131,7 @@ func TestReconcileBroadcastsOnComplete(t *testing.T) {
 
 func TestReconcileBroadcastsOnReversal(t *testing.T) {
 	repo := &reconRepo{stubRepo: newStubRepo(), processing: []wallet.Withdrawal{
-		{WithdrawalID: "wd2", WalletID: "w-real", UserID: "u1", Amount: 5000, Fee: 100, Status: wallet.WithdrawProcessing},
+		{WithdrawalID: "wd2", WalletID: "w-real", UserID: "u1", Amount: 5000, Status: wallet.WithdrawProcessing},
 	}}
 	repo.withdrawals["wd2"] = &repo.processing[0]
 	fake := pix.NewFake() // no staged status → NAO_ENCONTRADO
@@ -154,7 +154,7 @@ func TestReconcileBroadcastsOnReversal(t *testing.T) {
 
 func TestReconcileBroadcastsOnAlarmedReversal(t *testing.T) {
 	repo := &reconRepo{stubRepo: newStubRepo(), creditErr: errors.New("dynamo down"), processing: []wallet.Withdrawal{
-		{WithdrawalID: "wd3", WalletID: "w-real", UserID: "u1", Amount: 5000, Fee: 100, Status: wallet.WithdrawProcessing},
+		{WithdrawalID: "wd3", WalletID: "w-real", UserID: "u1", Amount: 5000, Status: wallet.WithdrawProcessing},
 	}}
 	repo.withdrawals["wd3"] = &repo.processing[0]
 	fake := pix.NewFake()

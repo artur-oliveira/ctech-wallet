@@ -145,15 +145,15 @@ func (s *stubRepo) FindMutation(_ context.Context, idemKey, _ string) (*wallet.L
 	}
 	return nil, nil
 }
-func (s *stubRepo) DebitWithFee(_ context.Context, w *wallet.Withdrawal, amount, fee int64, _, _ string) (*wallet.LedgerEntry, *wallet.LedgerEntry, bool, error) {
+func (s *stubRepo) DebitWithdrawal(_ context.Context, w *wallet.Withdrawal, amount int64, _, _ string) (*wallet.LedgerEntry, bool, error) {
 	s.debitFeeCalled = true
 	if s.debitFeeErr != nil {
-		return nil, nil, false, s.debitFeeErr
+		return nil, false, s.debitFeeErr
 	}
 	// Mirror the atomic co-write: the processing record is committed alongside
 	// the debit, so persist it here too (SEC-01).
 	s.withdrawals[w.WithdrawalID] = w
-	return &wallet.LedgerEntry{WalletID: w.WalletID, Amount: -amount}, &wallet.LedgerEntry{WalletID: w.WalletID, Amount: -fee}, false, nil
+	return &wallet.LedgerEntry{WalletID: w.WalletID, Amount: -amount}, false, nil
 }
 func (s *stubRepo) Transfer(_ context.Context, from, to string, amount, creditAmount int64, dt, ct, _, _, _ string, _ ...types.TransactWriteItem) (*wallet.LedgerEntry, *wallet.LedgerEntry, bool, error) {
 	s.transferCalled = true
@@ -174,6 +174,12 @@ func (s *stubRepo) GetDeposit(_ context.Context, _ string) (*wallet.PixDeposit, 
 }
 func (s *stubRepo) GetDepositByProviderQRCodeID(_ context.Context, _ string) (*wallet.PixDeposit, error) {
 	return s.deposit, nil
+}
+func (s *stubRepo) UpdateDepositProviderPaymentID(_ context.Context, _ string, paymentID string) error {
+	if s.deposit != nil {
+		s.deposit.ProviderPaymentID = paymentID
+	}
+	return nil
 }
 func (s *stubRepo) ReserveDepositIdem(_ context.Context, guardPK, txid, _ string, reqHash string) (string, *wallet.PixDeposit, *problem.Problem, error) {
 	if g, ok := s.depositIdem[guardPK]; ok {
@@ -405,6 +411,9 @@ func (f *fakeDepositBaas) SubmitGamePurchaseReversal(context.Context, string, st
 }
 
 func newSvc(repo *stubRepo, locker *stubLocker, pc pix.PixClient, kyc KYCClient) *WalletService {
+	// Most legacy custody tests exercise an enrolled user. Individual rollout
+	// tests turn this back off to cover the per-wallet allowlist explicitly.
+	repo.real.CustodyEnabled = true
 	return NewWalletService(repo, &stubUserRepo{}, &stubAudit{}, locker, pc, kyc)
 }
 
@@ -668,9 +677,8 @@ func TestWithdrawKeyNotFoundRefundsImmediately(t *testing.T) {
 	if !repo.debitFeeCalled {
 		t.Error("the debit still happens up front — it is the reversal that follows")
 	}
-	total := int64(5000) + wallet.WithdrawalFee(5000, nil, false)
-	if len(repo.creditCalls) != 1 || repo.creditCalls[0].Amount != total || repo.creditCalls[0].EntryType != wallet.EntryReversal {
-		t.Fatalf("expected one reversal credit of %d, got %+v", total, repo.creditCalls)
+	if len(repo.creditCalls) != 1 || repo.creditCalls[0].Amount != 5000 || repo.creditCalls[0].EntryType != wallet.EntryReversal {
+		t.Fatalf("expected one reversal credit of 5000, got %+v", repo.creditCalls)
 	}
 	w := repo.withdrawals["withdraw#u1#idem-1"]
 	if w == nil || w.Status != wallet.WithdrawReversed {
@@ -702,9 +710,6 @@ func TestWithdrawHappyPath(t *testing.T) {
 	}
 	if w.Status != wallet.WithdrawCompleted {
 		t.Errorf("status = %q, want completed", w.Status)
-	}
-	if w.Fee != wallet.WithdrawalFee(5000, nil, false) {
-		t.Errorf("fee = %d, want %d", w.Fee, wallet.WithdrawalFee(5000, nil, false))
 	}
 }
 
@@ -1148,6 +1153,40 @@ func TestInitiateDepositNonCustodiedBehaviorUnchangedWhenFlagOff(t *testing.T) {
 	}
 }
 
+func TestCustodyAllowlistKeepsInterForNonEnrolledRealWallet(t *testing.T) {
+	repo := newStubRepo()
+	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	// The test helper defaults custody enrollment on for legacy coverage; this
+	// is the explicit production-rollout case.
+	repo.real.CustodyEnabled = false
+	baas := &fakeDepositBaas{approved: true}
+	svc.SetBaas(baas)
+	svc.SetCustodyEnabled(true)
+
+	dep, _, err := svc.InitiateDeposit(context.Background(), "u1", wallet.KYCVerified, 1000, "idem-allowlist")
+	if err != nil {
+		t.Fatalf("InitiateDeposit: %v", err)
+	}
+	if baas.createCalls != 0 || dep.Provider != "" {
+		t.Fatalf("non-enrolled wallet must remain on Inter, deposit=%+v baas calls=%d", dep, baas.createCalls)
+	}
+}
+
+func TestConfirmAsaasDepositUsesRequeriedCustomerCPF(t *testing.T) {
+	repo := newStubRepo()
+	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{CPF: "12345678901"}})
+	repo.deposit = &wallet.PixDeposit{Txid: "tx-asaas", WalletID: repo.real.WalletID, UserID: "u1", AmountExpected: 1000, Status: wallet.DepositPending, Provider: wallet.ProviderAsaas}
+	baas := &fakeDepositBaas{queryChargeStub: &pix.Charge{Txid: "tx-asaas", Amount: 1000, Status: pix.ChargeCompleted, PayerCPF: "12345678901", E2EID: "pay_1"}}
+	svc.SetBaas(baas)
+
+	if err := svc.ConfirmAsaasDeposit(context.Background(), "pay_1", "tx-asaas"); err != nil {
+		t.Fatalf("ConfirmAsaasDeposit: %v", err)
+	}
+	if repo.deposit.ProviderPaymentID != "pay_1" || len(repo.creditCalls) != 1 {
+		t.Fatalf("expected persisted payment id and one credit, deposit=%+v credits=%+v", repo.deposit, repo.creditCalls)
+	}
+}
+
 func TestPurchaseSandboxFiresSettlementLegWhenCustodied(t *testing.T) {
 	repo := newStubRepo()
 	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
@@ -1257,14 +1296,14 @@ func TestInitiateClosureHappyPathPaysOutFullBalanceFeeFree(t *testing.T) {
 		t.Fatalf("expected 1 SubmitWithdrawalPayout call, got %d", baas.payoutCalls)
 	}
 	if !repo.debitFeeCalled {
-		t.Fatal("expected the closure payout to debit via DebitWithFee")
+		t.Fatal("expected the closure payout to debit atomically")
 	}
 	w, err := repo.GetWithdrawal(context.Background(), "withdraw#u1#idem-close-1")
 	if err != nil || w == nil {
 		t.Fatalf("expected a withdrawal record for the closure payout, got %v, %v", w, err)
 	}
-	if w.Amount != 12345 || w.Fee != 0 {
-		t.Fatalf("expected a fee-free full-balance payout of 12345, got amount=%d fee=%d", w.Amount, w.Fee)
+	if w.Amount != 12345 {
+		t.Fatalf("expected a full-balance payout of 12345, got amount=%d", w.Amount)
 	}
 }
 

@@ -454,15 +454,10 @@ func (b *BaasService) CreateDepositCharge(ctx context.Context, userID string, am
 	return charge, qr.PixQRCodeID, nil
 }
 
-// QueryDepositPayment re-queries an Asaas-opened deposit's payment by the
-// caller's own subaccount key, normalized into a pix.Charge so
-// WalletService.ConfirmDeposit's Invariant #11 re-query stays
-// provider-agnostic (plan §4.3). Payer CPF/name are deliberately left unset —
-// the design research found Asaas's payment query does not reliably expose
-// the actual payer's CPF. Therefore Asaas deposits remain quarantined after
-// payment until an authoritative identity query is implemented; webhook-only
-// payer fields are never promoted to trusted state.
-func (b *BaasService) QueryDepositPayment(ctx context.Context, userID, providerQRCodeID string) (*pix.Charge, error) {
+// QueryDepositPayment re-queries an Asaas payment and then its linked customer
+// through the same subaccount credential. The webhook only supplies the payment
+// ID wake-up; amount, status, customer linkage and CPF come from Asaas reads.
+func (b *BaasService) QueryDepositPayment(ctx context.Context, userID, paymentID string) (*pix.Charge, error) {
 	acc, err := b.repo.GetBaasAccount(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -474,7 +469,7 @@ func (b *BaasService) QueryDepositPayment(ctx context.Context, userID, providerQ
 	if err != nil {
 		return nil, err
 	}
-	payment, err := b.asaas.QueryPayment(ctx, apiKey, providerQRCodeID)
+	payment, err := b.asaas.QueryPayment(ctx, apiKey, paymentID)
 	if err != nil {
 		return nil, err
 	}
@@ -482,7 +477,16 @@ func (b *BaasService) QueryDepositPayment(ctx context.Context, userID, providerQ
 	if payment.Status == asaas.PaymentReceived {
 		status = pix.ChargeCompleted
 	}
-	return &pix.Charge{Txid: payment.ExternalReference, Amount: payment.Value, Status: status, E2EID: payment.ID}, nil
+	charge := &pix.Charge{Txid: payment.ExternalReference, Amount: payment.Value, Status: status, E2EID: payment.ID}
+	if payment.CustomerID == "" {
+		return charge, nil
+	}
+	customer, err := b.asaas.QueryCustomer(ctx, apiKey, payment.CustomerID)
+	if err != nil {
+		return nil, err
+	}
+	charge.PayerCPF = customer.CPFCNPJ
+	return charge, nil
 }
 
 // DecryptAPIKey recovers a subaccount's plaintext Asaas API key from its

@@ -95,11 +95,9 @@ them inside route handlers.
 ### Money & ledger (CRITICAL)
 
 - All amounts are integer **centavos**. Never float.
-- Withdrawal fee is **per-wallet**: optional `fee_bps`/`fee_min`/`fee_max` on the `wallets` row override the
-  defaults (2%/R$1/R$10); the result never drops below the absolute 100-centavo floor.
 - PIX deposit range is per-wallet the same way: optional `min_deposit`/`max_deposit` override the defaults
   (R$1/R$10.000); the minimum never drops below the absolute 100-centavo floor. Checked *before* `CreateCharge`.
-- Fee and deposit-range fields are admin-only (edited directly in DynamoDB) — never a client/API write path.
+- Deposit-range fields are admin-only (edited directly in DynamoDB) — never a client/API write path.
 - `real ↔ game` transfers carry no fee in either direction.
 - Every balance mutation is a conditional `TransactWriteItems`; debits carry `balance >= :amount`.
 - The ledger (`ledger_entries`) is append-only — never updated or deleted; the authoritative balance is

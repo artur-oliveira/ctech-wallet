@@ -19,7 +19,6 @@ const (
 const (
 	EntryDeposit         = "deposit"
 	EntryWithdraw        = "withdraw"
-	EntryFee             = "fee"
 	EntryGameDebit       = "game_debit"
 	EntryGameCredit      = "game_credit"
 	EntrySandboxPurchase = "sandbox_purchase"
@@ -173,25 +172,24 @@ func ToSandboxCredits(centavos int64) int64 {
 // monetary value, converted from real money at SandboxCreditsPerCent). The two
 // units never mix within one wallet.
 //
-// FeeBps/FeeMin/FeeMax are OPTIONAL per-wallet withdrawal-fee overrides, and
 // MinDeposit/MaxDeposit are OPTIONAL per-wallet PIX deposit-range overrides. All
 // are set ONLY by an admin editing the item directly in DynamoDB — there is no
 // API write path. Any unset (zero) field falls back to the package default. The
-// effective fee can never drop below AbsoluteFeeMin, and the effective minimum
-// deposit never below AbsoluteMinDeposit, regardless of overrides.
+// effective minimum deposit never below AbsoluteMinDeposit, regardless of overrides.
 type Wallet struct {
 	WalletID   string `dynamodbav:"pk" json:"wallet_id"`
 	UserID     string `dynamodbav:"user_id" json:"user_id"`
 	Type       string `dynamodbav:"type" json:"type"`
 	Balance    int64  `dynamodbav:"balance" json:"balance"`
 	Version    int64  `dynamodbav:"version" json:"version"`
-	FeeBps     int64  `dynamodbav:"fee_bps,omitempty" json:"fee_bps,omitempty"`
-	FeeMin     int64  `dynamodbav:"fee_min,omitempty" json:"fee_min,omitempty"`
-	FeeMax     int64  `dynamodbav:"fee_max,omitempty" json:"fee_max,omitempty"`
 	MinDeposit int64  `dynamodbav:"min_deposit,omitempty" json:"min_deposit,omitempty"`
 	MaxDeposit int64  `dynamodbav:"max_deposit,omitempty" json:"max_deposit,omitempty"`
+	// CustodyEnabled is the admin-only production rollout allowlist for a real
+	// wallet. When true (and the fleet capability is enabled), its PIX custody
+	// rail is Asaas; false keeps the established Inter rail.
+	CustodyEnabled bool `dynamodbav:"custody_enabled,omitempty" json:"-"`
 	// MinWithdrawal is the OPTIONAL per-wallet withdrawal-amount floor override
-	// (plan §5.2) — admin-only, same convention as FeeBps/MinDeposit above.
+	// (plan §5.2) — admin-only, same convention as MinDeposit above.
 	MinWithdrawal int64  `dynamodbav:"min_withdrawal,omitempty" json:"min_withdrawal,omitempty"`
 	CreatedAt     string `dynamodbav:"created_at" json:"created_at"`
 	UpdatedAt     string `dynamodbav:"updated_at" json:"updated_at"`
@@ -237,8 +235,11 @@ type PixDeposit struct {
 	// Provider is empty.
 	Provider         string `dynamodbav:"provider,omitempty" json:"-"`
 	ProviderQRCodeID string `dynamodbav:"provider_qr_code_id,omitempty" json:"-"`
-	CreatedAt        string `dynamodbav:"created_at" json:"created_at"`
-	TTL              int64  `dynamodbav:"expires_at" json:"-"` // business expiry; retained for durable idempotency/audit
+	// ProviderPaymentID is the immutable Asaas payment ID learned from its
+	// webhook. It is required to re-query the payment and its linked customer.
+	ProviderPaymentID string `dynamodbav:"provider_payment_id,omitempty" json:"-"`
+	CreatedAt         string `dynamodbav:"created_at" json:"created_at"`
+	TTL               int64  `dynamodbav:"expires_at" json:"-"` // business expiry; retained for durable idempotency/audit
 }
 
 // ProviderAsaas marks a PixDeposit opened against a user's Asaas subaccount
@@ -253,7 +254,6 @@ type Withdrawal struct {
 	WalletID       string `dynamodbav:"wallet_id" json:"wallet_id"`
 	UserID         string `dynamodbav:"user_id" json:"user_id"`
 	Amount         int64  `dynamodbav:"amount" json:"amount"`
-	Fee            int64  `dynamodbav:"fee" json:"fee"`
 	PixKey         string `dynamodbav:"pix_key" json:"pix_key"`
 	Provider       string `dynamodbav:"provider,omitempty" json:"provider,omitempty"`
 	Status         string `dynamodbav:"status" json:"status"`
@@ -339,7 +339,6 @@ const (
 // Transfer-intent kinds — what CreateTransfer call this row is tracking.
 const (
 	IntentKindWithdrawalPayout       = "withdrawal_payout"
-	IntentKindWithdrawalFeeSweep     = "withdrawal_fee_sweep"
 	IntentKindSettlementLeg          = "settlement_leg"
 	IntentKindSandboxPurchaseSettle  = "sandbox_purchase_settlement" // §9.1a forward leg
 	IntentKindSandboxPurchaseReverse = "sandbox_purchase_reversal"   // §9.1a reversal leg

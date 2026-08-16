@@ -87,7 +87,16 @@ func (c *LambdaAsaasClient) QueryPayment(ctx context.Context, apiKey, paymentID 
 		rpccontract.AsaasQueryPaymentArgs{PaymentID: paymentID}, &res); err != nil {
 		return nil, err
 	}
-	return &Payment{ID: res.ID, Value: res.Value, Status: res.Status, ExternalReference: res.ExternalReference}, nil
+	return &Payment{ID: res.ID, Value: res.Value, Status: res.Status, ExternalReference: res.ExternalReference, CustomerID: res.CustomerID}, nil
+}
+
+func (c *LambdaAsaasClient) QueryCustomer(ctx context.Context, apiKey, customerID string) (*Customer, error) {
+	var res rpccontract.AsaasCustomerResult
+	if err := c.call(ctx, rpccontract.OpAsaasQueryCustomer, apiKey,
+		rpccontract.AsaasQueryCustomerArgs{CustomerID: customerID}, &res); err != nil {
+		return nil, err
+	}
+	return &Customer{ID: res.ID, Name: res.Name, CPFCNPJ: res.CPFCNPJ}, nil
 }
 
 func (c *LambdaAsaasClient) CreateTransfer(ctx context.Context, apiKey string, req TransferRequest) (*Transfer, error) {

@@ -67,7 +67,7 @@ type LedgerStore interface {
 	ConfirmDepositCredit(ctx context.Context, m repositories.Mutation, txid, e2eID string) (*wallet.LedgerEntry, bool, error)
 	ApplyMedClawback(ctx context.Context, walletID, userID string, amount int64, ref, reqHash string) (debited, shortfall int64, replayed bool, err error)
 	FindMutation(ctx context.Context, idemKey, reqHash string) (*wallet.LedgerEntry, error)
-	DebitWithFee(ctx context.Context, w *wallet.Withdrawal, amount, fee int64, idemKey, reqHash string) (*wallet.LedgerEntry, *wallet.LedgerEntry, bool, error)
+	DebitWithdrawal(ctx context.Context, w *wallet.Withdrawal, amount int64, idemKey, reqHash string) (*wallet.LedgerEntry, bool, error)
 	Transfer(ctx context.Context, from, to string, amount, creditAmount int64, debitType, creditType, ref, idemKey, reqHash string, extra ...types.TransactWriteItem) (*wallet.LedgerEntry, *wallet.LedgerEntry, bool, error)
 	Statement(ctx context.Context, walletID string, limit int, startKey map[string]types.AttributeValue) (*repositories.QueryResult, error)
 	AnyDebitSince(ctx context.Context, walletID, sinceSK string) (bool, error)
@@ -79,6 +79,7 @@ type DepositStore interface {
 	PutDeposit(ctx context.Context, d *wallet.PixDeposit) error
 	GetDeposit(ctx context.Context, txid string) (*wallet.PixDeposit, error)
 	GetDepositByProviderQRCodeID(ctx context.Context, providerQRCodeID string) (*wallet.PixDeposit, error)
+	UpdateDepositProviderPaymentID(ctx context.Context, txid, providerPaymentID string) error
 	ReserveDepositIdem(ctx context.Context, guardPK, txid, userID, reqHash string) (reservedTxid string, existing *wallet.PixDeposit, conflict *problem.Problem, err error)
 	UpdateDepositStatus(ctx context.Context, txid, status, e2eID string) error
 	TransitionDepositStatus(ctx context.Context, txid, fromStatus, toStatus, e2eID string) (bool, error)
@@ -352,6 +353,19 @@ func (s *WalletService) SetCustodyEnabled(v bool) {
 	s.custodyEnabled = v
 }
 
+// CustodyEnabledForUser reports the internal real-wallet allowlist state. It
+// is intentionally not a self-service switch or public response field.
+func (s *WalletService) CustodyEnabledForUser(ctx context.Context, userID string) (bool, error) {
+	if !s.custodyEnabled {
+		return false, nil
+	}
+	real, err := s.repo.EnsureRealWallet(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	return real.CustodyEnabled, nil
+}
+
 // SetSandboxPurchases wires the direct-PIX sandbox-purchase repository (plan
 // §9.1/§9.3) after construction — same setter pattern as SetBroadcaster/
 // SetBaas, so every existing NewWalletService(...) call site keeps compiling
@@ -442,7 +456,14 @@ func (s *WalletService) ActivateGambling(ctx context.Context, userID, kycLevel, 
 // Asaas-sandbox test environment), custodyStatus is always "" and behavior is
 // byte-for-byte what it was before this branch existed.
 func (s *WalletService) GetBalances(ctx context.Context, userID string) (real, game, sandbox *wallet.Wallet, custodyStatus string, err error) {
-	if s.custodyEnabled {
+	if _, err := s.repo.EnsureRealWallet(ctx, userID); err != nil {
+		return nil, nil, nil, "", err
+	}
+	real, game, sandbox, err = s.repo.LoadWallets(ctx, userID)
+	if err != nil || real == nil {
+		return real, game, sandbox, "", err
+	}
+	if s.custodyEnabled && real.CustodyEnabled {
 		acc, err := s.baas.GetAccount(ctx, userID)
 		if err != nil {
 			return nil, nil, nil, "", err
@@ -455,10 +476,6 @@ func (s *WalletService) GetBalances(ctx context.Context, userID string) (real, g
 		}
 		custodyStatus = wallet.BaasApproved
 	}
-	if _, err := s.repo.EnsureRealWallet(ctx, userID); err != nil {
-		return nil, nil, nil, "", err
-	}
-	real, game, sandbox, err = s.repo.LoadWallets(ctx, userID)
 	return real, game, sandbox, custodyStatus, err
 }
 
@@ -482,6 +499,13 @@ func (s *WalletService) Statement(ctx context.Context, walletID string, limit in
 // Withdraw so this behavior is defined exactly once.
 func (s *WalletService) requireCustodyApproved(ctx context.Context, userID string) (*wallet.BaasAccount, error) {
 	if !s.custodyEnabled {
+		return nil, nil
+	}
+	real, err := s.repo.EnsureRealWallet(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if !real.CustodyEnabled {
 		return nil, nil
 	}
 	acc, err := s.baas.GetIfApproved(ctx, userID)
@@ -526,6 +550,13 @@ func (s *WalletService) requireCustodyApproved(ctx context.Context, userID strin
 // other money-moving path on the frozen status specifically.
 func (s *WalletService) requireNotFrozen(ctx context.Context, userID string) error {
 	if !s.custodyEnabled {
+		return nil
+	}
+	real, err := s.repo.EnsureRealWallet(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if !real.CustodyEnabled {
 		return nil
 	}
 	acc, err := s.baas.GetAccount(ctx, userID)
@@ -633,7 +664,11 @@ func (s *WalletService) InitiateDeposit(ctx context.Context, userID, kycLevel st
 // re-query stays provider-agnostic — this is the one place that dispatches).
 func (s *WalletService) queryDeposit(ctx context.Context, dep *wallet.PixDeposit) (*pix.Charge, error) {
 	if dep.Provider == wallet.ProviderAsaas {
-		return s.baas.QueryDepositPayment(ctx, dep.UserID, dep.ProviderQRCodeID)
+		paymentID := dep.ProviderPaymentID
+		if paymentID == "" {
+			paymentID = dep.ProviderQRCodeID
+		}
+		return s.baas.QueryDepositPayment(ctx, dep.UserID, paymentID)
 	}
 	return s.pix.QueryCharge(ctx, dep.Txid)
 }
@@ -784,9 +819,7 @@ func (s *WalletService) ConfirmDeposit(ctx context.Context, txid, payerCPF, paye
 // (poker settlement isn't wired), so there is nothing else to check — and no
 // open MED receivable (plan §7.3).
 //
-// The payout leg is always fee-free (WithdrawalFee's isClosure carve-out,
-// plan §5.2) — a precondition for closure to ever terminate, not an
-// enhancement. Driving the account from `closing` to `subaccount_closed`/
+// Driving the account from `closing` to `subaccount_closed`/
 // `closed` once the payout's Asaas transfer confirms DONE is not built here:
 // today's transfer-intent/reconcile machinery (plan §6) has no completion
 // hook wired to this specific transition yet — flagged as the next increment,
@@ -882,18 +915,25 @@ func (s *WalletService) ProcessMedClawback(ctx context.Context, providerAccountI
 // than trusting this webhook body for money movement (Invariant #11). An
 // unresolvable pixQrCodeId is an idempotent no-op, same as ConfirmDeposit's
 // own unknown-txid handling.
-func (s *WalletService) ConfirmAsaasDeposit(ctx context.Context, providerQRCodeID string) error {
-	dep, err := s.repo.GetDepositByProviderQRCodeID(ctx, providerQRCodeID)
+func (s *WalletService) ConfirmAsaasDeposit(ctx context.Context, paymentID, externalReference string) error {
+	if paymentID == "" || externalReference == "" {
+		return nil
+	}
+	dep, err := s.repo.GetDeposit(ctx, externalReference)
 	if err != nil {
 		return err
 	}
-	if dep == nil {
+	if dep == nil || dep.Provider != wallet.ProviderAsaas {
 		return nil
 	}
-	// The current Asaas payment-query response does not provide payer identity.
-	// Never promote identity asserted only by the webhook into trusted deposit
-	// state. ConfirmDeposit will re-query status/amount and quarantine the paid
-	// deposit until authoritative payer evidence becomes available.
+	if dep.ProviderPaymentID != paymentID {
+		if err := s.repo.UpdateDepositProviderPaymentID(ctx, dep.Txid, paymentID); err != nil {
+			return err
+		}
+		dep.ProviderPaymentID = paymentID
+	}
+	// ConfirmDeposit re-queries paymentID and its customer record through Asaas;
+	// neither the webhook amount nor webhook customer is used as credit evidence.
 	return s.ConfirmDeposit(ctx, dep.Txid, "", "", false)
 }
 
@@ -1155,9 +1195,7 @@ func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, a
 
 // executeWithdrawal is the shared debit/payout core of Withdraw (isClosure
 // false) and the closure flow's final payout leg (isClosure true, plan
-// §7.2) — same lock/idempotency/debit/dispatch machinery, differing only in
-// the fee-free carve-out (WithdrawalFee's isClosure param) closure needs to
-// ever terminate (plan §5.2). Callers have already resolved `custodied` and
+// §7.2) — same lock/idempotency/debit/dispatch machinery. Callers have already resolved `custodied` and
 // any pre-lock gating (custody approval, MED receivables) themselves — this
 // function only ever moves money.
 func (s *WalletService) executeWithdrawal(ctx context.Context, userID string, realw *wallet.Wallet, amount int64, idemKey string, custodied, isClosure bool) (*wallet.Withdrawal, error) {
@@ -1183,7 +1221,7 @@ func (s *WalletService) executeWithdrawal(ctx context.Context, userID string, re
 		// Re-read the balance under the lock — the caller's snapshot (taken
 		// before acquiring this lock) could be stale. Closure must always pay
 		// out exactly what's there NOW: a stale snapshot could either overshoot
-		// (rejected by DebitWithFee's balance>=amount condition, leaving closure
+		// (rejected by DebitWithdrawal's balance>=amount condition, leaving closure
 		// stuck) or undershoot (leaving dust the closure was supposed to sweep).
 		fresh, err := s.repo.GetWallet(ctx, realw.WalletID)
 		if err != nil {
@@ -1206,11 +1244,10 @@ func (s *WalletService) executeWithdrawal(ctx context.Context, userID string, re
 		return existing, nil
 	}
 
-	fee := wallet.WithdrawalFee(amount, realw, isClosure)
 	rh := reqHash(pixKey, amount)
 
-	// Build the withdrawal record up front so the balance debit, both ledger
-	// entries, the idempotency guard, AND the processing withdrawal row all
+	// Build the withdrawal record up front so the balance debit, ledger entry,
+	// idempotency guard, AND the processing withdrawal row all
 	// commit in a single TransactWriteItems. Previously the record was written
 	// by a separate PutWithdrawal call, so a transient failure (or a crash)
 	// between the two left a committed debit with no processing row — money in
@@ -1223,7 +1260,6 @@ func (s *WalletService) executeWithdrawal(ctx context.Context, userID string, re
 		WalletID:     realw.WalletID,
 		UserID:       userID,
 		Amount:       amount,
-		Fee:          fee,
 		PixKey:       pixKey,
 		Provider: func() string {
 			if custodied {
@@ -1236,7 +1272,7 @@ func (s *WalletService) executeWithdrawal(ctx context.Context, userID string, re
 		CreatedAt:      repositories.NowStr(),
 		UpdatedAt:      repositories.NowStr(),
 	}
-	_, _, replayed, err := s.repo.DebitWithFee(ctx, w, amount, fee, withdrawalID, rh)
+	_, replayed, err := s.repo.DebitWithdrawal(ctx, w, amount, withdrawalID, rh)
 	if err != nil {
 		return nil, err
 	}

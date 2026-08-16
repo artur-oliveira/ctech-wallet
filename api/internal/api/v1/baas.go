@@ -7,6 +7,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"gopkg.aoctech.app/wallet/api/internal/middleware"
+	"gopkg.aoctech.app/wallet/api/internal/problem"
 )
 
 // initiateClosure starts the account-closure state machine (plan §7.2).
@@ -30,6 +31,14 @@ func (h *handlers) initiateOnboarding(c fiber.Ctx) error {
 		return sendProblem(c, p)
 	}
 	cl := middleware.GetClaims(c)
+	allowed, err := h.svc.CustodyEnabledForUser(c.Context(), cl.Sub)
+	if err != nil {
+		return sendProblem(c, err)
+	}
+	if !allowed {
+		// The allowlist is operational state, not an enrollment feature.
+		return sendProblem(c, problem.NotFound("recurso não encontrado"))
+	}
 	acc, err := h.baas.InitiateOnboarding(c.Context(), cl.Sub, cl.KYCLevel, body.IncomeValue)
 	if err != nil {
 		return sendProblem(c, err)
@@ -49,28 +58,13 @@ type asaasWebhookPayload struct {
 		ID     string `json:"id"`
 		Status string `json:"status"`
 	} `json:"account"`
-	// Payment identifies which pending deposit should be re-queried. Payer data
-	// is decoded for schema compatibility only and is never trusted by the
-	// wallet's CPF anti-fraud gate.
+	// Payment is a wake-up only. Its ID and external reference tell the API
+	// which provider records to re-query; its amount/customer are never trusted.
 	Payment struct {
-		// PixQRCodeID reads Asaas's payment "id" field, not a distinct
-		// "pixQrCodeId" — the fetched PAYMENT_RECEIVED example payload
-		// (docs.asaas.com/docs/webhook-para-cobrancas) shows only
-		// id/value/status/externalReference/pixTransaction, no separate QR
-		// identifier. api's own CreatePixQRCode stores the created object's
-		// "id" as PixDeposit.ProviderQRCodeID (plan §4.2/§4.3), so resolving
-		// via this same "id" is correct as long as that identifier is stable
-		// across creation and the payment webhook — confirm against a live
-		// Asaas-sandbox round-trip before trusting this, same posture as
-		// every other "confirm before build" item in this file.
-		PixQRCodeID       string `json:"id"`
+		ID                string `json:"id"`
+		CustomerID        string `json:"customer"`
+		PixQRCodeID       string `json:"pixQrCodeId"`
 		ExternalReference string `json:"externalReference"`
-		// Payer is deliberately ignored. A webhook access token is not
-		// independent evidence of payer ownership.
-		Payer struct {
-			CPFCNPJ string `json:"cpfCnpj"`
-			Name    string `json:"name"`
-		} `json:"payer"`
 	} `json:"payment"`
 	// MED clawback (plan §7.3) — a DEDICATED event, never inferred from the
 	// conservation-check discovering a mismatch after the fact. Resolves via
@@ -104,7 +98,7 @@ func (h *handlers) asaasWebhook(c fiber.Ctx) error {
 		// account pending and page operations until provider re-query exists.
 		slog.ErrorContext(c.Context(), "ALARM Asaas account-status webhook quarantined pending authoritative re-query", "event", body.Event, "account_id", body.Account.ID)
 	case body.Event == "PAYMENT_RECEIVED" || body.Event == "PAYMENT_CONFIRMED":
-		if err := h.svc.ConfirmAsaasDeposit(c.Context(), body.Payment.PixQRCodeID); err != nil {
+		if err := h.svc.ConfirmAsaasDeposit(c.Context(), body.Payment.ID, body.Payment.ExternalReference); err != nil {
 			return sendProblem(c, err)
 		}
 	case body.Event == "TRANSFER_MED_CLAWBACK" || body.Event == "PIX_MED_RETURNED":

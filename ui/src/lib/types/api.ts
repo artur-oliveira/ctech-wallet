@@ -11,9 +11,6 @@ export interface Wallet {
   type: WalletType
   balance: number // integer centavos
   version: number
-  fee_bps?: number
-  fee_min?: number
-  fee_max?: number
   min_deposit?: number
   max_deposit?: number
   created_at: string
@@ -52,7 +49,6 @@ export interface Withdrawal {
   wallet_id: string
   user_id: string
   amount: number
-  fee: number
   pix_key: string
   status: 'processing' | 'completed' | 'reversed' | 'refund_failed'
   e2e_id?: string

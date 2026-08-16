@@ -394,6 +394,7 @@ func TestRunConservationCheckSetsAndClearsDriftFlag(t *testing.T) {
 
 func TestHoldGameBlockedByConservationDrift(t *testing.T) {
 	repo := newStubRepo()
+	repo.real.CustodyEnabled = true
 	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 	baas := &fakeDepositBaas{approved: true, conservationDrift: true}
 	svc.SetBaas(baas)
@@ -411,6 +412,7 @@ func TestMoneyOutPathsBlockedWhenFrozen(t *testing.T) {
 
 	t.Run("Withdraw", func(t *testing.T) {
 		repo := newStubRepo()
+		repo.real.CustodyEnabled = true
 		svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{CPF: "12345678900"}})
 		svc.SetBaas(baas)
 		svc.SetCustodyEnabled(true)
@@ -423,6 +425,7 @@ func TestMoneyOutPathsBlockedWhenFrozen(t *testing.T) {
 
 	t.Run("CashoutGame", func(t *testing.T) {
 		repo := newStubRepo()
+		repo.real.CustodyEnabled = true
 		svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 		svc.SetBaas(baas)
 		svc.SetCustodyEnabled(true)
@@ -435,6 +438,7 @@ func TestMoneyOutPathsBlockedWhenFrozen(t *testing.T) {
 
 	t.Run("ringTransfer via ReturnFromGame", func(t *testing.T) {
 		repo := newStubRepo()
+		repo.real.CustodyEnabled = true
 		svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 		svc.SetBaas(baas)
 		svc.SetCustodyEnabled(true)
@@ -552,6 +556,7 @@ func TestReconcileFailedAsaasWithdrawalReversesLedgerDebit(t *testing.T) {
 
 func TestProcessMedClawbackCleanDebitWhenSufficientBalance(t *testing.T) {
 	repo := newStubRepo()
+	repo.real.CustodyEnabled = true
 	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 	baasRepo := newFakeBaasRepo()
 	baasRepo.accounts["u1"] = &wallet.BaasAccount{UserID: "u1", Status: wallet.BaasApproved, ProviderAccountID: "acc_1"}
@@ -573,6 +578,7 @@ func TestProcessMedClawbackCleanDebitWhenSufficientBalance(t *testing.T) {
 
 func TestProcessMedClawbackCreatesReceivableForShortfall(t *testing.T) {
 	repo := newStubRepo()
+	repo.real.CustodyEnabled = true
 	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 	baasRepo := newFakeBaasRepo()
 	baasRepo.accounts["u1"] = &wallet.BaasAccount{UserID: "u1", Status: wallet.BaasApproved, ProviderAccountID: "acc_1"}
@@ -612,6 +618,29 @@ func TestProcessMedClawbackUnknownAccountIsNoOp(t *testing.T) {
 	}
 	if len(repo.debitCalls) != 0 {
 		t.Fatalf("expected no debit for an unknown account, got %+v", repo.debitCalls)
+	}
+}
+
+func TestQueryDepositPaymentLoadsCustomerCPF(t *testing.T) {
+	repo := newFakeBaasRepo()
+	key := make([]byte, 32)
+	ciphertext, nonce, err := asaas.EncryptAPIKey(key, "subaccount-api-key")
+	if err != nil {
+		t.Fatalf("EncryptAPIKey: %v", err)
+	}
+	repo.accounts["u1"] = &wallet.BaasAccount{UserID: "u1", Status: wallet.BaasApproved, APIKeyCiphertext: ciphertext, APIKeyNonce: nonce}
+	fake := asaas.NewFake()
+	fake.StagePayment("pay_1", "qr_1", 200, asaas.PaymentReceived, "tx_1")
+	fake.Payments["pay_1"].CustomerID = "cus_1"
+	fake.Customers["cus_1"] = &asaas.Customer{ID: "cus_1", Name: "Titular", CPFCNPJ: "12345678901"}
+	svc := NewBaasService(repo, fakeWallets{}, fake, nil, nil, key, "wallet_parent", "parent-api-key")
+
+	charge, err := svc.QueryDepositPayment(context.Background(), "u1", "pay_1")
+	if err != nil {
+		t.Fatalf("QueryDepositPayment: %v", err)
+	}
+	if charge.Status != pix.ChargeCompleted || charge.PayerCPF != "12345678901" || charge.Amount != 200 {
+		t.Fatalf("unexpected normalized payment: %+v", charge)
 	}
 }
 

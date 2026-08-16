@@ -107,7 +107,7 @@
     },
     "withdraw": {
       "title": "Sacar para o PIX",
-      "description": "A taxa de saque é descontada do seu saldo junto com o valor.",
+      "description": "O valor informado é debitado integralmente do seu saldo.",
       "submit": "Sacar",
       "pixDestination": "O PIX será enviado para o CPF cadastrado na sua conta. Você precisa já ter uma chave PIX registrada para ele no seu banco."
     },
@@ -129,7 +129,6 @@
     "amount": {
       "label": "Valor",
       "placeholder": "0,00",
-      "feePreview": "Inclui uma taxa de saque de {{fee}}.",
       "maxButton": "Máx {{max}}",
       "creditsPreview": "Corresponde a {{credits}} créditos."
     },

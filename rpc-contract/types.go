@@ -28,6 +28,7 @@ const (
 	OpAsaasCreateStaticPixKey  Op = "AsaasCreateStaticPixKey"
 	OpAsaasCreatePixQRCode     Op = "AsaasCreatePixQRCode"
 	OpAsaasQueryPayment        Op = "AsaasQueryPayment"
+	OpAsaasQueryCustomer       Op = "AsaasQueryCustomer"
 	OpAsaasCreateTransfer      Op = "AsaasCreateTransfer"
 	OpAsaasQueryTransfer       Op = "AsaasQueryTransfer"
 	OpAsaasQueryAccountBalance Op = "AsaasQueryAccountBalance"
@@ -197,6 +198,17 @@ type AsaasPaymentResult struct {
 	Value             int64  `json:"value"`
 	Status            string `json:"status"`
 	ExternalReference string `json:"external_reference"`
+	CustomerID        string `json:"customer_id"`
+}
+
+type AsaasQueryCustomerArgs struct {
+	CustomerID string `json:"customer_id"`
+}
+
+type AsaasCustomerResult struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	CPFCNPJ string `json:"cpf_cnpj"`
 }
 
 type AsaasCreateTransferArgs struct {

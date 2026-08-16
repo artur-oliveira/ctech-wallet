@@ -107,7 +107,7 @@
     },
     "withdraw": {
       "title": "Withdraw to PIX",
-      "description": "The withdrawal fee is deducted from your balance along with the amount.",
+      "description": "The entered amount is deducted in full from your balance.",
       "submit": "Withdraw",
       "pixDestination": "The PIX will be sent to the CPF registered on your account. You must already have a PIX key registered for it at your bank."
     },
@@ -129,7 +129,6 @@
     "amount": {
       "label": "Amount",
       "placeholder": "0.00",
-      "feePreview": "Includes a {{fee}} withdrawal fee.",
       "maxButton": "Max {{max}}",
       "creditsPreview": "Corresponds to {{credits}} credits."
     },

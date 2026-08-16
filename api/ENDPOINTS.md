@@ -121,10 +121,8 @@ non‑empty `sid` (`scope.go:42`).
 
 ## 5. Money math (all integer **centavos**)
 
-- **Withdrawal fee** — per‑wallet `fee_bps`/`fee_min`/`fee_max` override
-  defaults `200`/`100`/`1000` (2% / R$1 / R$10) (`domain/wallet/fee.go:7`).
-  `clamp(amount*bps/10000, min, max)`; never below **absolute floor 100
-  centavos** (`fee.go:13,34`). Admin‑only fields (DynamoDB edit, no API path).
+- **Withdrawal** — debits exactly the requested amount. CTech does not charge a
+  withdrawal fee and writes no fee ledger entry.
 - **PIX deposit range** — per‑wallet `min_deposit`/`max_deposit` override
   defaults `100`/`1000000` (R$1 / R$10.000) (`deposit_limits.go:9`); minimum
   never below absolute floor `100`; incoherent `max<min` widens rather than

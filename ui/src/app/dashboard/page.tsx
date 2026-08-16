@@ -412,7 +412,6 @@ function DashboardInner() {
         <AmountDialog
           flow="withdraw"
           maxCents={balances.data?.real?.balance}
-          feeConfig={balances.data?.real}
           pending={withdraw.isPending || confirm?.flow === 'withdraw'}
           onProceed={(amount) => {
             setStepUp(false)
@@ -463,7 +462,6 @@ function DashboardInner() {
               ? balances.data?.game?.balance ?? 0
               : balances.data?.real?.balance ?? 0
           }
-          feeConfig={balances.data?.real}
           pending={
             confirm.flow === 'withdraw'
               ? withdraw.isPending

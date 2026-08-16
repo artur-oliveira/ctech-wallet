@@ -6,15 +6,6 @@ package rpccontract
 // drift from the JSON. The ui reads money.json directly in its own sync test
 // (ui/src/lib/utils/money-contract.test.mjs).
 const (
-	// Withdrawal fee defaults (design spec §D); per-wallet DynamoDB fields
-	// override them.
-	DefaultFeeBps = 200  // 2.00% in basis points
-	DefaultFeeMin = 100  // R$ 1,00 in centavos
-	DefaultFeeMax = 1000 // R$ 10,00 in centavos
-	// AbsoluteFeeMin is a hard floor no per-wallet override may go below —
-	// it covers the PIX transfer cost.
-	AbsoluteFeeMin = 100 // R$ 1,00 in centavos
-
 	// SandboxCreditsPerCent is the fixed real→sandbox conversion rate.
 	SandboxCreditsPerCent = 100
 

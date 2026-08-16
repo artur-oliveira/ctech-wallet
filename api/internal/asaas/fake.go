@@ -14,6 +14,7 @@ type FakeAsaasClient struct {
 
 	Accounts  map[string]*Account  // by CPF — CreateAccount is keyed by the request's CPF for lookup in tests
 	Payments  map[string]*Payment  // by payment ID
+	Customers map[string]*Customer // by customer ID
 	Transfers map[string]*Transfer // by ExternalReference
 	Balances  map[string]int64     // by apiKey — staged for QueryAccountBalance
 
@@ -23,6 +24,7 @@ type FakeAsaasClient struct {
 	CreateAccountErr       error
 	CreateTransferErr      error
 	QueryPaymentErr        error
+	QueryCustomerErr       error
 	QueryTransferErr       error
 	QueryAccountBalanceErr error
 
@@ -37,9 +39,23 @@ func NewFake() *FakeAsaasClient {
 	return &FakeAsaasClient{
 		Accounts:  make(map[string]*Account),
 		Payments:  make(map[string]*Payment),
+		Customers: make(map[string]*Customer),
 		Transfers: make(map[string]*Transfer),
 		Balances:  make(map[string]int64),
 	}
+}
+
+func (f *FakeAsaasClient) QueryCustomer(_ context.Context, _ string, customerID string) (*Customer, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.QueryCustomerErr != nil {
+		return nil, f.QueryCustomerErr
+	}
+	c, ok := f.Customers[customerID]
+	if !ok {
+		return nil, fmt.Errorf("asaas: customer %s not found", customerID)
+	}
+	return c, nil
 }
 
 func (f *FakeAsaasClient) QueryAccountBalance(_ context.Context, apiKey string) (int64, error) {

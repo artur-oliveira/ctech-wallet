@@ -22,22 +22,6 @@ import (
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
 )
 
-// setWalletFee simulates an admin editing the wallet's fee fields directly in
-// DynamoDB (there is no API write path for fees).
-func setWalletFee(t *testing.T, walletID string, bps, minFee, maxFee int64) {
-	t.Helper()
-	n := func(v int64) dtypes.AttributeValue { return &dtypes.AttributeValueMemberN{Value: fmt.Sprintf("%d", v)} }
-	_, err := db.UpdateItem(context.Background(), &dynamodb.UpdateItemInput{
-		TableName:                 aws.String(table(wallet.TableWallets)),
-		Key:                       map[string]dtypes.AttributeValue{"pk": &dtypes.AttributeValueMemberS{Value: walletID}},
-		UpdateExpression:          aws.String("SET fee_bps = :b, fee_min = :mn, fee_max = :mx"),
-		ExpressionAttributeValues: map[string]dtypes.AttributeValue{":b": n(bps), ":mn": n(minFee), ":mx": n(maxFee)},
-	})
-	if err != nil {
-		t.Fatalf("setWalletFee: %v", err)
-	}
-}
-
 // setWalletDepositRange simulates an admin editing the wallet's deposit-range
 // fields directly in DynamoDB (there is no API write path for them).
 func setWalletDepositRange(t *testing.T, walletID string, minDep, maxDep int64) {
@@ -388,8 +372,7 @@ func TestWithdrawHappyPath(t *testing.T) {
 	if w.PixKey != cpf {
 		t.Fatalf("PixKey = %q, want the KYC CPF %q", w.PixKey, cpf)
 	}
-	fee := wallet.WithdrawalFee(5000, nil, false)
-	want := int64(20000) - 5000 - fee
+	want := int64(20000) - 5000
 	if got := balance(t, h, real.WalletID); got != want {
 		t.Fatalf("balance = %d, want %d", got, want)
 	}
@@ -414,29 +397,11 @@ func TestWithdrawKeyNotFoundRefundsImmediately(t *testing.T) {
 	}
 }
 
-func TestWithdrawUsesPerWalletFeeOverride(t *testing.T) {
-	ctx := context.Background()
-	h := newHarness(verified())
-	user := "u-" + id.New()
-	real := fund(t, h, user, 200000)
-
-	// Admin sets a 1% fee with a higher cap directly on the wallet item (no API path).
-	setWalletFee(t, real.WalletID, 100, 100, 5000)
-
-	w, err := h.svc.Withdraw(ctx, user, "enhanced", 100000, "idem-"+id.New())
-	if err != nil {
-		t.Fatalf("Withdraw: %v", err)
-	}
-	if w.Fee != 1000 { // 1% of 100000, within [100,5000]
-		t.Fatalf("fee = %d, want 1000 (per-wallet 1%%)", w.Fee)
-	}
-}
-
 func TestWithdrawInsufficientBalance(t *testing.T) {
 	ctx := context.Background()
 	h := newHarness(verified())
 	user := "u-" + id.New()
-	fund(t, h, user, 100) // less than amount+fee
+	fund(t, h, user, 100) // less than withdrawal amount
 
 	_, err := h.svc.Withdraw(ctx, user, "enhanced", 5000, "idem-"+id.New())
 	wantProblem(t, err, problem.TypeInsufficientBalance)
@@ -639,8 +604,7 @@ func TestWithdrawConcurrentSameIdempotencyKeyExactlyOneTransfer(t *testing.T) {
 	if got := len(h.pix.Transfers); got != 1 {
 		t.Fatalf("expected exactly 1 PIX transfer call, got %d", got)
 	}
-	fee := wallet.WithdrawalFee(5000, nil, false)
-	want := int64(100000) - 5000 - fee
+	want := int64(100000) - 5000
 	if got := balance(t, h, real.WalletID); got != want {
 		t.Fatalf("balance = %d, want %d (double-debit if lower)", got, want)
 	}
