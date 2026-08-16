@@ -73,7 +73,7 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 	w.Get("/gambling/limits", middleware.RequireUserScope(middleware.ScopeWalletGamblingRead), h.getGameLimits)
 	w.Put("/gambling/limits", middleware.RequireUserScope(middleware.ScopeWalletGamblingWrite), h.putGameLimits)
 	w.Delete("/gambling/limits/pending", middleware.RequireUserScope(middleware.ScopeWalletGamblingWrite), h.cancelPendingLimits)
-	w.Post("/gambling/activate", middleware.RequireUserScope(middleware.ScopeWalletGamblingWrite), middleware.RequireKYC(middleware.KYCVerified), h.activateGambling)
+	w.Post("/gambling/activate", middleware.RequireUserScope(middleware.ScopeWalletGamblingWrite), middleware.RequireKYC(middleware.KYCBasic), h.activateGambling)
 
 	// Everything that moves money INTO the ring-fence is flag-gated: with
 	// GAMBLING_ENABLED off these routes do not exist (404). An absent route cannot
