@@ -229,10 +229,10 @@ func TestActivateGamblingRequiresLimits(t *testing.T) {
 	users := &stubUserRepo{user: &wallet.User{GamblingAddendumVersion: wallet.CurrentGamblingAddendumVersion}}
 	svc, repo, _ := newRespSvc(users)
 	repo.notActivated = true
-	if _, _, err := svc.ActivateGambling(context.Background(), "u1", wallet.KYCVerified, "", "", 0, 0, 0); err == nil {
+	if _, _, err := svc.ActivateGambling(context.Background(), "u1", wallet.KYCBasic, "", "", 0, 0, 0); err == nil {
 		t.Fatal("fresh activation without limits must fail")
 	}
-	if _, _, err := svc.ActivateGambling(context.Background(), "u1", wallet.KYCVerified, "", "", 100, 200, 300); err != nil {
+	if _, _, err := svc.ActivateGambling(context.Background(), "u1", wallet.KYCBasic, "", "", 100, 200, 300); err != nil {
 		t.Fatalf("activation with limits: %v", err)
 	}
 	if users.user.GameLimits == nil || users.user.GameLimits.Daily != 100 {

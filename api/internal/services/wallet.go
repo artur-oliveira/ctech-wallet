@@ -400,7 +400,7 @@ func (s *WalletService) SetM2MClients(m map[string]M2MClient) {
 // Idempotent: activating twice returns the same wallets. Writes an audit event,
 // because consent must be provable after the fact.
 func (s *WalletService) ActivateGambling(ctx context.Context, userID, kycLevel, ip, userAgent string, daily, weekly, monthly int64) (game, sandbox *wallet.Wallet, err error) {
-	if kycLevel != wallet.KYCVerified {
+	if kycLevel != wallet.KYCBasic {
 		return nil, nil, problem.KYCNotVerified()
 	}
 	u, err := s.requireNotExcluded(ctx, userID)
