@@ -189,6 +189,32 @@ type SandboxPurchaseRepo interface {
 type M2MClient struct {
 	WebhookURL string `json:"webhook_url"`
 	HMACSecret string `json:"hmac_secret"`
+	// MaxChargeCents caps a caller-supplied charge amount
+	// (ScopeWalletChargeAmount). It is what replaces the catalogue as the fraud
+	// defense for that route, so it lives here — in the same admin-set SSM blob,
+	// with no API write path — rather than anywhere a request can reach.
+	//
+	// Absent means DefaultMaxChargeCents, never unlimited: a client added to the
+	// blob without this field must not thereby be able to open a charge for any
+	// amount at all.
+	MaxChargeCents int64 `json:"max_charge_cents,omitempty"`
+}
+
+// DefaultMaxChargeCents is the ceiling for a client with none configured:
+// R$ 1.000,00.
+//
+// A charge above it is refused, never truncated to it. A silently reduced charge
+// produces a paid invoice that is still short, which is worse than a refusal in
+// every way — the refusal is visible to the caller, and the short payment is
+// discovered by an accountant.
+const DefaultMaxChargeCents int64 = 100000
+
+// MaxCharge is the effective ceiling for this client.
+func (c M2MClient) MaxCharge() int64 {
+	if c.MaxChargeCents <= 0 {
+		return DefaultMaxChargeCents
+	}
+	return c.MaxChargeCents
 }
 
 // BaasProvider is the per-user Asaas custody gate WalletService reads before

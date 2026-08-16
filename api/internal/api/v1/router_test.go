@@ -112,3 +112,14 @@ func TestProductPurchaseConfirmationRouteIsRegistered(t *testing.T) {
 		t.Fatalf("%s is missing", path)
 	}
 }
+
+// The caller-supplied-amount charge lives at exactly this path, because
+// ctech-billing's client is already written against it
+// (ctech-billing/api/internal/wallet/client.go). A rename here is a broken
+// consumer, not a refactor.
+func TestChargeRouteIsRegisteredAtTheContractPath(t *testing.T) {
+	const path = "/v1.0/internal/wallet/charge"
+	if !registeredPaths(routerApp(t, false))[path] {
+		t.Fatalf("%s is missing", path)
+	}
+}

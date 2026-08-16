@@ -412,15 +412,39 @@ const (
 	ProductPurchaseRefunded  = "refunded"
 )
 
+// Kinds of sale that share this row.
+//
+// The row is shared deliberately: a caller-supplied-amount charge differs from a
+// catalogue sale in exactly one field — where the amount comes from — and every
+// other thing about it (the reservation, the txid, the confirm-by-re-query, the
+// refund, the sweep) is the same machinery. A second table would be a second
+// copy of all of that, and the copy is what drifts.
+//
+// The kind is what the two are told apart by, in the notify-back and in a log.
+// Not the SKU namespace: for a charge, that field holds a label the caller owns,
+// and inferring wallet's own routing from a string billing chose is exactly the
+// coupling this constant exists to avoid.
+const (
+	ProductPurchaseKindProduct = "product"
+	ProductPurchaseKindCharge  = "charge"
+)
+
 // ProductPurchase mirrors SandboxPurchase's shape minus everything about
 // credits: no CreditSK, no CreditsGranted, no ledger entry type. There is no
 // refund_pending status — a refund has nothing to resume except the PIX
 // provider call itself, which is idempotent on E2EID
 // (docs/specs/2026-08-12-product-purchase-skus.md).
 type ProductPurchase struct {
-	PurchaseID       string `dynamodbav:"pk" json:"purchase_id"`
-	UserID           string `dynamodbav:"user_id" json:"user_id"`
-	SKU              string `dynamodbav:"sku" json:"sku"`
+	PurchaseID string `dynamodbav:"pk" json:"purchase_id"`
+	UserID     string `dynamodbav:"user_id" json:"user_id"`
+	// SKU is the catalogue id for a product sale and the caller's own opaque
+	// reference for a charge (an invoice id, for ctech-billing). One attribute
+	// rather than two because it is one thing — what this sale was for — and a
+	// nullable second column would make every read ask which one to look at.
+	SKU string `dynamodbav:"sku" json:"sku"`
+	// Kind is ProductPurchaseKindProduct when absent, which is what every row
+	// written before charges existed is.
+	Kind             string `dynamodbav:"kind,omitempty" json:"kind,omitempty"`
 	AmountExpected   int64  `dynamodbav:"amount_expected" json:"amount_expected"`
 	RequestHash      string `dynamodbav:"request_hash" json:"-"`
 	Status           string `dynamodbav:"status" json:"status"`

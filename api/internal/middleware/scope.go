@@ -61,6 +61,22 @@ const (
 	// own scope, not reused from ScopeWalletSandboxPurchase: materially
 	// different blast radius (docs/specs/2026-08-12-product-purchase-skus.md).
 	ScopeWalletProductPurchase = "internal:wallet:product-purchase"
+
+	// ScopeWalletChargeAmount lets an M2M client open a PIX charge for an amount
+	// it supplies itself, instead of a catalogue price.
+	//
+	// It is a new scope and not a wider ScopeWalletProductPurchase, and that is
+	// the whole security argument. The catalogue is a fraud defense: a client
+	// holding the product scope can only ever sell a R$ 4,90 item, whatever it
+	// asks for. Accepting an amount field under that same scope would hand every
+	// existing holder — ctech-poker among them — the ability to name its own
+	// price the day the field lands. Removing the catalogue for one caller must
+	// not remove it for all of them.
+	//
+	// Granted to ctech-billing alone, whose amounts are arbitrary by construction
+	// (proration and metered usage), and bounded by M2MClient.MaxChargeCents
+	// rather than by a catalogue.
+	ScopeWalletChargeAmount = "internal:wallet:charge-amount"
 )
 
 const walletPublicScopePrefix = "wallet:"

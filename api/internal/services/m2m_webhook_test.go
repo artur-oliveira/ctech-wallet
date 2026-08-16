@@ -138,6 +138,10 @@ func TestRetryFailedM2MWebhooksRetriesOnlyFailed(t *testing.T) {
 	repo := newStubRepo()
 	purchases := newStubSandboxPurchaseRepo()
 	svc := newSandboxSvc(repo, purchases, nil)
+	// The sweep covers both purchase tables now, so both are wired — the same
+	// thing cmd/reconcile does.
+	products := newStubProductPurchaseRepo()
+	svc.SetProductPurchases(products)
 	svc.SetM2MClients(map[string]M2MClient{"poker": {WebhookURL: srv.URL, HMACSecret: "s"}})
 
 	failed := &wallet.SandboxPurchase{
@@ -153,15 +157,31 @@ func TestRetryFailedM2MWebhooksRetriesOnlyFailed(t *testing.T) {
 	purchases.purchases[failed.PurchaseID] = failed
 	purchases.purchases[delivered.PurchaseID] = delivered
 
+	// A charge whose notify-back failed. Until this sweep covered the product
+	// table, such a row was recorded as failed and then never retried — which
+	// left ctech-billing's own reconciliation as the only thing between a lost
+	// notification and an invoice that stays unpaid on somebody's screen.
+	failedCharge := &wallet.ProductPurchase{
+		PurchaseID: "prdp-charge-1", UserID: "u1", RequestingClient: "poker",
+		SKU: "in_abc", Kind: wallet.ProductPurchaseKindCharge,
+		Status: wallet.ProductPurchaseConfirmed, WebhookStatus: wallet.WebhookFailed,
+		CreatedAt: "2020-01-01T00:00:00Z", UpdatedAt: "2020-01-01T00:00:00Z",
+	}
+	products.purchases[failedCharge.PurchaseID] = failedCharge
+
 	retried, err := svc.RetryFailedM2MWebhooks(context.Background())
 	if err != nil {
 		t.Fatalf("RetryFailedM2MWebhooks: %v", err)
 	}
-	if retried != 1 || hits != 1 {
-		t.Fatalf("expected exactly 1 retry, got retried=%d hits=%d", retried, hits)
+	if retried != 2 || hits != 2 {
+		t.Fatalf("expected exactly 2 retries, got retried=%d hits=%d", retried, hits)
 	}
 	updated, _ := purchases.Get(context.Background(), failed.PurchaseID)
 	if updated.WebhookStatus != wallet.WebhookDelivered {
 		t.Fatalf("expected the retried purchase to flip to delivered, got %q", updated.WebhookStatus)
+	}
+	updatedCharge, _ := products.Get(context.Background(), failedCharge.PurchaseID)
+	if updatedCharge.WebhookStatus != wallet.WebhookDelivered {
+		t.Fatalf("expected the retried charge to flip to delivered, got %q", updatedCharge.WebhookStatus)
 	}
 }

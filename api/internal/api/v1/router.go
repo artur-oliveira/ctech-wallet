@@ -143,4 +143,15 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 	pp.Post("/", h.m2mPurchaseProduct)
 	pp.Get("/:id", h.m2mGetProductPurchase)
 	pp.Post("/:id/refund", h.m2mRefundProductPurchase)
+	// M2M PIX charge for an amount the caller supplies (ctech-billing: an invoice
+	// total is arbitrary because of proration and metered usage, so it cannot
+	// come from a catalogue). Its own scope, never pp's — see
+	// middleware.ScopeWalletChargeAmount for why widening the product scope
+	// instead would hand every catalogue client its own pricing.
+	//
+	// Rows land in the product-purchase table with the "prdp" prefix, so
+	// /pix/confirm-product-purchase above already wakes these up: one confirm
+	// path, one sweep, one refund, and no second copy of any of it.
+	internal.Post("/wallet/charge", middleware.RequireScope(middleware.ScopeWalletChargeAmount), h.m2mOpenCharge)
+	internal.Get("/wallet/charge/:id", middleware.RequireScope(middleware.ScopeWalletChargeAmount), h.m2mGetCharge)
 }

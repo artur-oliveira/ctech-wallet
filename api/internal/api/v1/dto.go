@@ -43,6 +43,27 @@ type M2MRefundSandboxPurchaseRequest struct {
 	IdempotencyKey string `json:"idempotency_key" validate:"required,max=128"`
 }
 
+// M2MOpenChargeRequest opens a PIX charge for an amount the caller supplies
+// (M2M, scope internal:wallet:charge-amount).
+//
+// It is the one request body in this file that names its own price, which is
+// why it is a separate type under a separate scope rather than an optional
+// field on M2MSandboxPurchaseRequest: a nullable amount on the shared body
+// would be one forgotten scope check away from letting a catalogue client set
+// it. The ceiling is server-side (services.M2MClient.MaxCharge) — `gt=0` here
+// only rejects the nonsensical, never the excessive.
+type M2MOpenChargeRequest struct {
+	UserID      string `json:"user_id" validate:"required,max=128"`
+	AmountCents int64  `json:"amount_cents" validate:"required,gt=0"`
+	// Reference is the caller's own label for what is being paid — an invoice id,
+	// for ctech-billing. Opaque to wallet.
+	Reference      string `json:"reference" validate:"required,max=128"`
+	IdempotencyKey string `json:"idempotency_key" validate:"required,max=128"`
+	// PayerTaxID is an optional CPF the rail uses to match the payer. Not stored
+	// for that purpose and not required for the charge to open.
+	PayerTaxID string `json:"payer_tax_id" validate:"omitempty,max=14"`
+}
+
 // ConfirmPurchaseRequest is pix-gateway's webhook-Lambda call for either
 // direct-sale rail (sandbox credits or a generic product). It mirrors
 // ConfirmDepositRequest's txid but has no payer identity because these sales

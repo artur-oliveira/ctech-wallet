@@ -25,6 +25,7 @@
     { "name": "internal:wallet:game-status", "descriptions": { "pt-BR": "Consultar elegibilidade de dinheiro real.", "en": "Read real-money eligibility." }, "visibility": "internal", "status": "active" },
     { "name": "internal:wallet:balance", "descriptions": { "pt-BR": "Consultar saldos sandbox e de jogos.", "en": "Read sandbox and game balances." }, "visibility": "internal", "status": "active" },
     { "name": "internal:wallet:sandbox-purchase", "descriptions": { "pt-BR": "Gerenciar compras PIX de creditos sandbox.", "en": "Manage PIX purchases of sandbox credits." }, "visibility": "internal", "status": "active" },
-    { "name": "internal:wallet:product-purchase", "descriptions": { "pt-BR": "Gerenciar vendas PIX de produtos digitais.", "en": "Manage PIX sales of digital products." }, "visibility": "internal", "status": "active" }
+    { "name": "internal:wallet:product-purchase", "descriptions": { "pt-BR": "Gerenciar vendas PIX de produtos digitais.", "en": "Manage PIX sales of digital products." }, "visibility": "internal", "status": "active" },
+    { "name": "internal:wallet:charge-amount", "descriptions": { "pt-BR": "Abrir cobranca PIX com valor informado pelo chamador.", "en": "Open a PIX charge for a caller-supplied amount." }, "visibility": "internal", "status": "active" }
   ]
 }

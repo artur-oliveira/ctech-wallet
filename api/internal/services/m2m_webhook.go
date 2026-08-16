@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -133,9 +134,15 @@ func (s *WalletService) dispatchM2MWebhookProduct(ctx context.Context, p *wallet
 		return
 	}
 
+	// A row written before charges existed carries no kind, and it is a product
+	// sale — the default is the migration, so no backfill is needed.
+	kind := p.Kind
+	if kind == "" {
+		kind = wallet.ProductPurchaseKindProduct
+	}
 	body, err := json.Marshal(m2mWebhookPayload{
 		PurchaseID: p.PurchaseID, UserID: p.UserID, SKU: p.SKU, Status: p.Status,
-		AmountExpected: p.AmountExpected, Kind: "product",
+		AmountExpected: p.AmountExpected, Kind: kind,
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "m2m webhook: marshal failed", "purchase_id", p.PurchaseID, "err", err)
@@ -182,15 +189,30 @@ func (s *WalletService) markM2MWebhookProduct(ctx context.Context, purchaseID, s
 // RetryFailedM2MWebhooks re-attempts notify-back for every purchase whose
 // last dispatch failed — the reconcile job's counterpart to
 // SweepPendingSandboxPurchases, same bounded-batch shape.
+//
+// Both tables, not just the sandbox one. The product table's GSI and its
+// ListWebhookFailedOlderThan existed with no caller, so a failed notify-back on
+// that rail was recorded and never retried. It matters more now that
+// ctech-billing's charges live there: a lost notification is an invoice that
+// stays unpaid on a screen until the consumer's own reconciliation notices, and
+// the retry is the cheaper of the two by a wide margin.
+//
+// A failure on one table must not skip the other, so the errors are collected
+// rather than returned at the first one.
 func (s *WalletService) RetryFailedM2MWebhooks(ctx context.Context) (retried int, err error) {
 	cutoff := time.Now().Add(-sweepAgeThreshold)
-	purchases, err := s.sandboxPurchases.ListWebhookFailedOlderThan(ctx, cutoff, reconcileBatch)
-	if err != nil {
-		return 0, err
-	}
+
+	purchases, sandboxErr := s.sandboxPurchases.ListWebhookFailedOlderThan(ctx, cutoff, reconcileBatch)
 	for i := range purchases {
 		s.dispatchM2MWebhook(ctx, &purchases[i])
 		retried++
 	}
-	return retried, nil
+
+	products, productErr := s.productPurchases.ListWebhookFailedOlderThan(ctx, cutoff, reconcileBatch)
+	for i := range products {
+		s.dispatchM2MWebhookProduct(ctx, &products[i])
+		retried++
+	}
+
+	return retried, errors.Join(sandboxErr, productErr)
 }

@@ -19,7 +19,7 @@ func TestScopeManifestMatchesEnforcedScopes(t *testing.T) {
 		ScopeWalletCredit, ScopeWalletDebit, ScopeWalletRealDebit,
 		ScopePixConfirmDeposit, ScopeWalletGameHold, ScopeWalletGameCashout,
 		ScopeWalletGameStatus, ScopeWalletBalance, ScopeWalletSandboxPurchase,
-		ScopeWalletProductPurchase,
+		ScopeWalletProductPurchase, ScopeWalletChargeAmount,
 	}
 	wantPublic := WalletPublicScopes()
 	gotInternal := make([]string, 0, len(wantInternal))
