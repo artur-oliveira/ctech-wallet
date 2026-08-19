@@ -4,6 +4,7 @@
   "scripts": {
     "build": "tsc",
     "watch": "tsc -w",
+    "test": "TS_NODE_PREFER_TS_EXTS=true node --require ts-node/register --test test/*.test.ts",
     "deploy:prod": "ENVIRONMENT=prod cdk deploy \"CtechWallet-Prod-*\" --require-approval never --profile ctech",
     "cdk": "cdk"
   },
@@ -14,7 +15,7 @@
     "typescript": "~6.0.3"
   },
   "dependencies": {
-    "@aoctech/cdk": "^0.2.1",
+    "@aoctech/cdk": "^0.3.0",
     "aws-cdk-lib": "^2.265.0",
     "constructs": "^10.8.1"
   }
