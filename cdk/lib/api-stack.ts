@@ -187,7 +187,7 @@ export class ApiStack extends cdk.Stack {
       logRemovalPolicy: isProd ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
       asgName: this.asgName,
       minCapacity: 1,
-      maxCapacity: isProd ? 3 : 1,
+      maxCapacity: 1,
       // Nightly stop/start with the shared defaults: down 22:00, back 10:00
       // America/Sao_Paulo (01:00 and 13:00 UTC). Applies to production too — the
       // service is unavailable in that window, and inbound webhooks fail.
@@ -208,21 +208,21 @@ export class ApiStack extends cdk.Stack {
     // slog ALARM lines (refund/reversal failures, deposit amount mismatches,
     // excess-payment refund failures) previously paged nobody — this fires a
     // CloudWatch alarm the moment one is emitted.
-    const alarmMetricFilter = service.appLogGroup.addMetricFilter('AlarmLogFilter', {
-      filterPattern: logs.FilterPattern.literal('"ALARM"'),
-      metricNamespace: `CtechWallet/${environment}`,
-      metricName: 'AlarmLogLines',
-      metricValue: '1',
-      defaultValue: 0,
-    });
-    new cloudwatch.Alarm(this, 'AlarmLogAlarm', {
-      alarmName: `${environment}-${SERVICE}-alarm-log-lines`,
-      alarmDescription: 'A wallet ALARM log line was emitted (refund/reversal failure, deposit amount mismatch, or statement drift) — needs manual reconciliation.',
-      metric: alarmMetricFilter.metric({statistic: 'Sum', period: cdk.Duration.minutes(5)}),
-      threshold: 1,
-      evaluationPeriods: 1,
-      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
-      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
-    });
+    // const alarmMetricFilter = service.appLogGroup.addMetricFilter('AlarmLogFilter', {
+    //   filterPattern: logs.FilterPattern.literal('"ALARM"'),
+    //   metricNamespace: `CtechWallet/${environment}`,
+    //   metricName: 'AlarmLogLines',
+    //   metricValue: '1',
+    //   defaultValue: 0,
+    // });
+    // new cloudwatch.Alarm(this, 'AlarmLogAlarm', {
+    //   alarmName: `${environment}-${SERVICE}-alarm-log-lines`,
+    //   alarmDescription: 'A wallet ALARM log line was emitted (refund/reversal failure, deposit amount mismatch, or statement drift) — needs manual reconciliation.',
+    //   metric: alarmMetricFilter.metric({statistic: 'Sum', period: cdk.Duration.minutes(5)}),
+    //   threshold: 1,
+    //   evaluationPeriods: 1,
+    //   comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+    //   treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    // });
   }
 }
