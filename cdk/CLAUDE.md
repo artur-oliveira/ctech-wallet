@@ -23,7 +23,7 @@ enforced here wherever they can be (IAM, table shape), and the rest in `api`.
 |-------|------|-----------|
 | `DynamoDBStack` | `lib/dynamodb-stack.ts` | 15 tables + GSIs (OnDemand) |
 | `IAMStack` | `lib/iam-stack.ts` | EC2 instance role for the API |
-| `ApiStack` | `lib/api-stack.ts` | EC2 ASG + HAProxy route + nginx + CloudWatch alarm |
+| `ApiStack` | `lib/api-stack.ts` | EC2 ASG + HAProxy route + nginx |
 | `ReconcileStack` | `lib/reconcile-stack.ts` | reconcile Lambda + EventBridge Scheduler (5 min) |
 | `PixGatewayStack` | `lib/pix-gateway-stack.ts` | outbound + webhook Lambdas, mTLS HTTP API |
 | `FrontendStack` | `lib/frontend-stack.ts` | S3 + CloudFront + URL-rewrite Function + KVS route store |

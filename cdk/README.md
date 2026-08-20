@@ -22,7 +22,7 @@ owned by `ctech-cdk` and referenced via SSM.
 |-------|------|-----------|
 | `DynamoDBStack` | `lib/dynamodb-stack.ts` | 8 tables + GSIs (OnDemand) |
 | `IAMStack` | `lib/iam-stack.ts` | EC2 instance role for the API |
-| `ApiStack` | `lib/api-stack.ts` | EC2 ASG + HAProxy route + nginx + deploy scripts + CloudWatch alarm |
+| `ApiStack` | `lib/api-stack.ts` | EC2 ASG + HAProxy route + nginx + deploy scripts |
 | `ReconcileStack` | `lib/reconcile-stack.ts` | reconcile Lambda + EventBridge Scheduler (5 min) |
 | `PixGatewayStack` | `lib/pix-gateway-stack.ts` | outbound + webhook Lambdas, mTLS HTTP API |
 | `FrontendStack` | `lib/frontend-stack.ts` | S3 + CloudFront + URL‑rewrite Function + KVS route store |
@@ -84,12 +84,19 @@ and they are — the underlying item actions are present. No IAM change needed.
 - User data downloads only the official Cloudflare Origin CA RSA root, verifies
   its pinned SHA-256 and installs it into the system trust store for verified
   `*.internal.aoctech.app` calls.
-- CloudWatch **alarm on `"ALARM"` log lines** (`:485`) — fires on refund/
-  reversal failures, deposit amount mismatch, excess‑payment refund failure
-  (the money‑in‑limbo sentinel).
-- `buildCloudWatchAgentConfig` publishes four bounded 60-second host series under
-  `CtechWallet/<env>/Host`: memory %, swap %, root-disk %, and application RSS.
-  EC2's native `CPUUtilization`/`CPUCreditBalance` remain the CPU source.
+- **No CloudWatch alarms and no custom metrics** (2026-08-19). The CloudWatch
+  agent config is logs-only — no `metrics` block, no `CtechWallet/<env>/Host`
+  namespace — because EC2 already publishes `CPUUtilization`/`CPUCreditBalance`
+  for free and nothing alarmed on the host/process series. The `"ALARM"` log-line
+  alarm (refund/reversal failure, deposit amount mismatch, excess-payment refund
+  failure — the money-in-limbo sentinel) is gone with it: those lines still land
+  in `/ctech-wallet/<env>/app`, but finding them is a Logs Insights query, not a
+  page. Reinstate the alarm before anyone relies on being told.
+- **SSM agent is a knob**, default on: `ENABLE_SSM_AGENT=false cdk deploy` stops
+  it in user data and reclaims ~70 MiB of RSS on a t4g.nano. On by default
+  because `.github/workflows/api.yml` deploys through SSM RunCommand and the
+  instances have no other ingress. Same knob as `ctech-lbalancer`,
+  `ctech-billing` and `ctech-account`. Flipping it replaces the instances.
 
 ## ReconcileStack (`reconcile-stack.ts`)
 

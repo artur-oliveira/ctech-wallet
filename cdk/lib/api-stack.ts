@@ -1,10 +1,9 @@
 import * as cdk from 'aws-cdk-lib';
-import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import {Construct} from 'constructs';
-import {buildCloudWatchAgentConfig, Ec2ScriptRunner, HaproxyEc2Service} from '@aoctech/cdk';
+import {Ec2ScriptRunner, HaproxyEc2Service} from '@aoctech/cdk';
 import {Environment} from './types';
 import {
   API_CURRENT_ARTIFACT_KEY,
@@ -36,6 +35,11 @@ interface ApiStackProps extends cdk.StackProps {
    * see docs/specs/2026-07-13-pix-gateway-lambda-design.md.
    */
   pixGatewayFunctionName: string;
+  // Session Manager. Same knob as ctech-lbalancer and ctech-billing: the agent
+  // costs ~70 MiB of RSS on a t4g.nano, so it is a switch rather than a given.
+  // Off means no shell onto the box and no SSM RunCommand target — which is how
+  // .github/workflows/api.yml deploys, so turning it off breaks CI deploys.
+  enableSsmAgent?: boolean;
 }
 
 export class ApiStack extends cdk.Stack {
@@ -51,6 +55,7 @@ export class ApiStack extends cdk.Stack {
       deploymentsBucketName,
       logsBucketName,
       pixGatewayFunctionName,
+      enableSsmAgent = true,
     } = props;
 
     const shared = SSM_SHARED(environment);
@@ -83,6 +88,12 @@ export class ApiStack extends cdk.Stack {
     scripts.run(userData, 'setup-swap.sh', '256');
     scripts.run(userData, 'setup-dualstack.sh');
     scripts.run(userData, 'setup-cloudflare-ca.sh');
+
+    // setup-base.sh installs the SSM agent and setup-dualstack.sh starts it, so
+    // this is what stops it again.
+    if (!enableSsmAgent) {
+      userData.addCommands('systemctl disable --now amazon-ssm-agent 2>/dev/null || true');
+    }
 
     userData.addCommands(
       // Static env file (loaded by systemd EnvironmentFile=). CDK tokens are
@@ -155,17 +166,25 @@ export class ApiStack extends cdk.Stack {
     scripts.run(userData, 'setup-logs.sh', logsBucketName, S3_PREFIX, SERVICE,
       '/var/log/app', '/var/log/nginx');
 
+    // Logs only. No `metrics` block: EC2 already publishes CPUUtilization and
+    // CPUCreditBalance for free, and every custom series this service used to
+    // publish was either that again or a number nobody alarmed on.
+    // {instance_id} is resolved by the CW agent at runtime, not by bash.
     userData.addCommands(
-      // {instance_id} is resolved by the CW agent at runtime, not by bash.
       `cat > /tmp/cwagent.json << 'CWA'`,
-      buildCloudWatchAgentConfig({
-        metricNamespace: `CtechWallet/${environment}/Host`,
-        appProcessPattern: '/opt/app/current/(app|bootstrap)',
-        logFiles: [
-          {filePath: '/var/log/app/app.log', logGroupName: logGroupApp, logStreamName: '{instance_id}'},
-          {filePath: '/var/log/nginx/access.log', logGroupName: logGroupNginx, logStreamName: '{instance_id}/access'},
-          {filePath: '/var/log/nginx/error.log', logGroupName: logGroupNginx, logStreamName: '{instance_id}/error'},
-        ],
+      JSON.stringify({
+        agent: {metrics_collection_interval: 60},
+        logs: {
+          logs_collected: {
+            files: {
+              collect_list: [
+                {file_path: '/var/log/app/app.log', log_group_name: logGroupApp, log_stream_name: '{instance_id}'},
+                {file_path: '/var/log/nginx/access.log', log_group_name: logGroupNginx, log_stream_name: '{instance_id}/access'},
+                {file_path: '/var/log/nginx/error.log', log_group_name: logGroupNginx, log_stream_name: '{instance_id}/error'},
+              ],
+            },
+          },
+        },
       }),
       `CWA`,
     );
@@ -204,25 +223,5 @@ export class ApiStack extends cdk.Stack {
       value: service.nginxLogGroup!.logGroupName,
       exportName: `${id}-nginx-log-group`,
     });
-
-    // slog ALARM lines (refund/reversal failures, deposit amount mismatches,
-    // excess-payment refund failures) previously paged nobody — this fires a
-    // CloudWatch alarm the moment one is emitted.
-    // const alarmMetricFilter = service.appLogGroup.addMetricFilter('AlarmLogFilter', {
-    //   filterPattern: logs.FilterPattern.literal('"ALARM"'),
-    //   metricNamespace: `CtechWallet/${environment}`,
-    //   metricName: 'AlarmLogLines',
-    //   metricValue: '1',
-    //   defaultValue: 0,
-    // });
-    // new cloudwatch.Alarm(this, 'AlarmLogAlarm', {
-    //   alarmName: `${environment}-${SERVICE}-alarm-log-lines`,
-    //   alarmDescription: 'A wallet ALARM log line was emitted (refund/reversal failure, deposit amount mismatch, or statement drift) — needs manual reconciliation.',
-    //   metric: alarmMetricFilter.metric({statistic: 'Sum', period: cdk.Duration.minutes(5)}),
-    //   threshold: 1,
-    //   evaluationPeriods: 1,
-    //   comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
-    //   treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
-    // });
   }
 }

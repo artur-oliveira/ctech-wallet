@@ -36,6 +36,11 @@ const CTECH_VPC_ID = process.env.CTECH_VPC_ID || 'vpc-0adfd86727d17445b';
 // and sets them as env vars before running cdk deploy.
 const CTECH_DEPLOYMENTS_BUCKET = process.env.CTECH_DEPLOYMENTS_BUCKET || `${ENVIRONMENT}-ctech-deployments`;
 const CTECH_LOGS_BUCKET = process.env.CTECH_LOGS_BUCKET || `${ENVIRONMENT}-ctech-application-logs`;
+// Session Manager on the API instances. Default on: it is the only way onto them
+// (no public IPv4, no SSH) and .github/workflows/api.yml deploys through SSM
+// RunCommand. Set ENABLE_SSM_AGENT=false to reclaim the agent's ~70 MiB of RSS —
+// at the cost of both.
+const ENABLE_SSM_AGENT = (process.env.ENABLE_SSM_AGENT || 'true') === 'true';
 
 // Inter partner bank. Neither value is a secret (the client secret, webhook secret
 // and mTLS PEMs all live in SSM), but they differ per environment:
@@ -120,6 +125,7 @@ const apiStack = new ApiStack(app, id('API'), {
   deploymentsBucketName: CTECH_DEPLOYMENTS_BUCKET,
   logsBucketName: CTECH_LOGS_BUCKET,
   pixGatewayFunctionName: pixGatewayStack.outboundFunctionName,
+  enableSsmAgent: ENABLE_SSM_AGENT,
   description: `CTech Wallet API (EC2 + ASG + ALB) - ${ENVIRONMENT}`,
 });
 // instanceProfileName is a plain string, not a CFN token — CDK cannot infer the
