@@ -35,10 +35,9 @@ interface ApiStackProps extends cdk.StackProps {
    * see docs/specs/2026-07-13-pix-gateway-lambda-design.md.
    */
   pixGatewayFunctionName: string;
-  // Session Manager. Same knob as ctech-lbalancer and ctech-billing: the agent
-  // costs ~70 MiB of RSS on a t4g.nano, so it is a switch rather than a given.
-  // Off means no shell onto the box and no SSM RunCommand target — which is how
-  // .github/workflows/api.yml deploys, so turning it off breaks CI deploys.
+  // Session Manager. **Off by default**: deploys replace the instances through an
+  // ASG instance refresh, so nothing needs SSM RunCommand any more, and the
+  // agent costs ~70 MiB of RSS on a t4g.nano. On means a shell back onto the box.
   enableSsmAgent?: boolean;
 }
 
@@ -55,7 +54,7 @@ export class ApiStack extends cdk.Stack {
       deploymentsBucketName,
       logsBucketName,
       pixGatewayFunctionName,
-      enableSsmAgent = true,
+      enableSsmAgent = false,
     } = props;
 
     const shared = SSM_SHARED(environment);
@@ -207,10 +206,11 @@ export class ApiStack extends cdk.Stack {
       asgName: this.asgName,
       minCapacity: 1,
       maxCapacity: 1,
-      // Nightly stop/start with the shared defaults: down 22:00, back 10:00
-      // America/Sao_Paulo (01:00 and 13:00 UTC). Applies to production too — the
-      // service is unavailable in that window, and inbound webhooks fail.
-      schedule: {},
+      // The ASG runs only inside a narrow daytime window: up at 11:55 and down
+      // at 13:15 America/Sao_Paulo. Outside it the service is off — inbound
+      // webhooks fail and nothing is reachable. Deliberate for a development
+      // environment on a single t4g.nano.
+      schedule: {enableCron: '55 11 * * *', disableCron: '15 13 * * *'},
     });
 
     // ── Outputs ───────────────────────────────────────────────────────────────

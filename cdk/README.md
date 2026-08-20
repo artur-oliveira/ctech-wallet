@@ -79,8 +79,8 @@ and they are — the underlying item actions are present. No IAM change needed.
   `start.sh` (fetches non‑secret env + reads secrets from SSM at boot:
   `VALKEY_URL` DB **2**, internal `CTECH_URL`/`CTECH_JWKS_URL`, public issuer,
   service audience/CORS, `WALLET_CLIENT_ID`/
-  `SECRET`), `deploy.sh` (SSM RunCommand rolling deploy invoked by GitHub
-  Actions), `upload-logs.sh`, logrotate.
+  `SECRET`), `deploy.sh` (kept for local/manual use — CI no longer calls it),
+  `upload-logs.sh`, logrotate.
 - User data downloads only the official Cloudflare Origin CA RSA root, verifies
   its pinned SHA-256 and installs it into the system trust store for verified
   `*.internal.aoctech.app` calls.
@@ -92,11 +92,17 @@ and they are — the underlying item actions are present. No IAM change needed.
   failure — the money-in-limbo sentinel) is gone with it: those lines still land
   in `/ctech-wallet/<env>/app`, but finding them is a Logs Insights query, not a
   page. Reinstate the alarm before anyone relies on being told.
-- **SSM agent is a knob**, default on: `ENABLE_SSM_AGENT=false cdk deploy` stops
-  it in user data and reclaims ~70 MiB of RSS on a t4g.nano. On by default
-  because `.github/workflows/api.yml` deploys through SSM RunCommand and the
-  instances have no other ingress. Same knob as `ctech-lbalancer`,
-  `ctech-billing` and `ctech-account`. Flipping it replaces the instances.
+- **Deploys replace the instances.** `.github/workflows/api.yml` uploads the
+  artifact and starts an ASG instance refresh with `MinHealthyPercentage: 0` —
+  no replacement is launched before the old instance goes away, so the service
+  is **down** for the length of the refresh. `SkipMatching` stays `false`: a
+  deploy does not change the launch template.
+- **SSM agent is off by default** (`ENABLE_SSM_AGENT=true cdk deploy` puts it
+  back for a debugging shell). Nothing needs RunCommand now, and the agent costs
+  ~70 MiB of RSS on a t4g.nano. Flipping it replaces the instances.
+- **The ASG runs 11:55 → 13:15 America/Sao_Paulo** and is scaled to zero outside
+  that window: unreachable, inbound webhooks fail. A deploy outside the window
+  exits early and the next scheduled instance boots the artifact.
 
 ## ReconcileStack (`reconcile-stack.ts`)
 
