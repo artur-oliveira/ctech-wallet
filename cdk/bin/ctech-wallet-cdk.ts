@@ -4,18 +4,14 @@ import * as cdk from 'aws-cdk-lib';
 import {DynamoDBStack} from '../lib/dynamodb-stack';
 import {IAMStack} from '../lib/iam-stack';
 import {ApiStack} from '../lib/api-stack';
-import {FrontendStack} from '../lib/frontend-stack';
 import {ReconcileStack} from '../lib/reconcile-stack';
 import {PixGatewayStack} from '../lib/pix-gateway-stack';
 import {OidcStack} from '../lib/oidc-stack';
 import {Environment} from '../lib/types';
 import {
-  ACCOUNTS_DOMAIN_PREFIX,
-  API_DOMAIN_PREFIX,
   APP_DOMAIN_PREFIX,
   AWS_ACCOUNT,
   AWS_REGION,
-  CERT_ARN,
   domainForEnv,
   GITHUB_REPO_DEFAULT,
   PIX_CERT_ARN,
@@ -152,17 +148,3 @@ const reconcileStack = new ReconcileStack(app, id('Reconcile'), {
 });
 reconcileStack.addStackDependency(dynamodbStack);
 reconcileStack.addStackDependency(pixGatewayStack);
-
-// =====================
-// Frontend (S3 + CloudFront)
-// =====================
-new FrontendStack(app, id('Frontend'), {
-  env,
-  environment: ENVIRONMENT,
-  certificateArn: CERT_ARN,
-  domainName: domainForEnv(ENVIRONMENT, APP_DOMAIN_PREFIX),
-  apiDomainName: domainForEnv(ENVIRONMENT, API_DOMAIN_PREFIX),
-  authDomainName: domainForEnv(ENVIRONMENT, ACCOUNTS_DOMAIN_PREFIX),
-  description: `CTech Wallet Frontend (S3 + CloudFront) - ${ENVIRONMENT}`,
-  extraConnectSrc: [],
-});
