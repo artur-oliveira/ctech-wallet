@@ -6,7 +6,7 @@ const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8')
 
 const globalsSource = read('../../app/globals.css')
 const providerSource = read('../../lib/providers/I18nProvider.tsx')
-const homeSource = read('../../app/page.tsx')
+const homeSource = read('../home.tsx')
 const loginSource = read('../../app/login/page.tsx')
 const dashboardSource = read('../../app/dashboard/page.tsx')
 const termsGateSource = read('../terms-addendum-gate.tsx')

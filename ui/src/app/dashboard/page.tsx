@@ -231,7 +231,6 @@ function DashboardInner() {
         id: w.withdrawal_id,
         kind: 'withdrawal',
         amount: w.amount,
-        fee: w.fee,
         status: w.status,
         created_at: w.created_at,
         updated_at: w.updated_at,
@@ -242,10 +241,6 @@ function DashboardInner() {
         setReceipt({
           title: t('toast.withdrawSent'),
           amountLabel: formatBRL(w.amount),
-          details: [
-            {label: t('confirm.fee'), value: formatBRL(w.fee)},
-            {label: t('confirm.total'), value: formatBRL(w.amount + w.fee)},
-          ],
         })
       }
     },

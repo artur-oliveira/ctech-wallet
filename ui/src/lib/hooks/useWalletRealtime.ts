@@ -8,10 +8,16 @@ import {useWebSocket, type WSStatus} from '@aoctech/ws-client'
 import {getAccessToken, subscribeAccessToken} from '@/lib/api/client'
 import type {RealtimeTransactionStatus} from '@/lib/utils/transaction-status'
 
-// NEXT_PUBLIC_API_URL already carries the environment's API origin (set in
-// frontend.yml) — converted http(s) → ws(s). Empty means same-origin, exactly
-// like apiClient's own API_BASE_URL fallback.
-const WS_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
+// NEXT_PUBLIC_WS_URL is read, not derived, and that is the whole point: the
+// generated CSP's connect-src is built from the `wss://` and `https://` literals
+// present in the build environment, and connect-src is scheme-exact — allowing
+// https://host does NOT allow wss://host. Deriving the socket origin from
+// NEXT_PUBLIC_API_URL at runtime would leave no wss:// literal for the generator
+// to find, and every socket would be blocked. It went unnoticed under CloudFront
+// because the socket was same-origin and covered by 'self'.
+//
+// The API_URL fallback stays for local development, where nothing sets it.
+const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL || process.env.NEXT_PUBLIC_API_URL || ''
 
 function buildWsUrl(): string {
   const origin = WS_BASE_URL || window.location.origin

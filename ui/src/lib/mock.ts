@@ -18,7 +18,6 @@ import type {
   WalletType,
   Withdrawal,
 } from '@/lib/types/api'
-import {withdrawalFee} from '@/lib/utils/fee'
 
 export const USE_MOCK = process.env.NEXT_PUBLIC_MOCK_AUTH === 'true'
 
@@ -161,15 +160,12 @@ export class MockApiClient {
 
   async createWithdrawal(amount: number, _idempotencyKey: string): Promise<Withdrawal> {
     void _idempotencyKey
-    const fee = withdrawalFee(amount, state.real)
     addEntry(state.real, 'withdraw', -amount)
-    addEntry(state.real, 'fee', -fee)
     return {
       withdrawal_id: `wd_${Date.now()}`,
       wallet_id: state.real.wallet_id,
       user_id: 'mock_user',
       amount,
-      fee,
       pix_key: '12345678901', // mock user's registered CPF — no client-supplied key anymore
       status: 'completed',
       created_at: new Date().toISOString(),

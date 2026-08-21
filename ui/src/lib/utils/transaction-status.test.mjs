@@ -13,7 +13,6 @@ const withdrawal = {
     id: 'withdraw#user#idem',
     kind: 'withdrawal',
     amount: 5_000,
-    fee: 100,
     status: 'processing',
     created_at: '2026-07-19T18:00:00.000Z',
 }

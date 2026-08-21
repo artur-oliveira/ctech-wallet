@@ -139,13 +139,13 @@
       "invalid": "Informe um valor válido.",
       "maxExceeded": "O valor máximo é {{max}}.",
       "overBalance": "Acima do disponível ({{amount}}).",
-      "overWithdrawable": "Com a taxa, o máximo disponível para saque é {{amount}}."
+      "overWithdrawable": "O máximo disponível para saque é {{amount}}."
     }
   },
   "confirm": {
     "withdraw": {
       "title": "Confirmar saque",
-      "description": "Revise o valor e a taxa antes do dinheiro sair do seu saldo."
+      "description": "Revise o valor antes do dinheiro sair do seu saldo."
     },
     "fundGame": {
       "title": "Confirmar envio para o jogo",
@@ -161,7 +161,6 @@
       "reverify": "Verificar identidade"
     },
     "amount": "Valor",
-    "fee": "Taxa de saque",
     "total": "Total debitado",
     "resulting": "Saldo resultante",
     "confirm": "Confirmar"
@@ -195,10 +194,9 @@
       "refund_failed": "Estorno pendente"
     },
     "reference": "Referência {{id}}",
-    "fee": "Taxa {{fee}}",
     "resumeDeposit": "Ver código PIX",
     "guidance": {
-      "processing": "O débito já aparece no seu saldo enquanto o banco confirma o PIX. Se ele não puder ser concluído, o valor e a taxa serão devolvidos automaticamente. Você pode fechar esta página com segurança.",
+      "processing": "O débito já aparece no seu saldo enquanto o banco confirma o PIX. Se ele não puder ser concluído, o valor será devolvido automaticamente. Você pode fechar esta página com segurança.",
       "refund_failed": "O PIX não foi concluído e o estorno automático ainda precisa de conciliação. Nossa equipe já foi avisada; guarde a referência acima se falar com o suporte."
     }
   },
@@ -354,7 +352,6 @@
     "type": {
       "deposit": "Depósito",
       "withdraw": "Saque",
-      "fee": "Taxa de saque",
       "game_debit": "Jogada",
       "game_credit": "Prêmio",
       "sandbox_purchase": "Compra de créditos",

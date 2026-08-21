@@ -49,11 +49,12 @@ Any other non‑empty `Error` is an opaque bank/transport failure surfaced as
 
 ## Mirror / drift notes
 
-- **No money constants here.** Fees and the sandbox conversion rate are
-  **not** defined in `rpc-contract`. They are mirrored **api ↔ ui by hand**
-  (see `api/ENDPOINTS.md` §5, §7/B18): `FEE_ABSOLUTE_MIN=100` and
-  `SANDBOX_CREDITS_PER_CENTAVO=10` live in `api/internal/domain/wallet` and
-  `ui/src/lib/utils/{fee,money}.ts`. Keep them in sync manually.
+- **No money constants here.** The sandbox conversion rate is **not** defined in
+  `rpc-contract`. It is mirrored **api ↔ ui by hand** (see `api/ENDPOINTS.md`
+  §5, §7/B18): `SANDBOX_CREDITS_PER_CENTAVO=10` lives in
+  `api/internal/domain/wallet/model.go` and `ui/src/lib/utils/money.ts`. Keep
+  them in sync manually. There are no fee constants on either side any more —
+  see `docs/specs/2026-08-16-withdrawal-fee-removal.md`.
 - **`DictLookupArgs`/`DictResult` (`types.go:94,99`) are vestigial.** There is
   **no `OpDictLookup`** in the `Op` enum and `PixClient` has no `DictLookup`
   method, so DICT same‑owner verification is not wired end‑to‑end (see B30/B36:

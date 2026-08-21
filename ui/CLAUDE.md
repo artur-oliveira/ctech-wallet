@@ -4,8 +4,11 @@ Next.js 16 (static export) + React 19 frontend for the ctech-wallet API.
 
 ## Stack
 
-- **Framework:** Next.js 16 `output: 'export'` (pure static build in prod; `next dev`
-  proxies `/v1.0/*` to `DEV_API_ORIGIN` so the browser stays same-origin).
+- **Framework:** Next.js 16 `output: 'export'` with `images: {unoptimized: true}`
+  (mandatory — the default image loader needs a server the export has none of).
+  Deployed to **Cloudflare Workers Static Assets**, not S3+CloudFront. `next dev`
+  still proxies `/v1.0/*` to `DEV_API_ORIGIN`, which is now the only place dev and
+  prod differ.
 - **UI:** ShadCN on top of Base UI (`@base-ui/react`), `lucide-react` icons, `react-hook-form`.
 - **Data:** TanStack Query (`@tanstack/react-query`) for server state.
 - **i18n:** `react-i18next` + `i18next-browser-languagedetector` (pt-BR default).
@@ -25,18 +28,32 @@ Next.js 16 (static export) + React 19 frontend for the ctech-wallet API.
 
 ## API access
 
-- **Same-origin** in all environments — browser calls `/v1.0/*` (CloudFront forwards to
-  the ALB; dev proxies it). `NEXT_PUBLIC_API_URL` only overrides the origin (and the WS
-  origin); empty = same-origin.
+- **Cross-origin** in deployed environments: nothing proxies `/v1.0/*` at the edge any
+  more, so the browser calls `NEXT_PUBLIC_API_URL` directly and **CORS applies**. Only
+  `next dev` is same-origin, via the rewrite. Empty `NEXT_PUBLIC_API_URL` = same-origin
+  and is a local-development value only.
 - **Idempotency:** mutating calls send an `Idempotency-Key` header
   (`src/lib/api/client.ts` `idemConfig`).
 - **Realtime:** WebSocket at `/v1.0/ws` (`useWalletRealtime`); the in-memory access JWT
-  is passed as the auth token (first frame) via `@aoctech/ws-client`.
+  is passed as the auth token (first frame) via `@aoctech/ws-client`. Its origin comes
+  from **`NEXT_PUBLIC_WS_URL`**, read rather than derived: the deployed CSP's
+  `connect-src` is generated from the `https://`/`wss://` literals in the build
+  environment, and `connect-src` is scheme-exact — allowing `https://host` does not
+  allow `wss://host`.
+
+## Locale routes
+
+`/`, `/en` and `/pt-BR` are three plain exported pages; the CloudFront Function that
+redirected `/` to a locale is gone. `/` prerenders pt-BR and switches client-side from
+the stored preference or `Accept-Language`; `/en` and `/pt-BR` are pinned by
+`StaticLocaleBoundary`. hreflang lives on the three **pages**, never the root layout —
+metadata is inherited, so a canonical there would also claim to be `/dashboard`'s.
 
 ## Rules
 
 - Keep the access token in memory; never move it to storage or a readable cookie.
-- Never call the API cross-origin — keep `/v1.0/*` same-origin so CORS never applies.
+- Every new external origin the app talks to must appear as a literal in the caller's
+  `build-env-*` (or `extra-connect-src`), or the generated `connect-src` blocks it.
 - Money is integer **centavos** end to end; format for display only.
 
 ## Mandatory Documentation Policy

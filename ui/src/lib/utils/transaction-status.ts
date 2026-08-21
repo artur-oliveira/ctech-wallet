@@ -13,7 +13,6 @@ export interface TrackedTransaction {
   id: string
   kind: 'deposit' | 'withdrawal'
   amount: number
-  fee?: number
   status: TrackedTransactionStatus
   created_at: string
   updated_at?: string
@@ -104,11 +103,6 @@ export function parseTransactionHistory(raw: string | null): TrackedTransaction[
         && typeof candidate.amount === 'number'
         && Number.isSafeInteger(candidate.amount)
         && candidate.amount > 0
-        && (candidate.fee == null || (
-          typeof candidate.fee === 'number'
-          && Number.isSafeInteger(candidate.fee)
-          && candidate.fee >= 0
-        ))
         && (candidate.expires_at == null || (
           typeof candidate.expires_at === 'number'
           && Number.isSafeInteger(candidate.expires_at)

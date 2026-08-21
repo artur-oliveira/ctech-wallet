@@ -139,13 +139,13 @@
       "invalid": "Enter a valid amount.",
       "maxExceeded": "The maximum amount is {{max}}.",
       "overBalance": "Above what's available ({{amount}}).",
-      "overWithdrawable": "Including the fee, the maximum available to withdraw is {{amount}}."
+      "overWithdrawable": "The maximum available to withdraw is {{amount}}."
     }
   },
   "confirm": {
     "withdraw": {
       "title": "Confirm withdrawal",
-      "description": "Review the amount and fee before the money leaves your balance."
+      "description": "Review the amount before the money leaves your balance."
     },
     "fundGame": {
       "title": "Confirm transfer to games",
@@ -161,7 +161,6 @@
       "reverify": "Re-verify identity"
     },
     "amount": "Amount",
-    "fee": "Withdrawal fee",
     "total": "Total debited",
     "resulting": "Resulting balance",
     "confirm": "Confirm"
@@ -195,10 +194,9 @@
       "refund_failed": "Refund pending"
     },
     "reference": "Reference {{id}}",
-    "fee": "Fee {{fee}}",
     "resumeDeposit": "View PIX code",
     "guidance": {
-      "processing": "The debit is already reflected in your balance while the bank confirms the PIX. If it cannot be completed, the amount and fee are returned automatically. You can close this page safely.",
+      "processing": "The debit is already reflected in your balance while the bank confirms the PIX. If it cannot be completed, the amount is returned automatically. You can close this page safely.",
       "refund_failed": "The PIX was not completed and the automatic refund still needs reconciliation. Our team has been notified; keep the reference above if you contact support."
     }
   },
@@ -354,7 +352,6 @@
     "type": {
       "deposit": "Deposit",
       "withdraw": "Withdrawal",
-      "fee": "Withdrawal fee",
       "game_debit": "Play",
       "game_credit": "Prize",
       "sandbox_purchase": "Credit purchase",

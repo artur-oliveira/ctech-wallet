@@ -1,9 +1,11 @@
 # ctech-wallet UI
 
-Next.js 16.3.1 **static-export SPA** (React 19.2.8) for the `ctech-wallet` API. Consumes
-`api` over `/v1.0/*` **same-origin** (CloudFront forwards to HAProxy; `next dev`
-proxies). Auth via `@aoctech/auth-client` (OAuth2 PKCE, OIDC). All money is
-**integer centavos** end-to-end — formatted for display only.
+Next.js 16.3.1 **static-export SPA** (React 19.2.8) for the `ctech-wallet` API,
+deployed to **Cloudflare Workers Static Assets**. Consumes `api` at
+`NEXT_PUBLIC_API_URL` **cross-origin** — nothing proxies `/v1.0/*` at the edge, so
+**CORS applies**; only `next dev` is same-origin, via a rewrite. Auth via
+`@aoctech/auth-client` (OAuth2 PKCE, OIDC). All money is **integer centavos**
+end-to-end — formatted for display only.
 
 > **This app drives real money.** The 12 Financial Safety Invariants in the repo
 > root [`../CLAUDE.md`](../CLAUDE.md) are non-negotiable. The UI's job is to
@@ -11,25 +13,34 @@ proxies). Auth via `@aoctech/auth-client` (OAuth2 PKCE, OIDC). All money is
 
 ## Stack
 
-- **Next.js 16** `output: 'export'` — pure static build in prod; `next dev`
-  proxies `/v1.0/*` to `DEV_API_ORIGIN` so the browser stays same-origin
-  (`next.config.ts`).
+- **Next.js 16** `output: 'export'` + `images: {unoptimized: true}` — pure static
+  build in prod (the default image loader needs a server the export has none of, so
+  the build fails without it); `next dev` proxies `/v1.0/*` to `DEV_API_ORIGIN`,
+  the one place dev and prod differ on purpose (`next.config.ts`).
 - **UI:** ShadCN over Base UI (`@base-ui/react`), `lucide-react`, `react-hook-form`.
 - **Server state:** TanStack Query (`@tanstack/react-query`).
 - **i18n:** `react-i18next` + browser lang detect (**pt-BR** default, en first-class).
-- **Realtime:** `@aoctech/ws-client` (`useWalletRealtime`).
+- **Realtime:** `@aoctech/ws-client` (`useWalletRealtime`), origin from
+  `NEXT_PUBLIC_WS_URL` — read, not derived from `NEXT_PUBLIC_API_URL`, because the
+  deployed CSP's `connect-src` is generated from the build environment's literals
+  and is scheme-exact (`https://host` does not permit `wss://host`).
 
 ## Routes (page → API)
 
 | Route | File | Auth gate | Calls |
 |--------|------|-----------|-------|
-| `/` `/login` | `src/app/{pt-BR,en,login}/page.tsx` | public | `startOAuthFlow` |
+| `/` `/en` `/pt-BR` `/login` | `src/components/home.tsx`, `src/app/{en,pt-BR,login}/page.tsx` | public | `startOAuthFlow` |
 | `/callback` | `src/app/callback/page.tsx` | — | `exchangeCode` → `doRefresh` |
 | `/dashboard` | `src/app/dashboard/page.tsx` | protected | `me`, `getBalances`, `getLedger`, realtime |
 | `/gambling/activate` | `src/app/gambling/activate/page.tsx` | protected (+ KYC) | `activateGambling` |
 | `/gambling/responsible` | `src/app/gambling/responsible/page.tsx` | protected | `getGameLimits`/`setGameLimits`/`selfExclude` |
 
-Localized layouts `src/app/{pt-BR,en}/layout.tsx` + `static-locale-boundary`.
+Localized layouts `src/app/{pt-BR,en}/layout.tsx` + `static-locale-boundary`. All three
+homepage routes render `src/components/home.tsx`; the markup lives there and not in
+`src/app/page.tsx` so `/` can export `metadata` (a client component cannot). Each of the
+three declares its own hreflang alternates — never the root layout, whose metadata every
+route inherits. There is no longer an edge redirect from `/` to a locale: `/` prerenders
+pt-BR and switches client-side.
 `components/protected-route.tsx` gates authenticated pages. `terms-addendum-gate.tsx`
 blocks the app until the current terms addendum is accepted.
 
@@ -58,7 +69,7 @@ blocks the app until the current terms addendum is accepted.
 
 ## API client (`src/lib/api/client.ts`)
 
-- **Same-origin**: `API_BASE_URL = NEXT_PUBLIC_API_URL ?? ''` (`:20`) → browser calls `/v1.0/*`.
+- **Cross-origin**: `API_BASE_URL = NEXT_PUBLIC_API_URL ?? ''` (`:20`); deployed environments always set it, so calls go to the API host and CORS applies. The `''` fallback is `next dev` only.
 - **Idempotency**: mutating calls send `Idempotency-Key` via `idemConfig` (`:115`).
 - Method map (→ `api` routes): `me`→`GET /v1.0/auth/me`, `getBalances`→`GET /v1.0/wallet`,
   `createDeposit`→`POST /v1.0/wallet/deposits`, `createWithdrawal`→`POST /v1.0/wallet/withdrawals`,
@@ -76,10 +87,10 @@ first frame** (`authToken`, `:101`) — mirrors `api` `ws.go`. Events:
 
 ## Money constants (B18 — mirrored api↔ui by hand)
 
-`FEE_ABSOLUTE_MIN = 100`, defaults `200/100/1000` (`src/lib/utils/fee.ts`);
-`SANDBOX_CREDITS_PER_CENTAVO = 10` (`src/lib/utils/money.ts`). Keep in sync
-with `api/internal/domain/wallet/{fee,model}.go` — `rpc-contract` defines **no**
-money constants.
+`SANDBOX_CREDITS_PER_CENTAVO = 10` (`src/lib/utils/money.ts`). Keep in sync with
+`api/internal/domain/wallet/model.go` — `rpc-contract` defines **no** money
+constants. There are no fee constants: see
+`../docs/specs/2026-08-16-withdrawal-fee-removal.md`.
 
 ## Build / quality gate
 

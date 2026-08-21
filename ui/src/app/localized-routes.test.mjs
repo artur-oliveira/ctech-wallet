@@ -19,4 +19,8 @@ test('localized metadata declares canonical, alternate, and Open Graph locales',
     assert.match(metadataSource, /languages:/)
     assert.match(metadataSource, /alternateLocale/)
     assert.match(switcherSource, /router\.replace\(localizedPath\(pathname, next\)\)/)
+    // `/` is the x-default of the cluster and must name the set back, or the
+    // annotation is one-way and ignored.
+    assert.match(metadataSource, /ROOT_ALTERNATES/)
+    assert.match(metadataSource, /'x-default': '\/'/)
 })

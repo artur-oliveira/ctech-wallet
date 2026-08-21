@@ -3,9 +3,10 @@ import path from "path";
 
 const isProduction = process.env.NODE_ENV === 'production';
 
-// Where `next dev` forwards /v1.0/* to. Mirrors what CloudFront does in front of
-// the ALB in deployed environments, so the browser is same-origin in dev too and
-// CORS never applies.
+// Where `next dev` forwards /v1.0/* to. Deployed environments do NOT do this any
+// more — the frontend is static on Cloudflare and the browser calls the API host
+// directly, with CORS. The dev rewrite stays only so local work needs no CORS
+// configuration; it is the one place where dev and prod differ on purpose.
 const DEV_API_ORIGIN = process.env.DEV_API_ORIGIN || 'http://localhost:8002';
 
 // rewrites() is unsupported by `output: 'export'` and only ever runs under
@@ -17,7 +18,13 @@ const nextConfig: NextConfig = {
   },
   allowedDevOrigins: ['127.0.0.1'],
   ...(isProduction
-    ? {output: 'export' as const}
+    ? {
+      // unoptimized is mandatory, not a preference: the default image loader
+      // needs a server, and `output: 'export'` has none. The build fails
+      // outright without it because the homepage uses next/image.
+      output: 'export' as const,
+      images: {unoptimized: true},
+    }
     : {
       async rewrites() {
         return [

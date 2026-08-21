@@ -44,3 +44,28 @@ export function localizedMetadata({
     },
   }
 }
+
+/**
+ * Alternates for `/`, which is not a locale route: the language is resolved in
+ * the browser by `I18nProvider`, so `/` is the cluster's `x-default` rather than
+ * a member of it.
+ *
+ * It needs its own annotation because hreflang is only honoured when every URL
+ * in a set names the whole set. `/en` and `/pt-BR` have always pointed
+ * `x-default` here, but `/` said nothing back — a one-way annotation a crawler
+ * discards. That went unnoticed while a CloudFront Function redirected `/` to a
+ * locale route so it was never served; the Cloudflare migration drops that
+ * redirect and makes `/` a real page.
+ *
+ * Declared on the root *page* and never on the root *layout*: metadata is
+ * inherited, so a canonical of `/` in the layout would also claim to be the
+ * canonical of `/dashboard`, `/login`, `/callback` and `/gambling/*`.
+ */
+export const ROOT_ALTERNATES: Metadata['alternates'] = {
+  canonical: '/',
+  languages: {
+    [DEFAULT_LOCALE]: `/${DEFAULT_LOCALE}`,
+    [ENGLISH_LOCALE]: `/${ENGLISH_LOCALE}`,
+    'x-default': '/',
+  },
+}

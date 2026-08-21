@@ -19,8 +19,9 @@ convenience.
   withdrawal step-up. Refresh token is the **HttpOnly + SameSite `ctech_rt`
   cookie** (`:48-50,57`); the **access token is in-memory only**
   (`src/lib/api/client.ts:23`), never persisted.
-- API access is **same-origin**: browser calls `/v1.0/*`
-  (`client.ts:20`). Never call the API cross-origin (CORS would then apply).
+- API access is **cross-origin** in deployed environments: the browser calls
+  `NEXT_PUBLIC_API_URL` directly (`client.ts:20`) and **CORS applies**. Only
+  `next dev` is same-origin, via the `next.config.ts` rewrite.
 - Realtime: `src/lib/hooks/useWalletRealtime.ts` — WS at `/v1.0/ws` (`:19`),
   JWT passed as the **first frame** (`authToken`, `:101`); events
   `deposit_confirmed`, `withdraw_completed`/`withdraw_reversed`/`withdraw_refund_failed`.
@@ -28,7 +29,9 @@ convenience.
 ## Rules (MUST follow)
 
 - **Never** move the access token to storage or a readable cookie.
-- **Never** call the API cross-origin — keep `/v1.0/*` same-origin.
+- **Never** talk to an origin that is not a literal in the caller workflow's
+  `build-env-*` — the generated CSP `connect-src` is derived from those and will
+  block anything else. `wss://` counts separately from `https://`.
 - All money is **integer centavos** end-to-end; format for display only.
 - Mutating calls MUST send an `Idempotency-Key` header (`idemConfig`,
   `client.ts:115`) — never omit it on POSTs that move money.
@@ -37,9 +40,10 @@ convenience.
 
 ## Known divergences
 
-- **B18** — money constants mirrored api↔ui by hand: `FEE_ABSOLUTE_MIN=100`,
-  defaults `200/100/1000` (`src/lib/utils/fee.ts`); `SANDBOX_CREDITS_PER_CENTAVO=10`
-  (`src/lib/utils/money.ts`). `rpc-contract` defines NONE. Keep in sync manually.
+- **B18** — money constants mirrored api↔ui by hand:
+  `SANDBOX_CREDITS_PER_CENTAVO=10` (`src/lib/utils/money.ts`). `rpc-contract`
+  defines NONE. Keep in sync manually. No fee constants exist — see
+  `../docs/specs/2026-08-16-withdrawal-fee-removal.md`.
 
 ## Cross-links
 

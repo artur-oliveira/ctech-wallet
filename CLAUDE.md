@@ -115,25 +115,23 @@ services return `*problem.Problem`). Never return raw errors, `fiber.Map`, or `f
 
 All balances and amounts are **integer centavos** — never floats.
 
-**Withdrawal fee** is per-wallet: each `wallets` row may carry optional `fee_bps` / `fee_min` / `fee_max`
-overrides, each falling back to the defaults (2% / R$1 / R$10) when unset. The effective fee is
-`clamp(amount*bps/10000, min, max)` in integer arithmetic and **never below the absolute floor of 100 centavos**
-regardless of overrides.
+**There is no withdrawal fee**, per `docs/specs/2026-08-16-withdrawal-fee-removal.md`. A withdrawal debits
+exactly its `amount` and writes one `withdraw` ledger entry — no fee entry, no `fee_bps`/`fee_min`/`fee_max`
+configuration, no sweep, no flag. Historical DynamoDB fee attributes and ledger rows are immutable history that
+new code neither reads nor writes. An Asaas tariff is a provider cost, tracked separately as `transfer_fee`, and
+is never CTech revenue.
 
-**PIX deposit range** is per-wallet the same way: optional `min_deposit` / `max_deposit` overrides falling back to
+**PIX deposit range** IS per-wallet: optional `min_deposit` / `max_deposit` overrides falling back to
 the defaults (R$1 / R$10.000). The effective minimum is **never below the absolute floor of 100 centavos**, and an
 incoherent override (`max < min`) widens rather than rejecting every amount. The range is checked *before*
 `CreateCharge`, so a rejected amount never opens a charge at Inter.
 
-Fee and deposit-range fields are **admin-only** — set directly in DynamoDB; there is no API write path for them.
-
-Transfers between `real` and `game` carry **no fee** in either direction.
+Deposit-range fields are **admin-only** — set directly in DynamoDB; there is no API write path for them.
 
 ### Testing — core functions need integration tests
 
 | Change             | Required tests                              |
 |--------------------|---------------------------------------------|
-| Fee calculation    | Unit (min/max boundaries)                   |
 | Ledger / balance   | Unit + integration (no-negative, atomic)    |
 | Idempotency        | Unit + integration (replay = same result)   |
 | Lock / concurrency | Integration (concurrent op → `wallet-busy`) |

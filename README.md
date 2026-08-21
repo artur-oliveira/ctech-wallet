@@ -66,8 +66,9 @@ Este serviço custodia dinheiro real de terceiros. Invariantes não-negociáveis
 - **Uma operação por wallet por vez** — lock via Valkey `SETNX` com TTL curto.
 - **Webhook nunca é fonte de verdade** — pagamento só credita após reconsulta ao provedor pelo `txid`.
 - **Saque com gate** — `kyc_level == verified` + step-up MFA + CPF da chave PIX destino == CPF do KYC.
-- **Taxa por-wallet** — `fee_bps`/`fee_min`/`fee_max` opcionais por carteira (default 2% / R$1 / R$10), piso
-  absoluto de R$1, configurável só por admin direto no DynamoDB (sem rota de API).
+- **Sem taxa de saque** — o saque debita exatamente o `amount` e grava um único lançamento `withdraw`
+  (`docs/specs/2026-08-16-withdrawal-fee-removal.md`). Tarifa da Asaas é custo de provedor (`transfer_fee`),
+  nunca receita da CTech.
 
 ## Início Rápido
 

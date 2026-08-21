@@ -113,11 +113,6 @@ export function TransactionStatusList({
                 <p className="font-mono text-sm font-semibold tabular-nums text-foreground">
                   {formatBRL(item.amount)}
                 </p>
-                {item.kind === 'withdrawal' && item.fee != null && (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {t('transactions.fee', {fee: formatBRL(item.fee)})}
-                  </p>
-                )}
               </div>
             </li>
           )
