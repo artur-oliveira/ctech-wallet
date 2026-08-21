@@ -9,7 +9,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.73.5
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
-	gopkg.aoctech.app/api-commons v1.5.0
+	gopkg.aoctech.app/api-commons v1.6.0
 	gopkg.aoctech.app/wallet/rpc-contract v0.0.0
 )
 
