@@ -12,7 +12,7 @@
     "@types/node": "^26.2.0",
     "aws-cdk": "^2.1136.0",
     "ts-node": "^10.9.2",
-    "typescript": "~6.0.3"
+    "typescript": "~7.0.2"
   },
   "dependencies": {
     "@aoctech/cdk": "^0.5.0",
