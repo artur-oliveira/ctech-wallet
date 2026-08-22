@@ -20,6 +20,15 @@ var productSKUCatalog = map[string]ProductSKU{
 	"poker_reaction_rofl":   {ID: "poker_reaction_rofl", PriceCents: 500},
 	"poker_reaction_knife":  {ID: "poker_reaction_knife", PriceCents: 500},
 	"poker_reaction_turtle": {ID: "poker_reaction_turtle", PriceCents: 500},
+	"poker_deck_casino":     {ID: "poker_deck_casino", PriceCents: 200},
+	"poker_deck_bicycle":    {ID: "poker_deck_bicycle", PriceCents: 200},
+	"poker_deck_vintage":    {ID: "poker_deck_vintage", PriceCents: 200},
+	"poker_deck_golden":     {ID: "poker_deck_golden", PriceCents: 500},
+	"poker_deck_pink":       {ID: "poker_deck_pink", PriceCents: 500},
+	"poker_deck_alt":        {ID: "poker_deck_alt", PriceCents: 500},
+	"poker_felt_midnight":   {ID: "poker_felt_midnight", PriceCents: 1000},
+	"poker_felt_burgundy":   {ID: "poker_felt_burgundy", PriceCents: 1000},
+	"poker_felt_ocean":      {ID: "poker_felt_ocean", PriceCents: 1000},
 }
 
 func ListProductSKUs() []ProductSKU {
