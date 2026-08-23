@@ -9,7 +9,7 @@ import {PixGatewayStack} from '../lib/pix-gateway-stack';
 import {OidcStack} from '../lib/oidc-stack';
 import {Environment} from '../lib/types';
 import {
-  APP_DOMAIN_PREFIX,
+  API_DOMAIN_PREFIX,
   AWS_ACCOUNT,
   AWS_REGION,
   domainForEnv,
@@ -93,7 +93,7 @@ const pixGatewayStack = new PixGatewayStack(app, id('PixGateway'), {
   certificateArn: PIX_CERT_ARN,
   interBaseUrl: INTER_BASE_URL,
   interPixKey: INTER_PIX_KEY,
-  walletApiUrl: `https://${domainForEnv(ENVIRONMENT, APP_DOMAIN_PREFIX)}`,
+  walletApiUrl: `https://${domainForEnv(ENVIRONMENT, API_DOMAIN_PREFIX)}`,
   description: `CTech Wallet pix-gateway (Inter integration Lambdas) - ${ENVIRONMENT}`,
 });
 

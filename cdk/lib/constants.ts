@@ -28,9 +28,8 @@ export const GITHUB_REPO_DEFAULT = 'artur-oliveira/ctech-wallet';
 export const SERVICE = 'ctech-wallet';
 export const BASE_DOMAIN = 'aoctech.app';
 
-/** ALB (api) and CloudFront (ui) host prefixes. */
+/** ALB (api) host prefix. */
 export const API_DOMAIN_PREFIX = 'wallet-api';
-export const APP_DOMAIN_PREFIX = 'wallet';
 export const ACCOUNTS_DOMAIN_PREFIX = 'accounts-api';
 
 /**
