@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 
+	"gopkg.aoctech.app/api-commons/observability"
 	"gopkg.aoctech.app/wallet/api/internal/asaas"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/pix"
@@ -298,7 +299,9 @@ func (b *BaasService) reconcileOneIntent(ctx context.Context, it wallet.Transfer
 				slog.Error("ALARM asaas withdrawal reversal failed", "withdrawal_id", it.Ref, "err", err)
 				return 0, 0, 1
 			}
-			_ = b.repo.UpdateTransferIntent(ctx, it.ExternalReference, map[string]any{"status": wallet.IntentFailed})
+			if updateErr := b.repo.UpdateTransferIntent(ctx, it.ExternalReference, map[string]any{"status": wallet.IntentFailed}); updateErr != nil {
+				observability.Error(ctx, "asaas failed transfer status update failed", updateErr, "external_reference", it.ExternalReference)
+			}
 			return 0, 0, 0
 		}
 		slog.Error("ALARM asaas transfer cancelled/failed", "external_reference", it.ExternalReference, "kind", it.Kind, "status", transfer.Status)

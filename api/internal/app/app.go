@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"gopkg.aoctech.app/api-commons/cache"
+	fiberobs "gopkg.aoctech.app/api-commons/observability/fiber"
 	"gopkg.aoctech.app/api-commons/ws"
 	apiv1 "gopkg.aoctech.app/wallet/api/internal/api/v1"
 	"gopkg.aoctech.app/wallet/api/internal/asaas"
@@ -29,7 +30,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/cors"
 	"github.com/gofiber/fiber/v3/middleware/logger"
-	"github.com/gofiber/fiber/v3/middleware/requestid"
+	"github.com/gofiber/fiber/v3/middleware/recover"
 	"go.uber.org/fx"
 )
 
@@ -266,18 +267,25 @@ func newFiberApp(cfg *config.Config) *fiber.App {
 	// AllowCredentials requires explicit origins (a wildcard is rejected by Fiber),
 	// so only enable it when origins are configured (production); in dev, allow all.
 	corsCfg := cors.Config{
-		AllowMethods: []string{"GET", "POST", "OPTIONS"},
-		AllowHeaders: []string{"Origin", "Content-Type", "Authorization", "X-Request-ID", apiv1.HeaderIdempotencyKey},
-		MaxAge:       3600,
+		AllowMethods:  []string{"GET", "POST", "OPTIONS"},
+		AllowHeaders:  []string{"Origin", "Content-Type", "Authorization", "X-Request-ID", apiv1.HeaderIdempotencyKey},
+		ExposeHeaders: []string{fiberobs.RequestIDHeader},
+		MaxAge:        3600,
 	}
 	if len(cfg.CorsAllowedOrigins) > 0 {
 		corsCfg.AllowOrigins = cfg.CorsAllowedOrigins
 		corsCfg.AllowCredentials = true
 	}
+	app.Use(fiberobs.RequestID())
+	app.Use(recover.New(recover.Config{EnableStackTrace: true}))
 	app.Use(cors.New(corsCfg))
-	app.Use(requestid.New())
 	app.Use(logger.New(logger.Config{
-		Format: `{"time":"${time}","status":${status},"latency":"${latency}","method":"${method}","path":"${path}","request-id":"${request-id}"}` + "\n",
+		Format: `{"time":"${time}","status":${status},"latency":"${latency}","method":"${method}",` +
+			`"path":"${path}","request_id":"${respHeader:X-Request-Id}"}` + "\n",
+		DisableColors: true,
+		Skip: func(c fiber.Ctx) bool {
+			return c.Path() == "/v1.0/health" || c.Path() == "/v1.0/health-check"
+		},
 	}))
 	return app
 }
@@ -313,6 +321,5 @@ func errorHandler(c fiber.Ctx, err error) error {
 	// Never surface a raw error string (DynamoDB/AWS/panic details) to the
 	// caller — that is an internal-info leak. Genuine, client-safe failures
 	// are returned as *problem.Problem from the handlers and never land here.
-	slog.Error("unhandled error", "err", err)
-	return problem.InternalServer("erro interno; tente novamente").Send(c)
+	return problem.InternalServer("erro interno; tente novamente").WithCause(err).Send(c)
 }

@@ -1,12 +1,14 @@
 package v1
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"strings"
 	"sync"
 	"time"
 
+	"gopkg.aoctech.app/api-commons/observability"
 	"gopkg.aoctech.app/api-commons/ws"
 	"gopkg.aoctech.app/wallet/api/internal/middleware"
 
@@ -29,9 +31,15 @@ const wsWriteWait = 5 * time.Second
 // readAuthToken reads the first WebSocket frame after the upgrade and extracts
 // the bearer JWT. The client sends it as {"token":"..."} (or a raw token) once;
 // a missing or unreadable frame fails closed so no connection hangs open.
-func readAuthToken(conn *fws.Conn) (string, bool) {
-	_ = conn.SetReadDeadline(time.Now().Add(wsAuthTimeout))
-	defer conn.SetReadDeadline(time.Time{})
+func readAuthToken(ctx context.Context, conn *fws.Conn) (string, bool) {
+	if err := conn.SetReadDeadline(time.Now().Add(wsAuthTimeout)); err != nil {
+		observability.Warn(ctx, "ws auth deadline setup failed", err)
+	}
+	defer func() {
+		if err := conn.SetReadDeadline(time.Time{}); err != nil {
+			observability.Warn(ctx, "ws auth deadline clear failed", err)
+		}
+	}()
 	_, msg, err := conn.ReadMessage()
 	if err != nil {
 		return "", false
@@ -88,23 +96,29 @@ func RegisterWS(router fiber.Router, verifier *middleware.Verifier, reg ws.Regis
 	}
 	router.Get("/ws", func(c fiber.Ctx) error {
 		return upgrader.Upgrade(c.RequestCtx(), func(conn *fws.Conn) {
+			ctx := c.Context()
 			// Post-upgrade the handler runs on a hijacked goroutine outside
 			// Fiber's recover middleware — an unrecovered panic here kills the
 			// whole process, not just this connection.
 			defer func() {
 				if r := recover(); r != nil {
 					slog.Error("ws handler panic", "panic", r)
-					_ = conn.Close()
+					closeWS(ctx, conn, "panic")
 				}
 			}()
-			ctx := c.Context()
 			// Single adapter shared by this handler and the fan-out registry:
 			// its mutex is the only thing serializing data-frame writes
 			// (fasthttp/websocket panics on concurrent writes).
 			safeConn := &wsConnAdapter{conn: conn}
 			send := func(msg any) {
-				data, _ := json.Marshal(msg)
-				_ = safeConn.WriteMessage(fws.TextMessage, data)
+				data, err := json.Marshal(msg)
+				if err != nil {
+					observability.Warn(ctx, "ws message serialization failed", err)
+					return
+				}
+				if err := safeConn.WriteMessage(fws.TextMessage, data); err != nil {
+					observability.Warn(ctx, "ws message write failed", err)
+				}
 			}
 
 			// M3: auth moved off the ?token= query string (it leaked into LB/CF
@@ -112,17 +126,17 @@ func RegisterWS(router fiber.Router, verifier *middleware.Verifier, reg ws.Regis
 			// first text frame immediately after the upgrade; we read exactly one
 			// frame under a short deadline, then clear it so the steady-state read
 			// loop blocks until the next ping.
-			token, ok := readAuthToken(conn)
+			token, ok := readAuthToken(ctx, conn)
 			if !ok {
 				send(map[string]any{"type": "error", "code": "unauthorized", "message": "Token ausente ou inválido"})
-				_ = conn.Close()
+				closeWS(ctx, conn, "missing auth token")
 				return
 			}
 
 			claims, err := verifier.VerifyClaims(ctx, token)
 			if err != nil || claims == nil || claims.Sub == "" || claims.SID == "" || !middleware.AllowsUserScope(claims, middleware.ScopeWalletBalancesRead) {
 				send(map[string]any{"type": "error", "code": "unauthorized", "message": "Token inválido ou expirado"})
-				_ = conn.Close()
+				closeWS(ctx, conn, "invalid auth token")
 				return
 			}
 			userID := claims.Sub
@@ -137,7 +151,7 @@ func RegisterWS(router fiber.Router, verifier *middleware.Verifier, reg ws.Regis
 			// Heartbeat: native ping/pong frames — the browser answers these
 			// transparently, no client code involved.
 			done := make(chan struct{})
-			go startHeartbeat(conn, done, wsPingInterval, wsPongWait, nil)
+			go startHeartbeat(ctx, conn, done, wsPingInterval, wsPongWait, nil)
 
 			// Read loop — detects a dead connection via the heartbeat's read
 			// deadline, and replies to the client's own app-level {"type":"ping"}
@@ -164,11 +178,13 @@ func RegisterWS(router fiber.Router, verifier *middleware.Verifier, reg ws.Regis
 // forever. checkAlive lets the caller veto the next ping (e.g. revoked
 // membership) — returning false closes the connection immediately. Pass nil
 // when there's nothing to veto on.
-func startHeartbeat(conn *fws.Conn, done <-chan struct{}, pingInterval, pongWait time.Duration, checkAlive func() bool) {
+func startHeartbeat(ctx context.Context, conn *fws.Conn, done <-chan struct{}, pingInterval, pongWait time.Duration, checkAlive func() bool) {
 	conn.SetPongHandler(func(string) error {
 		return conn.SetReadDeadline(time.Now().Add(pongWait))
 	})
-	_ = conn.SetReadDeadline(time.Now().Add(pongWait))
+	if err := conn.SetReadDeadline(time.Now().Add(pongWait)); err != nil {
+		observability.Warn(ctx, "ws pong deadline setup failed", err)
+	}
 
 	t := time.NewTicker(pingInterval)
 	defer t.Stop()
@@ -176,7 +192,7 @@ func startHeartbeat(conn *fws.Conn, done <-chan struct{}, pingInterval, pongWait
 		select {
 		case <-t.C:
 			if checkAlive != nil && !checkAlive() {
-				_ = conn.Close()
+				closeWS(ctx, conn, "heartbeat authorization revoked")
 				return
 			}
 			if e := conn.WriteControl(fws.PingMessage, nil, time.Now().Add(wsWriteWait)); e != nil {
@@ -185,6 +201,12 @@ func startHeartbeat(conn *fws.Conn, done <-chan struct{}, pingInterval, pongWait
 		case <-done:
 			return
 		}
+	}
+}
+
+func closeWS(ctx context.Context, conn *fws.Conn, reason string) {
+	if err := conn.Close(); err != nil {
+		observability.Warn(ctx, "ws connection close failed", err, "reason", reason)
 	}
 }
 

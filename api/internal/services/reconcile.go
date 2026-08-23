@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"gopkg.aoctech.app/api-commons/observability"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/pix"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
@@ -121,8 +122,10 @@ func (s *WalletService) reverse(ctx context.Context, w wallet.Withdrawal) bool {
 		ReqHash:        reqHash("reverse:"+w.WithdrawalID, total),
 	})
 	if err != nil {
-		slog.Error("ALARM withdrawal reversal credit-back failed", "withdrawal_id", w.WithdrawalID, "amount", total, "err", err)
-		_ = s.repo.UpdateWithdrawal(ctx, w.WithdrawalID, map[string]any{"status": wallet.WithdrawRefundFail})
+		observability.Error(ctx, "ALARM withdrawal reversal credit-back failed", err, "withdrawal_id", w.WithdrawalID, "amount", total)
+		if updateErr := s.repo.UpdateWithdrawal(ctx, w.WithdrawalID, map[string]any{"status": wallet.WithdrawRefundFail}); updateErr != nil {
+			observability.Error(ctx, "withdrawal refund failure status update failed", updateErr, "withdrawal_id", w.WithdrawalID)
+		}
 		s.broadcastWithdrawal(ctx, w.UserID, eventWithdrawalFailed, w.WithdrawalID, w.Amount)
 		return false
 	}

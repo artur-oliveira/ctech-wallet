@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"time"
 
+	"gopkg.aoctech.app/api-commons/observability"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 )
 
@@ -171,7 +172,11 @@ func (s *WalletService) dispatchM2MWebhookProduct(ctx context.Context, p *wallet
 		s.markM2MWebhookProduct(ctx, p.PurchaseID, wallet.WebhookFailed)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			observability.Warn(ctx, "m2m webhook response body close failed", closeErr, "purchase_id", p.PurchaseID)
+		}
+	}()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		slog.WarnContext(ctx, "m2m webhook: non-2xx response, will retry via reconcile sweep", "purchase_id", p.PurchaseID, "client", p.RequestingClient, "status", resp.StatusCode)
 		s.markM2MWebhookProduct(ctx, p.PurchaseID, wallet.WebhookFailed)

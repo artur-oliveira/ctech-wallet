@@ -17,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/google/uuid"
 
+	"gopkg.aoctech.app/api-commons/observability"
 	"gopkg.aoctech.app/wallet/api/internal/domain/id"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
@@ -1043,8 +1044,10 @@ func (s *WalletService) reverseDeposit(ctx context.Context, dep *wallet.PixDepos
 		IdempotencyKey: idemKey,
 		ReqHash:        reqHash(idemKey, r.Amount),
 	}); err != nil {
-		slog.Error("ALARM deposit refund debit failed", "txid", dep.Txid, "rtr_id", r.RtrID, "amount", r.Amount, "err", err)
-		_ = s.repo.UpdateDepositStatus(ctx, dep.Txid, wallet.DepositRefundFailed, dep.E2EID)
+		observability.Error(ctx, "ALARM deposit refund debit failed", err, "txid", dep.Txid, "rtr_id", r.RtrID, "amount", r.Amount)
+		if updateErr := s.repo.UpdateDepositStatus(ctx, dep.Txid, wallet.DepositRefundFailed, dep.E2EID); updateErr != nil {
+			observability.Error(ctx, "deposit refund failure status update failed", updateErr, "txid", dep.Txid)
+		}
 		return problem.InternalServer("estorno de depósito falhou; reconciliação manual necessária")
 	}
 	return s.repo.UpdateDepositStatus(ctx, dep.Txid, wallet.DepositRefunded, dep.E2EID)

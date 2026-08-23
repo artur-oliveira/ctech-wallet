@@ -44,8 +44,7 @@ func sendProblem(c fiber.Ctx, err error) error {
 	if p, ok := errors.AsType[*problem.Problem](err); ok {
 		return p.Send(c)
 	}
-	slog.ErrorContext(c.Context(), "unhandled error", "path", c.Path(), "err", err)
-	return problem.InternalServer("erro interno").Send(c)
+	return problem.InternalServer("erro interno").WithCause(err).Send(c)
 }
 
 // bindJSON strictly decodes the JSON body into dst (rejecting unknown fields)

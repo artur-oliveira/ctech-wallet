@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"gopkg.aoctech.app/api-commons/oauth2client"
+	"gopkg.aoctech.app/api-commons/observability"
 	"gopkg.aoctech.app/wallet/api/internal/config"
 )
 
@@ -79,9 +80,16 @@ func (c *Client) Get(ctx context.Context, userID string) (*KYC, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			observability.Warn(ctx, "KYC response body close failed", closeErr)
+		}
+	}()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		raw, _ := io.ReadAll(resp.Body)
+		raw, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return nil, fmt.Errorf("kyc get: read error response: %w", readErr)
+		}
 		return nil, fmt.Errorf("kyc get: status %d: %s", resp.StatusCode, string(raw))
 	}
 	var k KYC

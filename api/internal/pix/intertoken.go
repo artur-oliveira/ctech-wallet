@@ -19,6 +19,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"gopkg.aoctech.app/api-commons/cache"
+	"gopkg.aoctech.app/api-commons/observability"
 	"gopkg.aoctech.app/wallet/api/internal/config"
 	"gopkg.aoctech.app/wallet/api/internal/lambdarpc"
 	"gopkg.aoctech.app/wallet/api/internal/lock"
@@ -112,7 +113,9 @@ func (m *InterTokenManager) Invalidate(ctx context.Context) {
 	m.expiry = time.Time{}
 	m.mu.Unlock()
 	if m.cache != nil {
-		_ = m.cache.Delete(ctx, tokenCacheKey)
+		if err := m.cache.Delete(ctx, tokenCacheKey); err != nil {
+			observability.Warn(ctx, "inter token cache invalidation failed", err)
+		}
 	}
 }
 
@@ -314,13 +317,16 @@ func (m *InterTokenManager) storeShared(ctx context.Context, token string, exp t
 	ct := cachedToken{Token: token, Expiry: exp.Unix()}
 	raw, err := json.Marshal(ct)
 	if err != nil {
+		observability.Warn(ctx, "inter token cache serialization failed", err)
 		return
 	}
 	ttl := int(time.Until(exp).Seconds()) + 60
 	if ttl < 1 {
 		ttl = 1
 	}
-	_ = m.cache.Set(ctx, tokenCacheKey, raw, ttl)
+	if err := m.cache.Set(ctx, tokenCacheKey, raw, ttl); err != nil {
+		observability.Warn(ctx, "inter token cache write failed", err)
+	}
 }
 
 // waitShared polls the shared cache for a freshly published token (written by

@@ -56,6 +56,14 @@ pix-gateway/  # Provedor e mock de gateway PIX
 rpc-contract/ # Contrato RPC e DTOs M2M
 ```
 
+## Observabilidade de erros
+
+A API usa `api-commons/observability` e `api-commons/observability/fiber`. Toda resposta RFC 7807 é registrada uma
+vez na borda (`WARN` para 4xx, `ERROR` para 5xx), com `request_id`, método, path, tipo do problema e causa interna
+quando disponível. `X-Request-ID` é preservado ou gerado, devolvido e exposto por CORS. Erros best-effort continuam
+logados no ponto de consumo. Tokens, payloads financeiros, CPF, chaves PIX e demais dados sensíveis não entram nos
+logs. A integração não habilita OpenTelemetry nem métricas customizadas.
+
 ## Segurança (sistema financeiro)
 
 Este serviço custodia dinheiro real de terceiros. Invariantes não-negociáveis:
