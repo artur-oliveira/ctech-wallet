@@ -42,6 +42,12 @@ export const ALB_LISTENER_PRIORITY = 35;
 
 /** Port the Go binary listens on (nginx proxies :8080 → :8000). */
 export const APP_PORT = 8000;
+/**
+ * Loopback-only port for the second app process (zero-downtime rolling
+ * deploy). nginx round-robins between APP_PORT and APP_PORT_ALT; never
+ * touches the security group. See ctech-cdk's assets/ec2/setup-deploy.sh.
+ */
+export const APP_PORT_ALT = APP_PORT + 1;
 /** Port nginx listens on — the ALB target port. */
 export const NGINX_PORT = 8080;
 /** Health check path served by the Go API. */

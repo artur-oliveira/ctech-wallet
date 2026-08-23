@@ -8,6 +8,7 @@ import {Environment} from './types';
 import {
   API_CURRENT_ARTIFACT_KEY,
   APP_PORT,
+  APP_PORT_ALT,
   asgName,
   HEALTH_CHECK_PATH,
   NGINX_PORT,
@@ -35,9 +36,8 @@ interface ApiStackProps extends cdk.StackProps {
    * see docs/specs/2026-07-13-pix-gateway-lambda-design.md.
    */
   pixGatewayFunctionName: string;
-  // Session Manager. **Off by default**: deploys replace the instances through an
-  // ASG instance refresh, so nothing needs SSM RunCommand any more, and the
-  // agent costs ~70 MiB of RSS on a t4g.nano. On means a shell back onto the box.
+  // Session Manager. CI deploys over SSM RunCommand (/opt/app/deploy.sh), which
+  // needs the agent running. On also means a shell back onto the box.
   enableSsmAgent?: boolean;
 }
 
@@ -157,9 +157,12 @@ export class ApiStack extends cdk.Stack {
     );
 
     scripts.run(userData, 'setup-realip.sh', vpc.vpcCidrBlock);
-    scripts.run(userData, 'setup-nginx.sh', `${NGINX_PORT}`, `${APP_PORT}`, HEALTH_CHECK_PATH, '100', '1m');
+    // app-port-alt/alt-port turn on the zero-downtime rolling deploy: a second
+    // app process nginx round-robins into, so deploy.sh can restart one unit
+    // at a time instead of dropping the health check during `systemctl restart`.
+    scripts.run(userData, 'setup-nginx.sh', `${NGINX_PORT}`, `${APP_PORT}`, HEALTH_CHECK_PATH, '100', '1m', `${APP_PORT_ALT}`);
     scripts.run(userData, 'setup-app-service.sh', 'CTech Wallet API', 'app',
-      'network.target nginx.service');
+      'network.target nginx.service', `${APP_PORT_ALT}`);
     scripts.run(userData, 'setup-deploy.sh', deploymentsBucketName, 'app',
       `http://127.0.0.1:${NGINX_PORT}${HEALTH_CHECK_PATH}`);
     scripts.run(userData, 'setup-logs.sh', logsBucketName, S3_PREFIX, SERVICE,
@@ -178,6 +181,7 @@ export class ApiStack extends cdk.Stack {
             files: {
               collect_list: [
                 {file_path: '/var/log/app/app.log', log_group_name: logGroupApp, log_stream_name: '{instance_id}'},
+                {file_path: '/var/log/app/app2.log', log_group_name: logGroupApp, log_stream_name: '{instance_id}/app2'},
                 {file_path: '/var/log/nginx/access.log', log_group_name: logGroupNginx, log_stream_name: '{instance_id}/access'},
                 {file_path: '/var/log/nginx/error.log', log_group_name: logGroupNginx, log_stream_name: '{instance_id}/error'},
               ],
