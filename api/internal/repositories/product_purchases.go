@@ -67,13 +67,14 @@ func (r *ProductPurchaseRepository) ListByUser(ctx context.Context, userID strin
 
 const (
 	productStatusConditionExpression = "#status = :from"
-	productStatusUpdateExpression    = "SET #status = :to, " + attributeUpdatedAt + " = :now"
+	productStatusUpdateExpression    = "SET #status = :to, e2e_id = :e2e, " + attributeUpdatedAt + " = :now"
 )
 
-func productStatusValues(fromStatus, toStatus string) (map[string]string, map[string]types.AttributeValue) {
+func productStatusValues(fromStatus, toStatus, e2eID string) (map[string]string, map[string]types.AttributeValue) {
 	return map[string]string{"#status": "status"}, map[string]types.AttributeValue{
 		":from": &types.AttributeValueMemberS{Value: fromStatus},
 		":to":   &types.AttributeValueMemberS{Value: toStatus},
+		":e2e":  &types.AttributeValueMemberS{Value: e2eID},
 		":now":  &types.AttributeValueMemberS{Value: NowStr()},
 	}
 }
@@ -81,9 +82,12 @@ func productStatusValues(fromStatus, toStatus string) (map[string]string, map[st
 // TransitionStatus is a generic conditional transition — used for both
 // pending→confirmed and confirmed→refunded, since neither has a companion
 // ledger transaction to combine with (that's the whole simplification versus
-// SandboxPurchaseRepository's BuildConfirmTx/BuildRefundClaimTx).
-func (r *ProductPurchaseRepository) TransitionStatus(ctx context.Context, purchaseID, fromStatus, toStatus string) (bool, error) {
-	names, values := productStatusValues(fromStatus, toStatus)
+// SandboxPurchaseRepository's BuildConfirmTx/BuildRefundClaimTx). e2eID is
+// persisted on every transition (mirroring depositStatusTransition) so
+// pending→confirmed is the one write that ever records it — confirmed→refunded
+// just re-writes the value TransitionStatus itself already stored.
+func (r *ProductPurchaseRepository) TransitionStatus(ctx context.Context, purchaseID, fromStatus, toStatus, e2eID string) (bool, error) {
+	names, values := productStatusValues(fromStatus, toStatus, e2eID)
 	_, err := r.purchases.UpdateItemRaw(ctx, &dynamodb.UpdateItemInput{
 		Key:                       map[string]types.AttributeValue{"pk": &types.AttributeValueMemberS{Value: purchaseID}},
 		UpdateExpression:          aws.String(productStatusUpdateExpression),

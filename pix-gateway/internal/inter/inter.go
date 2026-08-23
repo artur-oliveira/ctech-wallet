@@ -275,6 +275,9 @@ func (c *InterClient) QueryTransfer(ctx context.Context, idemKey string) (*Trans
 }
 
 func (c *InterClient) Refund(ctx context.Context, e2eID string, amount int64, idemKey string) (*TransferResult, error) {
+	if e2eID == "" {
+		return nil, fmt.Errorf("pix-gateway: cannot refund item %s without E2EID", idemKey)
+	}
 	body := map[string]any{"valor": centavosToReais(amount)}
 	var resp struct {
 		Status string `json:"status"`

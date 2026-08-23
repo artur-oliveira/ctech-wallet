@@ -42,7 +42,7 @@ type ProductPurchaseRepo interface {
 	PutIfAbsent(ctx context.Context, p *wallet.ProductPurchase) error
 	Get(ctx context.Context, purchaseID string) (*wallet.ProductPurchase, error)
 	ListByUser(ctx context.Context, userID string, limit int, startKey map[string]types.AttributeValue) (*repositories.Page[wallet.ProductPurchase], error)
-	TransitionStatus(ctx context.Context, purchaseID, fromStatus, toStatus string) (bool, error)
+	TransitionStatus(ctx context.Context, purchaseID, fromStatus, toStatus, e2eID string) (bool, error)
 	Update(ctx context.Context, purchaseID string, updates map[string]any) error
 	ListPendingOlderThan(ctx context.Context, cutoff time.Time, limit int) ([]wallet.ProductPurchase, error)
 	ListWebhookFailedOlderThan(ctx context.Context, cutoff time.Time, limit int) ([]wallet.ProductPurchase, error)
@@ -136,7 +136,7 @@ func (s *WalletService) ConfirmProductPurchase(ctx context.Context, txid string,
 		return problem.InternalServer("valor pago não corresponde ao esperado; reconciliação manual necessária")
 	}
 
-	changed, err := s.productPurchases.TransitionStatus(ctx, txid, wallet.ProductPurchasePending, wallet.ProductPurchaseConfirmed)
+	changed, err := s.productPurchases.TransitionStatus(ctx, txid, wallet.ProductPurchasePending, wallet.ProductPurchaseConfirmed, charge.E2EID)
 	if err != nil {
 		return err
 	}
@@ -174,7 +174,7 @@ func (s *WalletService) RefundProductPurchase(ctx context.Context, userID, purch
 		slog.Error("ALARM product purchase refund failed", "purchase_id", purchaseID, "e2e_id", p.E2EID, "err", err)
 		return nil, problem.InternalServer("estorno da compra falhou; nova tentativa agendada")
 	}
-	changed, err := s.productPurchases.TransitionStatus(ctx, purchaseID, wallet.ProductPurchaseConfirmed, wallet.ProductPurchaseRefunded)
+	changed, err := s.productPurchases.TransitionStatus(ctx, purchaseID, wallet.ProductPurchaseConfirmed, wallet.ProductPurchaseRefunded, p.E2EID)
 	if err != nil {
 		return nil, err
 	}

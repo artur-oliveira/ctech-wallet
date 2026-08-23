@@ -44,12 +44,18 @@ func TestProductPurchaseRepositoryTransitionStatus(t *testing.T) {
 	if err := repo.PutIfAbsent(ctx, p); err != nil {
 		t.Fatalf("PutIfAbsent: %v", err)
 	}
-	ok, err := repo.TransitionStatus(ctx, "prdp-test-2", wallet.ProductPurchasePending, wallet.ProductPurchaseConfirmed)
+	ok, err := repo.TransitionStatus(ctx, "prdp-test-2", wallet.ProductPurchasePending, wallet.ProductPurchaseConfirmed, "E2E-test-2")
 	if err != nil || !ok {
 		t.Fatalf("TransitionStatus: ok=%v err=%v", ok, err)
 	}
+	// e2e_id must survive the transition — RefundProductPurchase reads it back
+	// from storage to build Inter's devolução call; an empty value there
+	// produces a malformed "//devolucao/" path.
+	if got, err := repo.Get(ctx, "prdp-test-2"); err != nil || got.E2EID != "E2E-test-2" {
+		t.Fatalf("Get after confirm: e2e_id = %q, err = %v, want E2E-test-2", got.E2EID, err)
+	}
 	// Wrong `from` fails the condition and reports ok=false, not an error.
-	ok, err = repo.TransitionStatus(ctx, "prdp-test-2", wallet.ProductPurchasePending, wallet.ProductPurchaseConfirmed)
+	ok, err = repo.TransitionStatus(ctx, "prdp-test-2", wallet.ProductPurchasePending, wallet.ProductPurchaseConfirmed, "E2E-test-2")
 	if err != nil || ok {
 		t.Fatalf("expected ok=false on stale from-status, got ok=%v err=%v", ok, err)
 	}

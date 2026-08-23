@@ -44,12 +44,13 @@ func (r *stubProductPurchaseRepo) ListByUser(_ context.Context, userID string, l
 	return &repositories.Page[wallet.ProductPurchase]{Items: items}, nil
 }
 
-func (r *stubProductPurchaseRepo) TransitionStatus(_ context.Context, purchaseID, fromStatus, toStatus string) (bool, error) {
+func (r *stubProductPurchaseRepo) TransitionStatus(_ context.Context, purchaseID, fromStatus, toStatus, e2eID string) (bool, error) {
 	p := r.purchases[purchaseID]
 	if p == nil || p.Status != fromStatus {
 		return false, nil
 	}
 	p.Status = toStatus
+	p.E2EID = e2eID
 	return true, nil
 }
 
