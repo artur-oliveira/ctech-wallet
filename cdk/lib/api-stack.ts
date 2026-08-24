@@ -3,7 +3,7 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import {Construct} from 'constructs';
-import {Ec2ScriptRunner, HaproxyEc2Service} from '@aoctech/cdk';
+import {Ec2ScriptRunner, HaproxyEc2Service, SSM as CtechSSM} from '@aoctech/cdk';
 import {Environment} from './types';
 import {
   API_CURRENT_ARTIFACT_KEY,
@@ -39,6 +39,9 @@ interface ApiStackProps extends cdk.StackProps {
   // Session Manager. CI deploys over SSM RunCommand (/opt/app/deploy.sh), which
   // needs the agent running. On also means a shell back onto the box.
   enableSsmAgent?: boolean;
+  // 'alpine' pilots the same ctech-billing/ctech-account custom AMI + OpenRC
+  // pattern here. Default 'alpine'; 'al2023' is the one-line rollback.
+  osFamily?: 'al2023' | 'alpine';
 }
 
 export class ApiStack extends cdk.Stack {
@@ -55,7 +58,9 @@ export class ApiStack extends cdk.Stack {
       logsBucketName,
       pixGatewayFunctionName,
       enableSsmAgent = false,
+      osFamily = 'alpine',
     } = props;
+    const isAlpine = osFamily === 'alpine';
 
     const shared = SSM_SHARED(environment);
     const wallet = SSM_WALLET(environment);
@@ -79,19 +84,49 @@ export class ApiStack extends cdk.Stack {
     // Every shared bootstrap step lives in ctech-cdk's assets/ec2 and is fetched
     // from S3 at boot; the prefix is their content hash, read from SSM at deploy
     // time, so editing a shared script versions this launch template.
-    const scripts = new Ec2ScriptRunner(this, 'Scripts', {environment});
     const userData = ec2.UserData.forLinux();
-    scripts.install(userData);
+    let scripts: Ec2ScriptRunner | undefined;
 
-    scripts.run(userData, 'setup-base.sh', svcName, 'nginx');
-    scripts.run(userData, 'setup-swap.sh', '256');
-    scripts.run(userData, 'setup-dualstack.sh');
-    scripts.run(userData, 'setup-cloudflare-ca.sh');
+    if (isAlpine) {
+      // No aws-cli on this AMI (musl) — ctech-ec2-agent is baked in at Packer
+      // build time instead. Same ctech_run shape as ValkeyStackV2 and
+      // ctech-account/ctech-billing's Alpine bootstraps.
+      const scriptsBucket = ssm.StringParameter.valueForStringParameter(
+        this, CtechSSM.ec2ScriptsAlpine(environment).bucket,
+      );
+      const scriptsVersion = ssm.StringParameter.valueForStringParameter(
+        this, CtechSSM.ec2ScriptsAlpine(environment).version,
+      );
+      userData.addCommands(
+        'export AWS_USE_DUALSTACK_ENDPOINT=true',
+        `CTECH_SCRIPTS_BUCKET="${scriptsBucket}"`,
+        `CTECH_SCRIPTS_VERSION="${scriptsVersion}"`,
+        'ctech_run(){ s=$1; shift; ctech-ec2-agent s3-cp -bucket "$CTECH_SCRIPTS_BUCKET" -key "$CTECH_SCRIPTS_VERSION/$s" -dest "/tmp/$s"; bash "/tmp/$s" "$@"; }',
+      );
+      // nginx and nginx-openrc are separate apk packages — the binary and the
+      // OpenRC init script — both are needed (confirmed live on ctech-account:
+      // nginx-openrc alone installs no nginx binary at all).
+      userData.addCommands(`ctech_run setup-base.sh ${svcName} nginx nginx-openrc`);
+      userData.addCommands('ctech_run setup-swap.sh 256');
+      userData.addCommands('ctech_run setup-dualstack.sh');
+      userData.addCommands('ctech_run setup-cloudflare-ca.sh');
+      if (!enableSsmAgent) {
+        userData.addCommands('rc-service amazon-ssm-agent stop 2>/dev/null || true', 'rc-update del amazon-ssm-agent default 2>/dev/null || true');
+      }
+    } else {
+      scripts = new Ec2ScriptRunner(this, 'Scripts', {environment});
+      scripts.install(userData);
 
-    // setup-base.sh installs the SSM agent and setup-dualstack.sh starts it, so
-    // this is what stops it again.
-    if (!enableSsmAgent) {
-      userData.addCommands('systemctl disable --now amazon-ssm-agent 2>/dev/null || true');
+      scripts.run(userData, 'setup-base.sh', svcName, 'nginx');
+      scripts.run(userData, 'setup-swap.sh', '256');
+      scripts.run(userData, 'setup-dualstack.sh');
+      scripts.run(userData, 'setup-cloudflare-ca.sh');
+
+      // setup-base.sh installs the SSM agent and setup-dualstack.sh starts it, so
+      // this is what stops it again.
+      if (!enableSsmAgent) {
+        userData.addCommands('systemctl disable --now amazon-ssm-agent 2>/dev/null || true');
+      }
     }
 
     userData.addCommands(
@@ -113,7 +148,7 @@ export class ApiStack extends cdk.Stack {
 
     // api no longer reads any Inter secret or the mTLS keypair — all Inter
     // contact moved to pix-gateway (docs/specs/2026-07-13-pix-gateway-lambda-design.md).
-    scripts.run(userData, 'setup-ssm-env.sh',
+    const ssmEnvArgs = [
       `VALKEY_BASE=${shared.valkeyUrl}`,
       `CTECH_URL=${account.internalBaseUrl}`,
       `CTECH_ISSUER_URL=${account.appUrl}`,
@@ -121,7 +156,13 @@ export class ApiStack extends cdk.Stack {
       `SERVICE_AUDIENCE=${wallet.appUrl}`,
       `WALLET_CLIENT_ID=${wallet.walletClientId}`,
       `WALLET_CLIENT_SECRET=${wallet.walletClientSecret}`,
-    );
+    ];
+    if (isAlpine) {
+      const quoted = ssmEnvArgs.map((a) => `'${a.replace(/'/g, `'\\''`)}'`).join(' ');
+      userData.addCommands(`ctech_run setup-ssm-env.sh ${quoted}`);
+    } else {
+      scripts!.run(userData, 'setup-ssm-env.sh', ...ssmEnvArgs);
+    }
 
     // The shared Valkey URL carries no DB number; each service appends the one it
     // owns, so per-wallet SETNX locks never share a keyspace. An empty base leaves
@@ -156,43 +197,91 @@ export class ApiStack extends cdk.Stack {
       `WSLOC`,
     );
 
-    scripts.run(userData, 'setup-realip.sh', vpc.vpcCidrBlock);
-    // app-port-alt/alt-port turn on the zero-downtime rolling deploy: a second
-    // app process nginx round-robins into, so deploy.sh can restart one unit
-    // at a time instead of dropping the health check during `systemctl restart`.
-    scripts.run(userData, 'setup-nginx.sh', `${NGINX_PORT}`, `${APP_PORT}`, HEALTH_CHECK_PATH, '100', '1m', `${APP_PORT_ALT}`);
-    scripts.run(userData, 'setup-app-service.sh', 'CTech Wallet API', 'app',
-      'network.target nginx.service', `${APP_PORT_ALT}`);
-    scripts.run(userData, 'setup-deploy.sh', deploymentsBucketName, 'app',
-      `http://127.0.0.1:${NGINX_PORT}${HEALTH_CHECK_PATH}`);
-    scripts.run(userData, 'setup-logs.sh', logsBucketName, S3_PREFIX, SERVICE,
-      '/var/log/app', '/var/log/nginx');
+    if (isAlpine) {
+      userData.addCommands(`ctech_run setup-realip.sh '${vpc.vpcCidrBlock}'`);
+      // app-port-alt/alt-port turn on the zero-downtime rolling deploy: a second
+      // app process nginx round-robins into, so deploy.sh can restart one unit
+      // at a time instead of dropping the health check during a restart.
+      userData.addCommands(`ctech_run setup-nginx.sh ${NGINX_PORT} ${APP_PORT} ${HEALTH_CHECK_PATH} 100 1m ${APP_PORT_ALT}`);
+      // Alpine's setup-app-service.sh has no After=-units argument — OpenRC
+      // services here only ever declare `need net`.
+      userData.addCommands(`ctech_run setup-app-service.sh 'CTech Wallet API' app ${APP_PORT_ALT}`);
+      userData.addCommands(
+        `ctech_run setup-deploy.sh ${deploymentsBucketName} app 'http://127.0.0.1:${NGINX_PORT}${HEALTH_CHECK_PATH}'`,
+      );
+      userData.addCommands(
+        `ctech_run setup-logs.sh ${logsBucketName} ${S3_PREFIX} ${SERVICE} /var/log/app /var/log/nginx`,
+      );
 
-    // Logs only. No `metrics` block: EC2 already publishes CPUUtilization and
-    // CPUCreditBalance for free, and every custom series this service used to
-    // publish was either that again or a number nobody alarmed on.
-    // {instance_id} is resolved by the CW agent at runtime, not by bash.
-    userData.addCommands(
-      `cat > /tmp/cwagent.json << 'CWA'`,
-      JSON.stringify({
-        agent: {metrics_collection_interval: 60},
-        logs: {
-          logs_collected: {
-            files: {
-              collect_list: [
-                {file_path: '/var/log/app/app.log', log_group_name: logGroupApp, log_stream_name: '{instance_id}'},
-                {file_path: '/var/log/app/app2.log', log_group_name: logGroupApp, log_stream_name: '{instance_id}/app2'},
-                {file_path: '/var/log/nginx/access.log', log_group_name: logGroupNginx, log_stream_name: '{instance_id}/access'},
-                {file_path: '/var/log/nginx/error.log', log_group_name: logGroupNginx, log_stream_name: '{instance_id}/error'},
-              ],
+      // ctech-ec2-agent logs-tail replaces the CloudWatch Agent (musl has no
+      // working aws-cli/CW-agent build). One logGroup per config file, so two
+      // separate services + configs, same as ctech-account/ctech-billing.
+      userData.addCommands(
+        `cat > /tmp/ctech-logs-app.json << 'LOGSAPP'`,
+        JSON.stringify({
+          logGroup: logGroupApp,
+          files: [
+            {path: '/var/log/app/app.log', streamPrefix: 'app'},
+            {path: '/var/log/app/app2.log', streamPrefix: 'app2'},
+          ],
+        }),
+        `LOGSAPP`,
+        `ctech_run setup-ctech-ec2-agent.sh /tmp/ctech-logs-app.json app`,
+        `cat > /tmp/ctech-logs-nginx.json << 'LOGSNGINX'`,
+        JSON.stringify({
+          logGroup: logGroupNginx,
+          files: [
+            {path: '/var/log/nginx/access.log', streamPrefix: 'access'},
+            {path: '/var/log/nginx/error.log', streamPrefix: 'error'},
+          ],
+        }),
+        `LOGSNGINX`,
+        `ctech_run setup-ctech-ec2-agent.sh /tmp/ctech-logs-nginx.json nginx`,
+      );
+      userData.addCommands(`ctech_run bootstrap-deploy.sh ${deploymentsBucketName} ${API_CURRENT_ARTIFACT_KEY}`);
+    } else {
+      scripts!.run(userData, 'setup-realip.sh', vpc.vpcCidrBlock);
+      scripts!.run(userData, 'setup-nginx.sh', `${NGINX_PORT}`, `${APP_PORT}`, HEALTH_CHECK_PATH, '100', '1m', `${APP_PORT_ALT}`);
+      scripts!.run(userData, 'setup-app-service.sh', 'CTech Wallet API', 'app',
+        'network.target nginx.service', `${APP_PORT_ALT}`);
+      scripts!.run(userData, 'setup-deploy.sh', deploymentsBucketName, 'app',
+        `http://127.0.0.1:${NGINX_PORT}${HEALTH_CHECK_PATH}`);
+      scripts!.run(userData, 'setup-logs.sh', logsBucketName, S3_PREFIX, SERVICE,
+        '/var/log/app', '/var/log/nginx');
+
+      // Logs only. No `metrics` block: EC2 already publishes CPUUtilization and
+      // CPUCreditBalance for free, and every custom series this service used to
+      // publish was either that again or a number nobody alarmed on.
+      // {instance_id} is resolved by the CW agent at runtime, not by bash.
+      userData.addCommands(
+        `cat > /tmp/cwagent.json << 'CWA'`,
+        JSON.stringify({
+          agent: {metrics_collection_interval: 60},
+          logs: {
+            logs_collected: {
+              files: {
+                collect_list: [
+                  {file_path: '/var/log/app/app.log', log_group_name: logGroupApp, log_stream_name: '{instance_id}'},
+                  {file_path: '/var/log/app/app2.log', log_group_name: logGroupApp, log_stream_name: '{instance_id}/app2'},
+                  {file_path: '/var/log/nginx/access.log', log_group_name: logGroupNginx, log_stream_name: '{instance_id}/access'},
+                  {file_path: '/var/log/nginx/error.log', log_group_name: logGroupNginx, log_stream_name: '{instance_id}/error'},
+                ],
+              },
             },
           },
-        },
-      }),
-      `CWA`,
-    );
-    scripts.run(userData, 'setup-cloudwatch-agent.sh', '/tmp/cwagent.json');
-    scripts.run(userData, 'bootstrap-deploy.sh', deploymentsBucketName, API_CURRENT_ARTIFACT_KEY);
+        }),
+        `CWA`,
+      );
+      scripts!.run(userData, 'setup-cloudwatch-agent.sh', '/tmp/cwagent.json');
+      scripts!.run(userData, 'bootstrap-deploy.sh', deploymentsBucketName, API_CURRENT_ARTIFACT_KEY);
+    }
+
+    const machineImage = isAlpine
+      ? ec2.MachineImage.fromSsmParameter(
+          CtechSSM.amiAlpine(environment).arm64,
+          {os: ec2.OperatingSystemType.LINUX},
+        )
+      : undefined; // HaproxyEc2Service defaults to latest AL2023 arm64 minimal.
 
     // ctech-lbalancer still owns the bootstrap route and private CNAME.
     const service = new HaproxyEc2Service(this, 'ApiService', {
@@ -200,6 +289,7 @@ export class ApiStack extends cdk.Stack {
       edgeSecurityGroup: edgeSg,
       appPort: NGINX_PORT,
       userData,
+      machineImage,
       instanceProfileName,
       securityGroupName: `${environment}-${svcName}-api-sg`,
       securityGroupDescription: 'ctech-wallet API instances',

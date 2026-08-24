@@ -121,6 +121,9 @@ const apiStack = new ApiStack(app, id('API'), {
   logsBucketName: CTECH_LOGS_BUCKET,
   pixGatewayFunctionName: pixGatewayStack.outboundFunctionName,
   enableSsmAgent: ENABLE_SSM_AGENT,
+  // Alpine/ARM is the default (same rollout as ctech-account); OS_FAMILY=al2023
+  // is the one-line rollback if this ever needs to revert.
+  osFamily: (process.env.OS_FAMILY as 'al2023' | 'alpine' | undefined) ?? 'alpine',
   description: `CTech Wallet API (EC2 + ASG + ALB) - ${ENVIRONMENT}`,
 });
 // instanceProfileName is a plain string, not a CFN token — CDK cannot infer the
