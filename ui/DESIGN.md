@@ -10,18 +10,18 @@ colors:
   destructive: "#dc2626"
 typography:
   display:
-    fontFamily: "Geist, ui-sans-serif, system-ui, sans-serif"
+    fontFamily: "IBM Plex, ui-sans-serif, system-ui, sans-serif"
     fontSize: "1.5rem"
     fontWeight: 600
     lineHeight: 1.2
     letterSpacing: "-0.01em"
   body:
-    fontFamily: "Geist, ui-sans-serif, system-ui, sans-serif"
+    fontFamily: "IBM Plex, ui-sans-serif, system-ui, sans-serif"
     fontSize: "0.875rem"
     fontWeight: 400
     lineHeight: 1.5
   label:
-    fontFamily: "Geist, ui-sans-serif, system-ui, sans-serif"
+    fontFamily: "IBM Plex, ui-sans-serif, system-ui, sans-serif"
     fontSize: "0.75rem"
     fontWeight: 600
     letterSpacing: "0.08em"
@@ -102,11 +102,11 @@ A cool slate casing (never warm cream) carries the interface; one violet is the 
 
 ## 3. Typography
 
-**Display Font:** Geist (with `ui-sans-serif, system-ui, sans-serif`)
-**Body Font:** Geist (with `ui-sans-serif, system-ui, sans-serif`)
-**Label/Mono Font:** Geist Mono (for all tabular numerics — money and ledger figures)
+**Display Font:** IBM Plex (with `ui-sans-serif, system-ui, sans-serif`)
+**Body Font:** IBM Plex (with `ui-sans-serif, system-ui, sans-serif`)
+**Label/Mono Font:** IBM Plex Mono (for all tabular numerics — money and ledger figures)
 
-**Character:** One geometric sans carries the whole interface with quiet authority; the only contrast axis is Geist Mono stepping in wherever a number must align like a readout. No display/serif pairing, no personality font — the type disappears into the task.
+**Character:** One geometric sans carries the whole interface with quiet authority; the only contrast axis is IBM Plex Mono stepping in wherever a number must align like a readout. No display/serif pairing, no personality font — the type disappears into the task.
 
 ### Hierarchy
 - **Display** (600, 1.5rem / 24px, line-height 1.2, -0.01em): section and dialog titles (`text-lg font-semibold`).
@@ -116,7 +116,7 @@ A cool slate casing (never warm cream) carries the interface; one violet is the 
 - **Label** (600, 0.75rem / 12px, 0.08em tracking, uppercase): eyebrows, wallet-type tags ("REAL", "GAME", "SANDBOX"), mono-tracked over violet.
 
 ### Named Rules
-**The Mono-for-Money Rule.** Every numeric money value — balances, amounts, ledger figures — renders in Geist Mono with `tabular-nums`. Proportional numerals are forbidden in financial readouts; alignment is part of the instrument feel.
+**The Mono-for-Money Rule.** Every numeric money value — balances, amounts, ledger figures — renders in IBM Plex Mono with `tabular-nums`. Proportional numerals are forbidden in financial readouts; alignment is part of the instrument feel.
 
 ## 4. Elevation
 
@@ -144,7 +144,7 @@ Flat by default. A surface earns a shadow only when it lifts (card hover) or ove
 - **Style:** white fill, 1px Line border, 10px radius, 40px height, text-sm ink text, readable muted placeholder (#94a3b8 meets 4.5:1).
 - **Focus:** `focus-within` / `focus` shifts the border to Signal Violet and raises a 3px violet ring at 20% (`ring-brand-500/20`).
 - **Error:** border turns red-400, ring red-500/20, and a red-600 message sits below the field. aria-invalid is set; the message is `aria-describedby`-linked.
-- **Money input:** the amount field prefixes a muted "R$" and renders the typed value in Geist Mono `tabular-nums`; a max-length guard caps entry at the R$ 1.000.000 ceiling on deposits and game funding. When a balance ceiling applies, a right-aligned "Máx {max}" link below the field fills it in one tap (it is a sibling below the input wrapper, never inside the flex row).
+- **Money input:** the amount field prefixes a muted "R$" and renders the typed value in IBM Plex Mono `tabular-nums`; a max-length guard caps entry at the R$ 1.000.000 ceiling on deposits and game funding. When a balance ceiling applies, a right-aligned "Máx {max}" link below the field fills it in one tap (it is a sibling below the input wrapper, never inside the flex row).
 
 ### Cards / Containers
 - **Corner Style:** 16px radius (`rounded-2xl`) on the balance cards; 12px (`rounded-xl`) on the ledger panel and dialogs.
@@ -165,7 +165,7 @@ The three balances are deliberately **not** a symmetric card set — the visual 
 - **Not activated:** balance and action surfaces stay absent; one quiet activation link stands in. If a sandbox wallet already exists, its statement remains available as an explicitly read-only history surface so prior play and credit purchases are never hidden.
 
 ### [Signature Component] Ledger Row
-A divided list (`divide-gray-100`) of entries: left side is the localized type label (title weight, ink) over a muted timestamp; right side is the signed amount in Geist Mono — violet (#6d28d9 / brand-700) when inflow, muted gray when outflow. Loading and empty states are explicit, centered, and teach the interface ("nothing here yet") rather than spinner-in-content.
+A divided list (`divide-gray-100`) of entries: left side is the localized type label (title weight, ink) over a muted timestamp; right side is the signed amount in IBM Plex Mono — violet (#6d28d9 / brand-700) when inflow, muted gray when outflow. Loading and empty states are explicit, centered, and teach the interface ("nothing here yet") rather than spinner-in-content.
 
 ### Purchase History
 
@@ -177,7 +177,7 @@ Purchase records remain a separate, read-only surface below wallet statements be
 - **Do** reserve Signal Violet for the single primary action and live state per screen (The Signal Violet Rule).
 - **Do** render the three balances with explicit semantics — filled = real, outlined = ring-fenced real, dashed = not money (The Money-Has-Semantics Rule).
 - **Do** keep surfaces flat; let shadow answer hover and elevation only (The Flat-By-Default Rule).
-- **Do** render every money value in Geist Mono `tabular-nums` (The Mono-for-Money Rule).
+- **Do** render every money value in IBM Plex Mono `tabular-nums` (The Mono-for-Money Rule).
 - **Do** keep transitions at 150–250 ms and state-only; honor `prefers-reduced-motion` with a crossfade or instant cut.
 - **Do** write all copy through i18n, pt-BR primary and English first-class.
 - **Do** hold body text to ≥4.5:1 and use a readable muted placeholder (#94a3b8), never light gray-on-tint.

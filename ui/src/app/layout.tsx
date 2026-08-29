@@ -1,5 +1,5 @@
 import type {Metadata, Viewport} from 'next'
-import {Geist, Geist_Mono} from 'next/font/google'
+import {IBM_Plex_Mono, IBM_Plex_Sans} from 'next/font/google'
 import React from 'react'
 
 import './globals.css'
@@ -11,15 +11,9 @@ import {Toaster} from 'sonner'
 
 const LIGHT_THEME_COLOR = '#f8fafc'
 
-const geistSans = Geist({
-  variable: '--font-geist-sans',
-  subsets: ['latin'],
-})
+const sans = IBM_Plex_Sans({subsets: ['latin'], variable: '--font-sans'});
+const mono = IBM_Plex_Mono({subsets: ['latin'], weight: ['400', '500', '600', '700',], variable: '--font-mono'});
 
-const geistMono = Geist_Mono({
-  variable: '--font-geist-mono',
-  subsets: ['latin'],
-})
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -108,7 +102,7 @@ export default function RootLayout({
     <html
       lang="pt-BR"
       suppressHydrationWarning
-      className={`${geistSans.variable} ${geistMono.variable} h-full`}
+      className={`${sans.variable} ${mono.variable} h-full`}
     >
     <body
       suppressHydrationWarning
