@@ -121,7 +121,7 @@ replay (webhook duplicado, retry de cliente).
 ## E. Sandbox
 
 - **Crédito por app** (poker/dominó): `POST /internal/wallet/sandbox/credit` — Bearer client_credentials, scope
-  `internal:wallet:credit`. Body `{user_id, amount, idempotency_key, reason}`.
+  `internal:wallet:credit`. Body `{user_id, amount, idempotency_key, reason, description?}` (`description`: texto livre ≤255 exibido no extrato — ver `docs/specs/2026-08-29-transaction-description.md`).
 - **Débito por app** (aposta): `POST /internal/wallet/sandbox/debit` — scope `internal:wallet:debit`. Mesma condição
   de saldo suficiente; app decide política de erro (mesa recusa jogada).
 - **Compra com dinheiro real**: `POST /wallet/sandbox/purchase` (Bearer usuário). `TransactWriteItems` cruzando as 2

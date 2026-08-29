@@ -140,6 +140,13 @@
       "maxExceeded": "The maximum amount is {{max}}.",
       "overBalance": "Above what's available ({{amount}}).",
       "overWithdrawable": "The maximum available to withdraw is {{amount}}."
+    },
+    "onboarding": {
+      "title": "Open payment account",
+      "description": "To receive PIX in this wallet we open a payment account in your name. Tell us your approximate monthly income.",
+      "incomeLabel": "Monthly income",
+      "incomeHint": "An approximate figure. Used only to register the payment account.",
+      "submit": "Open account"
     }
   },
   "confirm": {
@@ -249,7 +256,8 @@
     "fundGameSent": "Balance sent to the game wallet.",
     "returned": "Balance returned to real balance.",
     "pixCopied": "PIX code copied",
-    "gamblingActivated": "Game wallet activated."
+    "gamblingActivated": "Game wallet activated.",
+    "onboardingStarted": "Payment account sent for review."
   },
   "terms": {
     "title": "Just one more step",
@@ -346,7 +354,9 @@
     "selfExcluded": "Your self-exclusion blocks deposits to the game wallet.",
     "limitsNotConfigured": "Set your game limits before continuing.",
     "depositLimitExceeded": "This transfer exceeds one of your game limits.",
-    "generic": "Something went wrong. Please try again."
+    "generic": "Something went wrong. Please try again.",
+    "walletOnboarding": "Your payment account is not approved yet.",
+    "accountBlocked": "This account is blocked for transactions. Contact support."
   },
   "ledger": {
     "type": {
@@ -384,6 +394,26 @@
       "terms": "Terms of Use",
       "privacy": "Privacy",
       "legalCenter": "Legal Center"
+    }
+  },
+  "deposit": {
+    "gate": {
+      "kyc": {
+        "action": "Verify identity",
+        "note": "Deposits unlock after full identity verification: document and selfie."
+      },
+      "custodyAbsent": {
+        "action": "Open payment account",
+        "note": "One step left before this wallet can receive PIX."
+      },
+      "custodyPending": {
+        "action": "Under review",
+        "note": "Your payment account is under review. We will let you know as soon as it clears."
+      },
+      "custodyBlocked": {
+        "action": "Contact support",
+        "note": "Deposits are unavailable on this account."
+      }
     }
   }
 }

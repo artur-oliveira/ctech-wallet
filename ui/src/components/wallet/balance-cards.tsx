@@ -1,11 +1,12 @@
 'use client'
 
 import Link from 'next/link'
-import {ArrowDownToLine, ArrowUpFromLine, Dice5, Gamepad2, Plus, ShieldCheck} from 'lucide-react'
+import {ArrowUpFromLine, Dice5, Gamepad2, Plus, ShieldCheck} from 'lucide-react'
 import {useTranslation} from 'react-i18next'
 import {Button} from '@/components/ui/button'
 import {formatBRL, formatCreditsAmount} from '@/lib/utils/money'
-import type {Balances} from '@/lib/types/api'
+import type {Balances, DepositReadiness} from '@/lib/types/api'
+import {DepositGate, DepositGateNote} from '@/components/wallet/deposit-gate'
 
 interface BalanceCardsProps {
   balances: Balances
@@ -14,6 +15,10 @@ interface BalanceCardsProps {
   onBuyCredits: () => void
   onFundGame: () => void
   onReturnFromGame: () => void
+  /** Opens the payment-subaccount flow. Only reachable from the deposit gate. */
+  onOpenCustody: () => void
+  /** Pre-flight deposit gate from GET /auth/me. Undefined = unknown, behaves as allowed. */
+  depositReadiness?: DepositReadiness
   selfExcluded?: boolean
 }
 
@@ -40,6 +45,8 @@ export function BalanceCards({
                                onBuyCredits,
                                onFundGame,
                                onReturnFromGame,
+                               onOpenCustody,
+                               depositReadiness,
                                selfExcluded,
                              }: BalanceCardsProps) {
   const {t} = useTranslation()
@@ -61,14 +68,7 @@ export function BalanceCards({
           </div>
 
           <div className="mt-6 flex flex-wrap gap-2">
-            <Button
-              variant="secondary"
-              className="bg-white text-brand-700 hover:bg-brand-50"
-              onClick={onDeposit}
-            >
-              <ArrowDownToLine size={16}/>
-              {t('balance.deposit')}
-            </Button>
+            <DepositGate readiness={depositReadiness} onDeposit={onDeposit} onOpenCustody={onOpenCustody}/>
             <Button
               variant="outline"
               className="border-brand-400/60 bg-transparent text-white hover:bg-brand-700"
@@ -88,6 +88,7 @@ export function BalanceCards({
               </Button>
             )}
           </div>
+          <DepositGateNote readiness={depositReadiness}/>
         </section>
 
         {/* Game — real money, ring-fenced */}

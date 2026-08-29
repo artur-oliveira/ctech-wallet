@@ -459,7 +459,7 @@ func TestSandboxDebitNoNegative(t *testing.T) {
 	h := newHarness(verified())
 	user := fundedAndActivated(t, h, 0) // sandbox starts at 0
 
-	_, err := h.svc.DebitSandbox(ctx, user, 500, "round-1", "bet")
+	_, err := h.svc.DebitSandbox(ctx, user, 500, "round-1", "bet", "")
 	wantProblem(t, err, problem.TypeInsufficientBalance)
 }
 
@@ -470,7 +470,7 @@ func TestCreditSandboxSucceedsWithoutActivation(t *testing.T) {
 	h := newHarness(verified())
 	user := "u-" + id.New() // no EnsureRealWallet, no ActivateGambling at all
 
-	entry, err := h.svc.CreditSandbox(ctx, user, 500, "idem-"+id.New(), "daily-reward")
+	entry, err := h.svc.CreditSandbox(ctx, user, 500, "idem-"+id.New(), "daily-reward", "")
 	if err != nil {
 		t.Fatalf("CreditSandbox without activation: %v", err)
 	}
@@ -498,7 +498,7 @@ func TestDebitSandboxOnNeverActivatedUserRespectsBalanceFloor(t *testing.T) {
 	h := newHarness(verified())
 	user := "u-" + id.New()
 
-	_, err := h.svc.DebitSandbox(ctx, user, 500, "round-1", "bet")
+	_, err := h.svc.DebitSandbox(ctx, user, 500, "round-1", "bet", "")
 	wantProblem(t, err, problem.TypeInsufficientBalance)
 }
 
@@ -546,11 +546,11 @@ func TestIdempotentReplaySameResult(t *testing.T) {
 	_, sandbox := activate(t, h, user)
 
 	idem := "grant-1"
-	if _, err := h.svc.CreditSandbox(ctx, user, 1000, idem, "bonus"); err != nil {
+	if _, err := h.svc.CreditSandbox(ctx, user, 1000, idem, "bonus", ""); err != nil {
 		t.Fatalf("credit 1: %v", err)
 	}
 	// Replay with the SAME key and payload → no double credit.
-	if _, err := h.svc.CreditSandbox(ctx, user, 1000, idem, "bonus"); err != nil {
+	if _, err := h.svc.CreditSandbox(ctx, user, 1000, idem, "bonus", ""); err != nil {
 		t.Fatalf("credit replay: %v", err)
 	}
 	if got := balance(t, h, sandbox.WalletID); got != 1000 {
@@ -565,11 +565,11 @@ func TestIdempotencyConflictOnDifferentPayload(t *testing.T) {
 	activate(t, h, user)
 
 	idem := "grant-2"
-	if _, err := h.svc.CreditSandbox(ctx, user, 1000, idem, "bonus"); err != nil {
+	if _, err := h.svc.CreditSandbox(ctx, user, 1000, idem, "bonus", ""); err != nil {
 		t.Fatalf("credit: %v", err)
 	}
 	// Same key, different amount → conflict.
-	_, err := h.svc.CreditSandbox(ctx, user, 2000, idem, "bonus")
+	_, err := h.svc.CreditSandbox(ctx, user, 2000, idem, "bonus", "")
 	wantProblem(t, err, problem.TypeIdempotencyConflict)
 }
 
@@ -618,7 +618,7 @@ func TestRealDebitNeverTouchesSandboxWallet(t *testing.T) {
 	user := "u-" + id.New()
 	real := fund(t, h, user, 10000)
 
-	entry, err := h.svc.DebitReal(ctx, user, 5000, "charge-1", "subscription")
+	entry, err := h.svc.DebitReal(ctx, user, 5000, "charge-1", "subscription", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -854,5 +854,46 @@ func TestConcurrentPurchaseSandboxSameIdempotencyKeyAppliesOnce(t *testing.T) {
 	}
 	if got := balance(t, h, game.WalletID); got != 15000 {
 		t.Fatalf("game balance = %d, want 15000 (double-purchase if lower)", got)
+	}
+}
+
+// A caller-supplied description is persisted verbatim on the ledger entry and
+// is display metadata only: it is deliberately outside the idempotency request
+// hash, so replaying the same key with different text returns the original
+// entry instead of a 409 conflict.
+func TestLedgerDescriptionPersistedAndOutsideIdempotencyHash(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(verified())
+	user := "u-" + id.New()
+	idem := "idem-" + id.New()
+
+	entry, err := h.svc.CreditSandbox(ctx, user, 500, idem, "daily_reward", "Recompensa diária")
+	if err != nil {
+		t.Fatalf("CreditSandbox: %v", err)
+	}
+	if entry.Description != "Recompensa diária" {
+		t.Fatalf("entry.Description = %q, want %q", entry.Description, "Recompensa diária")
+	}
+	if entry.Ref != "daily_reward" {
+		t.Fatalf("entry.Ref = %q, want daily_reward — description must not overwrite ref", entry.Ref)
+	}
+
+	replay, err := h.svc.CreditSandbox(ctx, user, 500, idem, "daily_reward", "texto totalmente diferente")
+	if err != nil {
+		t.Fatalf("replay with a different description must not conflict: %v", err)
+	}
+	if replay.EntryID != entry.EntryID {
+		t.Fatalf("replay wrote a second entry: %q vs %q", replay.EntryID, entry.EntryID)
+	}
+	if replay.Description != entry.Description {
+		t.Fatalf("replay.Description = %q, want the original %q", replay.Description, entry.Description)
+	}
+
+	_, _, sandbox, err := h.repo.LoadWallets(ctx, user)
+	if err != nil {
+		t.Fatalf("LoadWallets: %v", err)
+	}
+	if sandbox == nil || sandbox.Balance != 500 {
+		t.Fatalf("sandbox = %+v, want balance 500 (replay must not credit twice)", sandbox)
 	}
 }

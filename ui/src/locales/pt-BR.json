@@ -140,6 +140,13 @@
       "maxExceeded": "O valor máximo é {{max}}.",
       "overBalance": "Acima do disponível ({{amount}}).",
       "overWithdrawable": "O máximo disponível para saque é {{amount}}."
+    },
+    "onboarding": {
+      "title": "Abrir conta de pagamento",
+      "description": "Para receber PIX nesta carteira, abrimos uma conta de pagamento no seu nome. Informe sua renda mensal aproximada.",
+      "incomeLabel": "Renda mensal",
+      "incomeHint": "Valor aproximado. Usado apenas no cadastro da conta de pagamento.",
+      "submit": "Abrir conta"
     }
   },
   "confirm": {
@@ -249,7 +256,8 @@
     "fundGameSent": "Saldo enviado para a carteira de jogo.",
     "returned": "Saldo devolvido ao saldo real.",
     "pixCopied": "Código PIX copiado",
-    "gamblingActivated": "Carteira de jogo ativada."
+    "gamblingActivated": "Carteira de jogo ativada.",
+    "onboardingStarted": "Conta de pagamento enviada para análise."
   },
   "terms": {
     "title": "Só mais um passo",
@@ -346,7 +354,9 @@
     "selfExcluded": "Sua autoexclusão bloqueia depósitos na carteira de jogo.",
     "limitsNotConfigured": "Defina seus limites de jogo antes de continuar.",
     "depositLimitExceeded": "Esse envio ultrapassa um dos seus limites de jogo.",
-    "generic": "Algo deu errado. Tente de novo."
+    "generic": "Algo deu errado. Tente de novo.",
+    "walletOnboarding": "Sua conta de pagamento ainda não está aprovada.",
+    "accountBlocked": "Esta conta está bloqueada para movimentações. Fale com o suporte."
   },
   "ledger": {
     "type": {
@@ -384,6 +394,26 @@
       "terms": "Termos de Uso",
       "privacy": "Privacidade",
       "legalCenter": "Central Jurídica"
+    }
+  },
+  "deposit": {
+    "gate": {
+      "kyc": {
+        "action": "Verificar identidade",
+        "note": "Depósitos liberam após a verificação completa de identidade: documento e selfie."
+      },
+      "custodyAbsent": {
+        "action": "Abrir conta de pagamento",
+        "note": "Falta um passo para você receber PIX nesta carteira."
+      },
+      "custodyPending": {
+        "action": "Análise em andamento",
+        "note": "Sua conta de pagamento está em análise. Avisamos assim que liberar."
+      },
+      "custodyBlocked": {
+        "action": "Falar com o suporte",
+        "note": "Depósitos indisponíveis nesta conta."
+      }
     }
   }
 }

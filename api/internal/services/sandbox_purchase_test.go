@@ -138,7 +138,7 @@ func TestPurchaseSandboxDirectOpensChargeForValidSKU(t *testing.T) {
 	fakePix := pix.NewFake()
 	svc := newSandboxSvc(repo, purchases, fakePix)
 
-	p, charge, err := svc.PurchaseSandboxDirect(context.Background(), "u1", "pack_100", "idem-1", "")
+	p, charge, err := svc.PurchaseSandboxDirect(context.Background(), "u1", "pack_100", "idem-1", "", "")
 	if err != nil {
 		t.Fatalf("PurchaseSandboxDirect: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestPurchaseSandboxDirectRejectsUnknownSKU(t *testing.T) {
 	purchases := newStubSandboxPurchaseRepo()
 	svc := newSandboxSvc(repo, purchases, pix.NewFake())
 
-	_, _, err := svc.PurchaseSandboxDirect(context.Background(), "u1", "not-a-sku", "idem-2", "")
+	_, _, err := svc.PurchaseSandboxDirect(context.Background(), "u1", "not-a-sku", "idem-2", "", "")
 	p, ok := errors.AsType[*problem.Problem](err)
 	if !ok || p.Type != problem.TypeBadRequest {
 		t.Fatalf("expected bad-request, got %v", err)
@@ -177,11 +177,11 @@ func TestPurchaseSandboxDirectIdempotentReplay(t *testing.T) {
 	fakePix := pix.NewFake()
 	svc := newSandboxSvc(repo, purchases, fakePix)
 
-	first, _, err := svc.PurchaseSandboxDirect(context.Background(), "u1", "pack_100", "idem-3", "")
+	first, _, err := svc.PurchaseSandboxDirect(context.Background(), "u1", "pack_100", "idem-3", "", "")
 	if err != nil {
 		t.Fatalf("first call: %v", err)
 	}
-	second, _, err := svc.PurchaseSandboxDirect(context.Background(), "u1", "pack_100", "idem-3", "")
+	second, _, err := svc.PurchaseSandboxDirect(context.Background(), "u1", "pack_100", "idem-3", "", "")
 	if err != nil {
 		t.Fatalf("replay: %v", err)
 	}
@@ -197,10 +197,10 @@ func TestPurchaseSandboxDirectRejectsSameKeyDifferentSKU(t *testing.T) {
 	repo := newStubRepo()
 	purchases := newStubSandboxPurchaseRepo()
 	svc := newSandboxSvc(repo, purchases, pix.NewFake())
-	if _, _, err := svc.PurchaseSandboxDirect(context.Background(), "u1", "pack_100", "idem-conflict", "client-a"); err != nil {
+	if _, _, err := svc.PurchaseSandboxDirect(context.Background(), "u1", "pack_100", "idem-conflict", "client-a", ""); err != nil {
 		t.Fatalf("first call: %v", err)
 	}
-	_, _, err := svc.PurchaseSandboxDirect(context.Background(), "u1", "pack_500", "idem-conflict", "client-a")
+	_, _, err := svc.PurchaseSandboxDirect(context.Background(), "u1", "pack_500", "idem-conflict", "client-a", "")
 	p, ok := errors.AsType[*problem.Problem](err)
 	if !ok || p.Type != problem.TypeIdempotencyConflict {
 		t.Fatalf("expected idempotency conflict, got %v", err)
@@ -213,7 +213,7 @@ func TestConfirmSandboxPurchaseCreditsSandboxWallet(t *testing.T) {
 	fakePix := pix.NewFake()
 	svc := newSandboxSvc(repo, purchases, fakePix)
 
-	p, _, err := svc.PurchaseSandboxDirect(context.Background(), "u1", "pack_100", "idem-4", "")
+	p, _, err := svc.PurchaseSandboxDirect(context.Background(), "u1", "pack_100", "idem-4", "", "")
 	if err != nil {
 		t.Fatalf("PurchaseSandboxDirect: %v", err)
 	}
@@ -248,7 +248,7 @@ func TestConfirmSandboxPurchaseNotYetPaidIsNoOp(t *testing.T) {
 	fakePix := pix.NewFake()
 	svc := newSandboxSvc(repo, purchases, fakePix)
 
-	p, _, err := svc.PurchaseSandboxDirect(context.Background(), "u1", "pack_100", "idem-5", "")
+	p, _, err := svc.PurchaseSandboxDirect(context.Background(), "u1", "pack_100", "idem-5", "", "")
 	if err != nil {
 		t.Fatalf("PurchaseSandboxDirect: %v", err)
 	}
@@ -268,7 +268,7 @@ func TestRefundSandboxPurchaseEligibleWhenUnused(t *testing.T) {
 	fakePix := pix.NewFake()
 	svc := newSandboxSvc(repo, purchases, fakePix)
 
-	p, _, err := svc.PurchaseSandboxDirect(context.Background(), "u1", "pack_100", "idem-6", "")
+	p, _, err := svc.PurchaseSandboxDirect(context.Background(), "u1", "pack_100", "idem-6", "", "")
 	if err != nil {
 		t.Fatalf("PurchaseSandboxDirect: %v", err)
 	}
@@ -299,7 +299,7 @@ func TestRefundSandboxPurchaseRejectedAfterUse(t *testing.T) {
 	fakePix := pix.NewFake()
 	svc := newSandboxSvc(repo, purchases, fakePix)
 
-	p, _, err := svc.PurchaseSandboxDirect(context.Background(), "u1", "pack_100", "idem-7", "")
+	p, _, err := svc.PurchaseSandboxDirect(context.Background(), "u1", "pack_100", "idem-7", "", "")
 	if err != nil {
 		t.Fatalf("PurchaseSandboxDirect: %v", err)
 	}
@@ -329,15 +329,15 @@ func TestM2MPurchaseSandboxDirectNamespacesPurchaseID(t *testing.T) {
 	purchases := newStubSandboxPurchaseRepo()
 	svc := newSandboxSvc(repo, purchases, pix.NewFake())
 
-	direct, _, err := svc.PurchaseSandboxDirect(context.Background(), "u1", "pack_100", "shared-key", "")
+	direct, _, err := svc.PurchaseSandboxDirect(context.Background(), "u1", "pack_100", "shared-key", "", "")
 	if err != nil {
 		t.Fatalf("user-direct PurchaseSandboxDirect: %v", err)
 	}
-	poker, _, err := svc.PurchaseSandboxDirect(context.Background(), "u1", "pack_100", "shared-key", "poker")
+	poker, _, err := svc.PurchaseSandboxDirect(context.Background(), "u1", "pack_100", "shared-key", "poker", "")
 	if err != nil {
 		t.Fatalf("m2m PurchaseSandboxDirect: %v", err)
 	}
-	domino, _, err := svc.PurchaseSandboxDirect(context.Background(), "u1", "pack_100", "shared-key", "domino")
+	domino, _, err := svc.PurchaseSandboxDirect(context.Background(), "u1", "pack_100", "shared-key", "domino", "")
 	if err != nil {
 		t.Fatalf("m2m PurchaseSandboxDirect (second client): %v", err)
 	}
@@ -361,7 +361,7 @@ func TestM2MSandboxPurchaseOwnershipIsolation(t *testing.T) {
 	fakePix := pix.NewFake()
 	svc := newSandboxSvc(repo, purchases, fakePix)
 
-	p, _, err := svc.PurchaseSandboxDirect(context.Background(), "u1", "pack_100", "idem-poker-1", "poker")
+	p, _, err := svc.PurchaseSandboxDirect(context.Background(), "u1", "pack_100", "idem-poker-1", "poker", "")
 	if err != nil {
 		t.Fatalf("PurchaseSandboxDirect: %v", err)
 	}
@@ -395,7 +395,7 @@ func TestPurchaseSandboxDirectAndRefundNeverTouchRealOrGame(t *testing.T) {
 	fakePix := pix.NewFake()
 	svc := newSandboxSvc(repo, purchases, fakePix)
 
-	p, _, err := svc.PurchaseSandboxDirect(context.Background(), "u1", "pack_100", "idem-8", "")
+	p, _, err := svc.PurchaseSandboxDirect(context.Background(), "u1", "pack_100", "idem-8", "", "")
 	if err != nil {
 		t.Fatalf("PurchaseSandboxDirect: %v", err)
 	}

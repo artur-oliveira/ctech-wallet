@@ -227,7 +227,7 @@ func TestGetChargeDoesNotReturnACatalogueSale(t *testing.T) {
 	svc, _, _ := newTestWalletServiceForProduct()
 	ctx := context.Background()
 
-	p, _, err := svc.PurchaseProductDirect(ctx, "user-1", "poker_reaction_cold", "idem-1", "poker")
+	p, _, err := svc.PurchaseProductDirect(ctx, "user-1", "poker_reaction_cold", "idem-1", "poker", "")
 	if err != nil {
 		t.Fatalf("purchase: %v", err)
 	}

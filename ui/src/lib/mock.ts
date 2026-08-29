@@ -134,7 +134,19 @@ export class MockApiClient {
   }
 
   async me(): Promise<MeResponse> {
-    return {user_id: 'mock_user', terms_addendum_accepted: true, terms_addendum_version: '1.0'}
+    return {
+      user_id: 'mock_user',
+      terms_addendum_accepted: true,
+      terms_addendum_version: '1.0',
+      // The mock has no KYC or custody lifecycle — it is always deposit-ready,
+      // so the mock dashboard behaves exactly as it did before the gate.
+      deposit: {allowed: true, kyc_level: 'enhanced', custody_required: false},
+    }
+  }
+
+  async initiateOnboarding(_incomeValue: number): Promise<{ status: string }> {
+    void _incomeValue
+    return {status: 'onboarding'}
   }
 
   async acceptTermsAddendum(): Promise<void> {

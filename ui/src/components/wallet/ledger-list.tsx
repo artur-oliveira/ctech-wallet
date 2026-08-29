@@ -79,10 +79,17 @@ export function LedgerList({type}: { type: WalletType }) {
         {items.map((entry) => (
           <li key={entry.entry_id} className="flex items-center justify-between gap-4 px-5 py-3.5">
             <div className="min-w-0">
-              <p className="text-sm font-medium text-foreground">
-                {t(`ledger.type.${ledgerType(type, entry.type, entry.ref)}`, entry.type)}
+              {/* A service-supplied description is what the user actually
+                  recognises, so it leads; the entry type stays visible one
+                  line down so the row never loses its money semantics. */}
+              <p className="line-clamp-2 text-sm font-medium text-foreground">
+                {entry.description || t(`ledger.type.${ledgerType(type, entry.type, entry.ref)}`, entry.type)}
               </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">{dateFmt.format(new Date(entry.created_at))}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {entry.description
+                  ? `${t(`ledger.type.${ledgerType(type, entry.type, entry.ref)}`, entry.type)} · ${dateFmt.format(new Date(entry.created_at))}`
+                  : dateFmt.format(new Date(entry.created_at))}
+              </p>
             </div>
             <p
               className={`shrink-0 font-mono text-sm tabular-nums ${

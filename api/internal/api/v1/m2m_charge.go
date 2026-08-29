@@ -21,6 +21,7 @@ func (h *handlers) m2mOpenCharge(c fiber.Ctx) error {
 		Reference:      body.Reference,
 		IdempotencyKey: body.IdempotencyKey,
 		PayerHintCPF:   body.PayerTaxID,
+		Description:    body.Description,
 		// From the token, never the body. A client-supplied identity here would
 		// let any holder of this scope open charges billed to — and refundable
 		// by — somebody else.

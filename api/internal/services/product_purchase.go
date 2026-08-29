@@ -58,7 +58,7 @@ func (s *WalletService) ProductPurchaseHistory(ctx context.Context, userID strin
 // no KYC gate (product sale, not custody), no ledger effect whatsoever
 // (docs/specs/2026-08-12-product-purchase-skus.md). Mirrors
 // PurchaseSandboxDirect's idempotent-reservation-before-charge shape exactly.
-func (s *WalletService) PurchaseProductDirect(ctx context.Context, userID, sku, idemKey, requestingClient string) (*wallet.ProductPurchase, *pix.Charge, error) {
+func (s *WalletService) PurchaseProductDirect(ctx context.Context, userID, sku, idemKey, requestingClient, description string) (*wallet.ProductPurchase, *pix.Charge, error) {
 	skuDef, ok := wallet.ProductSKUByID(sku)
 	if !ok {
 		return nil, nil, problem.BadRequest("sku inválido")
@@ -72,6 +72,7 @@ func (s *WalletService) PurchaseProductDirect(ctx context.Context, userID, sku, 
 		AmountExpected:   skuDef.PriceCents,
 		RequestHash:      reqHash(requestingClient+"#"+userID+"#"+sku, skuDef.PriceCents),
 		Status:           wallet.ProductPurchasePending,
+		Description:      description,
 		RequestingClient: requestingClient,
 		CreatedAt:        now,
 		UpdatedAt:        now,

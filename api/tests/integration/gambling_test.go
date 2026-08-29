@@ -365,7 +365,7 @@ func TestLegacySandboxHolderIsNotTreatedAsActivated(t *testing.T) {
 	_, _, err = h.svc.PurchaseSandbox(ctx, user, 1000, "idem-legacy")
 	wantProblem(t, err, problem.TypeGamblingNotActivated)
 
-	_, err = h.svc.DebitSandbox(ctx, user, 100, "idem-legacy-d", "bet")
+	_, err = h.svc.DebitSandbox(ctx, user, 100, "idem-legacy-d", "bet", "")
 	wantProblem(t, err, problem.TypeInsufficientBalance)
 
 	// Balances hide the frozen sandbox until they activate.

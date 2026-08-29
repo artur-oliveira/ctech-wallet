@@ -94,6 +94,9 @@ function PurchaseGroup({
                     {t(`purchases.status.${purchase.status}`)}
                   </span>
                 </div>
+                {purchase.description && (
+                  <p className="mt-1 line-clamp-2 text-sm text-foreground">{purchase.description}</p>
+                )}
                 <p className="mt-1 text-xs text-muted-foreground">
                   {dateFmt.format(new Date(purchase.created_at))}
                 </p>

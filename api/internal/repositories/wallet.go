@@ -66,10 +66,15 @@ func markerPK(userID, walletType string) string {
 
 // Mutation describes a single-wallet balance change (credit or debit).
 type Mutation struct {
-	WalletID       string
-	Amount         int64 // positive magnitude
-	EntryType      string
-	Ref            string
+	WalletID  string
+	Amount    int64 // positive magnitude
+	EntryType string
+	Ref       string
+	// Description is optional free-form display text carried onto the ledger
+	// entry. Deliberately NOT part of ReqHash: it is metadata, so changing it
+	// between replays of the same idempotency key must never turn a safe
+	// replay into a 409 conflict.
+	Description    string
 	IdempotencyKey string
 	ReqHash        string
 	Extra          func(*wallet.LedgerEntry) []types.TransactWriteItem
@@ -278,7 +283,7 @@ func (r *WalletRepository) mutate(ctx context.Context, m Mutation, sign int64, e
 	}
 
 	signed := sign * m.Amount
-	entry := r.newEntry(m.WalletID, m.EntryType, signed, w.Balance+signed, m.IdempotencyKey, m.Ref)
+	entry := r.newEntry(m.WalletID, m.EntryType, signed, w.Balance+signed, m.IdempotencyKey, m.Ref, m.Description)
 
 	walletTx, err := r.balanceTx(m.WalletID, m.Amount, sign, w.Version)
 	if err != nil {
@@ -355,7 +360,7 @@ func (r *WalletRepository) ApplyMedClawback(ctx context.Context, walletID, userI
 		debited = w.Balance
 	}
 	shortfall := amount - debited
-	entry := r.newEntry(walletID, wallet.EntryMedClawback, -debited, w.Balance-debited, idemKey, ref)
+	entry := r.newEntry(walletID, wallet.EntryMedClawback, -debited, w.Balance-debited, idemKey, ref, "")
 	ledgerTx, guardTx, err := r.ledgerAndGuardTx(entry, idemKey, reqHash)
 	if err != nil {
 		return 0, 0, false, err
@@ -433,7 +438,7 @@ func (r *WalletRepository) DebitWithdrawal(ctx context.Context, w *wallet.Withdr
 	if wl == nil {
 		return nil, false, problem.NotFound("carteira não encontrada")
 	}
-	wEntry := r.newEntry(w.WalletID, wallet.EntryWithdraw, -amount, wl.Balance-amount, idemKey, w.WithdrawalID)
+	wEntry := r.newEntry(w.WalletID, wallet.EntryWithdraw, -amount, wl.Balance-amount, idemKey, w.WithdrawalID, "")
 
 	walletTx, err := r.balanceTx(w.WalletID, amount, -1, wl.Version)
 	if err != nil {
@@ -483,8 +488,8 @@ func (r *WalletRepository) Transfer(ctx context.Context, fromWalletID, toWalletI
 	if from == nil || to == nil {
 		return nil, nil, false, problem.NotFound("carteira não encontrada")
 	}
-	dEntry := r.newEntry(fromWalletID, debitType, -amount, from.Balance-amount, idemKey, ref)
-	cEntry := r.newEntry(toWalletID, creditType, +creditAmount, to.Balance+creditAmount, idemKey, ref)
+	dEntry := r.newEntry(fromWalletID, debitType, -amount, from.Balance-amount, idemKey, ref, "")
+	cEntry := r.newEntry(toWalletID, creditType, +creditAmount, to.Balance+creditAmount, idemKey, ref, "")
 
 	debitTx, err := r.balanceTx(fromWalletID, amount, -1, from.Version)
 	if err != nil {
@@ -824,7 +829,7 @@ func (r *WalletRepository) ListProcessingWithdrawals(ctx context.Context, limit 
 
 // --- shared transaction builders ---
 
-func (r *WalletRepository) newEntry(walletID, entryType string, signedAmount, balanceAfter int64, idemKey, ref string) *wallet.LedgerEntry {
+func (r *WalletRepository) newEntry(walletID, entryType string, signedAmount, balanceAfter int64, idemKey, ref, description string) *wallet.LedgerEntry {
 	entryID := id.New()
 	ts := NowStr()
 	return &wallet.LedgerEntry{
@@ -836,6 +841,7 @@ func (r *WalletRepository) newEntry(walletID, entryType string, signedAmount, ba
 		BalanceAfter:   balanceAfter,
 		IdempotencyKey: idemKey,
 		Ref:            ref,
+		Description:    description,
 		CreatedAt:      ts,
 	}
 }

@@ -195,6 +195,10 @@ type Wallet struct {
 	UpdatedAt     string `dynamodbav:"updated_at" json:"updated_at"`
 }
 
+// DescriptionMaxLen caps the optional free-form Description carried by ledger
+// entries and purchases. Display metadata only — see LedgerEntry.Description.
+const DescriptionMaxLen = 255
+
 // LedgerEntry is an immutable audit row. balance_after is advisory; the
 // authoritative balance is always Wallet.Balance.
 //
@@ -210,7 +214,12 @@ type LedgerEntry struct {
 	BalanceAfter   int64  `dynamodbav:"balance_after" json:"balance_after"`
 	IdempotencyKey string `dynamodbav:"idempotency_key" json:"-"`
 	Ref            string `dynamodbav:"ref" json:"ref,omitempty"`
-	CreatedAt      string `dynamodbav:"created_at" json:"created_at"`
+	// Description is free-form human-readable text supplied by the calling
+	// service ("Recompensa diária", "Assinatura Plus — agosto/2026"). Display
+	// metadata only: never parsed, never part of the idempotency request hash,
+	// never authority for any amount. Capped at DescriptionMaxLen.
+	Description string `dynamodbav:"description,omitempty" json:"description,omitempty"`
+	CreatedAt   string `dynamodbav:"created_at" json:"created_at"`
 }
 
 // PixDeposit tracks an immediate PIX charge (cob) awaiting payment.
@@ -382,6 +391,9 @@ type SandboxPurchase struct {
 	Status         string `dynamodbav:"status" json:"status"`
 	CreditSK       string `dynamodbav:"credit_sk,omitempty" json:"-"`
 	E2EID          string `dynamodbav:"e2e_id,omitempty" json:"e2e_id,omitempty"`
+	// Description mirrors LedgerEntry.Description: optional caller-supplied
+	// display text, never authority for price or credits.
+	Description string `dynamodbav:"description,omitempty" json:"description,omitempty"`
 	// RequestingClient is the AZP (M2M client_id) of the caller that opened
 	// this purchase on a user's behalf via the M2M route — empty when the
 	// user opened it directly. Owns two things: webhook notify-back routing
@@ -443,11 +455,14 @@ type ProductPurchase struct {
 	SKU string `dynamodbav:"sku" json:"sku"`
 	// Kind is ProductPurchaseKindProduct when absent, which is what every row
 	// written before charges existed is.
-	Kind             string `dynamodbav:"kind,omitempty" json:"kind,omitempty"`
-	AmountExpected   int64  `dynamodbav:"amount_expected" json:"amount_expected"`
-	RequestHash      string `dynamodbav:"request_hash" json:"-"`
-	Status           string `dynamodbav:"status" json:"status"`
-	E2EID            string `dynamodbav:"e2e_id,omitempty" json:"e2e_id,omitempty"`
+	Kind           string `dynamodbav:"kind,omitempty" json:"kind,omitempty"`
+	AmountExpected int64  `dynamodbav:"amount_expected" json:"amount_expected"`
+	RequestHash    string `dynamodbav:"request_hash" json:"-"`
+	Status         string `dynamodbav:"status" json:"status"`
+	E2EID          string `dynamodbav:"e2e_id,omitempty" json:"e2e_id,omitempty"`
+	// Description mirrors LedgerEntry.Description: optional caller-supplied
+	// display text, never authority for the amount.
+	Description      string `dynamodbav:"description,omitempty" json:"description,omitempty"`
 	RequestingClient string `dynamodbav:"requesting_client,omitempty" json:"-"`
 	WebhookStatus    string `dynamodbav:"webhook_status,omitempty" json:"-"`
 	CreatedAt        string `dynamodbav:"created_at" json:"created_at"`

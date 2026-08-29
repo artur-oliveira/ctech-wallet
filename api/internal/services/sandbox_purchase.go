@@ -70,7 +70,7 @@ func sandboxPurchaseTxID(userID, idemKey, requestingClient string) string {
 // sandbox-purchase integration), or "" for the user-facing route. Threaded
 // through to ConfirmSandboxPurchase's notify-back and to
 // RefundSandboxPurchase/GetSandboxPurchase's ownership check.
-func (s *WalletService) PurchaseSandboxDirect(ctx context.Context, userID, sku, idemKey, requestingClient string) (*wallet.SandboxPurchase, *pix.Charge, error) {
+func (s *WalletService) PurchaseSandboxDirect(ctx context.Context, userID, sku, idemKey, requestingClient, description string) (*wallet.SandboxPurchase, *pix.Charge, error) {
 	skuDef, ok := wallet.SandboxSKUByID(sku)
 	if !ok {
 		return nil, nil, problem.BadRequest("sku inválido")
@@ -85,6 +85,7 @@ func (s *WalletService) PurchaseSandboxDirect(ctx context.Context, userID, sku, 
 		CreditsGranted:   skuDef.TotalCredits(),
 		RequestHash:      reqHash(requestingClient+"#"+userID+"#"+sku, skuDef.PriceCents),
 		Status:           wallet.SandboxPurchasePending,
+		Description:      description,
 		RequestingClient: requestingClient,
 		CreatedAt:        now,
 		UpdatedAt:        now,

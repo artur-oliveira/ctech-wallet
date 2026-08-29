@@ -41,7 +41,7 @@ func (h *handlers) realDebit(c fiber.Ctx) error {
 }
 
 // movementOp is any M2M balance mutation sharing MovementOpRequest's contract.
-type movementOp func(context.Context, string, int64, string, string) (*wallet.LedgerEntry, error)
+type movementOp func(context.Context, string, int64, string, string, string) (*wallet.LedgerEntry, error)
 
 // movement centralizes the transport pipeline for M2M credit/debit operations.
 // Authorization remains route-specific in Register; the selected service method
@@ -51,7 +51,7 @@ func (h *handlers) movement(c fiber.Ctx, op movementOp) error {
 	if p := bindJSON(c, &body); p != nil {
 		return sendProblem(c, p)
 	}
-	entry, err := op(c.Context(), body.UserID, body.Amount, body.IdempotencyKey, body.Reason)
+	entry, err := op(c.Context(), body.UserID, body.Amount, body.IdempotencyKey, body.Reason, body.Description)
 	if err != nil {
 		return sendProblem(c, err)
 	}

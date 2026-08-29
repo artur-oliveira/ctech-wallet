@@ -73,7 +73,7 @@ func (r *WalletRepository) CreateHold(ctx context.Context, holdID, walletID, use
 	}
 	holdTx := r.holds.BuildPutTxItemIfAbsent(hav)
 
-	entry := r.newEntry(walletID, wallet.EntryGameHoldDebit, -amount, w.Balance-amount, idemKey, tableRef)
+	entry := r.newEntry(walletID, wallet.EntryGameHoldDebit, -amount, w.Balance-amount, idemKey, tableRef, "")
 	walletTx, err := r.balanceTx(walletID, amount, -1, w.Version)
 	if err != nil {
 		return nil, false, err
@@ -148,7 +148,7 @@ func (r *WalletRepository) ReleaseHoldAtomic(ctx context.Context, h *wallet.Hold
 	if err != nil {
 		return nil, false, err
 	}
-	entry := r.newEntry(h.WalletID, wallet.EntryGameHoldRelease, h.Amount, w.Balance+h.Amount, idemKey, h.TableRef)
+	entry := r.newEntry(h.WalletID, wallet.EntryGameHoldRelease, h.Amount, w.Balance+h.Amount, idemKey, h.TableRef, "")
 	walletTx, err := r.balanceTx(h.WalletID, h.Amount, +1, w.Version)
 	if err != nil {
 		return nil, false, err
@@ -198,7 +198,7 @@ func (r *WalletRepository) CashoutHoldsAtomic(ctx context.Context, walletID, use
 	if err != nil {
 		return nil, false, err
 	}
-	entry := r.newEntry(walletID, wallet.EntryGameCashoutCredit, amount, w.Balance+amount, idemKey, tableRef)
+	entry := r.newEntry(walletID, wallet.EntryGameCashoutCredit, amount, w.Balance+amount, idemKey, tableRef, "")
 	walletTx, err := r.balanceTx(walletID, amount, +1, w.Version)
 	if err != nil {
 		return nil, false, err

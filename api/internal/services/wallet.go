@@ -548,6 +548,107 @@ func (s *WalletService) requireCustodyApproved(ctx context.Context, userID strin
 	return nil, problem.WalletOnboarding(status)
 }
 
+// Deposit gate reasons reported by DepositReadiness. They exist so the frontend
+// can render the right next step BEFORE the user types an amount, instead of
+// letting them submit into a 403/409 they could not have predicted. The client
+// renders whatever BlockedBy says and never re-derives it from KYCLevel /
+// CustodyStatus — one place decides, so UI and API cannot drift apart.
+const (
+	// DepositBlockedKYC: the caller's kyc_level is below the `enhanced` the
+	// deposit route demands (and, when custody applies, the same level
+	// POST /wallet/onboarding demands to open the subaccount).
+	DepositBlockedKYC = "kyc"
+	// DepositBlockedCustodyAbsent: custody is required and no subaccount has
+	// been opened yet — the user can act on this (open one).
+	DepositBlockedCustodyAbsent = "custody_absent"
+	// DepositBlockedCustodyPending: a subaccount exists but is not approved
+	// yet. Nothing for the user to do but wait.
+	DepositBlockedCustodyPending = "custody_pending"
+	// DepositBlockedCustodyBlocked: frozen, closing/closed, or conservation
+	// drift. Never an onboarding step — this needs support.
+	DepositBlockedCustodyBlocked = "custody_blocked"
+)
+
+// DepositReadiness is the pre-flight answer to "can this user deposit right
+// now, and if not, what is their next step?" — surfaced on GET /wallet/me so
+// the dashboard already has it before the deposit button is rendered.
+type DepositReadiness struct {
+	Allowed         bool   `json:"allowed"`
+	BlockedBy       string `json:"blocked_by,omitempty"`
+	KYCLevel        string `json:"kyc_level"`
+	CustodyRequired bool   `json:"custody_required"`
+	CustodyStatus   string `json:"custody_status,omitempty"`
+}
+
+// DepositReadiness evaluates the exact gates InitiateDeposit enforces, through
+// the very same requireCustodyApproved, and reports them as data instead of as
+// a rejection. A read-only pre-flight: it opens nothing, charges nothing, and
+// its answer is advisory — InitiateDeposit still enforces every gate itself.
+//
+// The KYC bar reported here is the ROUTE's, not this service method's: POST
+// /wallet/deposits carries RequireKYC(KYCVerified), so a `basic` user is
+// refused by the middleware before InitiateDeposit's own weaker `!= ""` check
+// ever runs. Reporting "basic is enough" would send them into a 403.
+func (s *WalletService) DepositReadiness(ctx context.Context, userID, kycLevel string) (*DepositReadiness, error) {
+	out := &DepositReadiness{KYCLevel: kycLevel}
+
+	custody, err := s.CustodyEnabledForUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	out.CustodyRequired = custody
+	if custody {
+		acc, err := s.baas.GetAccount(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		if acc != nil {
+			out.CustodyStatus = acc.Status
+		}
+	}
+
+	if kycLevel != wallet.KYCVerified {
+		out.BlockedBy = DepositBlockedKYC
+		return out, nil
+	}
+	if !custody {
+		out.Allowed = true
+		return out, nil
+	}
+
+	if _, err := s.requireCustodyApproved(ctx, userID); err != nil {
+		var p *problem.Problem
+		if !errors.As(err, &p) {
+			// A repository/provider failure is not a gate. Fail open here so a
+			// transient read never tells a fully-onboarded user they cannot
+			// deposit; InitiateDeposit remains the enforcing edge.
+			return nil, err
+		}
+		out.BlockedBy = custodyBlockReason(out.CustodyStatus)
+		return out, nil
+	}
+	out.Allowed = true
+	return out, nil
+}
+
+// custodyBlockReason maps a subaccount lifecycle status to the user-facing
+// next step. An empty status means no row at all — the one case the user can
+// resolve themselves.
+func custodyBlockReason(status string) string {
+	switch status {
+	case "":
+		return DepositBlockedCustodyAbsent
+	case wallet.BaasFrozen, wallet.BaasClosing, wallet.BaasSubaccountClosed, wallet.BaasClosed,
+		// requireCustodyApproved also refuses an APPROVED account under
+		// conservation drift (Invariant #13). Approved-but-refused is never an
+		// onboarding step.
+		wallet.BaasApproved:
+		return DepositBlockedCustodyBlocked
+	default:
+		return DepositBlockedCustodyPending
+	}
+}
+
 // requireNotFrozen refuses a money-moving op once AsaasCustodyEnabled and the
 // caller's Asaas subaccount is frozen (plan §7.1) — every money-out path
 // (`Withdraw`, `ringTransfer`, `CashoutGame`) must check this before acting;
@@ -1583,16 +1684,16 @@ func (s *WalletService) ReverseSandboxGamePurchase(ctx context.Context, userID, 
 }
 
 // CreditSandbox grants sandbox currency to a user (M2M, e.g. poker/dominó bonus).
-func (s *WalletService) CreditSandbox(ctx context.Context, userID string, amount int64, idemKey, reason string) (*wallet.LedgerEntry, error) {
-	return s.sandboxOp(ctx, userID, amount, idemKey, reason, wallet.EntryGameCredit, true)
+func (s *WalletService) CreditSandbox(ctx context.Context, userID string, amount int64, idemKey, reason, description string) (*wallet.LedgerEntry, error) {
+	return s.sandboxOp(ctx, userID, amount, idemKey, reason, description, wallet.EntryGameCredit, true)
 }
 
 // DebitSandbox spends sandbox currency (M2M, e.g. a bet). Respects balance.
-func (s *WalletService) DebitSandbox(ctx context.Context, userID string, amount int64, idemKey, reason string) (*wallet.LedgerEntry, error) {
-	return s.sandboxOp(ctx, userID, amount, idemKey, reason, wallet.EntryGameDebit, false)
+func (s *WalletService) DebitSandbox(ctx context.Context, userID string, amount int64, idemKey, reason, description string) (*wallet.LedgerEntry, error) {
+	return s.sandboxOp(ctx, userID, amount, idemKey, reason, description, wallet.EntryGameDebit, false)
 }
 
-func (s *WalletService) sandboxOp(ctx context.Context, userID string, amount int64, idemKey, reason, entryType string, credit bool) (*wallet.LedgerEntry, error) {
+func (s *WalletService) sandboxOp(ctx context.Context, userID string, amount int64, idemKey, reason, description, entryType string, credit bool) (*wallet.LedgerEntry, error) {
 	sandbox, err := s.repo.EnsureSandboxWallet(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -1608,6 +1709,7 @@ func (s *WalletService) sandboxOp(ctx context.Context, userID string, amount int
 		Amount:         amount,
 		EntryType:      entryType,
 		Ref:            reason,
+		Description:    description,
 		IdempotencyKey: entryType + "#" + userID + "#" + idemKey,
 		ReqHash:        reqHash(reason, amount),
 	}
@@ -1623,7 +1725,7 @@ func (s *WalletService) sandboxOp(ctx context.Context, userID string, amount int
 // DebitReal debits the real wallet for an authorized M2M client (e.g.
 // ctech-billing charging a subscription). No PIX leg — this only moves money
 // within the ledger, same shape as DebitSandbox but against `real`.
-func (s *WalletService) DebitReal(ctx context.Context, userID string, amount int64, idemKey, reason string) (*wallet.LedgerEntry, error) {
+func (s *WalletService) DebitReal(ctx context.Context, userID string, amount int64, idemKey, reason, description string) (*wallet.LedgerEntry, error) {
 	realw, err := s.repo.EnsureRealWallet(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -1639,6 +1741,7 @@ func (s *WalletService) DebitReal(ctx context.Context, userID string, amount int
 		Amount:         amount,
 		EntryType:      wallet.EntryBillingDebit,
 		Ref:            reason,
+		Description:    description,
 		IdempotencyKey: wallet.EntryBillingDebit + "#" + userID + "#" + idemKey,
 		ReqHash:        reqHash(reason, amount),
 	})

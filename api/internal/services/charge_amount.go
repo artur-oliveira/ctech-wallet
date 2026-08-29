@@ -40,6 +40,9 @@ type OpenChargeInput struct {
 	// RequestingClient is the AZP claim, never anything from the body. It is what
 	// the ceiling, the txid and the ownership check are all keyed on.
 	RequestingClient string
+	// Description is optional free-form display text for the charge row. Display
+	// metadata only — never part of the request hash, never price authority.
+	Description string
 }
 
 // OpenCharge opens a PIX charge for an amount the caller names.
@@ -71,10 +74,11 @@ func (s *WalletService) OpenCharge(ctx context.Context, in OpenChargeInput) (*wa
 	purchaseID := productPurchaseTxID(in.UserID, in.IdempotencyKey, in.RequestingClient)
 	now := repositories.NowStr()
 	p := &wallet.ProductPurchase{
-		PurchaseID: purchaseID,
-		UserID:     in.UserID,
-		SKU:        in.Reference,
-		Kind:       wallet.ProductPurchaseKindCharge,
+		PurchaseID:  purchaseID,
+		UserID:      in.UserID,
+		SKU:         in.Reference,
+		Kind:        wallet.ProductPurchaseKindCharge,
+		Description: in.Description,
 		// The hash binds the key to the amount **from the request**, not to a
 		// catalogue price. Without that, replaying one idempotency key with a
 		// bigger amount would return the original charge and read as success —

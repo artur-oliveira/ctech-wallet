@@ -34,6 +34,9 @@ type M2MSandboxPurchaseRequest struct {
 	UserID         string `json:"user_id" validate:"required,max=128"`
 	SKU            string `json:"sku" validate:"required,max=64"`
 	IdempotencyKey string `json:"idempotency_key" validate:"required,max=128"`
+	// Description is optional free-form display text for the purchase row, on
+	// the same terms as MovementOpRequest.Description: never price authority.
+	Description string `json:"description" validate:"max=255"`
 }
 
 // M2MRefundSandboxPurchaseRequest mirrors M2MSandboxPurchaseRequest's shape
@@ -62,6 +65,9 @@ type M2MOpenChargeRequest struct {
 	// PayerTaxID is an optional CPF the rail uses to match the payer. Not stored
 	// for that purpose and not required for the charge to open.
 	PayerTaxID string `json:"payer_tax_id" validate:"omitempty,max=14"`
+	// Description is optional free-form display text for the charge row, on the
+	// same terms as MovementOpRequest.Description: never price authority.
+	Description string `json:"description" validate:"max=255"`
 }
 
 // ConfirmPurchaseRequest is pix-gateway's webhook-Lambda call for either
@@ -116,6 +122,11 @@ type MovementOpRequest struct {
 	Amount         int64  `json:"amount" validate:"required,gt=0"`
 	IdempotencyKey string `json:"idempotency_key" validate:"required,max=128"`
 	Reason         string `json:"reason" validate:"max=256"`
+	// Description is optional free-form text the calling service wants the user
+	// to read on their statement ("Recompensa diária"). Stored verbatim on the
+	// ledger entry, never parsed, never authority for the amount. Reason stays
+	// the machine-readable key (`ref`); this is the human sentence.
+	Description string `json:"description" validate:"max=255"`
 }
 
 // ConfirmDepositRequest is pix-gateway's webhook-Lambda call. api re-derives

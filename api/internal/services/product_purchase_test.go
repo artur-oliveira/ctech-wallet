@@ -104,7 +104,7 @@ func TestPurchaseProductDirectIsIdempotent(t *testing.T) {
 	svc, _, _ := newTestWalletServiceForProduct()
 	ctx := context.Background()
 
-	p1, charge1, err := svc.PurchaseProductDirect(ctx, "user-1", "poker_reaction_cold", "idem-1", "poker")
+	p1, charge1, err := svc.PurchaseProductDirect(ctx, "user-1", "poker_reaction_cold", "idem-1", "poker", "")
 	if err != nil {
 		t.Fatalf("first purchase: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestPurchaseProductDirectIsIdempotent(t *testing.T) {
 		t.Fatalf("unexpected purchase: %+v", p1)
 	}
 
-	p2, charge2, err := svc.PurchaseProductDirect(ctx, "user-1", "poker_reaction_cold", "idem-1", "poker")
+	p2, charge2, err := svc.PurchaseProductDirect(ctx, "user-1", "poker_reaction_cold", "idem-1", "poker", "")
 	if err != nil {
 		t.Fatalf("replay: %v", err)
 	}
@@ -128,7 +128,7 @@ func TestConfirmProductPurchaseCreditsNothing(t *testing.T) {
 	svc, repo, fakePix := newTestWalletServiceForProduct()
 	ctx := context.Background()
 
-	p, _, err := svc.PurchaseProductDirect(ctx, "user-1", "poker_reaction_cold", "idem-2", "poker")
+	p, _, err := svc.PurchaseProductDirect(ctx, "user-1", "poker_reaction_cold", "idem-2", "poker", "")
 	if err != nil {
 		t.Fatalf("purchase: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestConfirmProductPurchaseAmountMismatchStaysPending(t *testing.T) {
 	svc, repo, fakePix := newTestWalletServiceForProduct()
 	ctx := context.Background()
 
-	p, _, err := svc.PurchaseProductDirect(ctx, "user-1", "poker_reaction_cold", "idem-3", "poker")
+	p, _, err := svc.PurchaseProductDirect(ctx, "user-1", "poker_reaction_cold", "idem-3", "poker", "")
 	if err != nil {
 		t.Fatalf("purchase: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestRefundProductPurchaseHappyPath(t *testing.T) {
 	svc, _, fakePix := newTestWalletServiceForProduct()
 	ctx := context.Background()
 
-	p, _, err := svc.PurchaseProductDirect(ctx, "user-1", "poker_reaction_cold", "idem-4", "poker")
+	p, _, err := svc.PurchaseProductDirect(ctx, "user-1", "poker_reaction_cold", "idem-4", "poker", "")
 	if err != nil {
 		t.Fatalf("purchase: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestRefundProductPurchaseCrossClientNotFound(t *testing.T) {
 	svc, _, fakePix := newTestWalletServiceForProduct()
 	ctx := context.Background()
 
-	p, _, err := svc.PurchaseProductDirect(ctx, "user-1", "poker_reaction_cold", "idem-5", "poker")
+	p, _, err := svc.PurchaseProductDirect(ctx, "user-1", "poker_reaction_cold", "idem-5", "poker", "")
 	if err != nil {
 		t.Fatalf("purchase: %v", err)
 	}
@@ -219,7 +219,7 @@ func TestRefundProductPurchaseCrossClientNotFound(t *testing.T) {
 func TestRefundProductPurchaseNotYetConfirmed(t *testing.T) {
 	svc, _, _ := newTestWalletServiceForProduct()
 	ctx := context.Background()
-	p, _, err := svc.PurchaseProductDirect(ctx, "user-1", "poker_reaction_cold", "idem-6", "poker")
+	p, _, err := svc.PurchaseProductDirect(ctx, "user-1", "poker_reaction_cold", "idem-6", "poker", "")
 	if err != nil {
 		t.Fatalf("purchase: %v", err)
 	}
@@ -232,7 +232,7 @@ func TestSweepPendingProductPurchasesConfirmsAgedOnes(t *testing.T) {
 	svc, repo, fakePix := newTestWalletServiceForProduct()
 	ctx := context.Background()
 
-	p, _, err := svc.PurchaseProductDirect(ctx, "user-1", "poker_reaction_cold", "idem-7", "poker")
+	p, _, err := svc.PurchaseProductDirect(ctx, "user-1", "poker_reaction_cold", "idem-7", "poker", "")
 	if err != nil {
 		t.Fatalf("purchase: %v", err)
 	}
@@ -257,7 +257,7 @@ func TestSweepPendingProductPurchasesConfirmsAgedOnes(t *testing.T) {
 
 func TestPurchaseProductDirectUnknownSKU(t *testing.T) {
 	svc, _, _ := newTestWalletServiceForProduct()
-	_, _, err := svc.PurchaseProductDirect(context.Background(), "user-1", "no-such-sku", "idem-1", "poker")
+	_, _, err := svc.PurchaseProductDirect(context.Background(), "user-1", "no-such-sku", "idem-1", "poker", "")
 	if err == nil {
 		t.Fatal("expected an error for unknown sku")
 	}

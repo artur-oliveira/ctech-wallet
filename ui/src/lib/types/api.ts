@@ -63,6 +63,8 @@ export interface LedgerEntry {
   amount: number // signed; unit matches the owning wallet (centavos for real/game, credits for sandbox)
   balance_after: number
   ref?: string
+  /** Optional free-form text supplied by the service that moved the money. */
+  description?: string
   created_at: string
 }
 
@@ -81,6 +83,8 @@ export interface SandboxPurchase {
   amount_expected: number
   credits_granted: number
   status: PurchaseStatus
+  /** Optional free-form text supplied by the client that opened the sale. */
+  description?: string
   created_at: string
   updated_at: string
 }
@@ -91,6 +95,8 @@ export interface ProductPurchase {
   sku: string
   amount_expected: number
   status: PurchaseStatus
+  /** Optional free-form text supplied by the client that opened the sale. */
+  description?: string
   created_at: string
   updated_at: string
 }
@@ -112,10 +118,31 @@ export interface Profile {
  * Wallet-side caller state. `terms_addendum_accepted` is computed server-side
  * against the current version constant — bumping the version re-gates the user.
  */
+/**
+ * Why a deposit is currently blocked. Derived server-side from the very gates
+ * `POST /wallet/deposits` enforces — never re-derived here from `kyc_level` or
+ * `custody_status`, so the UI cannot drift from the API.
+ */
+export type DepositBlockReason =
+  | 'kyc'
+  | 'custody_absent'
+  | 'custody_pending'
+  | 'custody_blocked'
+
+export interface DepositReadiness {
+  allowed: boolean
+  blocked_by?: DepositBlockReason
+  kyc_level: '' | 'basic' | 'enhanced'
+  custody_required: boolean
+  custody_status?: string
+}
+
 export interface MeResponse {
   user_id: string
   terms_addendum_accepted: boolean
   terms_addendum_version: string
+  /** Absent when the server could not read it — treat as "unknown", never as blocked. */
+  deposit?: DepositReadiness
 }
 
 export interface PendingGameLimits {

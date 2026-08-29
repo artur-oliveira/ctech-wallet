@@ -141,6 +141,15 @@ class ApiClient {
     await this.http.post('/v1.0/auth/terms-addendum/accept')
   }
 
+  /**
+   * Opens the caller's payment (custody) subaccount. Idempotent server-side: a
+   * second call while a row exists returns that row's status unchanged.
+   * `incomeValue` is centavos, like every other amount on this client.
+   */
+  async initiateOnboarding(incomeValue: number): Promise<{ status: string }> {
+    return (await this.http.post('/v1.0/wallet/onboarding', {income_value: incomeValue})).data
+  }
+
   async getBalances(): Promise<Balances> {
     return (await this.http.get<Balances>('/v1.0/wallet')).data
   }

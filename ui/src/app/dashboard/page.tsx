@@ -28,19 +28,23 @@ import {
   upsertTransaction,
 } from '@/lib/utils/transaction-status'
 import {SESSION_KEY_PIX_CHARGE_PREFIX, SESSION_KEY_TRANSACTION_PREFIX} from '@/lib/constants/storage'
+import {QUERY_KEY_ME} from '@/lib/constants/query'
+import {ACCOUNT_IDENTITY_URL} from '@/lib/legal'
 import Image from 'next/image'
 
-type Flow = 'deposit' | 'withdraw' | 'credits' | 'fund-game' | 'return-game' | null
+type Flow = 'deposit' | 'withdraw' | 'credits' | 'fund-game' | 'return-game' | 'onboarding' | null
 
 const TRANSACTION_LEDGER_LIMIT = 50
 const TRANSACTION_CONNECTED_POLL_INTERVAL_MS = 60_000
 const TRANSACTION_OFFLINE_POLL_INTERVAL_MS = 15_000
 const TRANSACTION_MAX_POLL_INTERVAL_MS = 60_000
+const CUSTODY_POLL_INTERVAL_MS = 30_000
 
 const AmountDialog = dynamic(() => import('@/components/wallet/amount-dialog').then((module) => module.AmountDialog))
 const ConfirmMoneyDialog = dynamic(() => import('@/components/wallet/confirm-money-dialog').then((module) => module.ConfirmMoneyDialog))
 const MoneyReceiptDialog = dynamic(() => import('@/components/wallet/money-receipt-dialog').then((module) => module.MoneyReceiptDialog))
 const PixChargeDialog = dynamic(() => import('@/components/wallet/pix-charge-dialog').then((module) => module.PixChargeDialog))
+const OnboardingDialog = dynamic(() => import('@/components/wallet/onboarding-dialog').then((module) => module.OnboardingDialog))
 
 /** RFC 7807 problem type → i18n key. */
 const PROBLEM_KEY: Record<string, string> = {
@@ -57,6 +61,8 @@ const PROBLEM_KEY: Record<string, string> = {
   '/problems/self-excluded': 'errors.selfExcluded',
   '/problems/limits-not-configured': 'errors.limitsNotConfigured',
   '/problems/deposit-limit-exceeded': 'errors.depositLimitExceeded',
+  '/problems/wallet-onboarding': 'errors.walletOnboarding',
+  '/problems/account-blocked': 'errors.accountBlocked',
 }
 
 /** Turns an RFC 7807 problem from the API into copy the user can act on. */
@@ -102,6 +108,17 @@ function DashboardInner() {
   } | null>(null)
   const [stepUp, setStepUp] = useState(false)
   const balances = useQuery({queryKey: ['balances'], queryFn: () => apiClient.getBalances()})
+  // Shares ProtectedRoute's cache entry; this observer only adds the polling.
+  // Asaas approval arrives on a provider webhook the wallet does not broadcast,
+  // so a subaccount under review is the one state worth re-asking about — and
+  // only while it lasts.
+  const me = useQuery({
+    queryKey: QUERY_KEY_ME,
+    queryFn: () => apiClient.me(),
+    refetchInterval: (query) =>
+      query.state.data?.deposit?.blocked_by === 'custody_pending' ? CUSTODY_POLL_INTERVAL_MS : false,
+  })
+  const depositReadiness = me.data?.deposit
   const responsible = useQuery({queryKey: ['gambling-limits'], queryFn: () => apiClient.getGameLimits()})
   const walletID = balances.data?.real.wallet_id
   const transactionStorageKey = walletID ? `${SESSION_KEY_TRANSACTION_PREFIX}${walletID}` : null
@@ -218,7 +235,27 @@ function DashboardInner() {
         expires_at: result.expires_at,
       }))
     },
-    onError: (err) => toast.error(problemMessage(err, t)),
+    onError: (err) => {
+      // The card gate is a pre-flight, not the enforcement: a /me read that is
+      // one beat stale can still let a blocked user through. The toast keeps
+      // the same next step reachable rather than dead-ending them.
+      if (err instanceof ApiError && err.type === '/problems/kyc-not-verified') {
+        toast.error(problemMessage(err, t), {
+          action: {
+            label: t('deposit.gate.kyc.action'),
+            onClick: () => window.location.assign(ACCOUNT_IDENTITY_URL),
+          },
+        })
+        void qc.invalidateQueries({queryKey: QUERY_KEY_ME})
+        return
+      }
+      if (err instanceof ApiError && err.type === '/problems/wallet-onboarding') {
+        toast.error(problemMessage(err, t))
+        void qc.invalidateQueries({queryKey: QUERY_KEY_ME})
+        return
+      }
+      toast.error(problemMessage(err, t))
+    },
   })
 
   const withdraw = useMutation({
@@ -281,6 +318,18 @@ function DashboardInner() {
       setFlow(null)
       refresh()
       setReceipt({title: t('toast.returned'), amountLabel: formatBRL(amount)})
+    },
+    onError: (err) => toast.error(problemMessage(err, t)),
+  })
+
+  const onboarding = useMutation({
+    mutationFn: (incomeValue: number) => apiClient.initiateOnboarding(incomeValue),
+    onSuccess: () => {
+      setFlow(null)
+      // The subaccount is now under review — re-read the gate so the card lands
+      // on "análise em andamento" without a reload.
+      void qc.invalidateQueries({queryKey: QUERY_KEY_ME})
+      toast.success(t('toast.onboardingStarted'))
     },
     onError: (err) => toast.error(problemMessage(err, t)),
   })
@@ -364,6 +413,8 @@ function DashboardInner() {
               onBuyCredits={() => setFlow('credits')}
               onFundGame={() => setFlow('fund-game')}
               onReturnFromGame={() => setFlow('return-game')}
+              onOpenCustody={() => setFlow('onboarding')}
+              depositReadiness={depositReadiness}
               selfExcluded={!!responsible.data?.excluded}
             />
 
@@ -400,6 +451,18 @@ function DashboardInner() {
           pending={deposit.isPending}
           onSubmit={(amount) => deposit.mutate(amount)}
           onClose={() => setFlow(null)}
+        />
+      )}
+
+      {flow === 'onboarding' && (
+        <OnboardingDialog
+          pending={onboarding.isPending}
+          error={onboarding.error ? problemMessage(onboarding.error, t) : undefined}
+          onSubmit={(incomeValue) => onboarding.mutate(incomeValue)}
+          onClose={() => {
+            onboarding.reset()
+            setFlow(null)
+          }}
         />
       )}
 

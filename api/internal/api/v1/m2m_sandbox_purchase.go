@@ -55,7 +55,7 @@ func (h *handlers) m2mPurchaseSandbox(c fiber.Ctx) error {
 		return sendProblem(c, p)
 	}
 	client := middleware.GetClaims(c).AZP
-	purchase, charge, err := h.svc.PurchaseSandboxDirect(c.Context(), body.UserID, body.SKU, body.IdempotencyKey, client)
+	purchase, charge, err := h.svc.PurchaseSandboxDirect(c.Context(), body.UserID, body.SKU, body.IdempotencyKey, client, body.Description)
 	if err != nil {
 		return sendProblem(c, err)
 	}
