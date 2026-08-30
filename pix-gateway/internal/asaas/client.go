@@ -386,12 +386,16 @@ type AccountStatus struct {
 
 // PendingDocument mirrors one entry of GET /v3/myAccount/documents.
 //
-// VERIFY: the provider documents onboardingUrl and the id/type/status trio,
-// but the exact JSON envelope ("data" list) is the platform-wide list
-// convention rather than something the fetched excerpt showed directly.
+// A requirement may legitimately arrive with an empty OnboardingURL, so callers
+// must not treat the URL as always present.
+// Confirmed against the provider's documented response: the list is wrapped in
+// `data`, each entry carries id/status/type/title/description/onboardingUrl, and
+// status is one of NOT_SENT / PENDING / APPROVED / REJECTED.
 type PendingDocument struct {
 	ID            string `json:"id"`
 	Type          string `json:"type"`
 	Status        string `json:"status"`
+	Title         string `json:"title"`
+	Description   string `json:"description"`
 	OnboardingURL string `json:"onboardingUrl"`
 }

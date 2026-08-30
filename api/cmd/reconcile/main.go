@@ -48,6 +48,8 @@ type Result struct {
 	TransfersAlarmed      int `json:"asaas_transfers_alarmed"`
 	ConservationChecked   int `json:"conservation_checked"`
 	ConservationDrifted   int `json:"conservation_drifted"`
+	OnboardingChecked     int `json:"custody_onboarding_checked"`
+	OnboardingAdvanced    int `json:"custody_onboarding_advanced"`
 }
 
 func main() {
@@ -161,6 +163,7 @@ func run(ctx context.Context) (*Result, error) {
 		return nil, fmt.Errorf("baas: %w", err)
 	}
 	baasSvc.SetWithdrawalReverser(svc.ReverseWithdrawal)
+	baasSvc.SetCustodyNotifier(svc.BroadcastCustodyChanged)
 	tResolved, tRetried, tAlarmed, err := baasSvc.ReconcileTransferIntents(ctx)
 	if err != nil {
 		return nil, err
@@ -169,6 +172,14 @@ func run(ctx context.Context) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Custody onboarding must finish without a browser open on it: the
+	// verification fee is already spent and non-refundable, so a stalled
+	// onboarding is money taken for a service not delivered.
+	onboardingChecked, onboardingAdvanced, err := baasSvc.SweepOnboardingAccounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	res.OnboardingChecked, res.OnboardingAdvanced = onboardingChecked, onboardingAdvanced
 	res.TransfersResolved, res.TransfersRetried, res.TransfersAlarmed = tResolved, tRetried, tAlarmed
 	res.ConservationChecked, res.ConservationDrifted = checked, drifted
 	return res, nil

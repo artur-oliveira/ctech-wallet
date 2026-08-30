@@ -310,7 +310,8 @@ func (h *handler) dispatch(ctx context.Context, req rpc.Request) rpc.Response {
 		out := rpc.AsaasPendingDocumentsResult{Documents: make([]rpc.AsaasPendingDocument, 0, len(docs))}
 		for _, d := range docs {
 			out.Documents = append(out.Documents, rpc.AsaasPendingDocument{
-				ID: d.ID, Type: d.Type, Status: d.Status, OnboardingURL: d.OnboardingURL,
+				ID: d.ID, Type: d.Type, Status: d.Status,
+				Title: d.Title, Description: d.Description, OnboardingURL: d.OnboardingURL,
 			})
 		}
 		return okResp(out)

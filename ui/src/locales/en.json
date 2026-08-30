@@ -420,7 +420,8 @@
       },
       "custodyDocuments": {
         "action": "Send documents",
-        "note": "The provider needs your identity documents to release the payment account."
+        "note": "The provider needs your identity documents to release the payment account.",
+        "list": "Outstanding: {{documents}}."
       },
       "custodyPending": {
         "action": "Under review",
@@ -429,6 +430,10 @@
       "custodyBlocked": {
         "action": "Contact support",
         "note": "Deposits are unavailable on this account."
+      },
+      "custodyEmail": {
+        "action": "Check your email",
+        "note": "Asaas emailed you the remaining verification steps. Finish them there and deposits open automatically."
       }
     },
     "providerNote": "Payment account and PIX settlement provided by Asaas (Asaas Gestão Financeira S.A.)."

@@ -68,7 +68,9 @@ func (h *handlers) getOnboarding(c fiber.Ctx) error {
 }
 
 func onboardingResponse(acc *wallet.BaasAccount, charge *pix.Charge) OnboardingResponse {
-	out := OnboardingResponse{Status: acc.Status, OnboardingURL: acc.OnboardingURL}
+	out := OnboardingResponse{
+		Status: acc.Status, OnboardingURL: acc.OnboardingURL, PendingDocuments: acc.PendingDocuments,
+	}
 	if charge != nil {
 		out.Fee = &OnboardingFee{
 			Amount: charge.Amount, QRCode: charge.QRCode, QRCodeB64: charge.QRCodeB64,

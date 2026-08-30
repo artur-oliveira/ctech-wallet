@@ -154,7 +154,10 @@ func (c *LambdaAsaasClient) ListPendingDocuments(ctx context.Context, apiKey str
 	}
 	out := make([]PendingDocument, 0, len(res.Documents))
 	for _, d := range res.Documents {
-		out = append(out, PendingDocument{ID: d.ID, Type: d.Type, Status: d.Status, OnboardingURL: d.OnboardingURL})
+		out = append(out, PendingDocument{
+			ID: d.ID, Type: d.Type, Status: d.Status,
+			Title: d.Title, Description: d.Description, OnboardingURL: d.OnboardingURL,
+		})
 	}
 	return out, nil
 }

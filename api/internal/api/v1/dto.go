@@ -102,6 +102,10 @@ type OnboardingResponse struct {
 	// OnboardingURL is present when the provider wants documents sent through
 	// its own hosted flow. It is the only way those documents may be sent.
 	OnboardingURL string `json:"onboarding_url,omitempty"`
+	// PendingDocuments names what the provider is waiting on. Populated even
+	// when OnboardingURL is absent — the provider does return requirements with
+	// no link, and "under review" with nothing to read is a dead end.
+	PendingDocuments []string `json:"pending_documents,omitempty"`
 }
 
 // OnboardingFee is the PIX charge for the one-off verification fee. It is a

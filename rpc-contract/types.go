@@ -285,9 +285,14 @@ type AsaasListPendingDocumentsArgs struct{}
 // flow, and an API upload of it is rejected. One without it is uploadable by
 // ID.
 type AsaasPendingDocument struct {
-	ID            string `json:"id"`
-	Type          string `json:"type"`
-	Status        string `json:"status"`
+	ID     string `json:"id"`
+	Type   string `json:"type"`
+	Status string `json:"status"`
+	// Title/Description are the provider's own words for the requirement. They
+	// matter when OnboardingURL is absent: without them the user is told only
+	// that something is missing.
+	Title         string `json:"title,omitempty"`
+	Description   string `json:"description,omitempty"`
 	OnboardingURL string `json:"onboarding_url,omitempty"`
 }
 

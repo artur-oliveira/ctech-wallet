@@ -62,6 +62,9 @@ func (f *fakeBaasRepo) UpdateBaasAccount(_ context.Context, userID string, updat
 	if v, ok := updates["onboarding_url"].(string); ok {
 		a.OnboardingURL = v
 	}
+	if v, ok := updates["pending_documents"].([]string); ok {
+		a.PendingDocuments = v
+	}
 	if v, ok := updates["fee_qr_payload"].(string); ok {
 		a.FeeQRPayload = v
 	}
@@ -841,5 +844,135 @@ func TestWithdrawBlockedByOpenMedReceivable(t *testing.T) {
 	p, ok := errors.AsType[*problem.Problem](err)
 	if !ok || p.Type != problem.TypeMedReceivableOpen {
 		t.Fatalf("expected med-receivable-open problem, got %v", err)
+	}
+}
+
+// Onboarding must finish without anyone watching. It used to move only on an
+// ACCOUNT_STATUS_* webhook or a client loading the onboarding screen, so a
+// subaccount whose webhook never fired sat forever behind a paid,
+// non-refundable fee with no process responsible for completing it.
+func TestSweepAdvancesStalledOnboarding(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("a created subaccount the provider has approved gets finished", func(t *testing.T) {
+		repo := newFakeBaasRepo()
+		fake := asaas.NewFake()
+		acc := &wallet.BaasAccount{UserID: "u1", Status: wallet.BaasOnboarding, ProviderAccountID: "acc_1"}
+		acc.APIKeyCiphertext, acc.APIKeyNonce, _ = asaas.EncryptAPIKey(make([]byte, 32), "apikey1")
+		repo.accounts["u1"] = acc
+		svc := newFeeSvc(repo, fake, newStubProductPurchaseRepo())
+		fake.StageAccountStatus("apikey1", &asaas.AccountStatus{General: asaas.RegistrationApproved})
+
+		checked, advanced, err := svc.SweepOnboardingAccounts(ctx)
+		if err != nil {
+			t.Fatalf("SweepOnboardingAccounts: %v", err)
+		}
+		if checked != 1 || advanced != 1 {
+			t.Fatalf("checked=%d advanced=%d, want 1/1", checked, advanced)
+		}
+		if got := repo.accounts["u1"]; got.Status != wallet.BaasApproved || got.EVPPixKey == "" {
+			t.Fatalf("sweep left the account at %+v", got)
+		}
+	})
+
+	// The fee cleared but the provider call that opens the subaccount failed.
+	// The user has paid a fee that is never refunded, so resuming here is the
+	// only thing that stops them being charged for nothing.
+	t.Run("a paid fee with no subaccount is resumed", func(t *testing.T) {
+		repo := newFakeBaasRepo()
+		fake := asaas.NewFake()
+		repo.accounts["u1"] = &wallet.BaasAccount{UserID: "u1", Status: wallet.BaasFeePaid, IncomeValue: 500000}
+		svc := newFeeSvc(repo, fake, newStubProductPurchaseRepo())
+
+		if _, advanced, err := svc.SweepOnboardingAccounts(ctx); err != nil || advanced != 1 {
+			t.Fatalf("advanced=%d err=%v, want 1/nil", advanced, err)
+		}
+		if len(fake.CreatedAccounts) != 1 {
+			t.Fatalf("expected the subaccount to be opened, got %d", len(fake.CreatedAccounts))
+		}
+	})
+
+	t.Run("terminal states are never re-queried", func(t *testing.T) {
+		repo := newFakeBaasRepo()
+		fake := asaas.NewFake()
+		for user, status := range map[string]string{
+			"approved": wallet.BaasApproved, "frozen": wallet.BaasFrozen,
+			"closing": wallet.BaasClosing, "closed": wallet.BaasClosed,
+		} {
+			acc := &wallet.BaasAccount{UserID: user, Status: status, ProviderAccountID: "acc_" + user}
+			acc.APIKeyCiphertext, acc.APIKeyNonce, _ = asaas.EncryptAPIKey(make([]byte, 32), "k_"+user)
+			repo.accounts[user] = acc
+		}
+		svc := newFeeSvc(repo, fake, newStubProductPurchaseRepo())
+
+		checked, advanced, err := svc.SweepOnboardingAccounts(ctx)
+		if err != nil {
+			t.Fatalf("SweepOnboardingAccounts: %v", err)
+		}
+		// A frozen or closing account is a decision; a re-query must never
+		// quietly reverse it, and an approved one is already done.
+		if checked != 0 || advanced != 0 {
+			t.Fatalf("checked=%d advanced=%d, want 0/0", checked, advanced)
+		}
+	})
+}
+
+// Every transition the user is waiting on has to reach their open screen. The
+// deposit flow already pushed its confirmation; onboarding pushed nothing, so a
+// user who had just paid the fee sat looking at an unchanged page.
+func TestCustodyTransitionsAreAnnounced(t *testing.T) {
+	repo := newFakeBaasRepo()
+	fake := asaas.NewFake()
+	acc := &wallet.BaasAccount{UserID: "u1", Status: wallet.BaasOnboarding, ProviderAccountID: "acc_1"}
+	acc.APIKeyCiphertext, acc.APIKeyNonce, _ = asaas.EncryptAPIKey(make([]byte, 32), "apikey1")
+	repo.accounts["u1"] = acc
+	svc := newFeeSvc(repo, fake, newStubProductPurchaseRepo())
+
+	var announced []string
+	svc.SetCustodyNotifier(func(_ context.Context, _, status string) {
+		announced = append(announced, status)
+	})
+	fake.StageAccountStatus("apikey1", &asaas.AccountStatus{General: asaas.RegistrationApproved})
+
+	if err := svc.ProcessAccountStatusWebhook(context.Background(), "acc_1"); err != nil {
+		t.Fatalf("ProcessAccountStatusWebhook: %v", err)
+	}
+	if len(announced) != 1 || announced[0] != wallet.BaasApproved {
+		t.Fatalf("announced = %v, want [%s]", announced, wallet.BaasApproved)
+	}
+}
+
+// A requirement with no provider link must still tell the user what is missing.
+func TestPendingDocumentsAreRecordedWhenTheProviderGivesNoLink(t *testing.T) {
+	repo := newFakeBaasRepo()
+	fake := asaas.NewFake()
+	acc := &wallet.BaasAccount{UserID: "u1", Status: wallet.BaasOnboarding, ProviderAccountID: "acc_1"}
+	acc.APIKeyCiphertext, acc.APIKeyNonce, _ = asaas.EncryptAPIKey(make([]byte, 32), "apikey1")
+	repo.accounts["u1"] = acc
+	svc := newFeeSvc(repo, fake, newStubProductPurchaseRepo())
+	fake.StageAccountStatus("apikey1", &asaas.AccountStatus{General: asaas.RegistrationPending})
+	fake.StagePendingDocuments("apikey1", []asaas.PendingDocument{
+		{ID: "d1", Type: "IDENTIFICATION", Title: "Documento de identificação", Status: asaas.RegistrationPending},
+		{ID: "d2", Type: "IDENTIFICATION_SELFIE", Status: "NOT_SENT"},
+		{ID: "d3", Type: "ADDRESS", Title: "Comprovante", Status: asaas.RegistrationApproved},
+	})
+
+	if err := svc.ProcessAccountStatusWebhook(context.Background(), "acc_1"); err != nil {
+		t.Fatalf("ProcessAccountStatusWebhook: %v", err)
+	}
+	got := repo.accounts["u1"]
+	if got.Status != wallet.BaasPendingDocuments {
+		t.Fatalf("status = %q", got.Status)
+	}
+	// The approved one is not outstanding; the untitled one falls back to its
+	// type so the list is never silently short.
+	want := []string{"Documento de identificação", "IDENTIFICATION_SELFIE"}
+	if len(got.PendingDocuments) != len(want) {
+		t.Fatalf("pending documents = %v, want %v", got.PendingDocuments, want)
+	}
+	for i := range want {
+		if got.PendingDocuments[i] != want[i] {
+			t.Fatalf("pending documents = %v, want %v", got.PendingDocuments, want)
+		}
 	}
 }

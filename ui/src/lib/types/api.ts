@@ -143,8 +143,14 @@ export interface OnboardingFee {
 export interface OnboardingState {
   status: string
   fee?: OnboardingFee
-  /** Provider-hosted document upload. The only way those documents may be sent. */
+  /**
+   * Provider-hosted document upload, when the provider hands one back. Often
+   * absent: the provider frequently drives document collection over email to
+   * the account holder instead, which is why `pending_documents` exists.
+   */
   onboarding_url?: string
+  /** What the provider is still waiting on, in its own words. */
+  pending_documents?: string[]
 }
 
 export interface DepositReadiness {

@@ -420,7 +420,8 @@
       },
       "custodyDocuments": {
         "action": "Enviar documentos",
-        "note": "O provedor precisa dos seus documentos para liberar a conta de pagamento."
+        "note": "O provedor precisa dos seus documentos para liberar a conta de pagamento.",
+        "list": "Pendente: {{documents}}."
       },
       "custodyPending": {
         "action": "Análise em andamento",
@@ -429,6 +430,10 @@
       "custodyBlocked": {
         "action": "Falar com o suporte",
         "note": "Depósitos indisponíveis nesta conta."
+      },
+      "custodyEmail": {
+        "action": "Verifique seu e-mail",
+        "note": "O Asaas enviou os próximos passos da verificação para o seu e-mail. Conclua por lá e liberamos os depósitos automaticamente."
       }
     },
     "providerNote": "Conta de pagamento e liquidação PIX fornecidas pelo Asaas (Asaas Gestão Financeira S.A.)."

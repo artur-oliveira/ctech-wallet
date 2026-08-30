@@ -19,6 +19,7 @@ interface BalanceCardsProps {
   onOpenCustody: () => void
   onPayCustodyFee: () => void
   onboardingURL?: string
+  pendingDocuments?: string[]
   /** Pre-flight deposit gate from GET /auth/me. Undefined = unknown, behaves as allowed. */
   depositReadiness?: DepositReadiness
   selfExcluded?: boolean
@@ -50,6 +51,7 @@ export function BalanceCards({
                                onOpenCustody,
                                onPayCustodyFee,
                                onboardingURL,
+                               pendingDocuments,
                                depositReadiness,
                                selfExcluded,
                              }: BalanceCardsProps) {
@@ -98,7 +100,11 @@ export function BalanceCards({
               </Button>
             )}
           </div>
-          <DepositGateNote readiness={depositReadiness}/>
+          <DepositGateNote
+            readiness={depositReadiness}
+            onboardingURL={onboardingURL}
+            pendingDocuments={pendingDocuments}
+          />
           {/* Named provider attribution: the payment account is held at Asaas
               under the user's own CPF, and the regulatory adequacy rules
               require saying so wherever we talk to the account holder. */}

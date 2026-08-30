@@ -360,6 +360,11 @@ type BaasAccount struct {
 	// PixDeposit.QRCodePayload.
 	FeeQRPayload string `dynamodbav:"fee_qr_payload,omitempty" json:"-"`
 	FeeQRImage   string `dynamodbav:"fee_qr_image,omitempty" json:"-"`
+	// PendingDocuments names what the provider is still waiting on, in its own
+	// words. Kept alongside OnboardingURL rather than instead of it: the
+	// provider returns requirements with no link, and "under review" with no
+	// list is a dead end for the user.
+	PendingDocuments []string `dynamodbav:"pending_documents,omitempty" json:"-"`
 	// OnboardingURL is the provider-hosted document upload link, when the
 	// provider says a pending document must be sent that way. Never a document
 	// we relay ourselves: uploading a document that carries this URL through the

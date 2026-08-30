@@ -1,6 +1,6 @@
 'use client'
 
-import {ArrowDownToLine, Clock, FileText, IdCard, LifeBuoy, Receipt, Wallet} from 'lucide-react'
+import {ArrowDownToLine, Clock, FileText, IdCard, LifeBuoy, Mail, Receipt, Wallet} from 'lucide-react'
 import {useTranslation} from 'react-i18next'
 import {Button} from '@/components/ui/button'
 import {ACCOUNT_IDENTITY_URL, ACCOUNT_SUPPORT_URL} from '@/lib/legal'
@@ -85,14 +85,15 @@ export function DepositGate({readiness, onDeposit, onOpenCustody, onPayCustodyFe
         </Button>
       )
     case 'custody_documents':
-      // Without a provider link there is no action the user can take here, so
-      // this falls back to the waiting state rather than a button that leads
-      // nowhere.
+      // The provider usually emails the document steps to the account holder
+      // rather than handing back a link. With no link there is nothing to open,
+      // so the button points at the inbox instead of being disabled — the user
+      // does have an action, it just is not on this screen.
       if (!onboardingURL) {
         return (
           <Button variant="secondary" className="bg-white text-brand-700" aria-describedby={NOTE_ID} disabled>
-            <Clock size={16}/>
-            {t('deposit.gate.custodyPending.action')}
+            <Mail size={16}/>
+            {t('deposit.gate.custodyEmail.action')}
           </Button>
         )
       }
@@ -130,10 +131,29 @@ export function DepositGate({readiness, onDeposit, onOpenCustody, onPayCustodyFe
 }
 
 /** The one-line explanation under the card actions. Nothing when unblocked. */
-export function DepositGateNote({readiness}: { readiness?: DepositReadiness }) {
+export function DepositGateNote({readiness, onboardingURL, pendingDocuments}: {
+  readiness?: DepositReadiness
+  onboardingURL?: string
+  pendingDocuments?: string[]
+}) {
   const {t} = useTranslation()
   const state = resolveDepositGate(readiness)
   if (state === 'allowed') return null
+
+  if (state === 'custody_documents') {
+    // Naming the outstanding documents is the whole point when there is no link
+    // to send the user to: "under review" alone leaves them with no idea what
+    // is missing or where it was asked for.
+    const list = pendingDocuments?.length ? pendingDocuments.join(', ') : undefined
+    return (
+      <p id={NOTE_ID} className="mt-3 text-sm text-brand-50">
+        {onboardingURL
+          ? t('deposit.gate.custodyDocuments.note')
+          : t('deposit.gate.custodyEmail.note')}
+        {list && ` ${t('deposit.gate.custodyDocuments.list', {documents: list})}`}
+      </p>
+    )
+  }
 
   const key: Record<DepositBlockReason, string> = {
     kyc: 'deposit.gate.kyc.note',

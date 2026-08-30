@@ -39,6 +39,11 @@ const (
 	eventWithdrawalComplete = "withdraw_completed"
 	eventWithdrawalFailed   = "withdraw_refund_failed"
 	eventWithdrawalReversed = "withdraw_reversed"
+	// eventCustodyChanged tells a client watching the onboarding screen that the
+	// custody account moved — the fee cleared, the subaccount opened, the
+	// provider approved it. Without it the only way to notice was polling, so a
+	// user who had just paid sat looking at an unchanged screen.
+	eventCustodyChanged = "custody_changed"
 )
 
 // interWithdrawalNamespace namespaces the deterministic UUID sent to Inter as
@@ -1262,6 +1267,17 @@ func (s *WalletService) broadcastDepositConfirmed(ctx context.Context, userID, w
 		"wallet_id": walletID,
 		"txid":      txid,
 		"amount":    amount,
+	})
+}
+
+// BroadcastCustodyChanged pushes a custody-onboarding transition to the user's
+// connected sockets. Exported because BaasService owns those transitions while
+// the broadcaster is wired here — same best-effort contract as every other
+// broadcast: a failure to notify never fails the transition that happened.
+func (s *WalletService) BroadcastCustodyChanged(ctx context.Context, userID, status string) {
+	s.broadcastEvent(ctx, userID, eventCustodyChanged, map[string]any{
+		"type":   eventCustodyChanged,
+		"status": status,
 	})
 }
 

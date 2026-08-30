@@ -89,12 +89,29 @@ type BaasService struct {
 	reverseWithdrawal func(context.Context, string) error
 	// feeConfig/purchases back the one-off verification fee — see
 	// custody_fee.go and SetCustodyFee.
-	feeConfig CustodyFeeConfig
-	purchases ProductPurchaseRepo
+	feeConfig     CustodyFeeConfig
+	purchases     ProductPurchaseRepo
+	notifyCustody func(ctx context.Context, userID, status string)
 }
 
 func (b *BaasService) SetWithdrawalReverser(fn func(context.Context, string) error) {
 	b.reverseWithdrawal = fn
+}
+
+// SetCustodyNotifier wires the real-time notifier for onboarding transitions.
+// A setter, like every other cross-service hookup here, because WalletService
+// owns the socket registry and this service owns the transitions.
+func (b *BaasService) SetCustodyNotifier(fn func(context.Context, string, string)) {
+	b.notifyCustody = fn
+}
+
+// announce reports a custody transition to the user's open sockets. Never
+// fatal: the state has already changed, and a missed notification only costs
+// the client a poll.
+func (b *BaasService) announce(ctx context.Context, userID, status string) {
+	if b.notifyCustody != nil {
+		b.notifyCustody(ctx, userID, status)
+	}
 }
 
 func NewBaasService(repo BaasRepo, wallets WalletReader, asaasClient asaas.AsaasClient, audit Auditor, kyc KYCClient, masterKey []byte, parentWalletID, parentAPIKey string) *BaasService {
@@ -196,6 +213,73 @@ func (b *BaasService) CheckConservation(ctx context.Context, userID string) (dri
 // (plan §6). Returns how many accounts were checked and how many are (now)
 // drifted. A read failure for one account is logged and skipped, never
 // flagged as drift — only a confirmed mismatch sets the switch.
+// SweepOnboardingAccounts advances every custody account that is not finished
+// yet, by asking the provider where it actually stands.
+//
+// This exists because nothing else was doing it. An account only moved when an
+// ACCOUNT_STATUS_* webhook arrived or when a client happened to load the
+// onboarding screen — so a subaccount whose webhook never fired, or fired while
+// the API was returning an error, sat in `onboarding` forever with a paid,
+// non-refundable fee behind it and no process responsible for finishing the job.
+// A paid onboarding that stalls is the same class of failure as a `processing`
+// withdrawal (Invariant #12), and it gets the same answer: a sweep that resolves
+// it whether or not anyone is watching.
+//
+// Terminal states are deliberately absent from the list: `approved` is done,
+// and frozen/closing/closed are decisions no re-query should quietly reverse.
+func (b *BaasService) SweepOnboardingAccounts(ctx context.Context) (checked, advanced int, err error) {
+	inProgress := []string{
+		wallet.BaasFeePaid, wallet.BaasOnboarding, wallet.BaasPendingDocuments, wallet.BaasPendingApproval,
+	}
+	// Snapshot the whole work queue before touching anything. Advancing an
+	// account changes its status, so listing status-by-status while mutating
+	// would pick the same account up again later in the same run — once as
+	// `fee_paid`, then again as `onboarding` — double-querying the provider and
+	// double-announcing to the user.
+	queue := make([]wallet.BaasAccount, 0)
+	seen := make(map[string]bool)
+	for _, status := range inProgress {
+		accounts, lerr := b.repo.ListBaasAccountsByStatus(ctx, status, conservationSweepLimit)
+		if lerr != nil {
+			return 0, 0, lerr
+		}
+		for _, acc := range accounts {
+			if seen[acc.UserID] {
+				continue
+			}
+			seen[acc.UserID] = true
+			queue = append(queue, acc)
+		}
+	}
+
+	for _, acc := range queue {
+		checked++
+		// fee_paid, or no subaccount at all, means the fee cleared but the
+		// provider call that opens the subaccount failed after the money was
+		// taken. Resuming is the only thing that stops that user having paid a
+		// non-refundable fee for nothing.
+		if acc.Status == wallet.BaasFeePaid || acc.ProviderAccountID == "" {
+			if serr := b.openSubaccount(ctx, acc.UserID); serr != nil {
+				slog.ErrorContext(ctx, "custody sweep: reopening subaccount failed",
+					"user_id", acc.UserID, "err", serr)
+				continue
+			}
+			advanced++
+			continue
+		}
+		if perr := b.ProcessAccountStatusWebhook(ctx, acc.ProviderAccountID); perr != nil {
+			slog.ErrorContext(ctx, "custody sweep: status re-query failed",
+				"user_id", acc.UserID, "provider_account_id", acc.ProviderAccountID, "err", perr)
+			continue
+		}
+		after, gerr := b.repo.GetBaasAccount(ctx, acc.UserID)
+		if gerr == nil && after != nil && after.Status != acc.Status {
+			advanced++
+		}
+	}
+	return checked, advanced, nil
+}
+
 func (b *BaasService) RunConservationCheck(ctx context.Context) (checked, drifted int, err error) {
 	accounts, err := b.repo.ListBaasAccountsByStatus(ctx, wallet.BaasApproved, conservationSweepLimit)
 	if err != nil {
@@ -682,7 +766,7 @@ func (b *BaasService) ProcessAccountStatusWebhook(ctx context.Context, providerA
 	case st.Approved():
 		return b.handleAccountApproved(ctx, acc)
 	case st.Rejected():
-		return b.repo.UpdateBaasAccount(ctx, acc.UserID, map[string]any{"status": wallet.BaasPendingDocuments})
+		return b.setStatusAndAnnounce(ctx, acc, map[string]any{"status": wallet.BaasPendingDocuments})
 	default:
 		return b.syncPendingStatus(ctx, acc, apiKey)
 	}
@@ -701,17 +785,38 @@ func (b *BaasService) syncPendingStatus(ctx context.Context, acc *wallet.BaasAcc
 		return b.repo.UpdateBaasAccount(ctx, acc.UserID, map[string]any{"status": wallet.BaasPendingApproval})
 	}
 	updates := map[string]any{"status": wallet.BaasPendingApproval}
+	// What the provider is waiting on, in its own words. Persisted because a
+	// document requirement with no onboardingUrl would otherwise leave the user
+	// on a bare "under review" with nothing to act on and nothing to read — and
+	// the provider does return document groups without a link.
+	pending := make([]string, 0, len(docs))
 	for _, d := range docs {
 		if d.Status == asaas.RegistrationApproved {
 			continue
 		}
 		updates["status"] = wallet.BaasPendingDocuments
-		if d.OnboardingURL != "" {
+		if label := d.Label(); label != "" {
+			pending = append(pending, label)
+		}
+		if d.OnboardingURL != "" && updates["onboarding_url"] == nil {
 			updates["onboarding_url"] = d.OnboardingURL
-			break
 		}
 	}
-	return b.repo.UpdateBaasAccount(ctx, acc.UserID, updates)
+	updates["pending_documents"] = pending
+	return b.setStatusAndAnnounce(ctx, acc, updates)
+}
+
+// setStatusAndAnnounce persists a lifecycle change and reports it. One place,
+// so no transition can be added later that silently skips the notification.
+func (b *BaasService) setStatusAndAnnounce(ctx context.Context, acc *wallet.BaasAccount, updates map[string]any) error {
+	if err := b.repo.UpdateBaasAccount(ctx, acc.UserID, updates); err != nil {
+		return err
+	}
+	status, _ := updates["status"].(string)
+	if status != "" && status != acc.Status {
+		b.announce(ctx, acc.UserID, status)
+	}
+	return nil
 }
 
 // handleAccountApproved creates the subaccount's static EVP PIX key exactly
@@ -740,13 +845,14 @@ func (b *BaasService) handleAccountApproved(ctx context.Context, acc *wallet.Baa
 		evpKey = key.Key
 	}
 	if err := b.repo.UpdateBaasAccount(ctx, acc.UserID, map[string]any{
-		"status": wallet.BaasApproved, "evp_pix_key": evpKey,
+		"status": wallet.BaasApproved, "evp_pix_key": evpKey, "pending_documents": []string{},
 	}); err != nil {
 		return err
 	}
 	if _, err := b.wallets.EnsureRealWallet(ctx, acc.UserID); err != nil {
 		return err
 	}
+	b.announce(ctx, acc.UserID, wallet.BaasApproved)
 	if b.audit == nil {
 		return nil
 	}

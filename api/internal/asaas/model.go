@@ -61,7 +61,20 @@ type PendingDocument struct {
 	ID            string
 	Type          string
 	Status        string
+	Title         string
+	Description   string
 	OnboardingURL string
+}
+
+// Label is the provider's own name for what it wants, preferring the
+// human-readable title over the enum. It exists because a document requirement
+// carrying no OnboardingURL leaves the user with nothing to act on — telling
+// them WHAT is missing is the least we owe them in that case.
+func (d PendingDocument) Label() string {
+	if d.Title != "" {
+		return d.Title
+	}
+	return d.Type
 }
 
 // Transfer status values. The plan's own §5.2/§6/§9.1a prose treats "DONE" as

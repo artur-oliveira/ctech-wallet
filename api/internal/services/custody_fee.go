@@ -264,6 +264,10 @@ func (b *BaasService) ConfirmCustodyFee(ctx context.Context, paymentID, external
 	if !moved {
 		return nil // lost the race with a concurrent delivery
 	}
+	// Tell the screen the fee cleared BEFORE opening the subaccount: opening it
+	// is a provider round trip that can fail, and the user's question ("did my
+	// payment land?") is already answered.
+	b.announce(ctx, p.UserID, wallet.BaasFeePaid)
 	return b.openSubaccount(ctx, p.UserID)
 }
 
@@ -320,6 +324,7 @@ func (b *BaasService) openSubaccount(ctx context.Context, userID string) error {
 	if err := b.repo.UpdateBaasAccount(ctx, userID, updates); err != nil {
 		return err
 	}
+	b.announce(ctx, userID, wallet.BaasOnboarding)
 	if b.audit == nil {
 		return nil
 	}

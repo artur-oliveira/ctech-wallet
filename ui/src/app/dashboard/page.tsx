@@ -443,6 +443,7 @@ function DashboardInner() {
               onOpenCustody={() => setFlow('onboarding')}
               onPayCustodyFee={() => setCustodyFee(onboardingState.data?.fee ?? null)}
               onboardingURL={onboardingState.data?.onboarding_url}
+              pendingDocuments={onboardingState.data?.pending_documents}
               depositReadiness={depositReadiness}
               selfExcluded={!!responsible.data?.excluded}
             />

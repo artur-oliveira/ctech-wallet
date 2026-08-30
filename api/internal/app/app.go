@@ -224,6 +224,10 @@ func newWalletService(repo *repositories.WalletRepository, users *repositories.U
 	svc.SetProductPurchases(productPurchases)
 	svc.SetM2MClients(m2mClients)
 	baas.SetWithdrawalReverser(svc.ReverseWithdrawal)
+	// Onboarding transitions happen in BaasService but the socket registry lives
+	// on WalletService, so the notifier is wired here — same shape as the
+	// withdrawal reverser above.
+	baas.SetCustodyNotifier(svc.BroadcastCustodyChanged)
 	return svc
 }
 
