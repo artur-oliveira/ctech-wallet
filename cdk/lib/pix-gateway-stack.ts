@@ -102,6 +102,7 @@ export class PixGatewayStack extends cdk.Stack {
         INTER_BASE_URL: interBaseUrl,
         INTER_PIX_KEY: interPixKey,
         INTER_CLIENT_ID: ssm.StringParameter.valueForStringParameter(this, walletSsm.interClientId),
+        ASAAS_BASE_URL: asaasBaseUrl,
       },
     });
     this.outboundFunctionArn = outboundFn.functionArn;
