@@ -160,6 +160,61 @@ aws ssm put-parameter --type SecureString --overwrite \
 POST with `X-Wallet-Signature: sha256=hex(HMAC-SHA256(body, HMACSecret))` and the receiver must verify it with the
 same secret. Rotate by updating both sides together; there is no versioning/overlap window.
 
+## 4b. Asaas custody (BaaS) — required before any deposit works
+
+Deposits have exactly one rail: a PIX static QR on the user's own Asaas
+subaccount. There is no Inter fallback, so an unresolvable parameter here means
+deposits are refused, never rerouted (`docs/specs/2026-08-30-asaas-only-deposits.md`).
+
+| Parameter                                                | Type             | Read by                    | What it is |
+|----------------------------------------------------------|------------------|----------------------------|------------|
+| `/ctech-wallet/{env}/asaas/api-key-master`               | **SecureString** | `api` (SDK, at boot)       | Hex-encoded AES-256 key. Every subaccount API key is stored AES-256-GCM encrypted under it and under nothing else — losing it makes every subaccount unusable, so back it up outside this account before onboarding anyone. |
+| `/ctech-wallet/{env}/asaas/parent-api-key`               | **SecureString** | `api`, `cmd/reconcile`     | CTech's own master-account API key. Authenticates subaccount creation, the fee charge, and the §9.1a reversal leg. |
+| `/ctech-wallet/{env}/asaas/webhook-token`                | **SecureString** | `api` (SDK, at boot)       | The static token Asaas echoes in `asaas-access-token`. Empty refuses every webhook — it never degrades to "any token". |
+| `/ctech-wallet/{env}/asaas/parent-wallet-id`             | String           | `api`, `cmd/reconcile` env | Destination `walletId` for every settlement leg. |
+| `/ctech-wallet/{env}/asaas/master-account-id`            | String           | `api` env                  | CTech's account id at Asaas. |
+| `/ctech-wallet/{env}/asaas/master-pix-key`               | String           | `api` env                  | The master account's static EVP key — the verification-fee QR is built on it. `api` refuses to boot in production without it. |
+| `/ctech-wallet/{env}/asaas/verification-fee-cents`       | String           | `api` env                  | One-off subaccount verification fee, centavos (`1290` = R$ 12,90). Tracks Asaas's own price; change it here, no deploy. |
+
+Non-SSM knob: `ASAAS_FREE_RECEIPTS_PER_MONTH` (default `95`). Asaas gives every
+account 100 free PIX receipts per calendar month and bills each one after that;
+the margin covers charges opened but not yet paid. Raising it past 100 buys
+per-receipt costs, not throughput.
+
+### Webhooks to configure in the Asaas panel
+
+Both are ordinary API routes on the main API — the mTLS HTTP API exists only
+because Inter requires a client certificate.
+
+| Event family | URL |
+|---|---|
+| Account status, payments, MED | `POST https://wallet-api.aoctech.app/v1.0/internal/asaas/webhook` |
+| Transfer authorization (synchronous) | `POST https://wallet-api.aoctech.app/v1.0/internal/asaas/transfer-authorization` |
+
+Set the access token on both to the `webhook-token` value above. Transfer
+authorization must be enabled explicitly in the panel — until it is, outbound
+transfers are not validated against the intent row the wallet wrote.
+
+### Rollout order
+
+1. Publish `pix-gateway` **before** `api`: the account-status and pending-document
+   ops are new on the gateway, and without them no subaccount ever reaches
+   `approved`.
+2. Seed every parameter above; confirm the panel webhooks answer.
+3. Set `custody_enabled: true` on exactly one real wallet in DynamoDB. That
+   attribute is the onboarding allowlist — it gates who may open a subaccount,
+   which is the scarce, paid action. It is admin-only and has no API write path.
+4. Walk that user end to end: fee paid → subaccount approved → EVP key created →
+   real deposit → real withdrawal → conservation check clean.
+5. Only then add the next user.
+
+**Asaas regulatory evaluation window.** From the first subaccount created in
+production: at most 10 subaccounts, at most R$ 2.000,00 in charges per
+subaccount, at most 60 corridos days. Hitting any of the three blocks further
+subaccount creation and charge issuance until homologation. Asaas also requires
+its brand, links, and responsibility text on every screen shown to the account
+holder — `ui` carries this on the real card's deposit area.
+
 ## 5. Withdrawal reconciliation schedule
 
 Run `cmd/reconcile` on a schedule (e.g. EventBridge every 5 min). It resolves

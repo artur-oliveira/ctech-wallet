@@ -130,22 +130,23 @@ func TestDepositConfirmCreditsOnCPFMatch(t *testing.T) {
 	ctx := context.Background()
 	h := newHarness(&kycclient.KYC{Level: "enhanced", CPF: cpf})
 	user := "u-" + id.New()
+	h.onboardCustody(t, user)
 
 	dep, _, err := h.svc.InitiateDeposit(ctx, user, "enhanced", 5000, id.New())
 	if err != nil {
 		t.Fatalf("InitiateDeposit: %v", err)
 	}
-	h.pix.StageCharge(dep.Txid, 5000, pix.ChargeCompleted, cpf, "E2E-1")
+	h.stagePaidDeposit(dep, 5000, cpf)
 
-	if err := h.svc.ConfirmDeposit(ctx, dep.Txid, cpf, "Fake Payer", false); err != nil {
-		t.Fatalf("ConfirmDeposit: %v", err)
+	if err := h.svc.ConfirmAsaasDeposit(ctx, dep.ProviderQRCodeID, dep.Txid); err != nil {
+		t.Fatalf("ConfirmAsaasDeposit: %v", err)
 	}
 	if got := balance(t, h, dep.WalletID); got != 5000 {
 		t.Fatalf("balance = %d, want 5000", got)
 	}
 
 	// Idempotent: re-confirming does not double-credit.
-	_ = h.svc.ConfirmDeposit(ctx, dep.Txid, cpf, "Fake Payer", false)
+	_ = h.svc.ConfirmAsaasDeposit(ctx, dep.ProviderQRCodeID, dep.Txid)
 	if got := balance(t, h, dep.WalletID); got != 5000 {
 		t.Fatalf("balance after re-confirm = %d, want 5000", got)
 	}
@@ -253,6 +254,7 @@ func TestDepositRejectsAmountOutsideGlobalRange(t *testing.T) {
 	ctx := context.Background()
 	h := newHarness(verified())
 	user := "u-" + id.New()
+	h.onboardCustody(t, user)
 
 	for _, amount := range []int64{wallet.DefaultMinDeposit - 1, wallet.DefaultMaxDeposit + 1} {
 		dep, charge, err := h.svc.InitiateDeposit(ctx, user, "enhanced", amount, id.New())
@@ -284,6 +286,7 @@ func TestDepositUsesPerWalletRangeOverride(t *testing.T) {
 	ctx := context.Background()
 	h := newHarness(verified())
 	user := "u-" + id.New()
+	h.onboardCustody(t, user)
 
 	real, err := h.repo.EnsureRealWallet(ctx, user)
 	if err != nil {
@@ -309,21 +312,29 @@ func TestDepositRejectsAndRefundsOnCPFMismatch(t *testing.T) {
 	ctx := context.Background()
 	h := newHarness(&kycclient.KYC{Level: "enhanced", CPF: cpf})
 	user := "u-" + id.New()
+	h.onboardCustody(t, user)
 
 	dep, _, err := h.svc.InitiateDeposit(ctx, user, "enhanced", 5000, id.New())
 	if err != nil {
 		t.Fatalf("InitiateDeposit: %v", err)
 	}
-	h.pix.StageCharge(dep.Txid, 5000, pix.ChargeCompleted, "99999999999", "E2E-9")
+	h.stagePaidDeposit(dep, 5000, "99999999999")
 
-	if err := h.svc.ConfirmDeposit(ctx, dep.Txid, "99999999999", "Fake Payer", false); err != nil {
-		t.Fatalf("ConfirmDeposit: %v", err)
+	// Through the provider's own webhook entry point, so the payment id is
+	// persisted the way production persists it — the refund below needs it.
+	if err := h.svc.ConfirmAsaasDeposit(ctx, dep.ProviderQRCodeID, dep.Txid); err != nil {
+		t.Fatalf("ConfirmAsaasDeposit: %v", err)
 	}
 	if got := balance(t, h, dep.WalletID); got != 0 {
 		t.Fatalf("balance = %d, want 0 (rejected)", got)
 	}
-	if len(h.pix.Refunds) != 1 {
-		t.Fatalf("expected one refund, got %d", len(h.pix.Refunds))
+	// The money goes back through the subaccount that received it, never
+	// through CTech's own account.
+	if len(h.asaas.RefundedPayments) != 1 {
+		t.Fatalf("expected one refund at the custody provider, got %d", len(h.asaas.RefundedPayments))
+	}
+	if len(h.pix.Refunds) != 0 {
+		t.Fatalf("a custodied deposit was refunded through Inter: %d", len(h.pix.Refunds))
 	}
 }
 
@@ -334,6 +345,7 @@ func TestInitiateDepositIdempotentReturnsSameCharge(t *testing.T) {
 	ctx := context.Background()
 	h := newHarness(verified())
 	user := "u-" + id.New()
+	h.onboardCustody(t, user)
 	idemKey := "idem-deposit-" + id.New()
 
 	dep1, charge1, err := h.svc.InitiateDeposit(ctx, user, "enhanced", 5000, idemKey)
@@ -345,14 +357,14 @@ func TestInitiateDepositIdempotentReturnsSameCharge(t *testing.T) {
 		t.Fatalf("replay InitiateDeposit: %v", err)
 	}
 	if dep1.Txid != dep2.Txid {
-		t.Fatalf("replay returned a different txid %q, want %q (second Inter charge opened)", dep2.Txid, dep1.Txid)
+		t.Fatalf("replay returned a different txid %q, want %q (a second charge was opened)", dep2.Txid, dep1.Txid)
 	}
 	if charge1.QRCode != charge2.QRCode {
 		t.Fatalf("replay returned a different QR code — a second charge was opened")
 	}
-	// Exactly one Inter charge may have been opened for the whole sequence.
-	if got := len(h.pix.CreatedCharges); got != 1 {
-		t.Fatalf("charges opened = %d, want 1 (idempotent key must not open a second charge)", got)
+	// Deposits never touch Inter at all now (Invariant #14), replay or not.
+	if got := len(h.pix.CreatedCharges); got != 0 {
+		t.Fatalf("Inter charges opened = %d, want 0", got)
 	}
 }
 

@@ -54,6 +54,13 @@ const (
 	pathTransfers     = "/v3/transfers"                      // POST — both PIX-key and Asaas-wallet transfers use this same endpoint
 	pathTransfersList = "/v3/transfers?externalReference=%s" // GET — list/filter, used for QueryTransfer (no GET-by-externalReference on the single-transfer endpoint)
 	pathBalance       = "/v3/finance/balance"                // GET
+	// pathMyStatus is the authoritative registration-status read for whichever
+	// account the API key belongs to. It is what makes an ACCOUNT_STATUS_*
+	// webhook safe to act on: the webhook wakes us, this decides.
+	pathMyStatus = "/v3/myAccount/status" // GET
+	// pathMyDocumentsList reports which documents the provider is still waiting
+	// on, and how each one must be sent.
+	pathMyDocumentsList = "/v3/myAccount/documents" // GET
 )
 
 // authHeader is the header Asaas expects the API key under on every call —
@@ -329,6 +336,30 @@ func (c *AsaasClient) QueryTransfer(ctx context.Context, apiKey, externalReferen
 	return &page.Data[0], nil
 }
 
+// QueryAccountStatus — GET /v3/myAccount/status. The account is fully approved
+// only when General == APPROVED; the other fields say which step is still
+// outstanding and are never an approval signal on their own.
+func (c *AsaasClient) QueryAccountStatus(ctx context.Context, apiKey string) (*AccountStatus, error) {
+	var out AccountStatus
+	if err := c.do(ctx, http.MethodGet, pathMyStatus, apiKey, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ListPendingDocuments — GET /v3/myAccount/documents. The provider requires at
+// least 15 seconds between creating a subaccount and this call; the caller
+// owns that wait, not this client.
+func (c *AsaasClient) ListPendingDocuments(ctx context.Context, apiKey string) ([]PendingDocument, error) {
+	var out struct {
+		Data []PendingDocument `json:"data"`
+	}
+	if err := c.do(ctx, http.MethodGet, pathMyDocumentsList, apiKey, nil, &out); err != nil {
+		return nil, err
+	}
+	return out.Data, nil
+}
+
 // QueryAccountBalance — GET /v3/finance/balance. VERIFY: the response
 // field name "balance" is the well-established Asaas convention (used
 // consistently across third-party Asaas SDKs) but was not directly shown in
@@ -341,4 +372,26 @@ func (c *AsaasClient) QueryAccountBalance(ctx context.Context, apiKey string) (i
 		return 0, err
 	}
 	return reaisToCentavos(out.Balance), nil
+}
+
+// AccountStatus mirrors GET /v3/myAccount/status. Every field carries one of
+// PENDING / APPROVED / REJECTED / AWAITING_APPROVAL.
+type AccountStatus struct {
+	ID              string `json:"id"`
+	CommercialInfo  string `json:"commercialInfo"`
+	BankAccountInfo string `json:"bankAccountInfo"`
+	Documentation   string `json:"documentation"`
+	General         string `json:"general"`
+}
+
+// PendingDocument mirrors one entry of GET /v3/myAccount/documents.
+//
+// VERIFY: the provider documents onboardingUrl and the id/type/status trio,
+// but the exact JSON envelope ("data" list) is the platform-wide list
+// convention rather than something the fetched excerpt showed directly.
+type PendingDocument struct {
+	ID            string `json:"id"`
+	Type          string `json:"type"`
+	Status        string `json:"status"`
+	OnboardingURL string `json:"onboardingUrl"`
 }

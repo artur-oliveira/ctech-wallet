@@ -1,7 +1,13 @@
 # Rollout controlado de custódia Asaas
 
 **Data:** 2026-08-16  
-**Status:** implementado no `ctech-wallet`; requer suporte correspondente no `ctech-pix-gateway` antes da ativação.
+**Status:** superseded em 2026-08-30 por `2026-08-30-asaas-only-deposits.md`.
+
+> **O que mudou:** não existe mais fallback Inter para depósito nem a flag
+> `ASAAS_CUSTODY_ENABLED` — a custódia é o único caminho de depósito, e
+> `custody_enabled` passou a gatear apenas o onboarding. O resto deste documento
+> (crédito por re-query, divergência de CPF, estorno pela subconta) continua
+> válido e é a descrição corrente desses fluxos.
 
 ## Escopo
 

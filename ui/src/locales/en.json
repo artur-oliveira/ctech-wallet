@@ -143,10 +143,17 @@
     },
     "onboarding": {
       "title": "Open payment account",
-      "description": "To receive PIX in this wallet we open a payment account in your name. Tell us your approximate monthly income.",
+      "description": "To receive PIX in this wallet we open a payment account in your name. There is a one-off verification fee, charged before it is opened. Tell us your approximate monthly income.",
       "incomeLabel": "Monthly income",
-      "incomeHint": "An approximate figure. Used only to register the payment account.",
-      "submit": "Open account"
+      "incomeHint": "Approximate value. Used only to register the payment account.",
+      "submit": "Continue"
+    },
+    "custodyFee": {
+      "title": "Verification fee",
+      "description": "Pay the PIX below so we can open your payment account. This is a service fee: it does not go into your balance.",
+      "qrAlt": "Verification fee PIX QR code",
+      "nonRefundable": "The fee is not refundable: it is consumed when the account is opened. If a document is refused you re-send it without paying again.",
+      "copy": "Copy PIX code"
     }
   },
   "confirm": {
@@ -257,7 +264,8 @@
     "returned": "Balance returned to real balance.",
     "pixCopied": "PIX code copied",
     "gamblingActivated": "Game wallet activated.",
-    "onboardingStarted": "Payment account sent for review."
+    "onboardingStarted": "Payment account sent for review.",
+    "custodyFeeCreated": "Verification fee charge created"
   },
   "terms": {
     "title": "Just one more step",
@@ -406,6 +414,14 @@
         "action": "Open payment account",
         "note": "One step left before this wallet can receive PIX."
       },
+      "custodyFeePending": {
+        "action": "Pay verification fee",
+        "note": "The one-off verification fee is still outstanding — it opens your payment account."
+      },
+      "custodyDocuments": {
+        "action": "Send documents",
+        "note": "The provider needs your identity documents to release the payment account."
+      },
       "custodyPending": {
         "action": "Under review",
         "note": "Your payment account is under review. We will let you know as soon as it clears."
@@ -414,6 +430,7 @@
         "action": "Contact support",
         "note": "Deposits are unavailable on this account."
       }
-    }
+    },
+    "providerNote": "Payment account and PIX settlement provided by Asaas (Asaas Gestão Financeira S.A.)."
   }
 }

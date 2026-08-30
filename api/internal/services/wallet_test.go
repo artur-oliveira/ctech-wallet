@@ -343,6 +343,9 @@ type fakeDepositBaas struct {
 	reversalCalls     int
 	refundCalls       int
 	refundErr         error
+	receiptsMonth     string
+	receiptsCount     int64
+	receiptCalls      int
 }
 
 func (s *stubRepo) ListRefundableDepositsOlderThan(_ context.Context, _ time.Time, _ int) ([]wallet.PixDeposit, error) {
@@ -371,7 +374,10 @@ func (f *fakeDepositBaas) GetAccount(context.Context, string) (*wallet.BaasAccou
 	if status == "" {
 		status = wallet.BaasApproved
 	}
-	return &wallet.BaasAccount{Status: status, ConservationDrift: f.conservationDrift}, nil
+	return &wallet.BaasAccount{
+		Status: status, ConservationDrift: f.conservationDrift,
+		ReceiptsMonthKey: f.receiptsMonth, ReceiptsCount: f.receiptsCount,
+	}, nil
 }
 func (f *fakeDepositBaas) CreateDepositCharge(_ context.Context, _ string, amount int64, txid string) (*pix.Charge, string, error) {
 	f.createCalls++
@@ -407,6 +413,14 @@ func (f *fakeDepositBaas) SetAccountStatus(_ context.Context, _, status string) 
 	f.lastSetStatus = status
 	return nil
 }
+func (f *fakeDepositBaas) CountReceipt(_ context.Context, _, monthKey string) error {
+	f.receiptCalls++
+	if f.receiptsMonth != monthKey {
+		f.receiptsMonth, f.receiptsCount = monthKey, 0
+	}
+	f.receiptsCount++
+	return nil
+}
 func (f *fakeDepositBaas) SubmitGamePurchaseSettlement(context.Context, string, string, int64) error {
 	f.settlementCalls++
 	return nil
@@ -417,9 +431,9 @@ func (f *fakeDepositBaas) SubmitGamePurchaseReversal(context.Context, string, st
 }
 
 func newSvc(repo *stubRepo, locker *stubLocker, pc pix.PixClient, kyc KYCClient) *WalletService {
-	// Most legacy custody tests exercise an enrolled user. Individual rollout
-	// tests turn this back off to cover the per-wallet allowlist explicitly.
-	repo.real.CustodyEnabled = true
+	// Custody enrolment is per test: the wallet's own custody_enabled flag now
+	// only decides the WITHDRAWAL rail (legacy Inter money must stay
+	// withdrawable), so a test that wants the Asaas rail sets it itself.
 	return NewWalletService(repo, &stubUserRepo{}, &stubAudit{}, locker, pc, kyc)
 }
 
@@ -1100,7 +1114,6 @@ func TestInitiateDepositRejectsUnapprovedSubaccountWhenCustodyEnabled(t *testing
 	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 	baas := &fakeDepositBaas{approved: false, status: wallet.BaasPendingDocuments}
 	svc.SetBaas(baas)
-	svc.SetCustodyEnabled(true)
 
 	_, _, err := svc.InitiateDeposit(context.Background(), "u1", wallet.KYCVerified, 1000, "idem-1")
 	p, ok := errors.AsType[*problem.Problem](err)
@@ -1118,7 +1131,6 @@ func TestInitiateDepositUsesAsaasWhenCustodied(t *testing.T) {
 	svc := newSvc(repo, &stubLocker{}, fakePix, &stubKYC{rec: &kycclient.KYC{}})
 	baas := &fakeDepositBaas{approved: true}
 	svc.SetBaas(baas)
-	svc.SetCustodyEnabled(true)
 
 	dep, charge, err := svc.InitiateDeposit(context.Background(), "u1", wallet.KYCVerified, 1000, "idem-2")
 	if err != nil {
@@ -1138,43 +1150,42 @@ func TestInitiateDepositUsesAsaasWhenCustodied(t *testing.T) {
 	}
 }
 
-func TestInitiateDepositNonCustodiedBehaviorUnchangedWhenFlagOff(t *testing.T) {
-	repo := newStubRepo()
-	fakePix := pix.NewFake()
-	svc := newSvc(repo, &stubLocker{}, fakePix, &stubKYC{rec: &kycclient.KYC{}})
-	// SetCustodyEnabled never called — must default false and behave exactly
-	// as it did before the Asaas branch existed, even with a real BaasProvider
-	// wired (mirrors production wiring order, where SetBaas always runs).
-	svc.SetBaas(&fakeDepositBaas{approved: true})
+// TestDepositNeverChargesInter is the executable form of Invariant #14: a user
+// deposit lands in that user's own custody subaccount or it does not happen at
+// all. If this ever passes with an Inter charge opened, third-party money is
+// landing in CTech's own operating account.
+func TestDepositNeverChargesInter(t *testing.T) {
+	cases := []struct {
+		name           string
+		custodyEnabled bool
+		baas           *fakeDepositBaas
+	}{
+		{"no subaccount at all", false, &fakeDepositBaas{approved: false}},
+		{"subaccount still onboarding", true, &fakeDepositBaas{approved: false, status: wallet.BaasOnboarding}},
+		// The allowlist governs who may OPEN a subaccount. It must never read as
+		// "deposit on the old rail instead" — that was the hole.
+		{"approved but outside the onboarding allowlist", false, &fakeDepositBaas{approved: true}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := newStubRepo()
+			fakePix := pix.NewFake()
+			svc := newSvc(repo, &stubLocker{}, fakePix, &stubKYC{rec: &kycclient.KYC{}})
+			repo.real.CustodyEnabled = tc.custodyEnabled
+			svc.SetBaas(tc.baas)
 
-	dep, _, err := svc.InitiateDeposit(context.Background(), "u1", wallet.KYCVerified, 1000, "idem-3")
-	if err != nil {
-		t.Fatalf("InitiateDeposit: %v", err)
-	}
-	if len(fakePix.CreatedCharges) != 1 {
-		t.Fatalf("expected pix.CreateCharge to be used, got %d calls", len(fakePix.CreatedCharges))
-	}
-	if dep.Provider != "" {
-		t.Fatalf("expected empty (Inter) provider, got %q", dep.Provider)
-	}
-}
-
-func TestCustodyAllowlistKeepsInterForNonEnrolledRealWallet(t *testing.T) {
-	repo := newStubRepo()
-	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
-	// The test helper defaults custody enrollment on for legacy coverage; this
-	// is the explicit production-rollout case.
-	repo.real.CustodyEnabled = false
-	baas := &fakeDepositBaas{approved: true}
-	svc.SetBaas(baas)
-	svc.SetCustodyEnabled(true)
-
-	dep, _, err := svc.InitiateDeposit(context.Background(), "u1", wallet.KYCVerified, 1000, "idem-allowlist")
-	if err != nil {
-		t.Fatalf("InitiateDeposit: %v", err)
-	}
-	if baas.createCalls != 0 || dep.Provider != "" {
-		t.Fatalf("non-enrolled wallet must remain on Inter, deposit=%+v baas calls=%d", dep, baas.createCalls)
+			_, _, err := svc.InitiateDeposit(context.Background(), "u1", wallet.KYCVerified, 1000, "idem-inv14")
+			if len(fakePix.CreatedCharges) != 0 {
+				t.Fatalf("a deposit opened an Inter charge: %d call(s)", len(fakePix.CreatedCharges))
+			}
+			if tc.baas.approved {
+				if err != nil {
+					t.Fatalf("approved subaccount must still deposit: %v", err)
+				}
+				return
+			}
+			isProblem(t, err, problem.TypeWalletOnboarding)
+		})
 	}
 }
 
@@ -1325,7 +1336,6 @@ func TestInitiateClosureHappyPathPaysOutFullBalanceFeeFree(t *testing.T) {
 	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{CPF: "12345678900"}})
 	baas := &fakeDepositBaas{approved: true}
 	svc.SetBaas(baas)
-	svc.SetCustodyEnabled(true)
 
 	acc, err := svc.InitiateClosure(context.Background(), "u1", "idem-close-1")
 	if err != nil {
@@ -1358,7 +1368,6 @@ func TestInitiateClosureZeroBalanceSkipsPayout(t *testing.T) {
 	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{CPF: "12345678900"}})
 	baas := &fakeDepositBaas{approved: true}
 	svc.SetBaas(baas)
-	svc.SetCustodyEnabled(true)
 
 	acc, err := svc.InitiateClosure(context.Background(), "u1", "idem-close-2")
 	if err != nil {
@@ -1380,7 +1389,6 @@ func TestInitiateClosureRefusedWhileHoldOpen(t *testing.T) {
 	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 	baas := &fakeDepositBaas{approved: true}
 	svc.SetBaas(baas)
-	svc.SetCustodyEnabled(true)
 	if _, err := svc.HoldGame(context.Background(), "u1", 1000, "table-1", "idem-hold-open"); err != nil {
 		t.Fatalf("HoldGame: %v", err)
 	}
@@ -1400,7 +1408,6 @@ func TestInitiateClosureRefusedByOpenMedReceivable(t *testing.T) {
 	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 	baas := &fakeDepositBaas{approved: true, openMedReceivable: true}
 	svc.SetBaas(baas)
-	svc.SetCustodyEnabled(true)
 
 	_, err := svc.InitiateClosure(context.Background(), "u1", "idem-close-4")
 	p, ok := errors.AsType[*problem.Problem](err)
@@ -1414,7 +1421,6 @@ func TestInitiateClosureIdempotentReplay(t *testing.T) {
 	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 	baas := &fakeDepositBaas{approved: false, status: wallet.BaasClosing}
 	svc.SetBaas(baas)
-	svc.SetCustodyEnabled(true)
 
 	acc, err := svc.InitiateClosure(context.Background(), "u1", "idem-close-5")
 	if err != nil {
@@ -1432,9 +1438,9 @@ func TestWithdrawCustodiedUsesAsaasPayoutNeverPix(t *testing.T) {
 	repo := newStubRepo()
 	fakePix := pix.NewFake()
 	svc := newSvc(repo, &stubLocker{}, fakePix, &stubKYC{rec: &kycclient.KYC{CPF: "12345678900"}})
+	repo.real.CustodyEnabled = true
 	baas := &fakeDepositBaas{approved: true}
 	svc.SetBaas(baas)
-	svc.SetCustodyEnabled(true)
 
 	w, err := svc.Withdraw(context.Background(), "u1", wallet.KYCVerified, 5000, "idem-w1")
 	if err != nil {
@@ -1456,9 +1462,9 @@ func TestWithdrawCustodiedUsesAsaasPayoutNeverPix(t *testing.T) {
 func TestWithdrawRejectsUnapprovedSubaccountWhenCustodyEnabled(t *testing.T) {
 	repo := newStubRepo()
 	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{CPF: "12345678900"}})
+	repo.real.CustodyEnabled = true
 	baas := &fakeDepositBaas{approved: false, status: wallet.BaasPendingApproval}
 	svc.SetBaas(baas)
-	svc.SetCustodyEnabled(true)
 
 	_, err := svc.Withdraw(context.Background(), "u1", wallet.KYCVerified, 5000, "idem-w2")
 	p, ok := errors.AsType[*problem.Problem](err)
@@ -1494,7 +1500,6 @@ func TestWithdrawNonCustodiedBehaviorUnchangedWhenFlagOff(t *testing.T) {
 func TestDepositReadiness(t *testing.T) {
 	cases := []struct {
 		name          string
-		custody       bool
 		allowlisted   bool
 		kycLevel      string
 		baas          *fakeDepositBaas
@@ -1502,53 +1507,65 @@ func TestDepositReadiness(t *testing.T) {
 		wantBlockedBy string
 	}{
 		{
-			name: "no custody, no kyc", kycLevel: "",
+			name: "no kyc", kycLevel: "",
 			wantBlockedBy: DepositBlockedKYC,
 		},
 		{
 			// POST /wallet/deposits carries RequireKYC(KYCVerified): `basic` is
-			// refused at the middleware, custody or not.
-			name: "no custody, basic kyc is still not enough", kycLevel: wallet.KYCBasic,
+			// refused at the middleware.
+			name: "basic kyc is still not enough", kycLevel: wallet.KYCBasic,
 			wantBlockedBy: DepositBlockedKYC,
 		},
 		{
-			name: "no custody, verified", kycLevel: wallet.KYCVerified,
-			wantAllowed: true,
-		},
-		{
-			name:    "custody required, basic kyc is not enough to open the subaccount",
-			custody: true, allowlisted: true, kycLevel: wallet.KYCBasic,
+			name:        "basic kyc is not enough to open the subaccount either",
+			allowlisted: true, kycLevel: wallet.KYCBasic,
 			baas:          &fakeDepositBaas{},
 			wantBlockedBy: DepositBlockedKYC,
 		},
 		{
-			name:    "custody required, verified, no subaccount yet",
-			custody: true, allowlisted: true, kycLevel: wallet.KYCVerified,
+			name:        "verified, allowed to open a subaccount, none yet",
+			allowlisted: true, kycLevel: wallet.KYCVerified,
 			baas:          &fakeDepositBaas{approved: false, status: ""},
 			wantBlockedBy: DepositBlockedCustodyAbsent,
 		},
 		{
-			name:    "custody required, subaccount under review",
-			custody: true, allowlisted: true, kycLevel: wallet.KYCVerified,
+			// No subaccount and no permission to open one: there is no next step
+			// the user can take, so offering "open one" would be a dead end.
+			name:        "verified, no subaccount and not allowed to open one",
+			allowlisted: false, kycLevel: wallet.KYCVerified,
+			baas:          &fakeDepositBaas{approved: false, status: ""},
+			wantBlockedBy: DepositBlockedCustodyBlocked,
+		},
+		{
+			name:        "waiting on the verification fee",
+			allowlisted: true, kycLevel: wallet.KYCVerified,
+			baas:          &fakeDepositBaas{approved: false, status: wallet.BaasFeePending},
+			wantBlockedBy: DepositBlockedCustodyFeePending,
+		},
+		{
+			name:        "waiting on identity documents",
+			allowlisted: true, kycLevel: wallet.KYCVerified,
+			baas:          &fakeDepositBaas{approved: false, status: wallet.BaasPendingDocuments},
+			wantBlockedBy: DepositBlockedCustodyDocuments,
+		},
+		{
+			name:        "subaccount under review",
+			allowlisted: true, kycLevel: wallet.KYCVerified,
 			baas:          &fakeDepositBaas{approved: false, status: wallet.BaasPendingApproval},
 			wantBlockedBy: DepositBlockedCustodyPending,
 		},
 		{
-			name:    "custody required, subaccount frozen",
-			custody: true, allowlisted: true, kycLevel: wallet.KYCVerified,
+			name:        "subaccount frozen",
+			allowlisted: true, kycLevel: wallet.KYCVerified,
 			baas:          &fakeDepositBaas{approved: false, status: wallet.BaasFrozen},
 			wantBlockedBy: DepositBlockedCustodyBlocked,
 		},
 		{
-			name:    "custody required, approved",
-			custody: true, allowlisted: true, kycLevel: wallet.KYCVerified,
+			// The allowlist gates opening a subaccount, not using one that is
+			// already approved.
+			name:        "approved subaccount deposits even off the allowlist",
+			allowlisted: false, kycLevel: wallet.KYCVerified,
 			baas:        &fakeDepositBaas{approved: true, status: wallet.BaasApproved},
-			wantAllowed: true,
-		},
-		{
-			name:    "custody flag on but user not allowlisted behaves as pre-Asaas",
-			custody: true, allowlisted: false, kycLevel: wallet.KYCVerified,
-			baas:        &fakeDepositBaas{},
 			wantAllowed: true,
 		},
 	}
@@ -1557,12 +1574,10 @@ func TestDepositReadiness(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := newStubRepo()
 			svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
-			// newSvc defaults the allowlist flag on; set it after, never before.
 			repo.real.CustodyEnabled = tc.allowlisted
 			if tc.baas != nil {
 				svc.SetBaas(tc.baas)
 			}
-			svc.SetCustodyEnabled(tc.custody)
 
 			got, err := svc.DepositReadiness(context.Background(), "u1", tc.kycLevel)
 			if err != nil {
@@ -1588,12 +1603,92 @@ func TestDepositReadinessOpensNothing(t *testing.T) {
 	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 	repo.real.CustodyEnabled = true
 	svc.SetBaas(baas)
-	svc.SetCustodyEnabled(true)
 
 	if _, err := svc.DepositReadiness(context.Background(), "u1", wallet.KYCVerified); err != nil {
 		t.Fatalf("DepositReadiness: %v", err)
 	}
 	if baas.createCalls != 0 {
 		t.Fatalf("readiness probe opened %d charges, want 0", baas.createCalls)
+	}
+}
+
+// Asaas bills every PIX receipt past the monthly free allowance, so the gate
+// has to refuse BEFORE a charge is opened — a QR opened and then refused would
+// already have cost the fee it exists to avoid.
+func TestDepositRefusedOnceMonthlyReceiptAllowanceIsSpent(t *testing.T) {
+	_, _, thisMonth := wallet.WindowKeys(time.Now())
+
+	t.Run("at the allowance", func(t *testing.T) {
+		repo := newStubRepo()
+		svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+		baas := &fakeDepositBaas{approved: true, receiptsMonth: thisMonth, receiptsCount: 95}
+		svc.SetBaas(baas)
+
+		_, _, err := svc.InitiateDeposit(context.Background(), "u1", wallet.KYCVerified, 1000, "idem-cap-1")
+		isProblem(t, err, problem.TypeDepositReceiptsExhausted)
+		if baas.createCalls != 0 {
+			t.Fatalf("no charge may be opened once the allowance is spent, got %d", baas.createCalls)
+		}
+	})
+
+	t.Run("one below the allowance", func(t *testing.T) {
+		repo := newStubRepo()
+		svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+		baas := &fakeDepositBaas{approved: true, receiptsMonth: thisMonth, receiptsCount: 94}
+		svc.SetBaas(baas)
+
+		if _, _, err := svc.InitiateDeposit(context.Background(), "u1", wallet.KYCVerified, 1000, "idem-cap-2"); err != nil {
+			t.Fatalf("InitiateDeposit: %v", err)
+		}
+	})
+
+	t.Run("a spent allowance from a previous month does not carry over", func(t *testing.T) {
+		repo := newStubRepo()
+		svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+		baas := &fakeDepositBaas{approved: true, receiptsMonth: "1999-01", receiptsCount: 10_000}
+		svc.SetBaas(baas)
+
+		if _, _, err := svc.InitiateDeposit(context.Background(), "u1", wallet.KYCVerified, 1000, "idem-cap-3"); err != nil {
+			t.Fatalf("a rolled window must start empty: %v", err)
+		}
+	})
+}
+
+// The counter is what the gate above reads, so a confirmed deposit has to
+// advance it — and only for the rail that is actually billed per receipt.
+func TestConfirmDepositCountsAsaasReceiptsOnly(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		provider  string
+		wantCalls int
+	}{
+		{"asaas deposit is metered", wallet.ProviderAsaas, 1},
+		{"legacy inter deposit is not", "", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := newStubRepo()
+			fakePix := pix.NewFake()
+			fakePix.Charges["tx-count"] = &pix.Charge{
+				Txid: "tx-count", Amount: 1000, Status: pix.ChargeCompleted,
+				PayerCPF: "12345678901", E2EID: "pay_c",
+			}
+			svc := newSvc(repo, &stubLocker{}, fakePix, &stubKYC{rec: &kycclient.KYC{CPF: "12345678901"}})
+			repo.deposit = &wallet.PixDeposit{
+				Txid: "tx-count", WalletID: repo.real.WalletID, UserID: "u1",
+				AmountExpected: 1000, Status: wallet.DepositPending, Provider: tc.provider,
+			}
+			baas := &fakeDepositBaas{
+				approved:        true,
+				queryChargeStub: &pix.Charge{Txid: "tx-count", Amount: 1000, Status: pix.ChargeCompleted, PayerCPF: "12345678901", E2EID: "pay_c"},
+			}
+			svc.SetBaas(baas)
+
+			if err := svc.ConfirmDeposit(context.Background(), "tx-count", "12345678901", "Fulano", false); err != nil {
+				t.Fatalf("ConfirmDeposit: %v", err)
+			}
+			if baas.receiptCalls != tc.wantCalls {
+				t.Fatalf("CountReceipt calls = %d, want %d", baas.receiptCalls, tc.wantCalls)
+			}
+		})
 	}
 }

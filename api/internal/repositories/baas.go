@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
@@ -68,6 +69,57 @@ var ErrBaasAccountExists = errors.New("repositories: baas account already exists
 
 func (r *BaasRepository) UpdateBaasAccount(ctx context.Context, userID string, updates map[string]any) error {
 	return UpdateItemWithTimestamp(ctx, r.accounts, userID, updates)
+}
+
+// IncrementReceiptCount adds one to the subaccount's PIX-receipt counter for
+// monthKey, atomically and without ever reading first.
+//
+// Two writes because the window roll and the increment are different
+// conditions, not one: the first bumps the counter while the stored key is
+// still the current month; if that condition fails the month rolled (or no
+// counter exists yet) and the second write starts the new window at 1. The
+// second is itself conditional on the key still not being monthKey, so two
+// concurrent confirmations at a month boundary cannot both reset to 1 — the
+// loser falls back to the increment path.
+func (r *BaasRepository) IncrementReceiptCount(ctx context.Context, userID, monthKey string) error {
+	key := map[string]types.AttributeValue{"pk": &types.AttributeValueMemberS{Value: userID}}
+	names := map[string]string{"#k": "receipts_month_key", "#c": "receipts_count", "#u": "updated_at"}
+	values := map[string]types.AttributeValue{
+		":m":   &types.AttributeValueMemberS{Value: monthKey},
+		":one": &types.AttributeValueMemberN{Value: "1"},
+		":now": &types.AttributeValueMemberS{Value: NowStr()},
+	}
+
+	_, err := r.accounts.UpdateItemRaw(ctx, &dynamodb.UpdateItemInput{
+		Key:                       key,
+		UpdateExpression:          aws.String("SET #c = #c + :one, #u = :now"),
+		ConditionExpression:       aws.String("#k = :m"),
+		ExpressionAttributeNames:  names,
+		ExpressionAttributeValues: values,
+	})
+	if !IsConditionFailed(err) {
+		return err
+	}
+
+	_, err = r.accounts.UpdateItemRaw(ctx, &dynamodb.UpdateItemInput{
+		Key:                       key,
+		UpdateExpression:          aws.String("SET #k = :m, #c = :one, #u = :now"),
+		ConditionExpression:       aws.String("attribute_exists(pk) AND (attribute_not_exists(#k) OR #k <> :m)"),
+		ExpressionAttributeNames:  names,
+		ExpressionAttributeValues: values,
+	})
+	if IsConditionFailed(err) {
+		// Lost the boundary race: another confirmation opened the new window
+		// first, so the plain increment is now the correct write.
+		_, err = r.accounts.UpdateItemRaw(ctx, &dynamodb.UpdateItemInput{
+			Key:                       key,
+			UpdateExpression:          aws.String("SET #c = #c + :one, #u = :now"),
+			ConditionExpression:       aws.String("#k = :m"),
+			ExpressionAttributeNames:  names,
+			ExpressionAttributeValues: values,
+		})
+	}
+	return err
 }
 
 // ListBaasAccountsByStatus returns accounts in the given status via the

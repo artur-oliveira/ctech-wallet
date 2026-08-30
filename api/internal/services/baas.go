@@ -24,6 +24,7 @@ type BaasAccountStore interface {
 	PutBaasAccount(ctx context.Context, a *wallet.BaasAccount) error
 	UpdateBaasAccount(ctx context.Context, userID string, updates map[string]any) error
 	ListBaasAccountsByStatus(ctx context.Context, status string, limit int) ([]wallet.BaasAccount, error)
+	IncrementReceiptCount(ctx context.Context, userID, monthKey string) error
 }
 
 // MedReceivableStore owns uncompensated MED clawback records.
@@ -86,6 +87,10 @@ type BaasService struct {
 	// user (i.e. everywhere until AsaasCustodyEnabled is on).
 	parentAPIKey      string
 	reverseWithdrawal func(context.Context, string) error
+	// feeConfig/purchases back the one-off verification fee — see
+	// custody_fee.go and SetCustodyFee.
+	feeConfig CustodyFeeConfig
+	purchases ProductPurchaseRepo
 }
 
 func (b *BaasService) SetWithdrawalReverser(fn func(context.Context, string) error) {
@@ -424,6 +429,13 @@ func (b *BaasService) HasOpenMedReceivable(ctx context.Context, walletID string)
 
 // SetAccountStatus transitions a BaasAccount's lifecycle status directly —
 // used by the closure state machine (plan §7.2).
+// CountReceipt records one received PIX against the subaccount's monthly free
+// allowance. See WalletService.requireReceiptAllowance for why it counts
+// confirmed receipts rather than opened charges.
+func (b *BaasService) CountReceipt(ctx context.Context, userID, monthKey string) error {
+	return b.repo.IncrementReceiptCount(ctx, userID, monthKey)
+}
+
 func (b *BaasService) SetAccountStatus(ctx context.Context, userID, status string) error {
 	return b.repo.UpdateBaasAccount(ctx, userID, map[string]any{"status": status})
 }
@@ -629,79 +641,23 @@ func (b *BaasService) SubmitTransfer(ctx context.Context, kind, userID, apiKey s
 // Deliberately does NOT call EnsureRealWallet: "a real wallet may not exist
 // before a custody account exists to back it, otherwise Invariant #13 is
 // false from birth" (plan §3.2 step 5). The real wallet is created later, by
-// ProcessAccountStatusWebhook, once the subaccount reaches ACCOUNT_STATUS_APPROVED.
-func (b *BaasService) InitiateOnboarding(ctx context.Context, userID, kycLevel string, incomeValue int64) (*wallet.BaasAccount, error) {
-	if kycLevel != wallet.KYCVerified {
-		return nil, problem.KYCNotVerified()
-	}
-	existing, err := b.repo.GetBaasAccount(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	if existing != nil {
-		return existing, nil
-	}
-	now := repositories.NowStr()
-	reservation := &wallet.BaasAccount{UserID: userID, Status: wallet.BaasOnboarding, CreatedAt: now, UpdatedAt: now}
-	if err := b.repo.PutBaasAccount(ctx, reservation); err != nil {
-		if errors.Is(err, repositories.ErrBaasAccountExists) {
-			return b.repo.GetBaasAccount(ctx, userID)
-		}
-		return nil, err
-	}
-
-	kyc, err := b.kyc.Get(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	acc, err := b.asaas.CreateAccount(ctx, b.parentAPIKey, asaas.CreateAccountRequest{
-		Name: kyc.LegalName, CPF: kyc.CPF, Email: kyc.Email, MobilePhone: kyc.Phone,
-		BirthDate: kyc.BirthDate, Address: kyc.Address.Street, AddressNumber: kyc.Address.Number,
-		Complement: kyc.Address.Complement, Province: kyc.Address.District, City: kyc.Address.City, State: kyc.Address.State,
-		PostalCode: kyc.Address.ZipCode, IncomeValue: incomeValue,
-	})
-	if err != nil {
-		slog.Error("asaas account creation failed", "user_id", userID, "err", err)
-		return nil, problem.InternalServer("falha ao criar subconta de custódia")
-	}
-
-	ciphertext, nonce, err := asaas.EncryptAPIKey(b.masterKey, acc.APIKey)
-	if err != nil {
-		return nil, err
-	}
-
-	row := &wallet.BaasAccount{
-		UserID:            userID,
-		Status:            wallet.BaasOnboarding,
-		ProviderAccountID: acc.ID,
-		ProviderWalletID:  acc.WalletID,
-		APIKeyCiphertext:  ciphertext,
-		APIKeyNonce:       nonce,
-		CreatedAt:         now,
-		UpdatedAt:         now,
-	}
-	if err := b.repo.UpdateBaasAccount(ctx, userID, map[string]any{
-		"provider_account_id": acc.ID, "provider_wallet_id": acc.WalletID,
-		"api_key_ciphertext": ciphertext, "api_key_nonce": nonce,
-	}); err != nil {
-		return nil, err
-	}
-	if b.audit != nil {
-		if err := b.audit.Append(ctx, &wallet.AuditEvent{
-			UserID: userID, EventType: wallet.EventBaasSubaccountCreated, Actor: userID, After: acc.ID,
-		}); err != nil {
-			return nil, err
-		}
-	}
-	return row, nil
-}
-
 // ProcessAccountStatusWebhook handles Asaas's account-status callback (plan
 // §3.2 step 6, §7.1). An unknown provider account ID is an idempotent no-op —
-// mirrors ConfirmDeposit's handling of an unrecognized txid. Any status other
-// than approved/rejected is recorded as pending_approval; §7.1's frozen state
-// is driven by a distinct balance-block webhook category, not this one.
-func (b *BaasService) ProcessAccountStatusWebhook(ctx context.Context, providerAccountID, status string) error {
+// mirrors ConfirmDeposit's handling of an unrecognized txid.
+//
+// The webhook body is a wake-up, never the decision. Whatever status it claims,
+// the outcome comes from re-querying the provider with the subaccount's own
+// credential — the same posture Invariant #11 imposes on money, applied to
+// onboarding, because a bearer-token webhook must not be able to approve a
+// custody account by itself.
+//
+// A rejection is NOT terminal. The provider charges its verification fee at
+// subaccount creation and does not return it, so a rejected account goes back
+// to pending_documents for re-submission rather than to closed — closing it
+// would burn a fee the user already paid and force them to pay a second one.
+// §7.1's frozen state is driven by a distinct balance-block webhook category,
+// not this one.
+func (b *BaasService) ProcessAccountStatusWebhook(ctx context.Context, providerAccountID string) error {
 	acc, err := b.repo.GetBaasAccountByProviderID(ctx, providerAccountID)
 	if err != nil {
 		return err
@@ -709,14 +665,53 @@ func (b *BaasService) ProcessAccountStatusWebhook(ctx context.Context, providerA
 	if acc == nil {
 		return nil
 	}
-	switch status {
-	case asaas.AccountStatusApproved:
+	apiKey, err := b.DecryptAPIKey(acc)
+	if err != nil {
+		return err
+	}
+	st, err := b.asaas.QueryAccountStatus(ctx, apiKey)
+	if err != nil {
+		// Leave the account where it is and let the redelivery (or ops) retry.
+		// Guessing from the webhook body is the exact thing this re-query
+		// exists to prevent.
+		slog.ErrorContext(ctx, "asaas account-status re-query failed",
+			"user_id", acc.UserID, "provider_account_id", providerAccountID, "err", err)
+		return err
+	}
+	switch {
+	case st.Approved():
 		return b.handleAccountApproved(ctx, acc)
-	case asaas.AccountStatusRejected:
-		return b.repo.UpdateBaasAccount(ctx, acc.UserID, map[string]any{"status": wallet.BaasClosed})
+	case st.Rejected():
+		return b.repo.UpdateBaasAccount(ctx, acc.UserID, map[string]any{"status": wallet.BaasPendingDocuments})
 	default:
+		return b.syncPendingStatus(ctx, acc, apiKey)
+	}
+}
+
+// syncPendingStatus records which onboarding step an unapproved subaccount is
+// actually waiting on, so the UI can say "send your documents" instead of the
+// unhelpful "under review" for both cases. A document that carries an
+// onboardingUrl is stored as-is: it is the only way that document may be sent.
+func (b *BaasService) syncPendingStatus(ctx context.Context, acc *wallet.BaasAccount, apiKey string) error {
+	docs, err := b.asaas.ListPendingDocuments(ctx, apiKey)
+	if err != nil {
+		// The documents call is advisory — losing it must not strand the
+		// account: fall back to the coarser "under review".
+		slog.WarnContext(ctx, "asaas pending-documents query failed", "user_id", acc.UserID, "err", err)
 		return b.repo.UpdateBaasAccount(ctx, acc.UserID, map[string]any{"status": wallet.BaasPendingApproval})
 	}
+	updates := map[string]any{"status": wallet.BaasPendingApproval}
+	for _, d := range docs {
+		if d.Status == asaas.RegistrationApproved {
+			continue
+		}
+		updates["status"] = wallet.BaasPendingDocuments
+		if d.OnboardingURL != "" {
+			updates["onboarding_url"] = d.OnboardingURL
+			break
+		}
+	}
+	return b.repo.UpdateBaasAccount(ctx, acc.UserID, updates)
 }
 
 // handleAccountApproved creates the subaccount's static EVP PIX key exactly

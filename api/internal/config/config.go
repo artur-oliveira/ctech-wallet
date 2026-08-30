@@ -22,17 +22,32 @@ type Config struct {
 	// With it off, those routes are not registered at all and 404.
 	GamblingEnabled bool `env:"GAMBLING_ENABLED" envDefault:"false"`
 
-	// AsaasCustodyEnabled enables the Asaas custody capability and its webhooks.
-	// It does not migrate every user: Wallet.CustodyEnabled is the separate,
-	// admin-only per-real-wallet rollout allowlist. Non-enrolled wallets remain
-	// on Inter even while this capability is on.
-	AsaasCustodyEnabled bool `env:"ASAAS_CUSTODY_ENABLED" envDefault:"false"`
-
 	// AsaasParentWalletID is Asaas's walletId for CTech's own parent/master
-	// account — the settlement destination for game-funded
-	// sandbox-purchase settlement leg (plan §5.2, §9.1a). Required once
-	// AsaasCustodyEnabled is true.
+	// account — the settlement destination for the game-funded
+	// sandbox-purchase settlement leg (plan §5.2, §9.1a).
 	AsaasParentWalletID string `env:"ASAAS_PARENT_WALLET_ID"`
+
+	// AsaasFreeReceiptsPerMonth caps how many PIX receipts one subaccount may
+	// take in a calendar month. Asaas gives every account 100 free static-QR
+	// receipts per month and charges per receipt beyond that, so the default
+	// sits just below the free ceiling — see
+	// docs/specs/2026-08-30-asaas-only-deposits.md.
+	AsaasFreeReceiptsPerMonth int64 `env:"ASAAS_FREE_RECEIPTS_PER_MONTH" envDefault:"95"`
+
+	// AsaasMasterAccountID is CTech's own account id at the provider. It exists
+	// so an inbound payment webhook for the verification fee is distinguishable
+	// from a user subaccount's deposit.
+	AsaasMasterAccountID string `env:"ASAAS_MASTER_ACCOUNT_ID"`
+
+	// AsaasMasterPixKey is that account's static EVP key — the verification-fee
+	// QR is built on it, so the fee lands where the provider debits its own
+	// subaccount charge from.
+	AsaasMasterPixKey string `env:"ASAAS_MASTER_PIX_KEY"`
+
+	// AsaasVerificationFeeCents is the one-off fee a user pays to have their
+	// custody subaccount opened. Configured, not a constant: it tracks the
+	// provider's own price and must change without a deploy.
+	AsaasVerificationFeeCents int64 `env:"ASAAS_VERIFICATION_FEE_CENTS" envDefault:"1290"`
 
 	ReadTimeout        int64    `env:"READ_TIMEOUT" envDefault:"10"`
 	IdleTimeout        int64    `env:"IDLE_TIMEOUT" envDefault:"60"`
@@ -74,11 +89,17 @@ func load() (*Config, error) {
 	if cfg.CtechJWKSURL == "" && cfg.CtechURL != "" {
 		cfg.CtechJWKSURL = cfg.CtechURL + "/.well-known/jwks.json"
 	}
-	if cfg.AsaasCustodyEnabled && cfg.AsaasParentWalletID == "" {
-		// Fail closed: with custody on, every settlement/fee-sweep leg needs a
-		// destination — an empty parent wallet ID would either panic deep in a
-		// money-out path or (worse) submit a transfer with an empty WalletID.
-		return nil, fmt.Errorf("config: ASAAS_PARENT_WALLET_ID must be set when ASAAS_CUSTODY_ENABLED is true")
+	if cfg.AsaasParentWalletID == "" && cfg.Env == "prod" {
+		// Fail closed: every settlement/fee-sweep leg needs a destination — an
+		// empty parent wallet ID would either panic deep in a money-out path or
+		// (worse) submit a transfer with an empty WalletID.
+		return nil, fmt.Errorf("config: ASAAS_PARENT_WALLET_ID must be set in production")
+	}
+	if cfg.AsaasFreeReceiptsPerMonth <= 0 {
+		return nil, fmt.Errorf("config: ASAAS_FREE_RECEIPTS_PER_MONTH must be positive")
+	}
+	if cfg.AsaasVerificationFeeCents <= 0 {
+		return nil, fmt.Errorf("config: ASAAS_VERIFICATION_FEE_CENTS must be positive")
 	}
 	return cfg, nil
 }
@@ -104,6 +125,13 @@ func Load() (*Config, error) {
 	}
 	if len(cfg.CorsAllowedOrigins) == 0 && cfg.Env == "prod" {
 		return nil, fmt.Errorf("config: CORS_ALLOWED_ORIGINS must be set in production")
+	}
+	if cfg.AsaasMasterPixKey == "" && cfg.Env == "prod" {
+		// Fail closed: without it the verification fee cannot be collected, and
+		// opening subaccounts anyway bills CTech once per user with nothing to
+		// notice it. An API-only guard — the reconciler never opens a
+		// subaccount, so LoadReconcile does not carry it.
+		return nil, fmt.Errorf("config: ASAAS_MASTER_PIX_KEY must be set in production so the verification fee can be collected")
 	}
 	if cfg.RedisURL == "" && cfg.Env == "prod" {
 		// Fail closed: an empty VALKEY_URL in prod means per-wallet locking

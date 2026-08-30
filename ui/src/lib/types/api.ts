@@ -126,8 +126,26 @@ export interface Profile {
 export type DepositBlockReason =
   | 'kyc'
   | 'custody_absent'
+  | 'custody_fee_pending'
+  | 'custody_documents'
   | 'custody_pending'
   | 'custody_blocked'
+
+/** The one-off charge that has to clear before the payment account is opened. */
+export interface OnboardingFee {
+  amount: number
+  qr_code: string
+  qr_code_base64?: string
+  /** Always false: the provider consumes it at account creation. */
+  refundable: boolean
+}
+
+export interface OnboardingState {
+  status: string
+  fee?: OnboardingFee
+  /** Provider-hosted document upload. The only way those documents may be sent. */
+  onboarding_url?: string
+}
 
 export interface DepositReadiness {
   allowed: boolean

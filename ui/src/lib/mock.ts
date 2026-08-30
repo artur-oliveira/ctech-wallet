@@ -10,6 +10,7 @@ import type {
   LedgerEntry,
   LedgerPage,
   MeResponse,
+  OnboardingState,
   ProductPurchase,
   PurchasePage,
   SandboxPurchase,
@@ -140,13 +141,17 @@ export class MockApiClient {
       terms_addendum_version: '1.0',
       // The mock has no KYC or custody lifecycle — it is always deposit-ready,
       // so the mock dashboard behaves exactly as it did before the gate.
-      deposit: {allowed: true, kyc_level: 'enhanced', custody_required: false},
+      deposit: {allowed: true, kyc_level: 'enhanced', custody_required: true},
     }
   }
 
-  async initiateOnboarding(_incomeValue: number): Promise<{ status: string }> {
+  async initiateOnboarding(_incomeValue: number): Promise<OnboardingState> {
     void _incomeValue
-    return {status: 'onboarding'}
+    return {status: 'fee_pending', fee: {amount: 1290, qr_code: '000201-mock-custody-fee', refundable: false}}
+  }
+
+  async getOnboarding(): Promise<OnboardingState> {
+    return {status: 'fee_pending', fee: {amount: 1290, qr_code: '000201-mock-custody-fee', refundable: false}}
   }
 
   async acceptTermsAddendum(): Promise<void> {

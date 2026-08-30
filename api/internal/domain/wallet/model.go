@@ -153,6 +153,13 @@ const (
 	MaxInboundReais  = MaxInboundAmount / 100
 )
 
+// DefaultReceiptsPerMonth is the fallback PIX-receipt allowance per subaccount
+// per calendar month, used when no configured value is wired in. The provider
+// gives 100 free receipts a month and bills each one after that; the gap is
+// deliberate headroom for charges opened but not yet paid (see
+// WalletService.requireReceiptAllowance).
+const DefaultReceiptsPerMonth = 95
+
 // SandboxCreditsPerCent is the fixed conversion applied when real money is
 // turned into sandbox credits (game → sandbox). R$ 1,00 (100 centavos) becomes
 // 1000 credits, so this is 10 credits per centavo. The rate is a backend
@@ -244,6 +251,14 @@ type PixDeposit struct {
 	// Provider is empty.
 	Provider         string `dynamodbav:"provider,omitempty" json:"-"`
 	ProviderQRCodeID string `dynamodbav:"provider_qr_code_id,omitempty" json:"-"`
+	// QRCodePayload/QRCodeImage are the copyable PIX string and its rendered
+	// image, stored at creation so a client that asks again — a refresh, a
+	// retried POST — gets its charge back without a provider call. That matters
+	// because a static QR has no payment record at the provider until somebody
+	// actually pays it: re-querying an unpaid deposit finds nothing. Public
+	// payable data, never a secret.
+	QRCodePayload string `dynamodbav:"qr_code_payload,omitempty" json:"-"`
+	QRCodeImage   string `dynamodbav:"qr_code_image,omitempty" json:"-"`
 	// ProviderPaymentID is the immutable Asaas payment ID learned from its
 	// webhook. It is required to re-query the payment and its linked customer.
 	ProviderPaymentID string `dynamodbav:"provider_payment_id,omitempty" json:"-"`
@@ -291,7 +306,13 @@ type Hold struct {
 
 // BaaS custody lifecycle states (wallet_baas_accounts.status). See
 // docs/plans/2026-07-30-asaas-baas-implementation-plan.md §2.4, §3, §7.
+// BaasFeePending/BaasFeePaid front the sequence: the provider charges a
+// non-refundable verification fee per subaccount at creation, so the user pays
+// it to CTech first and the subaccount is only opened once that charge clears
+// (docs/specs/2026-08-30-asaas-only-deposits.md).
 const (
+	BaasFeePending       = "fee_pending"
+	BaasFeePaid          = "fee_paid"
 	BaasOnboarding       = "onboarding"
 	BaasPendingDocuments = "pending_documents"
 	BaasPendingApproval  = "pending_approval"
@@ -325,9 +346,48 @@ type BaasAccount struct {
 	// open game holds. While true, HoldGame and Withdraw refuse this user with
 	// AccountBlocked rather than acting on data that may no longer be trustworthy
 	// — cleared only by ops, once the drift is manually reconciled and explained.
-	ConservationDrift bool   `dynamodbav:"conservation_drift,omitempty" json:"-"`
-	CreatedAt         string `dynamodbav:"created_at" json:"created_at"`
-	UpdatedAt         string `dynamodbav:"updated_at" json:"updated_at"`
+	ConservationDrift bool `dynamodbav:"conservation_drift,omitempty" json:"-"`
+	// FeePurchaseID links the verification-fee charge this onboarding is waiting
+	// on. Set once, when onboarding opens; kept afterwards as the audit trail of
+	// what the user paid for. The fee is never refunded (the provider consumes
+	// it at subaccount creation and a rejected subaccount does not give it
+	// back), so a rejected account is re-submitted, never re-charged.
+	FeePurchaseID string `dynamodbav:"fee_purchase_id,omitempty" json:"-"`
+	// FeeQRPayload/FeeQRImage are the verification fee's copyable PIX string and
+	// its rendered image, stored when the charge is opened so the onboarding
+	// screen can show it again on a reload without opening a second QR code at
+	// the provider. Public payable data, never a secret — the same reasoning as
+	// PixDeposit.QRCodePayload.
+	FeeQRPayload string `dynamodbav:"fee_qr_payload,omitempty" json:"-"`
+	FeeQRImage   string `dynamodbav:"fee_qr_image,omitempty" json:"-"`
+	// OnboardingURL is the provider-hosted document upload link, when the
+	// provider says a pending document must be sent that way. Never a document
+	// we relay ourselves: uploading a document that carries this URL through the
+	// API is rejected by the provider.
+	OnboardingURL string `dynamodbav:"onboarding_url,omitempty" json:"-"`
+	// IncomeValue is the declared monthly income the provider requires on the
+	// subaccount. Captured when onboarding is requested and used when the
+	// subaccount is finally created, which is a separate step (the fee clears
+	// in between).
+	IncomeValue int64 `dynamodbav:"income_value,omitempty" json:"-"`
+	// ReceiptsMonthKey/ReceiptsCount meter PIX receipts against the provider's
+	// monthly free allowance, in the same window-key shape as
+	// GameDepositCounters: a key that is not the current month means the window
+	// rolled and the count is logically zero.
+	ReceiptsMonthKey string `dynamodbav:"receipts_month_key,omitempty" json:"-"`
+	ReceiptsCount    int64  `dynamodbav:"receipts_count,omitempty" json:"-"`
+	CreatedAt        string `dynamodbav:"created_at" json:"created_at"`
+	UpdatedAt        string `dynamodbav:"updated_at" json:"updated_at"`
+}
+
+// ReceiptsUsed reports how many PIX receipts this subaccount has taken in
+// monthKey. A stale window key counts as zero — the counter is never reset by a
+// writer, it is simply superseded when the month rolls.
+func (a *BaasAccount) ReceiptsUsed(monthKey string) int64 {
+	if a == nil || a.ReceiptsMonthKey != monthKey {
+		return 0
+	}
+	return a.ReceiptsCount
 }
 
 // Transfer-intent statuses (wallet_transfer_intents.status). See plan §2.3.
@@ -438,6 +498,11 @@ const (
 const (
 	ProductPurchaseKindProduct = "product"
 	ProductPurchaseKindCharge  = "charge"
+	// ProductPurchaseKindCustodyFee is the one-off fee a user pays to have their
+	// custody subaccount opened. A sale like any other here, with two traits the
+	// others do not share: it is collected at the custody provider rather than
+	// at Inter, and it is never refunded (see services/custody_fee.go).
+	ProductPurchaseKindCustodyFee = "custody_fee"
 )
 
 // ProductPurchase mirrors SandboxPurchase's shape minus everything about

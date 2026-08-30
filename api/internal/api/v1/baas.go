@@ -6,8 +6,11 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
+	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/middleware"
+	"gopkg.aoctech.app/wallet/api/internal/pix"
 	"gopkg.aoctech.app/wallet/api/internal/problem"
+	"gopkg.aoctech.app/wallet/api/internal/services"
 )
 
 // initiateClosure starts the account-closure state machine (plan §7.2).
@@ -24,7 +27,9 @@ func (h *handlers) initiateClosure(c fiber.Ctx) error {
 	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"status": acc.Status})
 }
 
-// initiateOnboarding opens the caller's Asaas subaccount (plan §3.2).
+// initiateOnboarding starts custody onboarding: it reserves the caller's
+// record and opens the verification-fee charge. The subaccount itself is only
+// created once that fee clears, because the provider bills at creation.
 func (h *handlers) initiateOnboarding(c fiber.Ctx) error {
 	var body OnboardingRequest
 	if p := bindJSON(c, &body); p != nil {
@@ -39,11 +44,41 @@ func (h *handlers) initiateOnboarding(c fiber.Ctx) error {
 		// The allowlist is operational state, not an enrollment feature.
 		return sendProblem(c, problem.NotFound("recurso não encontrado"))
 	}
-	acc, err := h.baas.InitiateOnboarding(c.Context(), cl.Sub, cl.KYCLevel, body.IncomeValue)
+	acc, charge, err := h.baas.RequestCustodyAccount(c.Context(), cl.Sub, cl.KYCLevel, body.IncomeValue)
 	if err != nil {
 		return sendProblem(c, err)
 	}
-	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"status": acc.Status})
+	return c.Status(fiber.StatusCreated).JSON(onboardingResponse(acc, charge))
+}
+
+// getOnboarding is the state the onboarding screen polls. Read-only: it opens
+// no charge and creates no subaccount.
+func (h *handlers) getOnboarding(c fiber.Ctx) error {
+	cl := middleware.GetClaims(c)
+	acc, err := h.baas.OnboardingState(c.Context(), cl.Sub)
+	if err != nil {
+		return sendProblem(c, err)
+	}
+	if acc == nil {
+		return sendProblem(c, problem.NotFound("onboarding não iniciado"))
+	}
+	// An outstanding fee is part of the state, not a side effect of asking for
+	// it: this reads the stored charge and opens nothing.
+	return c.JSON(onboardingResponse(acc, h.baas.OutstandingFeeCharge(acc)))
+}
+
+func onboardingResponse(acc *wallet.BaasAccount, charge *pix.Charge) OnboardingResponse {
+	out := OnboardingResponse{Status: acc.Status, OnboardingURL: acc.OnboardingURL}
+	if charge != nil {
+		out.Fee = &OnboardingFee{
+			Amount: charge.Amount, QRCode: charge.QRCode, QRCodeB64: charge.QRCodeB64,
+			// Stated in the response rather than only in the terms: the provider
+			// consumes this fee at subaccount creation and does not return it if
+			// registration is later refused.
+			Refundable: false,
+		}
+	}
+	return out
 }
 
 // asaasWebhookPayload covers Asaas's account-status callback. Other event
@@ -93,11 +128,28 @@ func (h *handlers) asaasWebhook(c fiber.Ctx) error {
 	}
 	switch {
 	case strings.HasPrefix(body.Event, "ACCOUNT_STATUS_"):
-		// The current Asaas client has no authoritative account-status query.
-		// A static webhook token alone must never approve/reject custody. Keep the
-		// account pending and page operations until provider re-query exists.
-		slog.ErrorContext(c.Context(), "ALARM Asaas account-status webhook quarantined pending authoritative re-query", "event", body.Event, "account_id", body.Account.ID)
+		// The event only says "look again": the outcome comes from
+		// GET /v3/myAccount/status, never from this payload. A static webhook
+		// token must not be able to approve a custody account on its own.
+		if err := h.baas.ProcessAccountStatusWebhook(c.Context(), body.Account.ID); err != nil {
+			// 500 so Asaas redelivers — a transient provider read must not be
+			// swallowed as an acknowledged event, or the account stays stuck in
+			// whatever state it was in with nothing left to re-trigger it.
+			slog.ErrorContext(c.Context(), "asaas account-status processing failed",
+				"event", body.Event, "account_id", body.Account.ID, "err", err)
+			return sendProblem(c, problem.InternalServer("falha ao processar situação da conta"))
+		}
 	case body.Event == "PAYMENT_RECEIVED" || body.Event == "PAYMENT_CONFIRMED":
+		// Two kinds of inbound payment arrive on this one route: a user deposit
+		// into their own subaccount, and the verification fee into CTech's
+		// master account. The reference prefix is what separates them — never
+		// the amount, and never which account the webhook claims to be about.
+		if services.IsCustodyFeeReference(body.Payment.ExternalReference) {
+			if err := h.baas.ConfirmCustodyFee(c.Context(), body.Payment.ID, body.Payment.ExternalReference); err != nil {
+				return sendProblem(c, err)
+			}
+			break
+		}
 		if err := h.svc.ConfirmAsaasDeposit(c.Context(), body.Payment.ID, body.Payment.ExternalReference); err != nil {
 			return sendProblem(c, err)
 		}

@@ -87,17 +87,17 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 
 	// Asaas webhooks — gated on the static asaas-access-token header (plan §2.3),
 	// never the JWT/M2M auth used by every other route below: Asaas is not an
-	// account-issued client. Registered whenever AsaasCustodyEnabled is true; the
-	// token check itself already fails closed on an empty configured token, but
-	// there is no reason to expose the route at all pre-migration.
-	if cfg.AsaasCustodyEnabled {
-		asaasGroup := v1.Group("/internal/asaas", middleware.RequireAsaasWebhookToken(asaasWebhookToken))
-		asaasGroup.Post("/transfer-authorization", h.asaasTransferAuthorization)
-		asaasGroup.Post("/webhook", h.asaasWebhook)
+	// account-issued client. The token check fails closed on an empty configured
+	// token. These are ordinary API routes: the mTLS-verified HTTP API in
+	// cdk/lib/pix-gateway-stack.ts exists because Inter demands a client
+	// certificate, and Asaas offers a shared token instead.
+	asaasGroup := v1.Group("/internal/asaas", middleware.RequireAsaasWebhookToken(asaasWebhookToken))
+	asaasGroup.Post("/transfer-authorization", h.asaasTransferAuthorization)
+	asaasGroup.Post("/webhook", h.asaasWebhook)
 
-		w.Post("/onboarding", middleware.RequireUserScope(middleware.ScopeWalletCustodyWrite), middleware.RequireKYC(middleware.KYCVerified), h.initiateOnboarding)
-		w.Post("/closure", middleware.RequireUserScope(middleware.ScopeWalletCustodyWrite), middleware.RequireRecentMFA(middleware.StepUpMaxAge), h.initiateClosure)
-	}
+	w.Post("/onboarding", middleware.RequireUserScope(middleware.ScopeWalletCustodyWrite), middleware.RequireKYC(middleware.KYCVerified), h.initiateOnboarding)
+	w.Get("/onboarding", middleware.RequireUserScope(middleware.ScopeWalletBalancesRead), h.getOnboarding)
+	w.Post("/closure", middleware.RequireUserScope(middleware.ScopeWalletCustodyWrite), middleware.RequireRecentMFA(middleware.StepUpMaxAge), h.initiateClosure)
 
 	// Internal routes — all M2M client_credentials + scope, gated after auth.
 	internal := v1.Group("/internal", auth)

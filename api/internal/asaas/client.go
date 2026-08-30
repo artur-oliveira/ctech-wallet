@@ -43,4 +43,13 @@ type AsaasClient interface {
 	// QueryAccountBalance reads a subaccount's (or the parent's) current Asaas
 	// balance — the read side of Invariant #13's conservation check (plan §6).
 	QueryAccountBalance(ctx context.Context, apiKey string) (int64, error)
+	// QueryAccountStatus is the authoritative registration-status read that
+	// makes an ACCOUNT_STATUS_* webhook safe to act on: the webhook only says
+	// "look again", this says what is true (Invariant #11's posture, applied to
+	// onboarding rather than money).
+	QueryAccountStatus(ctx context.Context, apiKey string) (*AccountStatus, error)
+	// ListPendingDocuments reports which documents the provider still wants and
+	// how each must be delivered. The provider requires at least
+	// PendingDocumentsDelay after subaccount creation before this answers.
+	ListPendingDocuments(ctx context.Context, apiKey string) ([]PendingDocument, error)
 }

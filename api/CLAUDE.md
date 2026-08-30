@@ -96,7 +96,9 @@ them inside route handlers.
 
 - All amounts are integer **centavos**. Never float.
 - PIX deposit range is per-wallet the same way: optional `min_deposit`/`max_deposit` override the defaults
-  (R$1/R$10.000); the minimum never drops below the absolute 100-centavo floor. Checked *before* `CreateCharge`.
+  (R$1/R$10.000); the minimum never drops below the absolute 100-centavo floor. Checked *before* any charge is
+  opened at the provider — and so is the monthly PIX-receipt allowance (`ASAAS_FREE_RECEIPTS_PER_MONTH`,
+  default 95 of the provider's 100 free receipts; the margin covers charges opened but not yet paid).
 - Deposit-range fields are admin-only (edited directly in DynamoDB) — never a client/API write path.
 - `real ↔ game` transfers carry no fee in either direction.
 - Every balance mutation is a conditional `TransactWriteItems`; debits carry `balance >= :amount`.
@@ -174,8 +176,15 @@ for the `file:line` map.
 8. `real → game` limit counts GROSS INFLOW (returns never refund headroom).
 9. `game` is real money (withdrawable via `real`; total = `real + game`).
 10. Consent opt‑in + auditable (`wallet_audit` append‑only).
-11. PIX webhook never source of truth — re‑query Inter by `txid` before crediting.
-12. No money in limbo — `processing` withdrawals resolved by the reconcile job.
+11. PIX webhook never source of truth — re‑query the provider before crediting. Same posture for onboarding:
+    an `ACCOUNT_STATUS_*` webhook only triggers `GET /v3/myAccount/status`, which decides.
+12. Deposits are custody‑only — a user deposit opens a charge on that user's own Asaas subaccount, never on
+    CTech's Inter account. No approved subaccount, no deposit. Inter serves product purchases; the Asaas
+    master account collects the subaccount verification fee. See
+    `../docs/specs/2026-08-30-asaas-only-deposits.md`.
+13. The verification fee is never refunded — a refused registration reopens document submission rather than
+    closing the account and charging again.
+14. No money in limbo — `processing` withdrawals resolved by the reconcile job.
 
 ## Internal M2M scopes (constant table: `middleware/scope.go:11`)
 

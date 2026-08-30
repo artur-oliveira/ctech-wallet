@@ -59,6 +59,18 @@ func (f *fakeBaasRepo) UpdateBaasAccount(_ context.Context, userID string, updat
 	if v, ok := updates["evp_pix_key"].(string); ok {
 		a.EVPPixKey = v
 	}
+	if v, ok := updates["onboarding_url"].(string); ok {
+		a.OnboardingURL = v
+	}
+	if v, ok := updates["fee_qr_payload"].(string); ok {
+		a.FeeQRPayload = v
+	}
+	if v, ok := updates["fee_qr_image"].(string); ok {
+		a.FeeQRImage = v
+	}
+	if v, ok := updates["fee_purchase_id"].(string); ok {
+		a.FeePurchaseID = v
+	}
 	if v, ok := updates["provider_account_id"].(string); ok {
 		a.ProviderAccountID = v
 	}
@@ -111,6 +123,17 @@ func (f *fakeBaasRepo) ListBaasAccountsByStatus(_ context.Context, status string
 		}
 	}
 	return out, nil
+}
+func (f *fakeBaasRepo) IncrementReceiptCount(_ context.Context, userID, monthKey string) error {
+	a, ok := f.accounts[userID]
+	if !ok {
+		return errors.New("no account")
+	}
+	if a.ReceiptsMonthKey != monthKey {
+		a.ReceiptsMonthKey, a.ReceiptsCount = monthKey, 0
+	}
+	a.ReceiptsCount++
+	return nil
 }
 func (f *fakeBaasRepo) PutMedReceivableIfAbsent(_ context.Context, m *wallet.MedReceivable) error {
 	if _, ok := f.receivables[m.ReceivableID]; ok {
@@ -307,27 +330,184 @@ func TestCheckConservationZeroDriftWhenBalancesMatch(t *testing.T) {
 	}
 }
 
-func TestInitiateOnboardingReservesBeforeProviderCall(t *testing.T) {
-	repo := newFakeBaasRepo()
-	fake := asaas.NewFake()
-	fake.CreateAccountErr = errors.New("ambiguous provider timeout")
+// newFeeSvc builds a BaasService with the verification fee configured, which is
+// the only way onboarding proceeds at all.
+func newFeeSvc(repo *fakeBaasRepo, fake *asaas.FakeAsaasClient, purchases ProductPurchaseRepo) *BaasService {
 	svc := NewBaasService(repo, &walletsWithBalances{}, fake, nil,
 		&stubKYC{rec: &kycclient.KYC{CPF: "12345678901", LegalName: "User"}},
 		make([]byte, 32), "wallet_parent", "parent-apikey")
+	svc.SetCustodyFee(CustodyFeeConfig{
+		MasterAccountID: "acc_master", MasterPixKey: "master-evp-key", AmountCents: 1290,
+	}, purchases)
+	return svc
+}
 
-	if _, err := svc.InitiateOnboarding(context.Background(), "u1", wallet.KYCVerified, 1000); err == nil {
-		t.Fatal("expected provider failure")
+// The provider bills the verification fee the moment a subaccount exists, so
+// requesting onboarding must open a charge and NOTHING else. Creating the
+// subaccount first would spend money on a user who may never pay.
+func TestRequestCustodyAccountChargesFeeWithoutCreatingSubaccount(t *testing.T) {
+	repo := newFakeBaasRepo()
+	fake := asaas.NewFake()
+	purchases := newStubProductPurchaseRepo()
+	svc := newFeeSvc(repo, fake, purchases)
+
+	acc, charge, err := svc.RequestCustodyAccount(context.Background(), "u1", wallet.KYCVerified, 500000)
+	if err != nil {
+		t.Fatalf("RequestCustodyAccount: %v", err)
 	}
-	row := repo.accounts["u1"]
-	if row == nil || row.Status != wallet.BaasOnboarding {
-		t.Fatalf("durable reservation missing: %+v", row)
+	if acc.Status != wallet.BaasFeePending {
+		t.Fatalf("status = %q, want %q", acc.Status, wallet.BaasFeePending)
 	}
-	if _, err := svc.InitiateOnboarding(context.Background(), "u1", wallet.KYCVerified, 1000); err != nil {
-		t.Fatalf("replay should return reservation: %v", err)
+	if charge == nil || charge.Amount != 1290 {
+		t.Fatalf("expected a 1290-centavo fee charge, got %+v", charge)
 	}
-	if len(fake.CreatedAccounts) != 1 {
-		t.Fatalf("ambiguous retry created %d provider accounts", len(fake.CreatedAccounts))
+	if len(fake.CreatedAccounts) != 0 {
+		t.Fatalf("a subaccount was created before the fee was paid: %d", len(fake.CreatedAccounts))
 	}
+	if acc.IncomeValue != 500000 {
+		t.Fatalf("income value must survive until the subaccount is created, got %d", acc.IncomeValue)
+	}
+}
+
+// A user pays this fee once. A retried request — a refreshed page, a double
+// click — must return the same charge, never open a second one.
+func TestRequestCustodyAccountIsIdempotent(t *testing.T) {
+	repo := newFakeBaasRepo()
+	fake := asaas.NewFake()
+	purchases := newStubProductPurchaseRepo()
+	svc := newFeeSvc(repo, fake, purchases)
+
+	_, first, err := svc.RequestCustodyAccount(context.Background(), "u1", wallet.KYCVerified, 500000)
+	if err != nil {
+		t.Fatalf("first request: %v", err)
+	}
+	_, second, err := svc.RequestCustodyAccount(context.Background(), "u1", wallet.KYCVerified, 500000)
+	if err != nil {
+		t.Fatalf("second request: %v", err)
+	}
+	if first.Txid != second.Txid {
+		t.Fatalf("a retry opened a second fee purchase: %q vs %q", first.Txid, second.Txid)
+	}
+	if len(purchases.purchases) != 1 {
+		t.Fatalf("expected exactly one fee purchase row, got %d", len(purchases.purchases))
+	}
+}
+
+// The webhook says only "a payment happened". The amount and status must come
+// from re-querying the provider, and the subaccount is created only after that
+// read agrees (Invariant #11's posture, applied to onboarding).
+func TestConfirmCustodyFeeCreatesSubaccountOnlyAfterRequery(t *testing.T) {
+	repo := newFakeBaasRepo()
+	fake := asaas.NewFake()
+	purchases := newStubProductPurchaseRepo()
+	svc := newFeeSvc(repo, fake, purchases)
+
+	_, charge, err := svc.RequestCustodyAccount(context.Background(), "u1", wallet.KYCVerified, 500000)
+	if err != nil {
+		t.Fatalf("RequestCustodyAccount: %v", err)
+	}
+	ref := custodyFeeRefPrefix + charge.Txid
+
+	t.Run("unpaid payment creates nothing", func(t *testing.T) {
+		fake.StagePayment("pay_fee", "", 1290, asaas.PaymentPending, ref)
+		if err := svc.ConfirmCustodyFee(context.Background(), "pay_fee", ref); err != nil {
+			t.Fatalf("ConfirmCustodyFee: %v", err)
+		}
+		if len(fake.CreatedAccounts) != 0 {
+			t.Fatalf("an unpaid fee created a subaccount")
+		}
+	})
+
+	t.Run("paid payment creates exactly one subaccount", func(t *testing.T) {
+		fake.StagePayment("pay_fee", "", 1290, asaas.PaymentReceived, ref)
+		if err := svc.ConfirmCustodyFee(context.Background(), "pay_fee", ref); err != nil {
+			t.Fatalf("ConfirmCustodyFee: %v", err)
+		}
+		if len(fake.CreatedAccounts) != 1 {
+			t.Fatalf("expected 1 subaccount, got %d", len(fake.CreatedAccounts))
+		}
+		if repo.accounts["u1"].Status != wallet.BaasOnboarding {
+			t.Fatalf("status = %q, want %q", repo.accounts["u1"].Status, wallet.BaasOnboarding)
+		}
+
+		// Redelivery is normal, not exceptional.
+		if err := svc.ConfirmCustodyFee(context.Background(), "pay_fee", ref); err != nil {
+			t.Fatalf("redelivered webhook: %v", err)
+		}
+		if len(fake.CreatedAccounts) != 1 {
+			t.Fatalf("a redelivered webhook created %d subaccounts", len(fake.CreatedAccounts))
+		}
+	})
+}
+
+// The provider's own status read decides, not the webhook body. An event that
+// claims approval must not approve an account the provider still calls pending.
+func TestAccountStatusWebhookApprovesOnlyOnProviderGeneralApproved(t *testing.T) {
+	setup := func(t *testing.T) (*fakeBaasRepo, *asaas.FakeAsaasClient, *BaasService) {
+		t.Helper()
+		repo := newFakeBaasRepo()
+		fake := asaas.NewFake()
+		acc := &wallet.BaasAccount{UserID: "u1", Status: wallet.BaasOnboarding, ProviderAccountID: "acc_1"}
+		acc.APIKeyCiphertext, acc.APIKeyNonce, _ = asaas.EncryptAPIKey(make([]byte, 32), "apikey1")
+		repo.accounts["u1"] = acc
+		return repo, fake, newFeeSvc(repo, fake, newStubProductPurchaseRepo())
+	}
+
+	t.Run("provider says pending", func(t *testing.T) {
+		repo, fake, svc := setup(t)
+		fake.StageAccountStatus("apikey1", &asaas.AccountStatus{General: asaas.RegistrationPending, Documentation: asaas.RegistrationPending})
+		if err := svc.ProcessAccountStatusWebhook(context.Background(), "acc_1"); err != nil {
+			t.Fatalf("ProcessAccountStatusWebhook: %v", err)
+		}
+		if repo.accounts["u1"].Status == wallet.BaasApproved {
+			t.Fatal("a webhook approved an account the provider calls pending")
+		}
+	})
+
+	t.Run("provider says approved", func(t *testing.T) {
+		repo, fake, svc := setup(t)
+		fake.StageAccountStatus("apikey1", &asaas.AccountStatus{General: asaas.RegistrationApproved})
+		if err := svc.ProcessAccountStatusWebhook(context.Background(), "acc_1"); err != nil {
+			t.Fatalf("ProcessAccountStatusWebhook: %v", err)
+		}
+		if repo.accounts["u1"].Status != wallet.BaasApproved {
+			t.Fatalf("status = %q, want approved", repo.accounts["u1"].Status)
+		}
+		if repo.accounts["u1"].EVPPixKey == "" {
+			t.Fatal("approval must create the static PIX key deposits are built on")
+		}
+	})
+
+	t.Run("a document waiting on the hosted flow surfaces its link", func(t *testing.T) {
+		repo, fake, svc := setup(t)
+		fake.StageAccountStatus("apikey1", &asaas.AccountStatus{General: asaas.RegistrationPending, Documentation: asaas.RegistrationPending})
+		fake.StagePendingDocuments("apikey1", []asaas.PendingDocument{
+			{ID: "doc_1", Type: "IDENTIFICATION", Status: asaas.RegistrationPending, OnboardingURL: "https://provider.example/onboarding/x"},
+		})
+		if err := svc.ProcessAccountStatusWebhook(context.Background(), "acc_1"); err != nil {
+			t.Fatalf("ProcessAccountStatusWebhook: %v", err)
+		}
+		got := repo.accounts["u1"]
+		if got.Status != wallet.BaasPendingDocuments {
+			t.Fatalf("status = %q, want %q", got.Status, wallet.BaasPendingDocuments)
+		}
+		if got.OnboardingURL != "https://provider.example/onboarding/x" {
+			t.Fatalf("onboarding url = %q", got.OnboardingURL)
+		}
+	})
+
+	// The fee is consumed at subaccount creation and is not returned. Closing a
+	// refused account would strand it and force a second payment to retry.
+	t.Run("rejection reopens document submission instead of closing", func(t *testing.T) {
+		repo, fake, svc := setup(t)
+		fake.StageAccountStatus("apikey1", &asaas.AccountStatus{General: asaas.RegistrationRejected, Documentation: asaas.RegistrationRejected})
+		if err := svc.ProcessAccountStatusWebhook(context.Background(), "acc_1"); err != nil {
+			t.Fatalf("ProcessAccountStatusWebhook: %v", err)
+		}
+		if got := repo.accounts["u1"].Status; got != wallet.BaasPendingDocuments {
+			t.Fatalf("status = %q, want %q", got, wallet.BaasPendingDocuments)
+		}
+	})
 }
 
 func TestCheckConservationNonZeroDriftWhenMismatched(t *testing.T) {
@@ -398,7 +578,6 @@ func TestHoldGameBlockedByConservationDrift(t *testing.T) {
 	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 	baas := &fakeDepositBaas{approved: true, conservationDrift: true}
 	svc.SetBaas(baas)
-	svc.SetCustodyEnabled(true)
 
 	_, err := svc.HoldGame(context.Background(), "u1", 1000, "table-1", "idem-hold-drift")
 	p, ok := errors.AsType[*problem.Problem](err)
@@ -415,7 +594,6 @@ func TestMoneyOutPathsBlockedWhenFrozen(t *testing.T) {
 		repo.real.CustodyEnabled = true
 		svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{CPF: "12345678900"}})
 		svc.SetBaas(baas)
-		svc.SetCustodyEnabled(true)
 		_, err := svc.Withdraw(context.Background(), "u1", wallet.KYCVerified, 5000, "idem-frozen-w")
 		p, ok := errors.AsType[*problem.Problem](err)
 		if !ok || p.Type != problem.TypeAccountBlocked {
@@ -428,7 +606,6 @@ func TestMoneyOutPathsBlockedWhenFrozen(t *testing.T) {
 		repo.real.CustodyEnabled = true
 		svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 		svc.SetBaas(baas)
-		svc.SetCustodyEnabled(true)
 		_, err := svc.CashoutGame(context.Background(), "u1", 1000, "table-1", nil, "idem-frozen-c")
 		p, ok := errors.AsType[*problem.Problem](err)
 		if !ok || p.Type != problem.TypeAccountBlocked {
@@ -441,7 +618,6 @@ func TestMoneyOutPathsBlockedWhenFrozen(t *testing.T) {
 		repo.real.CustodyEnabled = true
 		svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 		svc.SetBaas(baas)
-		svc.SetCustodyEnabled(true)
 		_, _, err := svc.ReturnFromGame(context.Background(), "u1", 1000, "idem-frozen-r")
 		p, ok := errors.AsType[*problem.Problem](err)
 		if !ok || p.Type != problem.TypeAccountBlocked {
@@ -562,7 +738,6 @@ func TestProcessMedClawbackCleanDebitWhenSufficientBalance(t *testing.T) {
 	baasRepo.accounts["u1"] = &wallet.BaasAccount{UserID: "u1", Status: wallet.BaasApproved, ProviderAccountID: "acc_1"}
 	baasSvc := NewBaasService(baasRepo, fakeWallets{}, asaas.NewFake(), nil, nil, make([]byte, 32), "wallet_parent", "parent-apikey")
 	svc.SetBaas(baasSvc)
-	svc.SetCustodyEnabled(true)
 	repo.real.Balance = 10000
 
 	if err := svc.ProcessMedClawback(context.Background(), "acc_1", 3000, "med-evt-1"); err != nil {
@@ -584,7 +759,6 @@ func TestProcessMedClawbackCreatesReceivableForShortfall(t *testing.T) {
 	baasRepo.accounts["u1"] = &wallet.BaasAccount{UserID: "u1", Status: wallet.BaasApproved, ProviderAccountID: "acc_1"}
 	baasSvc := NewBaasService(baasRepo, fakeWallets{}, asaas.NewFake(), nil, nil, make([]byte, 32), "wallet_parent", "parent-apikey")
 	svc.SetBaas(baasSvc)
-	svc.SetCustodyEnabled(true)
 	repo.real.Balance = 1000 // less than the 3000 clawback
 
 	if err := svc.ProcessMedClawback(context.Background(), "acc_1", 3000, "med-evt-2"); err != nil {
@@ -611,7 +785,6 @@ func TestProcessMedClawbackUnknownAccountIsNoOp(t *testing.T) {
 	baasRepo := newFakeBaasRepo()
 	baasSvc := NewBaasService(baasRepo, fakeWallets{}, asaas.NewFake(), nil, nil, make([]byte, 32), "wallet_parent", "parent-apikey")
 	svc.SetBaas(baasSvc)
-	svc.SetCustodyEnabled(true)
 
 	if err := svc.ProcessMedClawback(context.Background(), "unknown-acc", 3000, "med-evt-3"); err != nil {
 		t.Fatalf("expected idempotent no-op, got %v", err)
@@ -649,7 +822,6 @@ func TestInitiateDepositBlockedByOpenMedReceivable(t *testing.T) {
 	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 	baas := &fakeDepositBaas{approved: true, openMedReceivable: true}
 	svc.SetBaas(baas)
-	svc.SetCustodyEnabled(true)
 
 	_, _, err := svc.InitiateDeposit(context.Background(), "u1", wallet.KYCVerified, 1000, "idem-med-dep")
 	p, ok := errors.AsType[*problem.Problem](err)
@@ -661,9 +833,9 @@ func TestInitiateDepositBlockedByOpenMedReceivable(t *testing.T) {
 func TestWithdrawBlockedByOpenMedReceivable(t *testing.T) {
 	repo := newStubRepo()
 	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{CPF: "12345678900"}})
+	repo.real.CustodyEnabled = true
 	baas := &fakeDepositBaas{approved: true, openMedReceivable: true}
 	svc.SetBaas(baas)
-	svc.SetCustodyEnabled(true)
 
 	_, err := svc.Withdraw(context.Background(), "u1", wallet.KYCVerified, 5000, "idem-med-w")
 	p, ok := errors.AsType[*problem.Problem](err)

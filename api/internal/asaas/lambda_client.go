@@ -135,3 +135,26 @@ func (c *LambdaAsaasClient) QueryAccountBalance(ctx context.Context, apiKey stri
 }
 
 var _ AsaasClient = (*LambdaAsaasClient)(nil)
+
+func (c *LambdaAsaasClient) QueryAccountStatus(ctx context.Context, apiKey string) (*AccountStatus, error) {
+	var res rpccontract.AsaasAccountStatusResult
+	if err := c.call(ctx, rpccontract.OpAsaasQueryAccountStatus, apiKey, rpccontract.AsaasQueryAccountStatusArgs{}, &res); err != nil {
+		return nil, err
+	}
+	return &AccountStatus{
+		ID: res.ID, CommercialInfo: res.CommercialInfo, BankAccountInfo: res.BankAccountInfo,
+		Documentation: res.Documentation, General: res.General,
+	}, nil
+}
+
+func (c *LambdaAsaasClient) ListPendingDocuments(ctx context.Context, apiKey string) ([]PendingDocument, error) {
+	var res rpccontract.AsaasPendingDocumentsResult
+	if err := c.call(ctx, rpccontract.OpAsaasListPendingDocuments, apiKey, rpccontract.AsaasListPendingDocumentsArgs{}, &res); err != nil {
+		return nil, err
+	}
+	out := make([]PendingDocument, 0, len(res.Documents))
+	for _, d := range res.Documents {
+		out = append(out, PendingDocument{ID: d.ID, Type: d.Type, Status: d.Status, OnboardingURL: d.OnboardingURL})
+	}
+	return out, nil
+}

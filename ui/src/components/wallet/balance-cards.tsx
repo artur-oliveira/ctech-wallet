@@ -17,6 +17,8 @@ interface BalanceCardsProps {
   onReturnFromGame: () => void
   /** Opens the payment-subaccount flow. Only reachable from the deposit gate. */
   onOpenCustody: () => void
+  onPayCustodyFee: () => void
+  onboardingURL?: string
   /** Pre-flight deposit gate from GET /auth/me. Undefined = unknown, behaves as allowed. */
   depositReadiness?: DepositReadiness
   selfExcluded?: boolean
@@ -46,6 +48,8 @@ export function BalanceCards({
                                onFundGame,
                                onReturnFromGame,
                                onOpenCustody,
+                               onPayCustodyFee,
+                               onboardingURL,
                                depositReadiness,
                                selfExcluded,
                              }: BalanceCardsProps) {
@@ -68,7 +72,13 @@ export function BalanceCards({
           </div>
 
           <div className="mt-6 flex flex-wrap gap-2">
-            <DepositGate readiness={depositReadiness} onDeposit={onDeposit} onOpenCustody={onOpenCustody}/>
+            <DepositGate
+              readiness={depositReadiness}
+              onDeposit={onDeposit}
+              onOpenCustody={onOpenCustody}
+              onPayCustodyFee={onPayCustodyFee}
+              onboardingURL={onboardingURL}
+            />
             <Button
               variant="outline"
               className="border-brand-400/60 bg-transparent text-white hover:bg-brand-700"
@@ -89,6 +99,12 @@ export function BalanceCards({
             )}
           </div>
           <DepositGateNote readiness={depositReadiness}/>
+          {/* Named provider attribution: the payment account is held at Asaas
+              under the user's own CPF, and the regulatory adequacy rules
+              require saying so wherever we talk to the account holder. */}
+          {depositReadiness?.custody_required && (
+            <p className="mt-2 text-xs text-brand-100/80">{t('deposit.providerNote')}</p>
+          )}
         </section>
 
         {/* Game — real money, ring-fenced */}

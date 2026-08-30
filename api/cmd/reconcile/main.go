@@ -156,23 +156,21 @@ func run(ctx context.Context) (*Result, error) {
 		RetriedSandboxRefunds: retriedSandboxRefunds, SweptProductPurchases: sweptProducts,
 		RetriedM2MWebhooks: retriedWebhooks, StaleHolds: staleHolds,
 	}
-	if cfg.AsaasCustodyEnabled {
-		baasSvc, err := newBaasService(ctx, cfg, clients, repo, audit, kycclient.New(cfg))
-		if err != nil {
-			return nil, fmt.Errorf("baas: %w", err)
-		}
-		baasSvc.SetWithdrawalReverser(svc.ReverseWithdrawal)
-		tResolved, tRetried, tAlarmed, err := baasSvc.ReconcileTransferIntents(ctx)
-		if err != nil {
-			return nil, err
-		}
-		checked, drifted, err := baasSvc.RunConservationCheck(ctx)
-		if err != nil {
-			return nil, err
-		}
-		res.TransfersResolved, res.TransfersRetried, res.TransfersAlarmed = tResolved, tRetried, tAlarmed
-		res.ConservationChecked, res.ConservationDrifted = checked, drifted
+	baasSvc, err := newBaasService(ctx, cfg, clients, repo, audit, kycclient.New(cfg))
+	if err != nil {
+		return nil, fmt.Errorf("baas: %w", err)
 	}
+	baasSvc.SetWithdrawalReverser(svc.ReverseWithdrawal)
+	tResolved, tRetried, tAlarmed, err := baasSvc.ReconcileTransferIntents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	checked, drifted, err := baasSvc.RunConservationCheck(ctx)
+	if err != nil {
+		return nil, err
+	}
+	res.TransfersResolved, res.TransfersRetried, res.TransfersAlarmed = tResolved, tRetried, tAlarmed
+	res.ConservationChecked, res.ConservationDrifted = checked, drifted
 	return res, nil
 }
 

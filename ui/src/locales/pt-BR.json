@@ -143,10 +143,17 @@
     },
     "onboarding": {
       "title": "Abrir conta de pagamento",
-      "description": "Para receber PIX nesta carteira, abrimos uma conta de pagamento no seu nome. Informe sua renda mensal aproximada.",
+      "description": "Para receber PIX nesta carteira, abrimos uma conta de pagamento no seu nome. Há uma taxa única de verificação, cobrada antes da abertura. Informe sua renda mensal aproximada.",
       "incomeLabel": "Renda mensal",
       "incomeHint": "Valor aproximado. Usado apenas no cadastro da conta de pagamento.",
-      "submit": "Abrir conta"
+      "submit": "Continuar"
+    },
+    "custodyFee": {
+      "title": "Taxa de verificação",
+      "description": "Pague o PIX abaixo para abrirmos sua conta de pagamento. Este valor é uma taxa de serviço: não entra no seu saldo.",
+      "qrAlt": "QR Code PIX da taxa de verificação",
+      "nonRefundable": "A taxa não é reembolsável: ela é consumida na abertura da conta. Se algum documento for recusado, você reenvia sem pagar de novo.",
+      "copy": "Copiar código PIX"
     }
   },
   "confirm": {
@@ -257,7 +264,8 @@
     "returned": "Saldo devolvido ao saldo real.",
     "pixCopied": "Código PIX copiado",
     "gamblingActivated": "Carteira de jogo ativada.",
-    "onboardingStarted": "Conta de pagamento enviada para análise."
+    "onboardingStarted": "Conta de pagamento enviada para análise.",
+    "custodyFeeCreated": "Taxa de verificação gerada"
   },
   "terms": {
     "title": "Só mais um passo",
@@ -406,6 +414,14 @@
         "action": "Abrir conta de pagamento",
         "note": "Falta um passo para você receber PIX nesta carteira."
       },
+      "custodyFeePending": {
+        "action": "Pagar taxa de verificação",
+        "note": "Falta pagar a taxa única de verificação para abrirmos sua conta de pagamento."
+      },
+      "custodyDocuments": {
+        "action": "Enviar documentos",
+        "note": "O provedor precisa dos seus documentos para liberar a conta de pagamento."
+      },
       "custodyPending": {
         "action": "Análise em andamento",
         "note": "Sua conta de pagamento está em análise. Avisamos assim que liberar."
@@ -414,6 +430,7 @@
         "action": "Falar com o suporte",
         "note": "Depósitos indisponíveis nesta conta."
       }
-    }
+    },
+    "providerNote": "Conta de pagamento e liquidação PIX fornecidas pelo Asaas (Asaas Gestão Financeira S.A.)."
   }
 }

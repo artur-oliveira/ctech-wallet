@@ -55,6 +55,10 @@ const (
 	TypeAccountBlocked      = "/problems/account-blocked"
 	TypeMedReceivableOpen   = "/problems/med-receivable-open"
 	TypeSandboxPurchaseUsed = "/problems/sandbox-purchase-used"
+
+	// Asaas-only deposits (docs/specs/2026-08-30-asaas-only-deposits.md)
+	TypeDepositReceiptsExhausted = "/problems/deposit-receipts-exhausted"
+	TypeCustodyFeeUnpaid         = "/problems/custody-fee-unpaid"
 )
 
 // FieldError is a single field-level validation failure. It mirrors the shape
@@ -281,6 +285,24 @@ func AccountBlocked() *Problem {
 func MedReceivableOpen() *Problem {
 	return New(http.StatusConflict, TypeMedReceivableOpen, "MED Receivable Open",
 		"há um débito pendente nesta carteira; aguarde a próxima entrada para quitação automática")
+}
+
+// DepositReceiptsExhausted: the subaccount used its monthly PIX-receipt
+// allowance. A 429 rather than a 4xx about the amount — nothing is wrong with
+// the request, the caller simply has to wait for the window to roll, which
+// Detail states in RFC3339.
+func DepositReceiptsExhausted(limit int64, resetsAt time.Time) *Problem {
+	p := New(http.StatusTooManyRequests, TypeDepositReceiptsExhausted, "Deposit Receipts Exhausted",
+		fmt.Sprintf("limite de %d depósitos por mês atingido; renova em %s", limit, resetsAt.Format(time.RFC3339)))
+	p.MaxAmount = limit
+	return p
+}
+
+// CustodyFeeUnpaid: the one-off verification fee for this subaccount has not
+// cleared yet, so the subaccount cannot be opened.
+func CustodyFeeUnpaid() *Problem {
+	return New(http.StatusConflict, TypeCustodyFeeUnpaid, "Custody Fee Unpaid",
+		"a taxa de verificação ainda não foi confirmada")
 }
 
 // SandboxPurchaseUsed: the §9.2/§9.1a eligibility check failed — the sandbox

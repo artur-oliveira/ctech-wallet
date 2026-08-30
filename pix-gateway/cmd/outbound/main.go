@@ -286,6 +286,35 @@ func (h *handler) dispatch(ctx context.Context, req rpc.Request) rpc.Response {
 		}
 		return okResp(rpc.AsaasBalanceResult{Balance: balance})
 
+	case rpc.OpAsaasQueryAccountStatus:
+		if _, err := decodePayload[rpc.AsaasQueryAccountStatusArgs](req.Payload); err != nil {
+			return toResp(err)
+		}
+		st, err := h.asaas.QueryAccountStatus(ctx, req.OAuthToken)
+		if err != nil {
+			return errResp(err)
+		}
+		return okResp(rpc.AsaasAccountStatusResult{
+			ID: st.ID, CommercialInfo: st.CommercialInfo, BankAccountInfo: st.BankAccountInfo,
+			Documentation: st.Documentation, General: st.General,
+		})
+
+	case rpc.OpAsaasListPendingDocuments:
+		if _, err := decodePayload[rpc.AsaasListPendingDocumentsArgs](req.Payload); err != nil {
+			return toResp(err)
+		}
+		docs, err := h.asaas.ListPendingDocuments(ctx, req.OAuthToken)
+		if err != nil {
+			return errResp(err)
+		}
+		out := rpc.AsaasPendingDocumentsResult{Documents: make([]rpc.AsaasPendingDocument, 0, len(docs))}
+		for _, d := range docs {
+			out.Documents = append(out.Documents, rpc.AsaasPendingDocument{
+				ID: d.ID, Type: d.Type, Status: d.Status, OnboardingURL: d.OnboardingURL,
+			})
+		}
+		return okResp(out)
+
 	default:
 		return errResp(fmt.Errorf("unknown op %q", req.Op))
 	}

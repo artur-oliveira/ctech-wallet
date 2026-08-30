@@ -4,11 +4,15 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 )
 
 // FakeAsaasClient is a programmable in-memory AsaasClient for tests. Mirrors
 // pix.FakePixClient's shape: stage accounts/QR codes/transfers, force errors,
 // inspect recorded calls.
+// fakeAccountSerial makes fake provider account ids unique process-wide.
+var fakeAccountSerial atomic.Int64
+
 type FakeAsaasClient struct {
 	mu sync.Mutex
 
@@ -27,6 +31,12 @@ type FakeAsaasClient struct {
 	QueryCustomerErr       error
 	QueryTransferErr       error
 	QueryAccountBalanceErr error
+	QueryAccountStatusErr  error
+
+	// Staged registration status / pending documents, by apiKey. An unstaged
+	// key answers PENDING with no documents — never approved by omission.
+	AccountStatuses  map[string]*AccountStatus
+	PendingDocuments map[string][]PendingDocument
 
 	// Recorded calls for assertions.
 	CreatedAccounts  []CreateAccountRequest
@@ -76,6 +86,49 @@ func (f *FakeAsaasClient) QueryAccountBalance(_ context.Context, apiKey string) 
 
 // StageBalance sets a subaccount's fake Asaas balance, keyed by apiKey — for
 // conservation-check tests.
+// StageAccountStatus sets what QueryAccountStatus answers for apiKey.
+func (f *FakeAsaasClient) StageAccountStatus(apiKey string, st *AccountStatus) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.AccountStatuses == nil {
+		f.AccountStatuses = map[string]*AccountStatus{}
+	}
+	f.AccountStatuses[apiKey] = st
+}
+
+// StagePendingDocuments sets what ListPendingDocuments answers for apiKey.
+func (f *FakeAsaasClient) StagePendingDocuments(apiKey string, docs []PendingDocument) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.PendingDocuments == nil {
+		f.PendingDocuments = map[string][]PendingDocument{}
+	}
+	f.PendingDocuments[apiKey] = docs
+}
+
+func (f *FakeAsaasClient) QueryAccountStatus(_ context.Context, apiKey string) (*AccountStatus, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.QueryAccountStatusErr != nil {
+		return nil, f.QueryAccountStatusErr
+	}
+	if st, ok := f.AccountStatuses[apiKey]; ok {
+		return st, nil
+	}
+	// Unstaged is PENDING, never approved: a fake that approves by default
+	// would let a test pass that production would refuse.
+	return &AccountStatus{
+		CommercialInfo: RegistrationPending, BankAccountInfo: RegistrationPending,
+		Documentation: RegistrationPending, General: RegistrationPending,
+	}, nil
+}
+
+func (f *FakeAsaasClient) ListPendingDocuments(_ context.Context, apiKey string) ([]PendingDocument, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.PendingDocuments[apiKey], nil
+}
+
 func (f *FakeAsaasClient) StageBalance(apiKey string, balance int64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -89,11 +142,17 @@ func (f *FakeAsaasClient) CreateAccount(_ context.Context, _ string, req CreateA
 	if f.CreateAccountErr != nil {
 		return nil, f.CreateAccountErr
 	}
+	// Unique across fake INSTANCES, not just within one. Integration tests build
+	// a fake per harness but share one database, and provider account ids are
+	// looked up through a global index — a per-instance counter makes two users
+	// collide on "acc_fake_1" and the index then resolves one user's webhook to
+	// the other's account.
 	f.nextAccountID++
+	serial := fmt.Sprintf("%d_%d", fakeAccountSerial.Add(1), f.nextAccountID)
 	acc := &Account{
-		ID:       fmt.Sprintf("acc_fake_%d", f.nextAccountID),
-		WalletID: fmt.Sprintf("wallet_fake_%d", f.nextAccountID),
-		APIKey:   fmt.Sprintf("apikey_fake_%d", f.nextAccountID),
+		ID:       "acc_fake_" + serial,
+		WalletID: "wallet_fake_" + serial,
+		APIKey:   "apikey_fake_" + serial,
 		Status:   AccountStatusPending,
 	}
 	f.Accounts[req.CPF] = acc
@@ -183,6 +242,18 @@ func (f *FakeAsaasClient) StagePayment(paymentID, pixQRCodeID string, amount int
 	f.Payments[paymentID] = &Payment{
 		ID: paymentID, PixQRCodeID: pixQRCodeID, Value: amount, Status: status, ExternalReference: externalRef,
 	}
+}
+
+// StagePayer attaches a payer to a staged payment, the way a real receipt does:
+// the deposit's CPF check reads it from the linked customer, never from the
+// webhook body.
+func (f *FakeAsaasClient) StagePayer(paymentID, customerID, cpfCNPJ, name string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if p, ok := f.Payments[paymentID]; ok {
+		p.CustomerID = customerID
+	}
+	f.Customers[customerID] = &Customer{ID: customerID, Name: name, CPFCNPJ: cpfCNPJ}
 }
 
 // StageTransferStatus overrides a transfer's status by ExternalReference —

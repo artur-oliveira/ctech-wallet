@@ -169,9 +169,7 @@ func newKYCClient(cfg *config.Config) services.KYCClient {
 // asaasSecrets bundles the two SSM SecureString values api fetches once at
 // startup and caches for the process lifetime (plan §3.3, §2.3): the AES-256
 // master key encrypting every subaccount's Asaas API key at rest, and the
-// static token Asaas echoes back on every inbound webhook. Both are the zero
-// value when AsaasCustodyEnabled is false — no environment that never touches
-// Asaas custody needs these SSM parameters provisioned at all.
+// static token Asaas echoes back on every inbound webhook.
 type asaasSecrets struct {
 	MasterKey    []byte
 	WebhookToken string
@@ -179,9 +177,6 @@ type asaasSecrets struct {
 }
 
 func newAsaasSecrets(cfg *config.Config, clients *awsclient.Clients) (*asaasSecrets, error) {
-	if !cfg.AsaasCustodyEnabled {
-		return &asaasSecrets{}, nil
-	}
 	store := secrets.NewStore(clients.SSM, cfg.Env)
 	ctx := context.Background()
 	hexKey, err := store.LoadAsaasMasterKey(ctx)
@@ -211,14 +206,20 @@ func newAsaasClient(client *lambda.Client, cfg *config.Config) asaas.AsaasClient
 	return asaas.NewLambdaAsaasClient(client, cfg.PixGatewayFunctionName)
 }
 
-func newBaasService(repo *repositories.BaasRepository, walletRepo *repositories.WalletRepository, asaasClient asaas.AsaasClient, audit *repositories.AuditRepository, kyc services.KYCClient, s *asaasSecrets, cfg *config.Config) *services.BaasService {
-	return services.NewBaasService(repo, walletRepo, asaasClient, audit, kyc, s.MasterKey, cfg.AsaasParentWalletID, s.ParentAPIKey)
+func newBaasService(repo *repositories.BaasRepository, walletRepo *repositories.WalletRepository, asaasClient asaas.AsaasClient, audit *repositories.AuditRepository, kyc services.KYCClient, productPurchases *repositories.ProductPurchaseRepository, s *asaasSecrets, cfg *config.Config) *services.BaasService {
+	svc := services.NewBaasService(repo, walletRepo, asaasClient, audit, kyc, s.MasterKey, cfg.AsaasParentWalletID, s.ParentAPIKey)
+	svc.SetCustodyFee(services.CustodyFeeConfig{
+		MasterAccountID: cfg.AsaasMasterAccountID,
+		MasterPixKey:    cfg.AsaasMasterPixKey,
+		AmountCents:     cfg.AsaasVerificationFeeCents,
+	}, productPurchases)
+	return svc
 }
 
 func newWalletService(repo *repositories.WalletRepository, users *repositories.UserRepository, audit *repositories.AuditRepository, l *lock.Locker, p pix.PixClient, k services.KYCClient, baas *services.BaasService, sandboxPurchases *repositories.SandboxPurchaseRepository, productPurchases *repositories.ProductPurchaseRepository, m2mClients map[string]services.M2MClient, cfg *config.Config) *services.WalletService {
 	svc := services.NewWalletService(repo, users, audit, l, p, k)
 	svc.SetBaas(baas)
-	svc.SetCustodyEnabled(cfg.AsaasCustodyEnabled)
+	svc.SetReceiptsPerMonth(cfg.AsaasFreeReceiptsPerMonth)
 	svc.SetSandboxPurchases(sandboxPurchases)
 	svc.SetProductPurchases(productPurchases)
 	svc.SetM2MClients(m2mClients)

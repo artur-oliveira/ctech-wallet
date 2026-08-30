@@ -38,13 +38,16 @@ func TestAsaasCentavosExactParsing(t *testing.T) {
 	}
 }
 
+// The MED clawback event still has no authoritative provider-side query, so it
+// stays quarantined: a bearer-token webhook must never debit a wallet on its
+// own. (The account-status event no longer belongs here — it re-queries
+// GET /v3/myAccount/status before deciding anything.)
 func TestUnverifiableAsaasEventsAreQuarantined(t *testing.T) {
 	app := fiber.New()
 	h := &handlers{} // nil services prove these events cannot mutate state
 	app.Post("/webhook", h.asaasWebhook)
 
 	for _, body := range []string{
-		`{"event":"ACCOUNT_STATUS_APPROVED","account":{"id":"acc_1","status":"ACCOUNT_STATUS_APPROVED"}}`,
 		`{"event":"TRANSFER_MED_CLAWBACK","account":{"id":"acc_1"},"transfer":{"value":10.00,"externalReference":"med_1"}}`,
 	} {
 		req := httptest.NewRequest(http.MethodPost, "/webhook", bytes.NewBufferString(body))

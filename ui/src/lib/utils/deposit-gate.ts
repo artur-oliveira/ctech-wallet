@@ -18,6 +18,8 @@ export function resolveDepositGate(readiness?: DepositReadiness): DepositGateSta
   switch (readiness.blocked_by) {
     case 'kyc':
     case 'custody_absent':
+    case 'custody_fee_pending':
+    case 'custody_documents':
     case 'custody_pending':
     case 'custody_blocked':
       return readiness.blocked_by

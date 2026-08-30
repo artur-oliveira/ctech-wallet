@@ -205,6 +205,7 @@ export class ReconcileStack extends cdk.Stack {
         `arn:aws:ssm:*:*:parameter${SSM_WALLET(environment).asaasApiKeyMaster}`,
         `arn:aws:ssm:*:*:parameter${SSM_WALLET(environment).asaasWebhookToken}`,
         `arn:aws:ssm:*:*:parameter${SSM_WALLET(environment).asaasParentApiKey}`,
+        `arn:aws:ssm:*:*:parameter${SSM_WALLET(environment).asaasParentWalletId}`,
         // M2M sandbox-purchase client registry — reconcile reads this to
         // retry failed webhook notify-back deliveries (RetryFailedM2MWebhooks).
         `arn:aws:ssm:*:*:parameter${SSM_WALLET(environment).m2mClients}`,
@@ -236,6 +237,9 @@ export class ReconcileStack extends cdk.Stack {
         // CFN template as plaintext — never do this with a SecureString).
         CTECH_URL: ssm.StringParameter.valueForStringParameter(this, SSM_ACCOUNT(environment).baseUrl),
         WALLET_CLIENT_ID: ssm.StringParameter.valueForStringParameter(this, SSM_WALLET(environment).walletClientId),
+        // Every settlement leg reconcile submits needs a destination wallet,
+        // and config.load() refuses to start in production without one.
+        ASAAS_PARENT_WALLET_ID: ssm.StringParameter.valueForStringParameter(this, SSM_WALLET(environment).asaasParentWalletId),
         // AWS_REGION is a reserved Lambda variable — set by the runtime, never here.
       },
       // NOTE: a Lambda has no /opt/app/start.sh, so WALLET_CLIENT_SECRET cannot be

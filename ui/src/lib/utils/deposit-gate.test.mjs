@@ -10,7 +10,9 @@ test('an allowed readiness offers the plain deposit action', () => {
 })
 
 test('a blocked readiness offers exactly the reason the server reported', () => {
-    for (const reason of ['kyc', 'custody_absent', 'custody_pending', 'custody_blocked']) {
+    for (const reason of [
+        'kyc', 'custody_absent', 'custody_fee_pending', 'custody_documents', 'custody_pending', 'custody_blocked',
+    ]) {
         assert.equal(
             resolveDepositGate({allowed: false, blocked_by: reason, kyc_level: '', custody_required: true}),
             reason,

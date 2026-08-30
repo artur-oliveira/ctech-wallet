@@ -156,6 +156,14 @@ export class ApiStack extends cdk.Stack {
       `SERVICE_AUDIENCE=${wallet.appUrl}`,
       `WALLET_CLIENT_ID=${wallet.walletClientId}`,
       `WALLET_CLIENT_SECRET=${wallet.walletClientSecret}`,
+      // Asaas custody. There is no second deposit rail behind these: an
+      // unresolvable parameter fails the API closed at boot rather than
+      // silently routing user money anywhere else
+      // (docs/specs/2026-08-30-asaas-only-deposits.md).
+      `ASAAS_PARENT_WALLET_ID=${wallet.asaasParentWalletId}`,
+      `ASAAS_MASTER_ACCOUNT_ID=${wallet.asaasMasterAccountId}`,
+      `ASAAS_MASTER_PIX_KEY=${wallet.asaasMasterPixKey}`,
+      `ASAAS_VERIFICATION_FEE_CENTS=${wallet.asaasVerificationFeeCents}`,
     ];
     if (isAlpine) {
       const quoted = ssmEnvArgs.map((a) => `'${a.replace(/'/g, `'\\''`)}'`).join(' ');

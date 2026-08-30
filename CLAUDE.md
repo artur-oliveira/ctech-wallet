@@ -78,7 +78,18 @@ it is.
     every callback. Payer CPF is the one field Inter's re-query does not return — it is sourced from the
     webhook body itself (persisted on first sight) and used only for the CPF-match anti-fraud check, never to
     authorize crediting.
-12. **No money left in limbo.** A withdrawal whose PIX transfer call fails after the internal debit enters a
+12. **Deposits are custody-only.** A user deposit opens a PIX charge on that user's own BaaS subaccount,
+    held under their CPF — never on CTech's Inter account. There is no fallback: no approved subaccount, no
+    deposit (`409 wallet-onboarding`). CTech's Inter account receives **product purchases** only (SKU sales,
+    `OpenCharge` invoices); CTech's **master account at the BaaS provider** receives the one-off subaccount
+    verification fee, because that is the balance the provider debits its own charge from. The regression test
+    `TestDepositNeverChargesInter` is the executable form of this rule. See
+    `docs/specs/2026-08-30-asaas-only-deposits.md`.
+13. **The verification fee is charged before the subaccount exists, and never refunded.** The provider
+    consumes it at creation and does not return it when registration is refused, so a refused registration
+    returns to `pending_documents` for re-submission — never to `closed`, which would strand a paid fee and
+    force a second payment. The user is told this before paying.
+14. **No money left in limbo.** A withdrawal whose PIX transfer call fails after the internal debit enters a
     `processing` state that a reconciliation job MUST resolve (complete or reverse). Failed refunds raise an
     operational alarm for manual reconciliation — never a silent path.
 
@@ -164,7 +175,8 @@ passwords, real customer data, or real CPFs.
 
 - **JWKS:** fetch from `{CTECH_URL}/.well-known/jwks.json`; RS256 only; verify `aud` contains the wallet's
   `SERVICE_AUDIENCE` and `iss` == `CTECH_URL`.
-- **Access-token claims used:** `sub` (user_id), `scope`, `azp` (client_id), `kyc_level` (`""|basic|verified`),
+- **Access-token claims used:** `sub` (user_id), `scope`, `azp` (client_id), `kyc_level` (`""|basic|enhanced` —
+  `wallet.KYCVerified == "enhanced"`, matching `kyc.LevelEnhanced` in `ctech-account`),
   `last_mfa_at` (unix, step-up freshness), empty `sid` marks an M2M `client_credentials` token.
 - **KYC promotion:** on the first confirmed deposit call `POST {CTECH_URL}/v1.0/internal/kyc/confirm`
   `{user_id, cpf}` (idempotent; mismatch → 409). CPF for payer/withdrawal matching:

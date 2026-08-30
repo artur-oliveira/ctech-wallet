@@ -18,7 +18,7 @@ import {Button} from '@/components/ui/button'
 import {QueryErrorState} from '@/components/query-error-state'
 import {LanguageSwitcher} from '@/components/language-switcher'
 import {useWalletRealtime} from '@/lib/hooks/useWalletRealtime'
-import type {DepositResult} from '@/lib/types/api'
+import type {DepositResult, OnboardingFee} from '@/lib/types/api'
 import {
   applyRealtimeStatus,
   parseStoredDeposit,
@@ -28,7 +28,7 @@ import {
   upsertTransaction,
 } from '@/lib/utils/transaction-status'
 import {SESSION_KEY_PIX_CHARGE_PREFIX, SESSION_KEY_TRANSACTION_PREFIX} from '@/lib/constants/storage'
-import {QUERY_KEY_ME} from '@/lib/constants/query'
+import {QUERY_KEY_ME, QUERY_KEY_ONBOARDING} from '@/lib/constants/query'
 import {ACCOUNT_IDENTITY_URL} from '@/lib/legal'
 import Image from 'next/image'
 
@@ -40,11 +40,20 @@ const TRANSACTION_OFFLINE_POLL_INTERVAL_MS = 15_000
 const TRANSACTION_MAX_POLL_INTERVAL_MS = 60_000
 const CUSTODY_POLL_INTERVAL_MS = 30_000
 
+/**
+ * Gate reasons that resolve without the user doing anything, so they are the
+ * ones worth re-asking about. Provider progress arrives on a webhook the wallet
+ * does not broadcast, and polling a state only the user can clear (pay the fee,
+ * send a document) would just be noise.
+ */
+const CUSTODY_REVIEW_REASONS: string[] = ['custody_pending', 'custody_documents']
+
 const AmountDialog = dynamic(() => import('@/components/wallet/amount-dialog').then((module) => module.AmountDialog))
 const ConfirmMoneyDialog = dynamic(() => import('@/components/wallet/confirm-money-dialog').then((module) => module.ConfirmMoneyDialog))
 const MoneyReceiptDialog = dynamic(() => import('@/components/wallet/money-receipt-dialog').then((module) => module.MoneyReceiptDialog))
 const PixChargeDialog = dynamic(() => import('@/components/wallet/pix-charge-dialog').then((module) => module.PixChargeDialog))
 const OnboardingDialog = dynamic(() => import('@/components/wallet/onboarding-dialog').then((module) => module.OnboardingDialog))
+const CustodyFeeDialog = dynamic(() => import('@/components/wallet/custody-fee-dialog').then((module) => module.CustodyFeeDialog))
 
 /** RFC 7807 problem type → i18n key. */
 const PROBLEM_KEY: Record<string, string> = {
@@ -107,6 +116,7 @@ function DashboardInner() {
     details?: Array<{ label: string; value: string }>
   } | null>(null)
   const [stepUp, setStepUp] = useState(false)
+  const [custodyFee, setCustodyFee] = useState<OnboardingFee | null>(null)
   const balances = useQuery({queryKey: ['balances'], queryFn: () => apiClient.getBalances()})
   // Shares ProtectedRoute's cache entry; this observer only adds the polling.
   // Asaas approval arrives on a provider webhook the wallet does not broadcast,
@@ -116,9 +126,23 @@ function DashboardInner() {
     queryKey: QUERY_KEY_ME,
     queryFn: () => apiClient.me(),
     refetchInterval: (query) =>
-      query.state.data?.deposit?.blocked_by === 'custody_pending' ? CUSTODY_POLL_INTERVAL_MS : false,
+      CUSTODY_REVIEW_REASONS.includes(query.state.data?.deposit?.blocked_by ?? '')
+        ? CUSTODY_POLL_INTERVAL_MS
+        : false,
   })
   const depositReadiness = me.data?.deposit
+  // Only fetched once the gate says onboarding is in progress: for everyone
+  // else the endpoint has nothing to report and 404s. It carries the
+  // outstanding fee charge and the provider's document link, so it is the one
+  // read the onboarding steps need.
+  const onboardingBlocked = depositReadiness?.blocked_by === 'custody_fee_pending'
+    || depositReadiness?.blocked_by === 'custody_documents'
+    || depositReadiness?.blocked_by === 'custody_pending'
+  const onboardingState = useQuery({
+    queryKey: QUERY_KEY_ONBOARDING,
+    queryFn: () => apiClient.getOnboarding(),
+    enabled: onboardingBlocked,
+  })
   const responsible = useQuery({queryKey: ['gambling-limits'], queryFn: () => apiClient.getGameLimits()})
   const walletID = balances.data?.real.wallet_id
   const transactionStorageKey = walletID ? `${SESSION_KEY_TRANSACTION_PREFIX}${walletID}` : null
@@ -324,15 +348,18 @@ function DashboardInner() {
 
   const onboarding = useMutation({
     mutationFn: (incomeValue: number) => apiClient.initiateOnboarding(incomeValue),
-    onSuccess: () => {
+    onSuccess: (state) => {
       setFlow(null)
-      // The subaccount is now under review — re-read the gate so the card lands
-      // on "análise em andamento" without a reload.
+      setCustodyFee(state.fee ?? null)
+      // The gate moved — re-read it so the card shows the new step without a
+      // reload.
       void qc.invalidateQueries({queryKey: QUERY_KEY_ME})
-      toast.success(t('toast.onboardingStarted'))
+      toast.success(state.fee ? t('toast.custodyFeeCreated') : t('toast.onboardingStarted'))
     },
     onError: (err) => toast.error(problemMessage(err, t)),
   })
+
+
 
   const name = profile?.first_name ?? profile?.username ?? ''
 
@@ -414,6 +441,8 @@ function DashboardInner() {
               onFundGame={() => setFlow('fund-game')}
               onReturnFromGame={() => setFlow('return-game')}
               onOpenCustody={() => setFlow('onboarding')}
+              onPayCustodyFee={() => setCustodyFee(onboardingState.data?.fee ?? null)}
+              onboardingURL={onboardingState.data?.onboarding_url}
               depositReadiness={depositReadiness}
               selfExcluded={!!responsible.data?.excluded}
             />
@@ -462,6 +491,19 @@ function DashboardInner() {
           onClose={() => {
             onboarding.reset()
             setFlow(null)
+          }}
+        />
+      )}
+
+      {custodyFee && (
+        <CustodyFeeDialog
+          fee={custodyFee}
+          onClose={() => {
+            setCustodyFee(null)
+            // Payment lands on a provider webhook, so the only way the card
+            // learns the fee cleared is by asking again.
+            void qc.invalidateQueries({queryKey: QUERY_KEY_ME})
+            void qc.invalidateQueries({queryKey: QUERY_KEY_ONBOARDING})
           }}
         />
       )}

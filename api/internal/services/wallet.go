@@ -261,6 +261,11 @@ type BaasProvider interface {
 	// SetAccountStatus transitions a BaasAccount's lifecycle status directly —
 	// used by the closure state machine (plan §7.2).
 	SetAccountStatus(ctx context.Context, userID, status string) error
+	// CountReceipt records one PIX receipt against the subaccount's monthly
+	// free allowance, rolling the window when monthKey changes. Called after a
+	// deposit is confirmed, because a receipt only costs money once it is
+	// actually received — an unpaid QR code is billed nothing.
+	CountReceipt(ctx context.Context, userID, monthKey string) error
 	// SubmitGamePurchaseSettlement/SubmitGamePurchaseReversal are §9.1a's
 	// forward/reverse settlement legs for a game-funded sandbox purchase.
 	SubmitGamePurchaseSettlement(ctx context.Context, userID, creditSK string, amount int64) error
@@ -309,6 +314,10 @@ func (noopBaasProvider) SetAccountStatus(context.Context, string, string) error 
 	return errors.New("baas: custody disabled")
 }
 
+func (noopBaasProvider) CountReceipt(context.Context, string, string) error {
+	return errors.New("baas: custody disabled")
+}
+
 func (noopBaasProvider) SubmitGamePurchaseSettlement(context.Context, string, string, int64) error {
 	return errors.New("baas: custody disabled")
 }
@@ -327,14 +336,28 @@ type WalletService struct {
 	kyc              KYCClient
 	broadcaster      Broadcaster          // optional; see SetBroadcaster
 	baas             BaasProvider         // defaults to noopBaasProvider; see SetBaas
-	custodyEnabled   bool                 // defaults false; see SetCustodyEnabled — matches config.AsaasCustodyEnabled's own default
+	receiptsPerMonth int64                // monthly PIX-receipt allowance per subaccount; see SetReceiptsPerMonth
 	sandboxPurchases SandboxPurchaseRepo  // required for PurchaseSandboxDirect/RefundSandboxPurchase/ConfirmSandboxPurchase; see SetSandboxPurchases
 	productPurchases ProductPurchaseRepo  // required for PurchaseProductDirect/ConfirmProductPurchase/RefundProductPurchase; see SetProductPurchases
 	m2mClients       map[string]M2MClient // AZP → webhook config; nil/missing entry means "don't notify"; see SetM2MClients
 }
 
 func NewWalletService(repo Repo, users UserRepo, audit Auditor, lock Locker, pixClient pix.PixClient, kyc KYCClient) *WalletService {
-	return &WalletService{repo: repo, users: users, audit: audit, lock: lock, pix: pixClient, kyc: kyc, baas: noopBaasProvider{}}
+	return &WalletService{
+		repo: repo, users: users, audit: audit, lock: lock, pix: pixClient, kyc: kyc,
+		baas:             noopBaasProvider{},
+		receiptsPerMonth: wallet.DefaultReceiptsPerMonth,
+	}
+}
+
+// SetReceiptsPerMonth wires config.AsaasFreeReceiptsPerMonth after
+// construction — same setter pattern as SetBroadcaster/SetBaas, so existing
+// call sites keep the safe default rather than an accidental zero (which would
+// refuse every deposit).
+func (s *WalletService) SetReceiptsPerMonth(v int64) {
+	if v > 0 {
+		s.receiptsPerMonth = v
+	}
 }
 
 // SetBroadcaster wires the WebSocket registry after construction — kept as a
@@ -354,20 +377,15 @@ func (s *WalletService) SetBaas(b BaasProvider) {
 	s.baas = b
 }
 
-// SetCustodyEnabled wires config.AsaasCustodyEnabled after construction — same
-// setter pattern as SetBroadcaster/SetBaas. Left false (the zero value) keeps
-// GetBalances byte-for-byte what it is today, which is the whole point of the
-// flag defaulting off (plan §1).
-func (s *WalletService) SetCustodyEnabled(v bool) {
-	s.custodyEnabled = v
-}
-
 // CustodyEnabledForUser reports the internal real-wallet allowlist state. It
 // is intentionally not a self-service switch or public response field.
+//
+// Since deposits became Asaas-only it gates ONBOARDING, not depositing: it
+// answers "may this user open a subaccount", which is the expensive, scarce
+// action (a non-refundable verification fee and a subaccount slot per attempt).
+// Whether an already-onboarded user may deposit is decided by
+// requireCustodyForDeposit, which never consults it.
 func (s *WalletService) CustodyEnabledForUser(ctx context.Context, userID string) (bool, error) {
-	if !s.custodyEnabled {
-		return false, nil
-	}
 	real, err := s.repo.EnsureRealWallet(ctx, userID)
 	if err != nil {
 		return false, err
@@ -472,7 +490,7 @@ func (s *WalletService) GetBalances(ctx context.Context, userID string) (real, g
 	if err != nil || real == nil {
 		return real, game, sandbox, "", err
 	}
-	if s.custodyEnabled && real.CustodyEnabled {
+	if real.CustodyEnabled {
 		acc, err := s.baas.GetAccount(ctx, userID)
 		if err != nil {
 			return nil, nil, nil, "", err
@@ -499,17 +517,13 @@ func (s *WalletService) Statement(ctx context.Context, walletID string, limit in
 // ConfirmDeposit after re-querying the charge. idemKey is required for
 // idempotency: a retried POST /wallet/deposits returns the same txid/QR and
 // never opens a second Inter charge (SEC-08).
-// requireCustodyApproved gates a money-in/money-out flow on the caller's
-// Asaas subaccount being approved, when AsaasCustodyEnabled (plan §4.2,
-// §5.2). Returns (nil, nil) — proceed exactly as before this branch existed —
-// when the flag is off. Returns (acc, nil) once approved. Otherwise returns a
-// 409 wallet-onboarding problem carrying the current lifecycle status, so the
-// UI can show the right onboarding step. Shared by InitiateDeposit and
-// Withdraw so this behavior is defined exactly once.
+// requireCustodyApproved gates a money-OUT flow on the caller's Asaas
+// subaccount being approved. A wallet outside the custody allowlist has no
+// subaccount and returns (nil, nil): its balance, if any, is legacy Inter money
+// and must stay withdrawable through Inter — refusing it would strand real
+// money (Invariant #12). Money-IN has no such history to honour and uses
+// requireCustodyForDeposit instead.
 func (s *WalletService) requireCustodyApproved(ctx context.Context, userID string) (*wallet.BaasAccount, error) {
-	if !s.custodyEnabled {
-		return nil, nil
-	}
 	real, err := s.repo.EnsureRealWallet(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -517,6 +531,19 @@ func (s *WalletService) requireCustodyApproved(ctx context.Context, userID strin
 	if !real.CustodyEnabled {
 		return nil, nil
 	}
+	return s.requireCustodyForDeposit(ctx, userID)
+}
+
+// requireCustodyForDeposit is the money-IN gate, and it never returns
+// (nil, nil): a deposit ALWAYS needs an approved Asaas subaccount to land in
+// (Invariant #14). It deliberately does not consult the real wallet's
+// custody_enabled allowlist — that flag decides who may open a subaccount, and
+// reading it here would re-open the Inter deposit path for everyone not on it,
+// which is the exact hole this replaced.
+//
+// Returns (acc, nil) once approved; otherwise a 409 wallet-onboarding carrying
+// the current lifecycle status so the UI can show the right onboarding step.
+func (s *WalletService) requireCustodyForDeposit(ctx context.Context, userID string) (*wallet.BaasAccount, error) {
 	acc, err := s.baas.GetIfApproved(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -548,6 +575,33 @@ func (s *WalletService) requireCustodyApproved(ctx context.Context, userID strin
 	return nil, problem.WalletOnboarding(status)
 }
 
+// requireReceiptAllowance refuses a new deposit charge once the caller's
+// subaccount has used its monthly PIX-receipt allowance. Asaas gives every
+// account a fixed number of free receipts per calendar month and bills each one
+// after that, so without this gate a busy wallet quietly turns into a per-PIX
+// cost with nothing capping it.
+//
+// ponytail: counts CONFIRMED receipts, not opened QR codes — an unpaid QR is
+// billed nothing, so reserving a slot at open time would count the wrong thing.
+// The configured allowance sits below the real free ceiling and that margin is
+// what covers charges opened but not yet paid (short TTL, one at a time per
+// wallet via the wallet lock). If per-user volume ever gets near the margin,
+// this becomes a reservation released on expiry.
+func (s *WalletService) requireReceiptAllowance(ctx context.Context, userID string) error {
+	acc, err := s.baas.GetAccount(ctx, userID)
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	_, _, month := wallet.WindowKeys(now)
+	used := acc.ReceiptsUsed(month)
+	if used < s.receiptsPerMonth {
+		return nil
+	}
+	_, _, resetsAt := wallet.WindowResets(now)
+	return problem.DepositReceiptsExhausted(s.receiptsPerMonth, resetsAt)
+}
+
 // Deposit gate reasons reported by DepositReadiness. They exist so the frontend
 // can render the right next step BEFORE the user types an amount, instead of
 // letting them submit into a 403/409 they could not have predicted. The client
@@ -558,9 +612,15 @@ const (
 	// deposit route demands (and, when custody applies, the same level
 	// POST /wallet/onboarding demands to open the subaccount).
 	DepositBlockedKYC = "kyc"
-	// DepositBlockedCustodyAbsent: custody is required and no subaccount has
-	// been opened yet — the user can act on this (open one).
+	// DepositBlockedCustodyAbsent: no subaccount has been opened yet and the
+	// user is allowed to open one — the one case the user resolves themselves.
 	DepositBlockedCustodyAbsent = "custody_absent"
+	// DepositBlockedCustodyFeePending: onboarding started and is waiting on the
+	// one-off verification fee. The user acts on this by paying the charge.
+	DepositBlockedCustodyFeePending = "custody_fee_pending"
+	// DepositBlockedCustodyDocuments: Asaas is waiting on identity documents.
+	// The user acts on this by following the provider's onboarding link.
+	DepositBlockedCustodyDocuments = "custody_documents"
 	// DepositBlockedCustodyPending: a subaccount exists but is not approved
 	// yet. Nothing for the user to do but wait.
 	DepositBlockedCustodyPending = "custody_pending"
@@ -590,39 +650,45 @@ type DepositReadiness struct {
 // refused by the middleware before InitiateDeposit's own weaker `!= ""` check
 // ever runs. Reporting "basic is enough" would send them into a 403.
 func (s *WalletService) DepositReadiness(ctx context.Context, userID, kycLevel string) (*DepositReadiness, error) {
-	out := &DepositReadiness{KYCLevel: kycLevel}
+	// Custody is no longer conditional: there is exactly one deposit rail and it
+	// is the user's own Asaas subaccount. The field stays in the response for
+	// the frontend's benefit, always true.
+	out := &DepositReadiness{KYCLevel: kycLevel, CustodyRequired: true}
 
-	custody, err := s.CustodyEnabledForUser(ctx, userID)
+	acc, err := s.baas.GetAccount(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	out.CustodyRequired = custody
-	if custody {
-		acc, err := s.baas.GetAccount(ctx, userID)
-		if err != nil {
-			return nil, err
-		}
-		if acc != nil {
-			out.CustodyStatus = acc.Status
-		}
+	if acc != nil {
+		out.CustodyStatus = acc.Status
 	}
 
 	if kycLevel != wallet.KYCVerified {
 		out.BlockedBy = DepositBlockedKYC
 		return out, nil
 	}
-	if !custody {
-		out.Allowed = true
-		return out, nil
-	}
 
-	if _, err := s.requireCustodyApproved(ctx, userID); err != nil {
+	if _, err := s.requireCustodyForDeposit(ctx, userID); err != nil {
 		var p *problem.Problem
 		if !errors.As(err, &p) {
 			// A repository/provider failure is not a gate. Fail open here so a
 			// transient read never tells a fully-onboarded user they cannot
 			// deposit; InitiateDeposit remains the enforcing edge.
 			return nil, err
+		}
+		if out.CustodyStatus == "" {
+			// No subaccount yet. "Open one" is only the next step for a user the
+			// allowlist actually lets open one; for anyone else there is no
+			// self-service action, so saying so would be a dead end.
+			allowed, aerr := s.CustodyEnabledForUser(ctx, userID)
+			if aerr != nil {
+				return nil, aerr
+			}
+			out.BlockedBy = DepositBlockedCustodyBlocked
+			if allowed {
+				out.BlockedBy = DepositBlockedCustodyAbsent
+			}
+			return out, nil
 		}
 		out.BlockedBy = custodyBlockReason(out.CustodyStatus)
 		return out, nil
@@ -632,14 +698,16 @@ func (s *WalletService) DepositReadiness(ctx context.Context, userID, kycLevel s
 }
 
 // custodyBlockReason maps a subaccount lifecycle status to the user-facing
-// next step. An empty status means no row at all — the one case the user can
-// resolve themselves.
+// next step. Only called with a non-empty status — the no-row case needs the
+// allowlist to decide and is handled by DepositReadiness itself.
 func custodyBlockReason(status string) string {
 	switch status {
-	case "":
-		return DepositBlockedCustodyAbsent
+	case wallet.BaasFeePending:
+		return DepositBlockedCustodyFeePending
+	case wallet.BaasPendingDocuments:
+		return DepositBlockedCustodyDocuments
 	case wallet.BaasFrozen, wallet.BaasClosing, wallet.BaasSubaccountClosed, wallet.BaasClosed,
-		// requireCustodyApproved also refuses an APPROVED account under
+		// requireCustodyForDeposit also refuses an APPROVED account under
 		// conservation drift (Invariant #13). Approved-but-refused is never an
 		// onboarding step.
 		wallet.BaasApproved:
@@ -659,9 +727,6 @@ func custodyBlockReason(status string) string {
 // deposit/withdrawal entry points on onboarding progress; this gates every
 // other money-moving path on the frozen status specifically.
 func (s *WalletService) requireNotFrozen(ctx context.Context, userID string) error {
-	if !s.custodyEnabled {
-		return nil
-	}
 	real, err := s.repo.EnsureRealWallet(ctx, userID)
 	if err != nil {
 		return err
@@ -684,27 +749,29 @@ func (s *WalletService) InitiateDeposit(ctx context.Context, userID, kycLevel st
 		return nil, nil, problem.KYCNotVerified()
 	}
 
-	// With AsaasCustodyEnabled, a deposit needs an APPROVED subaccount to open
-	// a charge against — else 409 wallet-onboarding (plan §4.2) so the UI can
-	// show the right onboarding step instead of a generic failure. With the
-	// flag off, custodied stays false and every line below behaves exactly as
-	// it did before this branch existed.
-	acc, err := s.requireCustodyApproved(ctx, userID)
-	if err != nil {
+	// A deposit needs an APPROVED subaccount to open a charge against — else
+	// 409 wallet-onboarding so the UI can show the right onboarding step
+	// instead of a generic failure. There is no fallback: money deposited by a
+	// user is custodied in a subaccount under their own CPF, never in CTech's
+	// Inter account (Invariant #14).
+	if _, err := s.requireCustodyForDeposit(ctx, userID); err != nil {
 		return nil, nil, err
 	}
-	custodied := acc != nil
 
 	realw, err := s.repo.EnsureRealWallet(ctx, userID)
 	if err != nil {
 		return nil, nil, err
 	}
-	if custodied {
-		if open, err := s.baas.HasOpenMedReceivable(ctx, realw.WalletID); err != nil {
-			return nil, nil, err
-		} else if open {
-			return nil, nil, problem.MedReceivableOpen()
-		}
+	if open, err := s.baas.HasOpenMedReceivable(ctx, realw.WalletID); err != nil {
+		return nil, nil, err
+	} else if open {
+		return nil, nil, problem.MedReceivableOpen()
+	}
+	// Asaas bills every PIX receipt past the monthly free allowance, so a
+	// subaccount that has used its allowance stops opening charges rather than
+	// silently costing money on each one.
+	if err := s.requireReceiptAllowance(ctx, userID); err != nil {
+		return nil, nil, err
 	}
 	// Absolute inbound ceiling — no per-wallet deposit-range override may exceed
 	// it. Reject above-cap amounts before any charge is opened at the bank.
@@ -731,7 +798,17 @@ func (s *WalletService) InitiateDeposit(ctx context.Context, userID, kycLevel st
 		return nil, nil, conflict
 	}
 	if existing != nil {
-		// Idempotent replay: return the original deposit + its (re-queried) charge.
+		// Idempotent replay: hand back the original deposit and its charge. A
+		// still-unpaid charge is answered from what was stored, because a static
+		// QR has no payment at the provider until someone pays it — re-querying
+		// one would fail on the most ordinary case there is, a user refreshing
+		// the screen before paying.
+		if existing.QRCodePayload != "" && existing.Status == wallet.DepositPending {
+			return existing, &pix.Charge{
+				Txid: existing.Txid, Amount: existing.AmountExpected, QRCode: existing.QRCodePayload,
+				QRCodeB64: existing.QRCodeImage, Status: pix.ChargeActive,
+			}, nil
+		}
 		charge, qerr := s.queryDeposit(ctx, existing)
 		if qerr != nil {
 			return nil, nil, qerr
@@ -739,14 +816,7 @@ func (s *WalletService) InitiateDeposit(ctx context.Context, userID, kycLevel st
 		return existing, charge, nil
 	}
 
-	var charge *pix.Charge
-	var providerQRCodeID, provider string
-	if custodied {
-		charge, providerQRCodeID, err = s.baas.CreateDepositCharge(ctx, userID, amount, txid)
-		provider = wallet.ProviderAsaas
-	} else {
-		charge, err = s.pix.CreateCharge(ctx, txid, amount, "")
-	}
+	charge, providerQRCodeID, err := s.baas.CreateDepositCharge(ctx, userID, amount, txid)
 	if err != nil {
 		slog.Error("pix charge creation failed", "user_id", userID, "txid", txid, "err", err)
 		return nil, nil, problem.InternalServer("falha ao criar cobrança PIX")
@@ -757,8 +827,10 @@ func (s *WalletService) InitiateDeposit(ctx context.Context, userID, kycLevel st
 		UserID:           userID,
 		AmountExpected:   amount,
 		Status:           wallet.DepositPending,
-		Provider:         provider,
+		Provider:         wallet.ProviderAsaas,
 		ProviderQRCodeID: providerQRCodeID,
+		QRCodePayload:    charge.QRCode,
+		QRCodeImage:      charge.QRCodeB64,
 		CreatedAt:        repositories.NowStr(),
 		TTL:              time.Now().Add(depositTTLMinutes * time.Minute).Unix(),
 	}
@@ -913,6 +985,18 @@ func (s *WalletService) ConfirmDeposit(ctx context.Context, txid, payerCPF, paye
 		ReqHash:        reqHash(txid, charge.Amount),
 	}, txid, charge.E2EID); err != nil {
 		return err
+	}
+	// Meter the receipt AFTER the credit commits, and never let a counter
+	// failure fail a deposit that already landed: the worst case is one receipt
+	// under-counted against a monthly allowance that has margin built in, which
+	// is far cheaper than a confirmed deposit reported as an error and retried.
+	// Only Asaas receipts are billed per receipt, so legacy Inter deposits
+	// draining after the cutover are not counted.
+	if dep.Provider == wallet.ProviderAsaas {
+		_, _, month := wallet.WindowKeys(time.Now())
+		if err := s.baas.CountReceipt(ctx, dep.UserID, month); err != nil {
+			slog.ErrorContext(ctx, "receipt counter update failed", "user_id", dep.UserID, "txid", txid, "err", err)
+		}
 	}
 	s.broadcastDepositConfirmed(ctx, dep.UserID, dep.WalletID, txid, charge.Amount)
 	return nil
@@ -1763,17 +1847,15 @@ func (s *WalletService) HoldGame(ctx context.Context, userID string, amount int6
 	if _, err := s.requireNotExcluded(ctx, userID); err != nil { // defense in depth: an excluded user must not re-enter play
 		return nil, err
 	}
-	if s.custodyEnabled {
-		// Invariant #13 fail-closed kill-switch (plan §6) + frozen-account gate
-		// (plan §7.1): a new hold must never be opened against a custodied user
-		// whose Asaas balance and ledger already disagree, or whose subaccount
-		// is frozen — a non-custodied (or not-yet-custodied) user has no
-		// BaasAccount row at all and is unaffected.
-		if acc, err := s.baas.GetAccount(ctx, userID); err != nil {
-			return nil, err
-		} else if acc != nil && (acc.ConservationDrift || acc.Status == wallet.BaasFrozen) {
-			return nil, problem.AccountBlocked()
-		}
+	// Invariant #13 fail-closed kill-switch (plan §6) + frozen-account gate
+	// (plan §7.1): a new hold must never be opened against a custodied user
+	// whose Asaas balance and ledger already disagree, or whose subaccount
+	// is frozen — a not-yet-onboarded user has no BaasAccount row at all and
+	// is unaffected.
+	if acc, err := s.baas.GetAccount(ctx, userID); err != nil {
+		return nil, err
+	} else if acc != nil && (acc.ConservationDrift || acc.Status == wallet.BaasFrozen) {
+		return nil, problem.AccountBlocked()
 	}
 	release, err := acquireWallet(ctx, s.lock, game.WalletID)
 	if err != nil {

@@ -7,6 +7,7 @@ import type {
   GameLimitsStatus,
   LedgerPage,
   MeResponse,
+  OnboardingState,
   ProductPurchase,
   PurchasePage,
   SandboxPurchase,
@@ -142,12 +143,19 @@ class ApiClient {
   }
 
   /**
-   * Opens the caller's payment (custody) subaccount. Idempotent server-side: a
-   * second call while a row exists returns that row's status unchanged.
+   * Starts custody onboarding and returns the one-off verification fee to pay.
+   * The payment account itself is only opened once that fee clears, because the
+   * provider bills the moment it exists. Idempotent server-side: called again
+   * while the fee is outstanding it returns the same charge, never a second one.
    * `incomeValue` is centavos, like every other amount on this client.
    */
-  async initiateOnboarding(incomeValue: number): Promise<{ status: string }> {
-    return (await this.http.post('/v1.0/wallet/onboarding', {income_value: incomeValue})).data
+  async initiateOnboarding(incomeValue: number): Promise<OnboardingState> {
+    return (await this.http.post<OnboardingState>('/v1.0/wallet/onboarding', {income_value: incomeValue})).data
+  }
+
+  /** Current onboarding step. Read-only: opens no charge and no account. */
+  async getOnboarding(): Promise<OnboardingState> {
+    return (await this.http.get<OnboardingState>('/v1.0/wallet/onboarding')).data
   }
 
   async getBalances(): Promise<Balances> {

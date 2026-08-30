@@ -145,6 +145,13 @@ export const SSM_WALLET = (env: Environment) => ({
   asaasApiKeyMaster: `/${SERVICE}/${env}/asaas/api-key-master`, // SecureString — hex-encoded AES-256 key
   asaasWebhookToken: `/${SERVICE}/${env}/asaas/webhook-token`, // SecureString
   asaasParentApiKey: `/${SERVICE}/${env}/asaas/parent-api-key`, // SecureString — plan §9.1a reversal leg
+  // Plain Strings, exported into api's environment at boot by setup-ssm-env.sh.
+  // Not secrets: an account id, a public PIX key, and a price. See
+  // docs/specs/2026-08-30-asaas-only-deposits.md.
+  asaasParentWalletId: `/${SERVICE}/${env}/asaas/parent-wallet-id`,
+  asaasMasterAccountId: `/${SERVICE}/${env}/asaas/master-account-id`,
+  asaasMasterPixKey: `/${SERVICE}/${env}/asaas/master-pix-key`,
+  asaasVerificationFeeCents: `/${SERVICE}/${env}/asaas/verification-fee-cents`,
   // M2M sandbox-purchase client registry (client_id → {webhook_url,
   // hmac_secret} JSON) — admin-provisioned, no API write path, same posture
   // as the wallets table's fee/deposit-range overrides. Read by both api

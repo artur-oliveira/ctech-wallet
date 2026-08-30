@@ -5,6 +5,8 @@
 // docs/plans/2026-07-30-asaas-baas-implementation-plan.md §2.1.
 package asaas
 
+import rpccontract "gopkg.aoctech.app/wallet/rpc-contract"
+
 // Account (subaccount) status values, per Asaas's onboarding webhook. Field
 // names/values here are best-effort against the design research in the
 // implementation plan — confirm against a live Asaas-sandbox response before
@@ -15,6 +17,52 @@ const (
 	AccountStatusRejected         = "ACCOUNT_STATUS_REJECTED"
 	AccountStatusAwaitingApproval = "ACCOUNT_STATUS_AWAITING_APPROVAL"
 )
+
+// Registration status values returned by QueryAccountStatus. Distinct from the
+// ACCOUNT_STATUS_* webhook event names above: those are wake-up labels, these
+// are the authoritative state.
+const (
+	RegistrationPending          = rpccontract.AsaasRegistrationPending
+	RegistrationApproved         = rpccontract.AsaasRegistrationApproved
+	RegistrationRejected         = rpccontract.AsaasRegistrationRejected
+	RegistrationAwaitingApproval = rpccontract.AsaasRegistrationAwaitingApproval
+)
+
+// AccountStatus is the provider's own answer to "is this subaccount usable".
+// Approved means General == RegistrationApproved and nothing else: the three
+// component fields exist to name the outstanding step, never to be combined
+// into an approval of our own.
+type AccountStatus struct {
+	ID              string
+	CommercialInfo  string
+	BankAccountInfo string
+	Documentation   string
+	General         string
+}
+
+// Approved reports full registration approval.
+func (s *AccountStatus) Approved() bool {
+	return s != nil && s.General == RegistrationApproved
+}
+
+// Rejected reports a refused registration. Not terminal: the user re-sends
+// documents on the same subaccount, and the verification fee is never charged
+// twice (docs/specs/2026-08-30-asaas-only-deposits.md).
+func (s *AccountStatus) Rejected() bool {
+	return s != nil && (s.General == RegistrationRejected || s.Documentation == RegistrationRejected)
+}
+
+// PendingDocument is one document the provider is still waiting on.
+//
+// OnboardingURL decides the delivery route and the provider enforces it:
+// a document that has one can only be sent through that hosted flow, and an
+// API upload of it is refused.
+type PendingDocument struct {
+	ID            string
+	Type          string
+	Status        string
+	OnboardingURL string
+}
 
 // Transfer status values. The plan's own §5.2/§6/§9.1a prose treats "DONE" as
 // the terminal success status to poll for — kept verbatim rather than guessing

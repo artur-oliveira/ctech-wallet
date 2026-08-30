@@ -43,3 +43,5 @@ jobs:
         NEXT_PUBLIC_WS_URL=wss://wallet-api.aoctech.app
         NEXT_PUBLIC_CTECH_URL=https://accounts-api.aoctech.app
         NEXT_PUBLIC_CTECH_CLIENT_ID=wallet
+      csp-overrides: |
+        script-src-elem 'self' 'unsafe-inline' https://static.cloudflareinsights.com

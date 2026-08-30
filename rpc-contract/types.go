@@ -23,16 +23,18 @@ const (
 	// Asaas credentials travel only in Request.OAuthToken. They MUST NOT be
 	// duplicated into Payload. Payloads can contain financial data and are never
 	// operationally logged.
-	OpAsaasCreateAccount       Op = "AsaasCreateAccount"
-	OpAsaasUploadDocument      Op = "AsaasUploadDocument"
-	OpAsaasCreateStaticPixKey  Op = "AsaasCreateStaticPixKey"
-	OpAsaasCreatePixQRCode     Op = "AsaasCreatePixQRCode"
-	OpAsaasQueryPayment        Op = "AsaasQueryPayment"
-	OpAsaasQueryCustomer       Op = "AsaasQueryCustomer"
-	OpAsaasRefundPayment       Op = "AsaasRefundPayment"
-	OpAsaasCreateTransfer      Op = "AsaasCreateTransfer"
-	OpAsaasQueryTransfer       Op = "AsaasQueryTransfer"
-	OpAsaasQueryAccountBalance Op = "AsaasQueryAccountBalance"
+	OpAsaasCreateAccount        Op = "AsaasCreateAccount"
+	OpAsaasUploadDocument       Op = "AsaasUploadDocument"
+	OpAsaasCreateStaticPixKey   Op = "AsaasCreateStaticPixKey"
+	OpAsaasCreatePixQRCode      Op = "AsaasCreatePixQRCode"
+	OpAsaasQueryPayment         Op = "AsaasQueryPayment"
+	OpAsaasQueryCustomer        Op = "AsaasQueryCustomer"
+	OpAsaasRefundPayment        Op = "AsaasRefundPayment"
+	OpAsaasCreateTransfer       Op = "AsaasCreateTransfer"
+	OpAsaasQueryTransfer        Op = "AsaasQueryTransfer"
+	OpAsaasQueryAccountBalance  Op = "AsaasQueryAccountBalance"
+	OpAsaasQueryAccountStatus   Op = "AsaasQueryAccountStatus"
+	OpAsaasListPendingDocuments Op = "AsaasListPendingDocuments"
 )
 
 // ErrKeyNotFoundSentinel is the Response.Error value that means
@@ -244,4 +246,51 @@ type AsaasQueryAccountBalanceArgs struct{}
 
 type AsaasBalanceResult struct {
 	Balance int64 `json:"balance"`
+}
+
+// AsaasQueryAccountStatusArgs reads the registration status of whichever
+// account the supplied API key belongs to (GET /v3/myAccount/status). No
+// arguments: the credential IS the selector.
+type AsaasQueryAccountStatusArgs struct{}
+
+// Registration status values, shared by every field of AsaasAccountStatusResult.
+const (
+	AsaasRegistrationPending          = "PENDING"
+	AsaasRegistrationApproved         = "APPROVED"
+	AsaasRegistrationRejected         = "REJECTED"
+	AsaasRegistrationAwaitingApproval = "AWAITING_APPROVAL"
+)
+
+// AsaasAccountStatusResult is the authoritative answer to "is this subaccount
+// usable yet". The account is fully approved only when General is APPROVED —
+// the other three fields exist to tell the user WHICH step is outstanding, and
+// must never be combined into an approval decision of their own.
+type AsaasAccountStatusResult struct {
+	ID              string `json:"id"`
+	CommercialInfo  string `json:"commercial_info"`
+	BankAccountInfo string `json:"bank_account_info"`
+	Documentation   string `json:"documentation"`
+	General         string `json:"general"`
+}
+
+// AsaasListPendingDocumentsArgs lists the documents the provider is still
+// waiting on for the account the API key belongs to
+// (GET /v3/myAccount/documents).
+type AsaasListPendingDocumentsArgs struct{}
+
+// AsaasPendingDocument is one outstanding document requirement.
+//
+// OnboardingURL decides how it must be sent, and the choice is not ours: a
+// document that carries one can ONLY be sent through that provider-hosted
+// flow, and an API upload of it is rejected. One without it is uploadable by
+// ID.
+type AsaasPendingDocument struct {
+	ID            string `json:"id"`
+	Type          string `json:"type"`
+	Status        string `json:"status"`
+	OnboardingURL string `json:"onboarding_url,omitempty"`
+}
+
+type AsaasPendingDocumentsResult struct {
+	Documents []AsaasPendingDocument `json:"documents"`
 }
