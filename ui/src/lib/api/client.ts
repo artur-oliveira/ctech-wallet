@@ -17,6 +17,15 @@ import type {
   Withdrawal,
 } from '@/lib/types/api'
 import {MockApiClient, USE_MOCK} from '@/lib/mock'
+import {
+  ApiUnavailableError,
+  checkApiLiveness,
+  HTTP_TIMEOUT_MS,
+  requireApiLiveness,
+} from '@/lib/network/liveness'
+import {httpRetryDelay, isRetryableFailure} from '@/lib/network/retry'
+import {SESSION_KEY_RETURN_AFTER_OUTAGE} from '@/lib/constants/storage'
+import {UNAVAILABLE_PATH} from '@/lib/constants/routes'
 
 // Empty means same-origin: CloudFront forwards /v1.0/* to the ALB in deployed
 // environments, and `next dev` proxies it locally (next.config.ts). Either way
@@ -37,6 +46,23 @@ export function registerRefreshFn(fn: () => Promise<string | null>): void {
 
 export function getAccessToken(): string | null {
   return _accessToken
+}
+
+/**
+ * Renews the in-memory access token out-of-band, for callers that are not an
+ * HTTP request — today the WebSocket, whose auth frame is rejected after the
+ * upgrade rather than as a 401 the interceptor could see.
+ *
+ * Returns null when no refresh is registered or the session is genuinely gone,
+ * which the caller must treat as terminal.
+ */
+export async function refreshAccessToken(): Promise<string | null> {
+  if (!_refreshFn) return null
+  const token = await _refreshFn().catch(() => null)
+  if (!token) return null
+  _accessToken = token
+  notifyTokenListeners(token)
+  return token
 }
 
 const tokenListeners = new Set<(token: string) => void>()
@@ -77,13 +103,49 @@ export class ApiError extends Error {
   }
 }
 
+interface RetryableConfig extends AxiosRequestConfig {
+  _retry?: boolean
+  _networkRetryCount?: number
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * A 503 is the API telling us it is not serving. Sending the user to the
+ * maintenance page beats letting every query on the screen render its own error
+ * toast for one shared cause. Where they were is remembered so the retry can
+ * put them back rather than dumping them on the dashboard.
+ */
+export function redirectOnServiceUnavailable(status?: number): boolean {
+  if (status !== 503 || typeof window === 'undefined' || window.location.pathname === UNAVAILABLE_PATH) return false
+  try {
+    window.sessionStorage.setItem(
+      SESSION_KEY_RETURN_AFTER_OUTAGE,
+      `${window.location.pathname}${window.location.search || ''}`,
+    )
+  } catch {
+    // Storage is unavailable in some privacy modes; the dashboard remains the
+    // safe fallback destination.
+  }
+  window.location.replace(UNAVAILABLE_PATH)
+  return true
+}
+
 function createAxiosInstance(): AxiosInstance {
   const instance = axios.create({
     baseURL: API_BASE_URL,
+    // Without this, a hung connection leaves the request pending forever and the
+    // UI spins with nothing to cancel it.
+    timeout: HTTP_TIMEOUT_MS,
     headers: {'Content-Type': 'application/json'},
   })
 
-  instance.interceptors.request.use((config) => {
+  instance.interceptors.request.use(async (config) => {
+    // One health probe owns "is the API up", so a dead API fails these fast
+    // instead of turning every mounted query into its own retry loop.
+    if (!USE_MOCK) await requireApiLiveness()
     if (_accessToken) config.headers.Authorization = `Bearer ${_accessToken}`
     return config
   })
@@ -91,7 +153,7 @@ function createAxiosInstance(): AxiosInstance {
   instance.interceptors.response.use(
     (response) => response,
     async (error: AxiosError) => {
-      const original = error.config as (AxiosRequestConfig & { _retry?: boolean }) | undefined
+      const original = error.config as RetryableConfig | undefined
       if (error.response?.status === 401 && original && !original._retry && _refreshFn) {
         original._retry = true
         const newToken = await _refreshFn()
@@ -108,6 +170,24 @@ function createAxiosInstance(): AxiosInstance {
         }
         return
       }
+
+      // Verify an ambiguous failure against liveness before retrying it: a
+      // timeout during a real outage should stop, not retry twice more and then
+      // report a generic error.
+      let mayRetry = !(error instanceof ApiUnavailableError)
+      if (!USE_MOCK && !error.response && mayRetry) mayRetry = await checkApiLiveness()
+      if (mayRetry && original && isRetryableFailure({response: error.response, config: original})) {
+        original._networkRetryCount = (original._networkRetryCount || 0) + 1
+        const retryAfter = error.response?.headers?.['retry-after'] as string | undefined
+        await wait(httpRetryDelay(original._networkRetryCount, retryAfter))
+        return instance(original)
+      }
+
+      if (error instanceof ApiUnavailableError) {
+        redirectOnServiceUnavailable(503)
+        throw new ApiError(503, error.message, '/problems/service-unavailable', error)
+      }
+      redirectOnServiceUnavailable(error.response?.status)
       const data = error.response ? await parseErr(error.response) : undefined
       const detail = data?.detail ?? data?.title ?? error.message ?? `HTTP ${error.response?.status}`
       throw new ApiError(error.response?.status ?? 0, detail, data?.type, data)

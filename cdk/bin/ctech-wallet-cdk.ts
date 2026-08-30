@@ -94,6 +94,7 @@ const pixGatewayStack = new PixGatewayStack(app, id('PixGateway'), {
   interBaseUrl: INTER_BASE_URL,
   interPixKey: INTER_PIX_KEY,
   walletApiUrl: `https://${domainForEnv(ENVIRONMENT, API_DOMAIN_PREFIX)}`,
+  asaasBaseUrl: 'https://api.asaas.com',
   description: `CTech Wallet pix-gateway (Inter integration Lambdas) - ${ENVIRONMENT}`,
 });
 

@@ -49,6 +49,35 @@ the stored preference or `Accept-Language`; `/en` and `/pt-BR` are pinned by
 `StaticLocaleBoundary`. hreflang lives on the three **pages**, never the root layout —
 metadata is inherited, so a canonical there would also claim to be `/dashboard`'s.
 
+## Resilience
+
+Four things carry the app through a failing API, and each has exactly one owner:
+
+- **`src/lib/network/liveness.ts`** — the single source of truth for "is the API up",
+  probed via the dependency-free `/v1.0/health`. Concurrent callers share one in-flight
+  check. `requireApiLiveness()` in the axios request interceptor makes ordinary calls
+  fail fast during an outage, so the health probe (not every mounted query) is the loop
+  that discovers recovery. A fetch rejection counts as unavailable: a dead load balancer
+  answers without CORS headers, which the browser surfaces as a TypeError, not a status.
+- **`src/lib/network/retry.ts`** — retry policy, pure and separately tested. Safe methods
+  and Idempotency-Key-carrying mutations only, max 2 attempts, jittered backoff,
+  Retry-After honoured. **A mutation without an Idempotency-Key is never retried** — two
+  PIX charges for one intent is the exact failure the key exists to prevent. `retry` in
+  QueryProvider is aligned with this rather than stacked on top of it.
+- **`src/components/system-state.tsx`** — the one treatment for 404 / 500 / 503, so a
+  dead end never reads as a different kind of failure depending on which one you hit.
+  `app/error.tsx` (route boundary), `app/global-error.tsx` (root layout; self-contained
+  and hardcoded pt-BR, because i18n/fonts/tokens are gone by then), `app/unavailable`
+  (maintenance, auto-returns the user when liveness recovers).
+- **`src/lib/utils/realtime-auth.ts`** — when the socket must stop reconnecting. The API
+  accepts the WS upgrade and only then rejects the auth frame, so `@aoctech/ws-client`
+  sees a successful open and resets its backoff: an expired token is an endless series of
+  *working* connections. `unauthorized` therefore buys exactly one token refresh and is
+  terminal after that.
+
+Timeouts: `HTTP_TIMEOUT_MS` 10s for API calls, `LIVENESS_TIMEOUT_MS` 5s for the health
+probe.
+
 ## Rules
 
 - Keep the access token in memory; never move it to storage or a readable cookie.

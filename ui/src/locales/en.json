@@ -432,5 +432,35 @@
       }
     },
     "providerNote": "Payment account and PIX settlement provided by Asaas (Asaas Gestão Financeira S.A.)."
+  },
+  "systemState": {
+    "retry": "Try again",
+    "checkAgain": "Check again",
+    "backToDashboard": "Go to wallet",
+    "backToLogin": "Sign in",
+    "support": "Contact support",
+    "reassurance": "Your balance and your history were not affected.",
+    "notFound": {
+      "readout": "Page not found"
+    },
+    "error": {
+      "readout": "Screen interrupted",
+      "title": "We could not load this screen.",
+      "description": "Something unexpected interrupted the page. No operation was sent to the bank because of it.",
+      "detail": "Try loading this screen again.",
+      "reference": "Error reference: {{digest}}"
+    },
+    "unavailable": {
+      "readout": "Service unavailable",
+      "title": "The wallet is back in a moment.",
+      "description": "The server did not respond. Deposits and withdrawals already in flight stay recorded and will settle.",
+      "detail": "We are checking on our own — you do not need to reload.",
+      "checking": "Checking whether the service is back…"
+    },
+    "offline": {
+      "readout": "No connection",
+      "title": "Your device is offline.",
+      "description": "The wallet needs a connection to show your balances. Nothing was lost in the meantime."
+    }
   }
 }

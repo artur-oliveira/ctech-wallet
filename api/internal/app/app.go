@@ -302,7 +302,12 @@ func startServer(lc fx.Lifecycle, app *fiber.App, cfg *config.Config) {
 			addr := fmt.Sprintf(":%d", cfg.Port)
 			slog.Info("starting ctech-wallet-api", "addr", addr, "env", cfg.Env)
 			go func() {
-				if err := app.Listen(addr); err != nil {
+				// The ASCII startup banner is written straight to stdout, which is
+				// this process's log file. It carries blank lines, and a blank line
+				// is not a log record: CloudWatch's PutLogEvents rejects a
+				// zero-length message and fails the whole batch it arrived in. The
+				// banner tells us nothing slog.Info above does not.
+				if err := app.Listen(addr, fiber.ListenConfig{DisableStartupMessage: true}); err != nil {
 					slog.Error("server error", "err", err)
 				}
 			}()

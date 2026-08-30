@@ -432,5 +432,35 @@
       }
     },
     "providerNote": "Conta de pagamento e liquidação PIX fornecidas pelo Asaas (Asaas Gestão Financeira S.A.)."
+  },
+  "systemState": {
+    "retry": "Tentar novamente",
+    "checkAgain": "Verificar novamente",
+    "backToDashboard": "Ir para a carteira",
+    "backToLogin": "Entrar",
+    "support": "Falar com o suporte",
+    "reassurance": "Seu saldo e seu histórico não foram afetados.",
+    "notFound": {
+      "readout": "Página não encontrada"
+    },
+    "error": {
+      "readout": "Tela interrompida",
+      "title": "Não conseguimos carregar esta tela.",
+      "description": "Algo inesperado interrompeu a página. Nenhuma operação foi enviada ao banco por causa disso.",
+      "detail": "Tente carregar esta tela novamente.",
+      "reference": "Referência do erro: {{digest}}"
+    },
+    "unavailable": {
+      "readout": "Serviço indisponível",
+      "title": "A carteira volta em instantes.",
+      "description": "O servidor não respondeu. Depósitos e saques em andamento seguem registrados e serão concluídos.",
+      "detail": "Estamos verificando sozinhos — você não precisa recarregar a página.",
+      "checking": "Verificando se o serviço já voltou…"
+    },
+    "offline": {
+      "readout": "Sem conexão",
+      "title": "Seu dispositivo está sem internet.",
+      "description": "A carteira precisa de conexão para mostrar seus saldos. Nada foi perdido enquanto isso."
+    }
   }
 }

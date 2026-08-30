@@ -12,6 +12,7 @@ import {Button} from '@/components/ui/button'
 import {LanguageSwitcher} from '@/components/language-switcher'
 import {QUERY_KEY_ME} from '@/lib/constants/query'
 import {resolveProtectedRouteState} from '@/lib/utils/protected-route-state'
+import {useApiLivenessWatcher} from '@/lib/hooks/useApiLiveness'
 
 function Spinner() {
   const {t} = useTranslation()
@@ -74,6 +75,11 @@ function ConsentLookupError({
 export function ProtectedRoute({children}: { children: React.ReactNode }) {
   const {authenticated, loading, logout} = useAuth()
   const router = useRouter()
+  // Every authenticated screen mounts this component, so this is the app's one
+  // liveness probe. The watcher's state lives in a module singleton, so a
+  // second mount would only duplicate the polling, never the answer — and
+  // /unavailable, which sits outside this gate, runs its own.
+  useApiLivenessWatcher()
 
   const me = useQuery({
     queryKey: QUERY_KEY_ME,

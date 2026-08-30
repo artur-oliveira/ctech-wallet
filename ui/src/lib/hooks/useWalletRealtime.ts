@@ -1,12 +1,13 @@
 'use client'
 
-import {useCallback} from 'react'
+import {useCallback, useEffect, useRef, useState} from 'react'
 import {useQueryClient} from '@tanstack/react-query'
 import {toast} from 'sonner'
 import {useTranslation} from 'react-i18next'
 import {useWebSocket, type WSStatus} from '@aoctech/ws-client'
-import {getAccessToken, subscribeAccessToken} from '@/lib/api/client'
+import {getAccessToken, refreshAccessToken, subscribeAccessToken} from '@/lib/api/client'
 import type {RealtimeTransactionStatus} from '@/lib/utils/transaction-status'
+import {realtimeAuthAction} from '@/lib/utils/realtime-auth'
 
 // NEXT_PUBLIC_WS_URL is read, not derived, and that is the whole point: the
 // generated CSP's connect-src is built from the `wss://` and `https://` literals
@@ -27,11 +28,14 @@ function buildWsUrl(): string {
 
 interface RealtimeMessage {
   type: string
+  code?: string
   wallet_id?: string
   txid?: string
   withdrawal_id?: string
   amount?: number
 }
+
+
 
 /** Formats centavos as BRL without importing formatBRL, to keep this hook
  * dependency-free of the wallet component tree (avoids a circular import risk
@@ -65,12 +69,38 @@ export function useWalletRealtime({
   const {t, i18n} = useTranslation()
   const qc = useQueryClient()
   const token = getAccessToken()
+  // Terminal means "do not reconnect with this credential", not "never again":
+  // a genuinely new token clears it via the effect below.
+  const [authTerminal, setAuthTerminal] = useState(false)
+  const recoveriesRef = useRef(0)
 
-  const wsUrl = token ? buildWsUrl() : null
+  useEffect(() => subscribeAccessToken(() => {
+    recoveriesRef.current = 0
+    setAuthTerminal(false)
+  }), [])
+
+  const wsUrl = token && !authTerminal ? buildWsUrl() : null
 
   const handleMessage = useCallback((data: unknown) => {
     const msg = data as RealtimeMessage
     if (!msg?.type || msg.type === 'ping' || msg.type === 'connected') return
+
+    const authAction = realtimeAuthAction(msg, {recoveries: recoveriesRef.current})
+    if (authAction === 'stop') {
+      setAuthTerminal(true)
+      return
+    }
+    if (authAction === 'refresh') {
+      recoveriesRef.current += 1
+      // A successful refresh notifies the token subscribers above, which clears
+      // the counter and reconnects with no backoff. A failed one takes the
+      // socket down until the user's next authenticated request repairs the
+      // session, which is where that repair belongs.
+      void refreshAccessToken().then((renewed) => {
+        if (!renewed) setAuthTerminal(true)
+      })
+      return
+    }
 
     if (msg.type === 'deposit_confirmed') {
       void qc.invalidateQueries({queryKey: ['balances']})
