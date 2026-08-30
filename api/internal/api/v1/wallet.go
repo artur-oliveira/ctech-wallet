@@ -20,18 +20,17 @@ func (h *handlers) getWallet(c fiber.Ctx) error {
 	if err != nil {
 		return sendProblem(c, err)
 	}
-	// custodyStatus is only ever non-empty when AsaasCustodyEnabled — the UI
-	// reads it to show the right onboarding step instead of a balance card
-	// (plan §4.1). Omitted entirely otherwise, matching today's response shape.
-	if custodyStatus != "" && custodyStatus != wallet.BaasApproved {
-		return c.JSON(fiber.Map{"custody_status": custodyStatus, "activated": false})
-	}
+	// The response shape does not change with onboarding progress: `real` is
+	// always present, and custody_status is an extra field the client may
+	// ignore. An in-progress subaccount must never blank the balances — the
+	// deposit gate on GET /auth/me is what tells the UI the next step, and the
+	// sandbox wallet has nothing to do with custody at all.
 	return c.JSON(walletBalancesResponse(realw, gamew, sandboxw, custodyStatus))
 }
 
 func walletBalancesResponse(realw, gamew, sandboxw *wallet.Wallet, custodyStatus string) fiber.Map {
 	out := fiber.Map{"real": realw, "activated": gamew != nil}
-	if custodyStatus == wallet.BaasApproved {
+	if custodyStatus != "" {
 		out["custody_status"] = custodyStatus
 	}
 	if gamew != nil {

@@ -146,3 +146,44 @@ func TestReceiptAllowanceIsMeteredAcrossConfirmations(t *testing.T) {
 	_, _, err = h.svc.InitiateDeposit(ctx, user, wallet.KYCVerified, 5000, id.New())
 	wantProblem(t, err, problem.TypeDepositReceiptsExhausted)
 }
+
+// Custody onboarding must never blank a balance. It used to: an unapproved
+// subaccount returned nil for all three wallets, which dropped `real` out of a
+// response whose contract requires it (the frontend crashed on
+// `real.wallet_id`) and stranded `sandbox` — play currency with no custody
+// involvement whatsoever — behind an unrelated onboarding step.
+//
+// Whether the user may DEPOSIT is a separate question, answered by
+// DepositReadiness. Withholding what they already own answers nothing.
+func TestOnboardingNeverHidesBalances(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(verified())
+	user := "u-" + id.New()
+
+	// A sandbox wallet in active use, created independently of custody.
+	if _, err := h.repo.EnsureSandboxWallet(ctx, user); err != nil {
+		t.Fatalf("EnsureSandboxWallet: %v", err)
+	}
+	if _, _, err := h.baas.RequestCustodyAccount(ctx, user, wallet.KYCVerified, 500000); err != nil {
+		t.Fatalf("RequestCustodyAccount: %v", err)
+	}
+
+	real, _, sandbox, custodyStatus, err := h.svc.GetBalances(ctx, user)
+	if err != nil {
+		t.Fatalf("GetBalances: %v", err)
+	}
+	if real == nil {
+		t.Fatal("the real wallet must always be present — its absence is what broke the client")
+	}
+	if sandbox == nil {
+		t.Fatal("sandbox has no custody involvement and must survive onboarding")
+	}
+	if custodyStatus != wallet.BaasFeePending {
+		t.Fatalf("custody_status = %q, want %q — reported, never enforced here", custodyStatus, wallet.BaasFeePending)
+	}
+
+	// The gate is where the refusal belongs, and it is still refusing.
+	if _, _, err := h.svc.InitiateDeposit(ctx, user, wallet.KYCVerified, 5000, id.New()); err == nil {
+		t.Fatal("deposits must still be gated while onboarding is unfinished")
+	}
+}

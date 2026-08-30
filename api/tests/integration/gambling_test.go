@@ -18,24 +18,47 @@ const (
 	testMonthlyGameLimit int64 = 1_000_000
 )
 
-// Activation requires KYC `verified` — real money is about to enter a gambling
-// ring-fence, so `basic` is not enough.
-func TestActivateGamblingRequiresVerifiedKYC(t *testing.T) {
+// Activation needs a MINIMUM of KYC `basic` — any verification started. The bar
+// is deliberately not equality: `enhanced` has cleared strictly more than
+// `basic`, so an enhanced user must never be refused where a basic one is
+// allowed. Only a caller with no verification at all is turned away, and a
+// refused activation creates no wallets.
+func TestActivateGamblingRequiresStartedKYC(t *testing.T) {
 	ctx := context.Background()
-	h := newHarness(&kycclient.KYC{Level: wallet.KYCBasic, CPF: cpf})
-	user := "u-" + id.New()
-	acceptGambling(t, h, user)
 
-	_, _, err := h.svc.ActivateGambling(ctx, user, wallet.KYCBasic, "", "",
-		testDailyGameLimit, testWeeklyGameLimit, testMonthlyGameLimit)
-	wantProblem(t, err, problem.TypeKYCNotVerified)
+	t.Run("no verification at all is refused", func(t *testing.T) {
+		h := newHarness(&kycclient.KYC{CPF: cpf})
+		user := "u-" + id.New()
+		acceptGambling(t, h, user)
 
-	_, game, sandbox, err := h.repo.LoadWallets(ctx, user)
-	if err != nil {
-		t.Fatalf("LoadWallets: %v", err)
-	}
-	if game != nil || sandbox != nil {
-		t.Fatal("a rejected activation must not create wallets")
+		_, _, err := h.svc.ActivateGambling(ctx, user, "", "", "",
+			testDailyGameLimit, testWeeklyGameLimit, testMonthlyGameLimit)
+		wantProblem(t, err, problem.TypeKYCNotVerified)
+
+		_, game, sandbox, err := h.repo.LoadWallets(ctx, user)
+		if err != nil {
+			t.Fatalf("LoadWallets: %v", err)
+		}
+		if game != nil || sandbox != nil {
+			t.Fatal("a rejected activation must not create wallets")
+		}
+	})
+
+	for _, level := range []string{wallet.KYCBasic, wallet.KYCVerified} {
+		t.Run(level+" activates", func(t *testing.T) {
+			h := newHarness(&kycclient.KYC{Level: level, CPF: cpf})
+			user := "u-" + id.New()
+			acceptGambling(t, h, user)
+
+			game, sandbox, err := h.svc.ActivateGambling(ctx, user, level, "", "",
+				testDailyGameLimit, testWeeklyGameLimit, testMonthlyGameLimit)
+			if err != nil {
+				t.Fatalf("ActivateGambling(%s): %v", level, err)
+			}
+			if game == nil || sandbox == nil {
+				t.Fatalf("activation must create both wallets, got game=%v sandbox=%v", game, sandbox)
+			}
+		})
 	}
 }
 

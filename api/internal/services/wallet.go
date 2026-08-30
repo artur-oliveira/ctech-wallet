@@ -412,14 +412,21 @@ func (s *WalletService) SetM2MClients(m map[string]M2MClient) {
 	s.m2mClients = m
 }
 
-// ActivateGambling opens the caller's game + sandbox wallets. Gates: KYC
-// `verified` (real money is about to enter a gambling ring-fence) and acceptance
-// of the CURRENT gambling addendum — a separate document from the wallet terms.
+// ActivateGambling opens the caller's game + sandbox wallets. Gates: KYC at
+// least `basic` — any verification started — and acceptance of the CURRENT
+// gambling addendum, a separate document from the wallet terms.
+//
+// The bar is a MINIMUM, matching the route's own RequireKYC(KYCBasic): an
+// `enhanced` user has cleared strictly more than a `basic` one, so comparing
+// for equality against `basic` refused exactly the users most entitled to
+// activate. Depositing into the ring-fence is a separate, stricter gate
+// (`real → game` still runs the limit engine), and money can only reach `game`
+// from `real`, which is itself `enhanced`-only.
 //
 // Idempotent: activating twice returns the same wallets. Writes an audit event,
 // because consent must be provable after the fact.
 func (s *WalletService) ActivateGambling(ctx context.Context, userID, kycLevel, ip, userAgent string, daily, weekly, monthly int64) (game, sandbox *wallet.Wallet, err error) {
-	if kycLevel != wallet.KYCBasic {
+	if kycLevel == "" {
 		return nil, nil, problem.KYCNotVerified()
 	}
 	u, err := s.requireNotExcluded(ctx, userID)
@@ -473,15 +480,25 @@ func (s *WalletService) ActivateGambling(ctx context.Context, userID, kycLevel, 
 // and is returned so its read-only history remains accessible. Its presence is
 // never evidence of gambling consent; callers derive activation from game only.
 //
-// custodyStatus is only meaningful when AsaasCustodyEnabled (plan §4.1): if the
-// caller's Asaas subaccount is absent or not yet approved, real/game/sandbox
-// are all nil, custodyStatus carries the current onboarding lifecycle state
-// ("onboarding", "pending_documents", ...), and EnsureRealWallet is
-// deliberately never called — "a real wallet may not exist before a custody
-// account exists to back it, otherwise Invariant #13 is false from birth"
-// (plan §3.2). With the flag off (the default everywhere outside a dedicated
-// Asaas-sandbox test environment), custodyStatus is always "" and behavior is
-// byte-for-byte what it was before this branch existed.
+// custodyStatus reports where the caller's custody onboarding currently stands
+// ("", "fee_pending", "onboarding", ..., "approved"). It is REPORTING ONLY and
+// never suppresses a balance.
+//
+// It used to blank real/game/sandbox until the subaccount was approved, citing
+// "a real wallet may not exist before a custody account exists to back it"
+// (plan §3.2). That reasoning is about not CREATING the wallet, and it does not
+// hold here: EnsureRealWallet runs unconditionally above, so the row exists
+// either way and hiding it afterwards protects nothing. What it did do was
+// strand the `sandbox` wallet — play currency with its own lifecycle, no
+// custody involvement, and in active use — behind an unrelated onboarding step,
+// and drop `real` out of the response entirely for a client whose contract
+// requires it.
+//
+// Invariant #13 is unaffected: conservation compares a balance to the
+// subaccount's, and an un-onboarded user cannot deposit at all
+// (requireCustodyForDeposit), so the balance it starts from is zero. Depositing
+// is gated at InitiateDeposit and reported by DepositReadiness — never by
+// withholding what the user already owns.
 func (s *WalletService) GetBalances(ctx context.Context, userID string) (real, game, sandbox *wallet.Wallet, custodyStatus string, err error) {
 	if _, err := s.repo.EnsureRealWallet(ctx, userID); err != nil {
 		return nil, nil, nil, "", err
@@ -490,20 +507,17 @@ func (s *WalletService) GetBalances(ctx context.Context, userID string) (real, g
 	if err != nil || real == nil {
 		return real, game, sandbox, "", err
 	}
-	if real.CustodyEnabled {
-		acc, err := s.baas.GetAccount(ctx, userID)
-		if err != nil {
-			return nil, nil, nil, "", err
-		}
-		if acc == nil {
-			return nil, nil, nil, wallet.BaasOnboarding, nil
-		}
-		if acc.Status != wallet.BaasApproved {
-			return nil, nil, nil, acc.Status, nil
-		}
-		custodyStatus = wallet.BaasApproved
+	acc, err := s.baas.GetAccount(ctx, userID)
+	if err != nil {
+		// Custody state is decoration on this response. Losing it must not cost
+		// the caller their balances.
+		slog.WarnContext(ctx, "custody status read failed", "user_id", userID, "err", err)
+		return real, game, sandbox, "", nil
 	}
-	return real, game, sandbox, custodyStatus, err
+	if acc != nil {
+		custodyStatus = acc.Status
+	}
+	return real, game, sandbox, custodyStatus, nil
 }
 
 // Statement returns a paginated ledger for a wallet (newest first).

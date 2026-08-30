@@ -117,7 +117,7 @@ them inside route handlers.
 - Real money reaches a game or sandbox **only** across `real → game` (`FundGame`). Sandbox is bought from `game`,
   never from `real`. That one edge is where personal limits are enforced; a second door makes them meaningless.
 - `game → real` (`ReturnFromGame`) is never limited and never charged.
-- `game` does not exist until `ActivateGambling` (verified KYC + gambling addendum). Every `game`-touching
+- `game` does not exist until `ActivateGambling` (KYC **at least** `basic` + gambling addendum). Every `game`-touching
   operation goes through `requireActivated`. `sandbox` does **not** share this gate — it is play currency and
   is created lazily on first M2M sandbox credit/debit (`EnsureSandboxWallet`), independent of KYC/consent.
 - The whole surface is gated by `GAMBLING_ENABLED` (default **false**) — the routes are not registered when it is

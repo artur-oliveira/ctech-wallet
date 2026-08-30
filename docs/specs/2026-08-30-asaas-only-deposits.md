@@ -299,6 +299,25 @@ mapeamento de status, não uma migração de schema.
 **Correção de documentação:** o `CLAUDE.md` da raiz diz `kyc_level` ∈ `""|basic|verified`. O valor
 real é `enhanced` desde sempre no código; só o doc está velho.
 
+## Onboarding não esconde saldo
+
+`GET /v1.0/wallet` devolve `real` **sempre**, em qualquer estágio de onboarding.
+`custody_status` é campo informativo, nunca supressor.
+
+A regra anterior (plan §4.1) anulava `real`, `game` e `sandbox` até a subconta ser
+aprovada, justificando com "uma carteira real não pode existir antes de uma conta
+de custódia que a lastreie". Essa justificativa é sobre **não criar** a carteira, e
+não se sustentava: `EnsureRealWallet` roda incondicionalmente antes do branch, então
+a linha existe de todo jeito — esconder depois não protegia nada. O que ela fazia era
+tirar `real` de uma resposta cujo contrato o exige (o frontend quebrava em
+`real.wallet_id`) e prender a carteira `sandbox`, que é moeda de brincadeira sem
+nenhuma relação com custódia e está em uso hoje, atrás de um passo que não é dela.
+
+A Invariante #13 não é afetada: a conservação compara saldo com o da subconta, e um
+usuário não onboardado não consegue depositar (`requireCustodyForDeposit`), logo o
+saldo de partida é zero. O portão fica em `InitiateDeposit` e é relatado por
+`DepositReadiness`. Regressão: `TestOnboardingNeverHidesBalances`.
+
 ## Invariantes afetadas
 
 - **#11** — reforçada em dois lugares: o webhook `ACCOUNT_STATUS_*` deixa de ser descartado e passa a

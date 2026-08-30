@@ -83,7 +83,10 @@ first M2M sandbox credit/debit, whichever happens first.
   replacing it.
 
 **Activation requires all of:**
-1. KYC `verified` — real money is about to enter a gambling ring-fence.
+1. KYC at least `basic` — any verification started. Lowered from `verified` on 2026-08-16 (`a8df5ab`):
+   activation only opens the wallet, and money still cannot reach `game` except across `real → game`, which
+   is `enhanced`-only and metered by the limit engine. The bar is a minimum, never an equality — an
+   `enhanced` user has cleared strictly more than a `basic` one.
 2. Acceptance of the **gambling addendum** (a document distinct from the wallet terms addendum).
 3. Initial personal limits set in the same request.
 
@@ -118,7 +121,7 @@ counterpart is incomplete.
 
 | Route | Change |
 |---|---|
-| `POST /v1.0/wallet/gambling/activate` | **New.** Gated on KYC `verified` + gambling addendum + initial limits. Creates `game` + `sandbox` atomically. Idempotent. |
+| `POST /v1.0/wallet/gambling/activate` | **New.** Gated on KYC at least `basic` + gambling addendum + initial limits. Creates `game` + `sandbox` atomically. Idempotent. |
 | `POST /v1.0/wallet/game/deposit` | **New.** `real → game`. **Limited.** Requires activation. |
 | `POST /v1.0/wallet/game/withdraw` | **New.** `game → real`. Unlimited. Requires activation. Not a PIX payout — an internal transfer. |
 | `POST /v1.0/wallet/sandbox/purchase` | **Changed.** Source becomes `game`, not `real`. Requires activation. |
@@ -201,7 +204,7 @@ A backfill script is unnecessary — activation creates what is missing, and `ga
 | `real → game` transfer | Unit + integration: atomic pair, no-negative, idempotent replay |
 | `game → real` return | Unit + integration: atomic, never blocked by limits |
 | Lock ordering | Integration: concurrent cross-wallet ops → `wallet-busy`, no deadlock |
-| Activation | Integration: idempotent; creates both wallets atomically; blocked without KYC `verified`; blocked without addendum |
+| Activation | Integration: idempotent; creates both wallets atomically; blocked with NO KYC at all, allowed for both `basic` and `enhanced`; blocked without addendum |
 | **Bypass regression** | Integration: `real → sandbox` is **impossible** — sandbox purchase from a user with no `game` wallet must fail, and must never debit `real` |
 | Balances | Integration: `game`/`sandbox` absent from the response before activation |
 | Audit | Integration: activation writes a `wallet_audit` row; the row is never mutated |
