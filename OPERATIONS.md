@@ -215,6 +215,51 @@ subaccount creation and charge issuance until homologation. Asaas also requires
 its brand, links, and responsibility text on every screen shown to the account
 holder — `ui` carries this on the real card's deposit area.
 
+## 4c. Log shipping: blank lines used to stop it dead
+
+Symptom: `/var/log/app/*.log` exists and is filling, and nothing reaches
+CloudWatch. `logs-nginx` streams fine, `logs-app` does not.
+
+Diagnosis, in three reads over SSM:
+
+```bash
+# 1. Is the shipper alive? The number in parentheses is its restart count.
+rc-status --all | grep ctech-ec2-agent-logs
+# 2. Is its cursor advancing? A frozen offset:0 means it never flushed once.
+for f in /var/lib/ctech-ec2-agent/*.pos; do echo "$f: $(cat $f)"; done
+# 3. Why is it dying? Run it in the foreground and read the API's own words.
+timeout 12 /usr/local/bin/ctech-ec2-agent logs-tail -config /etc/ctech-ec2-agent/logs-app.json
+```
+
+Root cause: `PutLogEvents` rejects a zero-length message **and fails the whole
+batch** over one bad member, so a single blank line makes every other line in
+its batch unshippable. Blank lines came from Fiber's ASCII startup banner and
+fx's console-formatted tree, both written straight to stdout — which is the log
+file. Fixed at both ends: `api/cmd/server/main.go` routes fx through slog and
+`internal/app/app.go` passes `DisableStartupMessage`, while
+`ctech-cdk/assets/ctech-ec2-agent/logstail.go` now drops unshippable lines,
+treats a validation rejection as a poison batch instead of a reason to die, and
+flushes before advancing its cursor.
+
+**This was never wallet-specific.** Whether a blank line is fatal depended on
+which flush path it landed in: a full 100-line batch flushes before saving the
+cursor (fatal, permanent loop), a partial batch saves the cursor first (dies
+once, then silently skips the batch it could not send). Services that looked
+healthy were losing a batch of logs per blank line. The agent fix needs the
+binary republished and the AMI rebuilt, then an instance refresh, for every
+Alpine service.
+
+Unsticking an instance already in the loop, without waiting for the AMI —
+truncate in place (`:> file`) rather than `mv`, because `supervise-daemon` holds
+the fd in append mode and the cursor is keyed on the inode:
+
+```bash
+cp -a /var/log/app/app.log /tmp/app.log.bak   # setup-logs.sh also archives to S3
+: > /var/log/app/app.log
+: > /var/log/app/app2.log
+rc-service ctech-ec2-agent-logs-app restart
+```
+
 ## 5. Withdrawal reconciliation schedule
 
 Run `cmd/reconcile` on a schedule (e.g. EventBridge every 5 min). It resolves
