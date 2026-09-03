@@ -4,6 +4,8 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import {Construct} from 'constructs';
 import {Ec2ScriptRunner, HaproxyEc2Service, SSM as CtechSSM} from '@aoctech/cdk';
+
+const API_SPOT_INSTANCE_TYPES = ['t4g.nano', 't4g.micro'] as const;
 import {Environment} from './types';
 import {
   API_CURRENT_ARTIFACT_KEY,
@@ -316,7 +318,9 @@ export class ApiStack extends cdk.Stack {
       // webhooks fail and nothing is reachable. Deliberate for a development
       // environment on a single t4g.nano.
       // schedule: {enableCron: '55 11 * * *', disableCron: '15 13 * * *'},
-      spot: {},
+      spot: {
+        instanceTypes: API_SPOT_INSTANCE_TYPES.map((type) => new ec2.InstanceType(type)),
+      },
     });
 
     // ── Outputs ───────────────────────────────────────────────────────────────

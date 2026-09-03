@@ -8,7 +8,10 @@ import {ApiStack} from '../lib/api-stack';
 const USER_DATA_LIMIT_BYTES = 16384;
 
 /** The rendered user data, with unresolved tokens standing in for their values. */
-function userDataText(): string {
+let cachedTemplate: Template | undefined;
+
+function synth(): Template {
+  if (cachedTemplate) return cachedTemplate;
   const app = new cdk.App();
   const stack = new ApiStack(app, 'TestApiStack', {
     env: {account: '868899309401', region: 'us-east-1'},
@@ -19,7 +22,12 @@ function userDataText(): string {
     logsBucketName: 'prod-ctech-application-logs',
     pixGatewayFunctionName: 'prod-ctech-wallet-pix-gateway-outbound',
   });
-  const template = Template.fromStack(stack);
+  cachedTemplate = Template.fromStack(stack);
+  return cachedTemplate;
+}
+
+function userDataText(): string {
+  const template = synth();
   const launchTemplate = Object.values(
     template.findResources('AWS::EC2::LaunchTemplate'),
   )[0] as any;
@@ -48,4 +56,14 @@ test('no secret value is written into the launch template', () => {
   const rendered = userDataText();
   assert.match(rendered, /'WALLET_CLIENT_SECRET=\/ctech-wallet\/prod\//);
   assert.doesNotMatch(rendered, /WALLET_CLIENT_SECRET=(?!\/|\$)/);
+});
+
+test('the Spot policy can launch both nano and micro Graviton instances', () => {
+  synth().hasResourceProperties('AWS::AutoScaling::AutoScalingGroup', {
+    MixedInstancesPolicy: {
+      LaunchTemplate: {
+        Overrides: [{InstanceType: 't4g.nano'}, {InstanceType: 't4g.micro'}],
+      },
+    },
+  });
 });
