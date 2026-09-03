@@ -184,3 +184,5 @@ CI: `.github/workflows/{api,frontend,infra,deploy}.yml`.
   [`../pix-gateway/README.md`](../pix-gateway/README.md)
 - Secrets / SSM seeding: [`../OPERATIONS.md`](../OPERATIONS.md)
 - Wire contract: [`../rpc-contract/README.md`](../rpc-contract/README.md)
+- Spot capacity permits both `t4g.nano` and `t4g.micro` through the shared
+  construct, so a shortage or reclaim event in one pool does not remove every option.
