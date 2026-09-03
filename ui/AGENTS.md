@@ -17,7 +17,7 @@ convenience.
   in `src/lib/auth/scopes.ts`; `startOAuthFlow` (`:26`);
   `startStepUpFlow` (`:36`) → `startOAuthFlow(returnTo,{maxAge:0})` for the
   withdrawal step-up. Refresh token is the **HttpOnly + SameSite `ctech_rt`
-  cookie** (`:48-50,57`); the **access token is in-memory only**
+  cookie namespaced by OAuth client** (`:48-50,57`); the **access token is in-memory only**
   (`src/lib/api/client.ts:23`), never persisted.
 - API access is **cross-origin** in deployed environments: the browser calls
   `NEXT_PUBLIC_API_URL` directly (`client.ts:20`) and **CORS applies**. Only
@@ -29,6 +29,8 @@ convenience.
 ## Rules (MUST follow)
 
 - **Never** move the access token to storage or a readable cookie.
+- Treat `OAuthTransientError` as retryable and preserve local identity; only a
+  `null` refresh result is a definitive absent/rejected session.
 - **Never** talk to an origin that is not a literal in the caller workflow's
   `build-env-*` — the generated CSP `connect-src` is derived from those and will
   block anything else. `wss://` counts separately from `https://`.

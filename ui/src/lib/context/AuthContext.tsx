@@ -117,8 +117,14 @@ export function AuthProvider({children}: { children: ReactNode }) {
           localStorage.removeItem(STORAGE_KEY_USER)
         }
       }
-      await tryRefresh()
-      setLoading(false)
+      try {
+        await tryRefresh()
+      } catch {
+        // Preserve cached profile/session hints on transient IdP failures.
+        // A later API request or navigation can retry the refresh.
+      } finally {
+        setLoading(false)
+      }
     })()
   }, [tryRefresh])
 
