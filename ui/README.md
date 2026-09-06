@@ -7,7 +7,7 @@ deployed to **Cloudflare Workers Static Assets**. Consumes `api` at
 `@aoctech/auth-client` (OAuth2 PKCE, OIDC). All money is **integer centavos**
 end-to-end — formatted for display only.
 
-> **This app drives real money.** The 12 Financial Safety Invariants in the repo
+> **This app drives real money.** The 14 Financial Safety Invariants in the repo
 > root [`../CLAUDE.md`](../CLAUDE.md) are non-negotiable. The UI's job is to
 > never obscure where money is or nudge toward gambling (see `../ui/PRODUCT.md`).
 

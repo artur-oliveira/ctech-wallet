@@ -5,7 +5,7 @@ PIX/Banking APIs. The `api` service never opens an mTLS connection; it
 invokes these Lambdas over `lambda:Invoke` with an Inter OAuth bearer
 supplied per call.
 
-> This gateway is the front door to **real money movement** at Inter. The 12
+> This gateway is the front door to **real money movement** at Inter. The 14
 > Financial Safety Invariants in the repo root [`../CLAUDE.md`](../CLAUDE.md)
 > still bind (the webhook is never the source of truth — Invariant #11 — and
 > the CPF gate is anti-fraud only).

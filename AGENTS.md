@@ -65,15 +65,31 @@ it is.
    encourage.
 9. **`game` balance is real money.** Withdrawable (via `real`), counts toward the user's real holdings, never
    expired or written off. The user's total real money is `real.balance + game.balance`.
-10. **Consent is opt-in and auditable.** `game`/`sandbox` do not exist until the user accepts the gambling
-    addendum (a document distinct from the terms addendum) with verified KYC. Activation, consent, and every
+10. **Consent is opt-in and auditable.** `game` does not exist until the user accepts the gambling
+    addendum (a document distinct from the terms addendum) with KYC at least `basic` — `sandbox` is play currency
+    and is created independently (lazily, on first use), with no KYC/consent requirement of its own.
+    Activation, consent, and every
     personal-limit change append to `wallet_audit` — append-only, never updated, never deleted, enforced in IAM
     with an explicit DENY on `UpdateItem`/`DeleteItem`. Never fabricate consent: a legacy user holding a sandbox
     wallet from the old two-wallet model is **not** activated.
-11. **The PIX webhook is never the source of truth.** A deposit credits only after re-querying the charge by
-    `txid` at the Inter API (confirming amount, status, payer CPF). The webhook is a "wake up and re-check"
-    signal, nothing more.
-12. **No money left in limbo.** A withdrawal whose PIX transfer call fails after the internal debit enters a
+11. **The PIX webhook is never the source of truth for money movement.** A deposit credits only after
+    re-querying the charge by `txid` at the Inter API (confirming amount and status). The webhook is a "wake
+    up and re-check" signal for those, authenticated by a static `hmac` query parameter Inter echoes back on
+    every callback. Payer CPF is the one field Inter's re-query does not return — it is sourced from the
+    webhook body itself (persisted on first sight) and used only for the CPF-match anti-fraud check, never to
+    authorize crediting.
+12. **Deposits are custody-only.** A user deposit opens a PIX charge on that user's own BaaS subaccount,
+    held under their CPF — never on CTech's Inter account. There is no fallback: no approved subaccount, no
+    deposit (`409 wallet-onboarding`). CTech's Inter account receives **product purchases** only (SKU sales,
+    `OpenCharge` invoices); CTech's **master account at the BaaS provider** receives the one-off subaccount
+    verification fee, because that is the balance the provider debits its own charge from. The regression test
+    `TestDepositNeverChargesInter` is the executable form of this rule. See
+    `docs/specs/2026-08-30-asaas-only-deposits.md`.
+13. **The verification fee is charged before the subaccount exists, and never refunded.** The provider
+    consumes it at creation and does not return it when registration is refused, so a refused registration
+    returns to `pending_documents` for re-submission — never to `closed`, which would strand a paid fee and
+    force a second payment. The user is told this before paying.
+14. **No money left in limbo.** A withdrawal whose PIX transfer call fails after the internal debit enters a
     `processing` state that a reconciliation job MUST resolve (complete or reverse). Failed refunds raise an
     operational alarm for manual reconciliation — never a silent path.
 
@@ -158,19 +174,25 @@ passwords, real customer data, or real CPFs.
 
 - **JWKS:** fetch from `{CTECH_URL}/.well-known/jwks.json`; RS256 only; verify `aud` contains the wallet's
   `SERVICE_AUDIENCE` and `iss` == `CTECH_URL`.
-- **Access-token claims used:** `sub` (user_id), `scope`, `azp` (client_id), `kyc_level` (`""|basic|verified`),
+- **Access-token claims used:** `sub` (user_id), `scope`, `azp` (client_id), `kyc_level` (`""|basic|enhanced` —
+  `wallet.KYCVerified == "enhanced"`, matching `kyc.LevelEnhanced` in `ctech-account`),
   `last_mfa_at` (unix, step-up freshness), empty `sid` marks an M2M `client_credentials` token.
 - **KYC promotion:** on the first confirmed deposit call `POST {CTECH_URL}/v1.0/internal/kyc/confirm`
   `{user_id, cpf}` (idempotent; mismatch → 409). CPF for payer/withdrawal matching:
   `GET {CTECH_URL}/v1.0/internal/kyc/:user_id`.
-- **Scopes:** `internal:wallet:credit` / `internal:wallet:debit` (sandbox only) seeded into the global catalog
-  via `ctech-account`'s `cmd/seedscopes`. The wallet's own M2M client is seeded confidential + `first_party:true`
-  with `allowed_scopes:["internal:account:kyc"]`.
+- **Scopes:** `internal:wallet:credit` / `internal:wallet:debit` (sandbox only) and `internal:wallet:debit-real`
+  (real wallet — deliberately a separate scope, never granted to a client that only needs sandbox credit/debit,
+  e.g. poker/dominó) seeded into the global catalog via `ctech-account`'s `cmd/seedscopes`. The wallet's own
+  M2M client is seeded confidential + `first_party:true` with `allowed_scopes:["internal:account:kyc"]`.
 - **Step-up:** withdrawals mirror account's `RequireRecentMFA(5m)` — stateless, reads `last_mfa_at` from the JWT;
-  no call to account needed.
+  no call to account needed. Re-verifying a stale MFA proof redirects to `{CTECH_URL}/v1.0/authorize` with
+  `max_age=0` (OIDC-standard) — this forces `ctech-account` to require a fresh interactive login even with a valid
+  SSO session, refreshing `last_mfa_at`. A plain re-login (no `max_age`) would silently reuse the SSO session and
+  never re-prove MFA. The frontend calls this via `@aoctech/auth-client`'s `startOAuthFlow(returnTo, {maxAge: 0})`
+  (wrapped as `startStepUpFlow` in `ui/src/lib/auth/oauth.ts`).
 
-`ctech-account` **does require code changes** for this: `internal/handler/authorize.go` must honor `max_age`,
-and `ui/src/hooks/use-redirect-if-authenticated.ts` must not bypass the login form when the `continue` target
+`ctech-account` DOES require code changes for this: `internal/handler/authorize.go` honors `max_age`, and
+`ui/src/hooks/use-redirect-if-authenticated.ts` must not bypass the login form when the `continue` target itself
 requests `max_age=0`. Beyond that, only operational seeding is needed.
 
 ---
@@ -193,3 +215,26 @@ requests `max_age=0`. Beyond that, only operational seeding is needed.
 There are NO exceptions.
 
 Any modification affecting behavior, architecture, APIs, integrations, configuration, deployment, security, business rules, or developer workflow MUST include the corresponding documentation update in the same change.
+
+---
+
+## CTech Family — Cross-Repo Awareness (IMPORTANT)
+
+This repo is one service in the CTech product family, not an isolated project. All CTech repos live under the same GitHub account and are meant to be treated as one codebase split across repos:
+
+- ctech-cdk (github.com/artur-oliveira/ctech-cdk) — shared CDK constructs (EC2/ASG, DynamoDB, etc.)
+- ctech-go-common (github.com/artur-oliveira/ctech-go-common) — shared Go libraries (HTTP client, auth, retries, websocket drain, caching)
+- ctech-account, ctech-wallet, ctech-billing, ctech-dfe, ctech-poker — backend services
+- ctech-ui (github.com/artur-oliveira/ctech-ui) — shared frontend design system / components (adoption in progress)
+- ctech-ws-client (github.com/artur-oliveira/ctech-ws-client) — shared websocket client library
+- ctech-oauth-client, ctech-vanity, ctech-lbalancer — supporting infra/clients
+
+Before making a decision here, ask: "does this apply to the whole family, not just this repo?" Treat as cross-repo by default:
+- Infra/runtime bugs (clock drift, spot interruption handling, websocket draining, health checks, load balancer behavior) — check ctech-cdk / ctech-lbalancer and sibling services for the same exposure before treating it as local.
+- API leaks/perf/cost bugs (DynamoDB read/write amplification, KMS decrypt calls, SQS growth, N+1 requests) — check whether the root cause is shared code (ctech-go-common) or a repeatable pattern other services also have.
+- Frontend state/websocket/resilience/UX patterns (reconnect, circuit breaker, error/loading/empty states, 404/500/503 pages, OAuth flow, modals, buttons) — check ctech-ui and ctech-ws-client for the shared version before implementing locally.
+- New reusable code (not service-specific business logic) — default to proposing it for a shared package (ctech-cdk, ctech-go-common, ctech-ui, ctech-ws-client) instead of duplicating it here.
+
+A fix scoped to only this repo, for a problem that is actually systemic across the family, is an incomplete fix. This applies to AI agents working in single-repo sessions too.
+
+ctech-wallet is a payments/money-movement service: its idempotency discipline (every mutation keyed, transactional ledger+guard writes, replay-safe) and its fencing/locking discipline (Valkey-backed ordered wallet locks with safe in-memory fallback only in dev) are the gold standard the rest of the family should be measured against — before copying a lock or idempotency pattern from elsewhere into a money path, check whether this repo already does it better.

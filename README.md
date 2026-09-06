@@ -22,7 +22,7 @@ essas versões. A fonte pública de verdade é
 
 A Wallet é dona do manifesto versionado
 `api/internal/oauthresource/scope-manifest.json`, atualmente com 13 permissões
-públicas `wallet:*` e 10 permissões M2M `internal:wallet:*`. O teste de contrato
+públicas `wallet:*` e 11 permissões M2M `internal:wallet:*`. O teste de contrato
 compara o manifesto com as constantes realmente usadas pelo middleware. O deploy
 o publica no CTech Account depois do CDK e antes da API usando um client
 confidencial vinculado somente ao Resource Server `wallet`; o papel OIDC lê
@@ -73,7 +73,7 @@ Este serviço custodia dinheiro real de terceiros. Invariantes não-negociáveis
 - **Idempotência obrigatória** — toda operação exige `Idempotency-Key`; replay retorna o resultado anterior.
 - **Uma operação por wallet por vez** — lock via Valkey `SETNX` com TTL curto.
 - **Webhook nunca é fonte de verdade** — pagamento só credita após reconsulta ao provedor pelo `txid`.
-- **Saque com gate** — `kyc_level == verified` + step-up MFA + CPF da chave PIX destino == CPF do KYC.
+- **Saque com gate** — `kyc_level == enhanced` (constante `KYCVerified`) + step-up MFA + CPF da chave PIX destino == CPF do KYC.
 - **Sem taxa de saque** — o saque debita exatamente o `amount` e grava um único lançamento `withdraw`
   (`docs/specs/2026-08-16-withdrawal-fee-removal.md`). Tarifa da Asaas é custo de provedor (`transfer_fee`),
   nunca receita da CTech.

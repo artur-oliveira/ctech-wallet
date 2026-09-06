@@ -21,7 +21,7 @@ enforced here wherever they can be (IAM, table shape), and the rest in `api`.
 
 | Stack | File | Provisions |
 |-------|------|-----------|
-| `DynamoDBStack` | `lib/dynamodb-stack.ts` | 15 tables + GSIs (OnDemand) |
+| `DynamoDBStack` | `lib/dynamodb-stack.ts` | 14 tables + GSIs (OnDemand) |
 | `IAMStack` | `lib/iam-stack.ts` | EC2 instance role for the API |
 | `ApiStack` | `lib/api-stack.ts` | EC2 ASG + HAProxy route + nginx |
 | `ReconcileStack` | `lib/reconcile-stack.ts` | reconcile Lambda + EventBridge Scheduler (5 min) |
@@ -117,9 +117,9 @@ CI: `.github/workflows/{api,frontend,infra,deploy}.yml`.
 
 | ID | Where | Status |
 |----|-------|--------|
-| **B1** | `dynamodb:TransactWriteItems` absent from API (`iam-stack.ts:81`) + reconcile roles. **Runtime-blocking.** | Open — fix before real money. |
-| — | OPERATIONS.md §4 registers webhook as `…/webhook?hmac=` but CDK routes `POST /pix/webhook` (`pix-gateway-stack.ts`). Path mismatch. | Doc gap. |
-| — | OPERATIONS.md §4 omits the pix-gateway webhook M2M secret `/ctech-wallet/{env}/pix-gateway/client-secret`. | Doc gap — seed it. |
+| **B1** | `dynamodb:TransactWriteItems` absent from API (`iam-stack.ts:81`) + reconcile roles. | Closed — false positive; item-level perms already cover it (see top of this file). |
+| — | ~~OPERATIONS.md §4 registered webhook as `…/webhook?hmac=` but CDK routes `POST /pix/webhook` (`pix-gateway-stack.ts`). Path mismatch.~~ | Fixed — OPERATIONS.md now says `/pix/webhook`. |
+| — | ~~OPERATIONS.md §4 omitted the pix-gateway webhook M2M secret `/ctech-wallet/{env}/pix-gateway/client-secret`.~~ | Fixed — OPERATIONS.md §4 now lists it. |
 
 ## Cross-links
 

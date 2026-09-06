@@ -96,7 +96,9 @@ them inside route handlers.
 
 - All amounts are integer **centavos**. Never float.
 - PIX deposit range is per-wallet the same way: optional `min_deposit`/`max_deposit` override the defaults
-  (R$1/R$10.000); the minimum never drops below the absolute 100-centavo floor. Checked *before* `CreateCharge`.
+  (R$1/R$10.000); the minimum never drops below the absolute 100-centavo floor. Checked *before* any charge is
+  opened at the provider — and so is the monthly PIX-receipt allowance (`ASAAS_FREE_RECEIPTS_PER_MONTH`,
+  default 95 of the provider's 100 free receipts; the margin covers charges opened but not yet paid).
 - Deposit-range fields are admin-only (edited directly in DynamoDB) — never a client/API write path.
 - `real ↔ game` transfers carry no fee in either direction.
 - Every balance mutation is a conditional `TransactWriteItems`; debits carry `balance >= :amount`.
@@ -115,8 +117,9 @@ them inside route handlers.
 - Real money reaches a game or sandbox **only** across `real → game` (`FundGame`). Sandbox is bought from `game`,
   never from `real`. That one edge is where personal limits are enforced; a second door makes them meaningless.
 - `game → real` (`ReturnFromGame`) is never limited and never charged.
-- `game`/`sandbox` do not exist until `ActivateGambling` (verified KYC + gambling addendum). Every ring-fence
-  operation goes through `requireActivated`.
+- `game` does not exist until `ActivateGambling` (KYC **at least** `basic` + gambling addendum). Every `game`-touching
+  operation goes through `requireActivated`. `sandbox` does **not** share this gate — it is play currency and
+  is created lazily on first M2M sandbox credit/debit (`EnsureSandboxWallet`), independent of KYC/consent.
 - The whole surface is gated by `GAMBLING_ENABLED` (default **false**) — the routes are not registered when it is
   off. Do not turn it on before the personal limit engine ships.
 
@@ -173,20 +176,29 @@ for the `file:line` map.
 8. `real → game` limit counts GROSS INFLOW (returns never refund headroom).
 9. `game` is real money (withdrawable via `real`; total = `real + game`).
 10. Consent opt‑in + auditable (`wallet_audit` append‑only).
-11. PIX webhook never source of truth — re‑query Inter by `txid` before crediting.
-12. No money in limbo — `processing` withdrawals resolved by the reconcile job.
+11. PIX webhook never source of truth — re‑query the provider before crediting. Same posture for onboarding:
+    an `ACCOUNT_STATUS_*` webhook only triggers `GET /v3/myAccount/status`, which decides.
+12. Deposits are custody‑only — a user deposit opens a charge on that user's own Asaas subaccount, never on
+    CTech's Inter account. No approved subaccount, no deposit. Inter serves product purchases; the Asaas
+    master account collects the subaccount verification fee. See
+    `../docs/specs/2026-08-30-asaas-only-deposits.md`.
+13. The verification fee is never refunded — a refused registration reopens document submission rather than
+    closing the account and charging again.
+14. No money in limbo — `processing` withdrawals resolved by the reconcile job.
 
 ## Internal M2M scopes (constant table: `middleware/scope.go:11`)
 
-| Scope                             | Guards                                       | Notes                                    |
-|-----------------------------------|----------------------------------------------|------------------------------------------|
-| `internal:wallet:credit`          | `POST /internal/wallet/sandbox/credit`       | sandbox only                             |
-| `internal:wallet:debit`           | `POST /internal/wallet/sandbox/debit`        | sandbox only                             |
-| `internal:wallet:debit-real`      | `POST /internal/wallet/real/debit`           | **real** wallet — distinct from `:debit` |
-| `internal:wallet:confirm-deposit` | `POST /internal/pix/confirm-deposit`, `/confirm-sandbox-purchase`, `/confirm-product-purchase` | requested by **pix‑gateway**; API re-queries Inter |
-| `internal:wallet:game-hold`       | `POST .../game/hold`, `.../hold/:id/release` |                                          |
-| `internal:wallet:game-cashout`    | `POST .../game/cashout`                      |                                          |
-| `internal:wallet:game-status`     | `GET .../game/status/:user_id`               |                                          |
+| Scope                              | Guards                                                                    | Notes                                                                                                                         |
+|------------------------------------|---------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|
+| `internal:wallet:credit`           | `POST /internal/wallet/sandbox/credit`                                    | sandbox only                                                                                                                  |
+| `internal:wallet:debit`            | `POST /internal/wallet/sandbox/debit`                                     | sandbox only                                                                                                                  |
+| `internal:wallet:debit-real`       | `POST /internal/wallet/real/debit`                                        | **real** wallet — distinct from `:debit`                                                                                      |
+| `internal:wallet:confirm-deposit`  | `POST /internal/pix/confirm-deposit`, `/confirm-sandbox-purchase`, `/confirm-product-purchase` | requested by **pix‑gateway**; prefix-routed wake-ups, API always re-queries Inter                                              |
+| `internal:wallet:game-hold`        | `POST .../game/hold`, `.../hold/:id/release`                              |                                                                                                                               |
+| `internal:wallet:game-cashout`     | `POST .../game/cashout`                                                   |                                                                                                                               |
+| `internal:wallet:game-status`      | `GET .../game/status/:user_id`                                            |                                                                                                                               |
+| `internal:wallet:balance`          | `GET .../wallet/balance/:user_id`                                         | read-only, game+sandbox only                                                                                                  |
+| `internal:wallet:sandbox-purchase` | `POST .../wallet/sandbox-purchase/`, `GET .../:id`, `POST .../:id/refund` | M2M-opened direct PIX→sandbox sale (e.g. ctech-poker); see `docs/specs/2026-07-30-m2m-sandbox-purchase-integration-design.md` |
 
 The wallet's **own** M2M client requests `internal:account:kyc` from
 `ctech-account` to read the verified CPF (`kycclient/kycclient.go:24`) — a
@@ -200,7 +212,7 @@ different scope on a different service. Do not conflate it with
 | B1  | IAM may be missing `dynamodb:TransactWriteItems` — every money op uses `Base.TransactWrite` (→ `ctech-go-common/dynamo`). If absent, all money ops denied at runtime.                                  | `repositories/wallet.go:275`; verify `cdk/README.md`             |
 | B2  | `internal:account:kyc` (wallet→account) vs `internal:wallet:confirm-deposit` (pix‑gateway→api) conflated in some comments (`kycclient.go:2`, `config.go:41`).                                          | `kycclient.go:24`, `scope.go:15`                                 |
 | B3  | `internal:wallet:debit-real` (code) vs stale `internal:wallet:real:debit` in `docs/specs/2026-07-19-poker-game-holds-design.md`.                                                                       | `scope.go:14`                                                    |
-| B7  | Valkey fail‑closed in prod (`config.go:74`) but `newCacheBackend` silently falls back to in‑memory on missing/!redis; same for WS registry. Non‑prod ⇒ locks/WS not fleet‑shared with no hard failure. | `app.go:65,72,91`                                                |
+| B7  | **Fixed:** prod fails closed on empty `VALKEY_URL` (`config.go:74`) AND on Valkey init failure (`app.go` `newCacheBackend` returns error in prod). Non‑prod still falls back to in‑memory with a warn log. | `app.go:65`                                                      |
 | B18 | Money constants mirrored api↔ui by hand (no float): `SANDBOX_CREDITS_PER_CENTAVO=10`. No fee constants on either side — see `docs/specs/2026-08-16-withdrawal-fee-removal.md`. `rpc-contract` holds NO money constants. | `model.go:115`, `ui/src/lib/utils/money.ts` |
 
 ---

@@ -22,7 +22,7 @@ or refresh the instance; a CDK template change is not needed.
 The Wallet owns `api/internal/oauthresource/scope-manifest.json`. The deploy
 workflow publishes it to CTech Account through the Wallet-bound confidential
 scope publisher before deploying the API. The manifest currently contains 13
-public `wallet:*` permissions and 10 service-only `internal:wallet:*`
+public `wallet:*` permissions and 11 service-only `internal:wallet:*`
 permissions; no Account source-code edit or legacy `seedscopes` execution is
 required.
 
@@ -94,6 +94,7 @@ parameters per environment (`dev` / `stage` / `prod`):
 | `/ctech-wallet/{env}/inter/client-id`      | String           | `pix-gateway` `start.sh` → `INTER_CLIENT_ID`      |
 | `/ctech-wallet/{env}/inter/client-secret`  | **SecureString** | `pix-gateway` `start.sh` → `INTER_CLIENT_SECRET`  |
 | `/ctech-wallet/{env}/inter/webhook-secret` | **SecureString** | `pix-gateway` `start.sh` → `INTER_WEBHOOK_SECRET` |
+| `/ctech-wallet/{env}/pix-gateway/client-secret` | **SecureString** | `pix-gateway`'s own M2M secret (`ssm.go:20`) — signs/verifies the notify-back webhook, separate from `wallet-client-secret` below |
 | `/ctech-wallet/{env}/wallet-client-id`     | String           | `start.sh` → `WALLET_CLIENT_ID`     |
 | `/ctech-wallet/{env}/wallet-client-secret` | **SecureString** | `start.sh` → `WALLET_CLIENT_SECRET` |
 
@@ -121,10 +122,11 @@ aws ssm put-parameter --type SecureString --overwrite \
 
 Also register the webhook secret with Inter's webhook configuration, and set
 `INTER_PIX_KEY` (the receiving key for charges) in the API stack's static env.
-Register the webhook URL with Inter as `https://pix.wallet.aoctech.app/webhook?hmac=<the
+Register the webhook URL with Inter as `https://pix.wallet.aoctech.app/pix/webhook?hmac=<the
 same value stored in /ctech-wallet/{env}/inter/webhook-secret>` — Inter echoes this query
 string back on every callback and `pix-gateway`'s webhook Lambda now rejects any request
-where it doesn't match.
+where it doesn't match. (Route is `POST /pix/webhook`, not `/webhook` —
+`cdk/lib/pix-gateway-stack.ts`.)
 
 > Before enabling real money, confirm each Inter endpoint's request/response shape
 > against Inter's current API reference and sandbox (see `api/internal/pix/inter.go`).
@@ -290,8 +292,10 @@ user's own money in a game wallet. Reducing exposure is never blocked.
    thing this design exists to prevent. Shipping activation with limits "to follow" is not an acceptable
    intermediate state.
 2. `docs/legal/wallet-gambling-addendum.md` has passed **legal review** (it currently carries a PENDING banner),
-   and the text, the UI page (`ui/src/app/gambling-addendum/page.tsx`), and
-   `wallet.CurrentGamblingAddendumVersion` all agree.
+   and the text, the UI presentation of it, and `wallet.CurrentGamblingAddendumVersion` all agree. No
+   `ui/src/app/gambling-addendum/page.tsx` (or equivalent) exists yet — only `gambling/activate` and
+   `gambling/responsible` pages are built so far — so this UI surface still needs to be built before
+   the flag can go on.
 3. The `wallet_audit` table exists in the target environment and the API role can write it.
 
 Turning the flag on does **not** retroactively activate anyone: activation stays opt-in and per-user, gated on

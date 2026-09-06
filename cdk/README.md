@@ -20,7 +20,7 @@ owned by `ctech-cdk` and referenced via SSM.
 
 | Stack | File | Provisions |
 |-------|------|-----------|
-| `DynamoDBStack` | `lib/dynamodb-stack.ts` | 8 tables + GSIs (OnDemand) |
+| `DynamoDBStack` | `lib/dynamodb-stack.ts` | 14 tables + GSIs (OnDemand) |
 | `IAMStack` | `lib/iam-stack.ts` | EC2 instance role for the API |
 | `ApiStack` | `lib/api-stack.ts` | EC2 ASG + HAProxy route + nginx + deploy scripts |
 | `ReconcileStack` | `lib/reconcile-stack.ts` | reconcile Lambda + EventBridge Scheduler (5 min) |
@@ -69,9 +69,14 @@ and they are — the underlying item actions are present. No IAM change needed.
 
 - Uses `HaproxyEc2Service` for the private-IPv4 security group, encrypted launch
   template, log groups, ASG and CPU target tracking. The shared HAProxy edge discovers
-  the ASG through its existing `wallet` route and probes `/v1.0/health-check`; the API's
-  degraded `207` response remains part of that route's health contract.
-- Instances: min 1, max 3 (prod). nginx `:8080` → app `:8000`
+  the ASG through its existing `wallet` route and probes `HEALTH_CHECK_PATH`
+  (`constants.ts` — the dependency-free `/v1.0/health` liveness endpoint, not the
+  detailed `/v1.0/health-check`). The API's degraded `207` response on
+  `/v1.0/health-check` is informational only; it is not what gates HAProxy routing.
+- Instances: min 1, max 2 in every environment (`api-stack.ts:311-315` — the
+  extra 1 over min gives CapacityRebalance headroom to launch a replacement
+  before terminating a spot-interrupted instance; not prod-only anymore).
+  nginx `:8080` → app `:8000`
   (`constants.ts:44-48`). Rate limit `100r/s` by real viewer IP
   (`limit_req_zone`, `:182`). WebSocket `/v1.0/ws` upgrade proxied
   (`:223`). Real‑IP resolved via `update-realip.sh`.
@@ -100,9 +105,13 @@ and they are — the underlying item actions are present. No IAM change needed.
 - **SSM agent is off by default** (`ENABLE_SSM_AGENT=true cdk deploy` puts it
   back for a debugging shell). Nothing needs RunCommand now, and the agent costs
   ~70 MiB of RSS on a t4g.nano. Flipping it replaces the instances.
-- **The ASG runs 11:55 → 13:15 America/Sao_Paulo** and is scaled to zero outside
-  that window: unreachable, inbound webhooks fail. A deploy outside the window
-  exits early and the next scheduled instance boots the artifact.
+- **The daytime-only schedule is currently disabled.** `api-stack.ts:320` has
+  `schedule: {enableCron: '55 11 * * *', disableCron: '15 13 * * *'}` commented
+  out (with the explanatory comment above it left in place) — the ASG runs
+  continuously in every environment today, not just 11:55 → 13:15
+  America/Sao_Paulo. Confirm with the operator whether this was a deliberate
+  revert (e.g. inbound webhooks needed round-the-clock) or an accidental
+  regression before relying on either behavior.
 
 ## ReconcileStack (`reconcile-stack.ts`)
 
@@ -175,8 +184,8 @@ CI: `.github/workflows/{api,frontend,infra,deploy}.yml`.
 | ID | Where | Status |
 |----|-------|--------|
 | **B1** | `dynamodb:TransactWriteItems` — **FALSE POSITIVE (closed)**. Not an IAM action; needs item‑level perms (`ConditionCheckItem`/`DeleteItem`/`PutItem`/`UpdateItem`) which the wallet IAM already grants. Money ops work in prod. | No fix needed. |
-| — | OPERATIONS.md §4 instructs Inter to POST the webhook to `…/webhook?hmac=` but the CDK registers `POST /pix/webhook` (`pix-gateway-stack.ts:186`). Path mismatch. | Doc gap — align OPERATIONS.md / Inter registration. |
-| — | OPERATIONS.md §4 omits the pix‑gateway webhook M2M secret `/ctech-wallet/{env}/pix-gateway/client-secret` (required by `ssm.go:20`, `constants.ts:144`). | Doc gap — seed it. |
+| — | ~~OPERATIONS.md §4 instructed Inter to POST the webhook to `…/webhook?hmac=` but the CDK registers `POST /pix/webhook` (`pix-gateway-stack.ts:186`).~~ | Fixed — OPERATIONS.md now says `/pix/webhook`. |
+| — | ~~OPERATIONS.md §4 omitted the pix‑gateway webhook M2M secret `/ctech-wallet/{env}/pix-gateway/client-secret` (required by `ssm.go:20`, `constants.ts:144`).~~ | Fixed — OPERATIONS.md §4 now lists it. |
 
 ## Cross‑links
 

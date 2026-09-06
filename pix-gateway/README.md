@@ -6,8 +6,10 @@ these Lambdas over `lambda:Invoke` with an Inter OAuth bearer supplied per call.
 Split into two functions:
 
 - **`cmd/outbound`** — performs the actual Inter calls (CreateCharge, QueryCharge,
-  Transfer, QueryTransfer, Refund, Ping, GetToken). Dispatches on the
-  `rpc-contract` `Op` enum (`cmd/outbound/main.go:89`).
+  Transfer, QueryTransfer, Refund, Ping, GetToken) and the Asaas BaaS custody
+  calls (account creation, document upload, static PIX key/QR, payment/transfer
+  query, refund, balance/status — see `../rpc-contract/README.md`). Dispatches
+  on the `rpc-contract` `Op` enum (`cmd/outbound/main.go:89`).
 - **`cmd/webhook`** — receives Inter's PIX callback, validates it, and asks `api`
   to re‑derive + credit the deposit. Carries **no Inter credentials at all**
   (`cmd/webhook/main.go:1`).

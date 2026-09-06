@@ -6,7 +6,7 @@ Context for AI agents working on the PIX gateway. Identical intent to
 The **only** component allowed to talk to Banco Inter's PIX/Banking APIs.
 `api` never opens an mTLS connection — it invokes these Lambdas over
 `lambda:Invoke` with an Inter OAuth bearer per call. This gateway fronts
-**real money movement** at Inter; the 12 Financial Safety Invariants in the
+**real money movement** at Inter; the 14 Financial Safety Invariants in the
 repo root [`../CLAUDE.md`](../CLAUDE.md) still bind (webhook is never the
 source of truth — Invariant #11 — and the CPF gate is anti-fraud only).
 

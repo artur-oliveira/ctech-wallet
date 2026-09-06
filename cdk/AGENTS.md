@@ -4,12 +4,12 @@ Context for AI agents working on the wallet infrastructure. Identical intent
 to [`CLAUDE.md`](CLAUDE.md); this is the agent-facing summary.
 
 AWS CDK (TypeScript) for `ctech-wallet`. This stack custodies **real
-third-party money** — the 12 Financial Safety Invariants in the repo root
+third-party money** — the 14 Financial Safety Invariants in the repo root
 [`../CLAUDE.md`](../CLAUDE.md) are non-negotiable.
 
 ## Stacks (`lib/*.ts`)
 
-`DynamoDBStack` (8 tables + GSIs, OnDemand), `IAMStack` (API instance
+`DynamoDBStack` (14 tables + GSIs, OnDemand), `IAMStack` (API instance
 role), `ApiStack` (EC2 ASG + HAProxy route + nginx), `ReconcileStack`
 (reconcile Lambda + EventBridge 5 min), `PixGatewayStack` (outbound +
 webhook Lambdas, mTLS HTTP API), `FrontendStack` (S3 + CloudFront),

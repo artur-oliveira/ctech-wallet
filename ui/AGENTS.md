@@ -4,7 +4,7 @@ Context for AI agents working on the `ctech-wallet` frontend. Identical intent
 to [`CLAUDE.md`](CLAUDE.md); this file is the agent-facing summary.
 
 Next.js 16 **static-export SPA** (React 19) for the wallet API. This app
-drives **real third-party money** — the 12 Financial Safety Invariants in the
+drives **real third-party money** — the 14 Financial Safety Invariants in the
 repo root [`../CLAUDE.md`](../CLAUDE.md) are non-negotiable and override
 convenience.
 

@@ -6,7 +6,7 @@ with an append‑only ledger, PIX (Banco Inter) deposits/withdrawals, and
 skill‑game holds/cash‑outs. Talks to Inter **only through `pix-gateway`** (a
 Lambda) — it never opens an mTLS connection itself.
 
-> **This service custodies real money.** The 12 Financial Safety Invariants in
+> **This service custodies real money.** The 14 Financial Safety Invariants in
 > the repo root `CLAUDE.md` are non‑negotiable and override convenience.
 
 ## Layout

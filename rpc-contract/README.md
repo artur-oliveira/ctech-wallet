@@ -35,6 +35,28 @@ the matching `*Args`.
 | `Ping` | — | — | reachability, no money movement |
 | `GetToken` | — | `GetTokenResult{Token, ExpiresIn}` (`:42`) | Inter OAuth2 bearer |
 
+## Asaas BaaS custody operations (`types.go:26-37`)
+
+Added for the per-user custody subaccount migration
+(`docs/plans/2026-07-30-asaas-baas-implementation-plan.md`). Same envelope as
+the Inter ops above — `OAuthToken` carries the Asaas credentials for these too
+and MUST NOT be duplicated into `Payload`.
+
+| Op | Args | Result | Notes |
+|----|------|--------|-------|
+| `AsaasCreateAccount` | `AsaasCreateAccountArgs` (`:143`) | `AsaasAccountResult` (`:159`) | creates the user's subaccount |
+| `AsaasUploadDocument` | `AsaasUploadDocumentArgs` (`:167`) | — | rejected if the pending document carries an `OnboardingURL` (must go through that flow instead) |
+| `AsaasCreateStaticPixKey` | `AsaasCreateStaticPixKeyArgs{}` (`:172`) | `AsaasPixAddressKeyResult` (`:174`) | the subaccount's EVP key |
+| `AsaasCreatePixQRCode` | `AsaasCreatePixQRCodeArgs` (`:179`) | `AsaasQRCodeResult` (`:188`) | deposit QR / verification-fee QR |
+| `AsaasQueryPayment` | `AsaasQueryPaymentArgs` (`:195`) | `AsaasPaymentResult` (`:199`) | **source of truth** for a deposit, mirrors `QueryCharge` |
+| `AsaasQueryCustomer` | `AsaasQueryCustomerArgs` (`:207`) | `AsaasCustomerResult` (`:220`) | |
+| `AsaasRefundPayment` | `AsaasRefundPaymentArgs` (`:214`) | — | refunds the payment that received the money |
+| `AsaasCreateTransfer` | `AsaasCreateTransferArgs` (`:226`) | `AsaasTransferResult` (`:234`) | PIX payout from a subaccount, mirrors `Transfer` |
+| `AsaasQueryTransfer` | `AsaasQueryTransferArgs` (`:241`) | `AsaasTransferResult` | reconciliation, mirrors `QueryTransfer` |
+| `AsaasQueryAccountBalance` | `AsaasQueryAccountBalanceArgs{}` (`:245`) | `AsaasBalanceResult` (`:247`) | |
+| `AsaasQueryAccountStatus` | `AsaasQueryAccountStatusArgs{}` (`:254`) | `AsaasAccountStatusResult` (`:268`) | approved only when `General == "APPROVED"`; the other three fields say which step is outstanding and must never be combined into an approval decision of their own |
+| `AsaasListPendingDocuments` | `AsaasListPendingDocumentsArgs{}` (`:279`) | `AsaasPendingDocumentsResult` (`:299`) | |
+
 ## Sentinels (`Response.Error`)
 
 - `key_not_found` (`types.go:25`) ⇒ Inter `ErrKeyNotFound` — destination PIX key
@@ -43,6 +65,10 @@ the matching `*Args`.
 - `unauthorized` (`types.go:29`) ⇒ Inter rejected the bearer (401); `api`
   invalidates + force‑refreshes the token and retries once
   (`lambda_client.go:87`).
+- `transfer_not_found` (`types.go:52`) ⇒ a provider query succeeded and proved
+  no transfer exists for the supplied external reference — deliberately
+  distinct from a query/transport error: only this result permits
+  resubmission.
 
 Any other non‑empty `Error` is an opaque bank/transport failure surfaced as
 `problem.InternalServer`.
