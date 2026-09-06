@@ -49,8 +49,8 @@ export const APP_PORT = 8000;
 export const APP_PORT_ALT = APP_PORT + 1;
 /** Port nginx listens on — the ALB target port. */
 export const NGINX_PORT = 8080;
-/** Health check path served by the Go API. */
-export const HEALTH_CHECK_PATH = '/v1.0/health-check';
+/** Dependency-free liveness path served by the Go API. */
+export const HEALTH_CHECK_PATH = '/v1.0/health';
 
 /**
  * Request paths CloudFront forwards to the ALB instead of S3. The browser then
