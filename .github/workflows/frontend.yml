@@ -45,3 +45,4 @@ jobs:
         NEXT_PUBLIC_CTECH_CLIENT_ID=wallet
       csp-overrides: |
         script-src-elem 'self' 'unsafe-inline' https://static.cloudflareinsights.com
+        img-src 'self' data: https://baas.asaas.com
