@@ -64,7 +64,7 @@ export function BalanceCards({
       <div className={activated ? 'grid gap-4 md:grid-cols-[1.4fr_1fr]' : 'grid gap-4'}>
         {/* Real — money */}
         <section className="relative overflow-hidden rounded-2xl bg-brand-600 p-6 text-white">
-          <div className="flex items-start justify-between">
+          <div className="flex items-start justify-between gap-4">
             <div>
               <p className="font-mono text-xs uppercase tracking-widest text-brand-50">{t('balance.real.label')}</p>
               <p className="mt-3 font-mono text-4xl font-bold tabular-nums tracking-tight">
@@ -72,6 +72,7 @@ export function BalanceCards({
               </p>
               <p className="mt-2 text-sm text-brand-50">{t('balance.real.subtitle')}</p>
             </div>
+            <AsaasBadge variant="white" className="shrink-0"/>
           </div>
 
           <div className="mt-6 flex flex-wrap gap-2">
@@ -112,7 +113,6 @@ export function BalanceCards({
           {depositReadiness?.custody_required && (
             <p className="mt-2 text-xs text-brand-100/80">{t('deposit.providerNote')}</p>
           )}
-          <AsaasBadge variant="white" className="mt-4"/>
         </section>
 
         {/* Game — real money, ring-fenced */}

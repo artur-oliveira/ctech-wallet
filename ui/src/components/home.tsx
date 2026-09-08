@@ -53,7 +53,7 @@ export default function Home() {
       <footer
         className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-6 py-6 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
         <p>© {new Date().getFullYear()} A O CARVALHO TECH</p>
-        <div className="flex flex-wrap gap-x-4 gap-y-2">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <a href={WALLET_TERMS_URL} className="hover:text-foreground" target="_blank" rel="noreferrer">
             {t('home.footer.terms')}
           </a>
@@ -63,8 +63,8 @@ export default function Home() {
           <a href={ACCOUNTS_LEGAL_URL} className="hover:text-foreground" target="_blank" rel="noreferrer">
             {t('home.footer.legalCenter')}
           </a>
+          <AsaasBadge/>
         </div>
-        <AsaasBadge/>
       </footer>
     </div>
   )

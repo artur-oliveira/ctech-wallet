@@ -100,8 +100,13 @@ export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onCl
       }}
     >
       <DialogContent render={<form onSubmit={submit} noValidate/>}>
-        <DialogTitle>{t(`dialog.${flowKey}.title`)}</DialogTitle>
-        <DialogDescription className="mt-1">{t(`dialog.${flowKey}.description`)}</DialogDescription>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <DialogTitle>{t(`dialog.${flowKey}.title`)}</DialogTitle>
+            <DialogDescription className="mt-1">{t(`dialog.${flowKey}.description`)}</DialogDescription>
+          </div>
+          {(flow === 'deposit' || flow === 'withdraw') && <AsaasBadge className="mt-0.5 shrink-0"/>}
+        </div>
 
         <label className="mt-5 block text-sm font-medium text-foreground" htmlFor="amount">
           {t('dialog.amount.label')}
@@ -186,8 +191,6 @@ export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onCl
             {pending ? t('common.loading') : t(`dialog.${flowKey}.submit`)}
           </Button>
         </div>
-
-        {(flow === 'deposit' || flow === 'withdraw') && <AsaasBadge className="mt-5 justify-center"/>}
       </DialogContent>
     </Dialog>
   )

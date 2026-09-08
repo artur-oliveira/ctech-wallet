@@ -32,8 +32,8 @@ export function AsaasBadge({variant = 'color', className}: AsaasBadgeProps) {
       <Image
         src={BADGE_SRC[variant]}
         alt={t('common.asaasBadgeAlt')}
-        width={120}
-        height={36}
+        width={88}
+        height={26}
         unoptimized
       />
     </a>
