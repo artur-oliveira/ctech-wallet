@@ -46,8 +46,13 @@ export function OnboardingDialog({pending, error, onSubmit, onClose}: Onboarding
           />
         }
       >
-        <DialogTitle>{t('dialog.onboarding.title')}</DialogTitle>
-        <DialogDescription className="mt-1">{t('dialog.onboarding.description')}</DialogDescription>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <DialogTitle>{t('dialog.onboarding.title')}</DialogTitle>
+            <DialogDescription className="mt-1">{t('dialog.onboarding.description')}</DialogDescription>
+          </div>
+          <AsaasBadge className="mt-0.5 shrink-0"/>
+        </div>
 
         <label className="mt-5 block text-sm font-medium text-foreground" htmlFor="income-value">
           {t('dialog.onboarding.incomeLabel')}
@@ -84,8 +89,6 @@ export function OnboardingDialog({pending, error, onSubmit, onClose}: Onboarding
             {pending ? t('common.loading') : t('dialog.onboarding.submit')}
           </Button>
         </div>
-
-        <AsaasBadge className="mt-5 justify-center"/>
       </DialogContent>
     </Dialog>
   )
