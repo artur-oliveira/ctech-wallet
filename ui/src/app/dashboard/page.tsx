@@ -366,7 +366,7 @@ function DashboardInner() {
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card">
-        <h1 className="sr-only">CTech Wallet</h1>
+        <h1 className="sr-only">CTech Ledger</h1>
         <div className="mx-auto flex max-w-4xl items-center justify-between gap-3 px-4 py-4 sm:px-6">
           <div className="flex items-center gap-2.5">
             <div className="flex size-8 items-center justify-center rounded-lg bg-brand-600 text-white">
@@ -375,7 +375,7 @@ function DashboardInner() {
                      width={32}
                      height={32}/>
             </div>
-            <span className="font-semibold text-foreground">CTech Wallet</span>
+            <span className="font-semibold text-foreground">CTech Ledger</span>
           </div>
           <div className="flex min-w-0 items-center gap-3">
                         <span

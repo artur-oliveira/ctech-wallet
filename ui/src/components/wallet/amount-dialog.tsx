@@ -15,6 +15,7 @@ import {
   toCredits
 } from '@/lib/utils/money'
 import {Dialog, DialogContent, DialogDescription, DialogTitle} from '@/components/ui/dialog'
+import {AsaasBadge} from '@/components/wallet/asaas-badge'
 
 type Flow = 'deposit' | 'withdraw' | 'credits' | 'fund-game' | 'return-game'
 
@@ -185,6 +186,8 @@ export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onCl
             {pending ? t('common.loading') : t(`dialog.${flowKey}.submit`)}
           </Button>
         </div>
+
+        {(flow === 'deposit' || flow === 'withdraw') && <AsaasBadge className="mt-5 justify-center"/>}
       </DialogContent>
     </Dialog>
   )

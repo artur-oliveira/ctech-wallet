@@ -5,6 +5,7 @@ import {useTranslation} from 'react-i18next'
 import {Button} from '@/components/ui/button'
 import {Dialog, DialogContent, DialogDescription, DialogTitle} from '@/components/ui/dialog'
 import {formatCredits, MAX_AMOUNT_DIGITS} from '@/lib/utils/money'
+import {AsaasBadge} from '@/components/wallet/asaas-badge'
 
 interface OnboardingDialogProps {
   pending?: boolean
@@ -83,6 +84,8 @@ export function OnboardingDialog({pending, error, onSubmit, onClose}: Onboarding
             {pending ? t('common.loading') : t('dialog.onboarding.submit')}
           </Button>
         </div>
+
+        <AsaasBadge className="mt-5 justify-center"/>
       </DialogContent>
     </Dialog>
   )
