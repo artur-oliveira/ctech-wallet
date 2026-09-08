@@ -7,6 +7,7 @@ import {Button} from '@/components/ui/button'
 import {LanguageSwitcher} from '@/components/language-switcher'
 import {useAuth} from '@/lib/hooks/useAuth'
 import {ACCOUNTS_LEGAL_URL, PRIVACY_POLICY_URL, WALLET_TERMS_URL} from '@/lib/legal'
+import {AsaasBadge} from '@/components/wallet/asaas-badge'
 
 const DASHBOARD_PATH = '/dashboard'
 
@@ -63,6 +64,7 @@ export default function Home() {
             {t('home.footer.legalCenter')}
           </a>
         </div>
+        <AsaasBadge/>
       </footer>
     </div>
   )
