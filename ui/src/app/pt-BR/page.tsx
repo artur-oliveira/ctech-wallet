@@ -6,7 +6,7 @@ import {Metadata} from "next";
 export const metadata: Metadata = localizedMetadata({
   locale: DEFAULT_LOCALE,
   path: '',
-  title: 'CTech Wallet',
+  title: 'CTech Ledger',
   description: ptBR.home.description,
   absoluteTitle: true,
 })

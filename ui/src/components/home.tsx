@@ -29,7 +29,7 @@ export default function Home() {
         <section className="mx-auto w-full max-w-md">
           <div className="flex items-center gap-2.5">
             <Image src="/app.svg" alt="" aria-hidden="true" width={36} height={36} priority/>
-            <span className="font-semibold text-foreground">CTech Wallet</span>
+            <span className="font-semibold text-foreground">CTech Ledger</span>
           </div>
           <h1 className="mt-8 text-2xl font-semibold tracking-tight text-foreground">
             {t('home.title')}

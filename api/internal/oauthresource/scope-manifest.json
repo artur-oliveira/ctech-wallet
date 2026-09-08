@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "resource_server_id": "wallet",
-  "display_name": "CTech Wallet",
+  "display_name": "CTech Ledger",
   "scopes": [
     { "name": "wallet:state:read", "descriptions": { "pt-BR": "Consultar o estado do usuario na Wallet.", "en": "Read the user's Wallet state." }, "visibility": "public", "status": "active" },
     { "name": "wallet:terms:write", "descriptions": { "pt-BR": "Aceitar os termos da Wallet.", "en": "Accept the Wallet terms." }, "visibility": "public", "status": "active" },

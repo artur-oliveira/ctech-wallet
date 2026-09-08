@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "CTech Wallet"
+    "name": "CTech Ledger"
   },
   "common": {
     "cancel": "Cancelar",
@@ -13,7 +13,7 @@
     "changeLanguage": "Mudar idioma para {{language}}"
   },
   "login": {
-    "title": "CTech Wallet",
+    "title": "CTech Ledger",
     "subtitle": "Seu saldo real para PIX e serviços CTech.",
     "button": "Entrar com a conta CTech"
   },
@@ -23,7 +23,7 @@
     "error": {
       "accessDenied": {
         "title": "A entrada foi cancelada",
-        "description": "Você não autorizou o acesso à CTech Wallet. Nenhuma movimentação da carteira foi alterada. Volte quando quiser tentar novamente."
+        "description": "Você não autorizou o acesso à CTech Ledger. Nenhuma movimentação da carteira foi alterada. Volte quando quiser tentar novamente."
       },
       "sessionExpired": {
         "title": "Sua sessão de entrada expirou",
@@ -269,10 +269,10 @@
   },
   "terms": {
     "title": "Só mais um passo",
-    "description": "Antes de acessar seu saldo real e movimentá-lo via PIX, leia e aceite os Termos Adicionais da CTech Wallet.",
+    "description": "Antes de acessar seu saldo real e movimentá-lo via PIX, leia e aceite os Termos Adicionais da CTech Ledger.",
     "error": "Não foi possível confirmar. Tente de novo.",
     "checkboxPrefix": "Li e concordo com os",
-    "termsLink": "Termos Adicionais da CTech Wallet",
+    "termsLink": "Termos Adicionais da CTech Ledger",
     "decline": "Recusar e sair",
     "continue": "Continuar",
     "confirming": "Confirmando…",

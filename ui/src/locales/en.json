@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "CTech Wallet"
+    "name": "CTech Ledger"
   },
   "common": {
     "cancel": "Cancel",
@@ -13,7 +13,7 @@
     "changeLanguage": "Switch language to {{language}}"
   },
   "login": {
-    "title": "CTech Wallet",
+    "title": "CTech Ledger",
     "subtitle": "Your real balance for PIX and CTech services.",
     "button": "Sign in with CTech account"
   },
@@ -23,7 +23,7 @@
     "error": {
       "accessDenied": {
         "title": "Sign-in was cancelled",
-        "description": "You didn't grant access to CTech Wallet. No wallet activity was changed. Return to sign in when you're ready."
+        "description": "You didn't grant access to CTech Ledger. No wallet activity was changed. Return to sign in when you're ready."
       },
       "sessionExpired": {
         "title": "Your sign-in session expired",
@@ -269,10 +269,10 @@
   },
   "terms": {
     "title": "Just one more step",
-    "description": "Before accessing your real balance and PIX activity, read and accept the CTech Wallet Additional Terms.",
+    "description": "Before accessing your real balance and PIX activity, read and accept the CTech Ledger Additional Terms.",
     "error": "We couldn't confirm. Please try again.",
     "checkboxPrefix": "I have read and agree with the",
-    "termsLink": "CTech Wallet Additional Terms",
+    "termsLink": "CTech Ledger Additional Terms",
     "decline": "Decline and sign out",
     "continue": "Continue",
     "confirming": "Confirming…",

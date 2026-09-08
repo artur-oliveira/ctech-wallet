@@ -1,7 +1,7 @@
 import type {Metadata} from 'next'
 import {DEFAULT_LOCALE, ENGLISH_LOCALE, type SupportedLocale} from '@/lib/locale'
 
-const SITE_NAME = 'CTech Wallet'
+const SITE_NAME = 'CTech Ledger'
 
 export function localizedMetadata({
                                     locale,
