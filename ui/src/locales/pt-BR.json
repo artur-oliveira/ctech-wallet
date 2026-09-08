@@ -10,7 +10,8 @@
     "retrying": "Tentando novamente…",
     "genericError": "Algo deu errado. Tente de novo.",
     "close": "Fechar",
-    "changeLanguage": "Mudar idioma para {{language}}"
+    "changeLanguage": "Mudar idioma para {{language}}",
+    "asaasBadgeAlt": "Serviços financeiros prestados pela Asaas Gestão Financeira S.A."
   },
   "login": {
     "title": "CTech Ledger",

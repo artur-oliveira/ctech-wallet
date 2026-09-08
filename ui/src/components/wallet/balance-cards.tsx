@@ -7,6 +7,7 @@ import {Button} from '@/components/ui/button'
 import {formatBRL, formatCreditsAmount} from '@/lib/utils/money'
 import type {Balances, DepositReadiness} from '@/lib/types/api'
 import {DepositGate, DepositGateNote} from '@/components/wallet/deposit-gate'
+import {AsaasBadge} from '@/components/wallet/asaas-badge'
 
 interface BalanceCardsProps {
   balances: Balances
@@ -111,6 +112,7 @@ export function BalanceCards({
           {depositReadiness?.custody_required && (
             <p className="mt-2 text-xs text-brand-100/80">{t('deposit.providerNote')}</p>
           )}
+          <AsaasBadge variant="white" className="mt-4"/>
         </section>
 
         {/* Game — real money, ring-fenced */}

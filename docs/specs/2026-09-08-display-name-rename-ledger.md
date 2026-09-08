@@ -30,3 +30,14 @@ exibida no topbar e na tela inicial, e as strings de i18n (`en.json`, `pt-BR.jso
   rotas, escopos (`wallet:*`, `internal:wallet:*`) e qualquer outro nome técnico interno.
 
 Nenhuma infraestrutura, contrato de API, schema ou comportamento mudou — apenas o texto exibido ao usuário.
+
+## Selo de atribuição Asaas
+
+Mesmo playbook, seção de transparência ao cliente final (Resolução Conjunta nº 16/2025): o usuário precisa
+ser informado de que a Asaas — não a CTech — é a instituição de pagamento que processa a operação, em
+toda tela de criação de conta ou movimentação de valores. Componente novo `AsaasBadge`
+(`ui/src/components/wallet/asaas-badge.tsx`), um link para `asaas.com` com o selo oficial hospedado pela
+Asaas (variante colorida em fundos claros, variante branca sobre o card violeta sólido — a única legível
+ali), adicionado em `onboarding-dialog.tsx` (criação da conta de pagamento), `balance-cards.tsx` (card do
+saldo real) e `amount-dialog.tsx` (apenas nos fluxos `deposit`/`withdraw`, que são os únicos que tocam a
+Asaas). Novas chaves i18n: `common.asaasBadgeAlt` em `en.json`/`pt-BR.json`.
