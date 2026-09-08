@@ -40,4 +40,11 @@ toda tela de criação de conta ou movimentação de valores. Componente novo `A
 Asaas (variante colorida em fundos claros, variante branca sobre o card violeta sólido — a única legível
 ali), adicionado em `onboarding-dialog.tsx` (criação da conta de pagamento), `balance-cards.tsx` (card do
 saldo real) e `amount-dialog.tsx` (apenas nos fluxos `deposit`/`withdraw`, que são os únicos que tocam a
-Asaas). Novas chaves i18n: `common.asaasBadgeAlt` em `en.json`/`pt-BR.json`.
+Asaas) e no footer da home (`components/home.tsx`). Novas chaves i18n: `common.asaasBadgeAlt` em
+`en.json`/`pt-BR.json`.
+
+O selo é carregado por URL externa (`baas.asaas.com`), então a CSP `img-src` (gerada pelo workflow
+reutilizável de `ctech-cdk`, que por padrão só permite `'self' data:`) precisa do override
+`img-src 'self' data: https://baas.asaas.com` em `.github/workflows/frontend.yml`
+(mesmo mecanismo já usado pelo poker para os avatares — ver comentário em
+`ctech-cdk/.github/workflows/frontend-cloudflare.yml`).
