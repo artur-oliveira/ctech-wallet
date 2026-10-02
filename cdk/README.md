@@ -1,3 +1,9 @@
+## EC2 capacity (2026-10-01)
+
+The user-data capacity marker versions the launch template to force replacement of existing Spot instances during migration.
+
+The API uses only `t4g.nano` On-Demand instances with `@aoctech/cdk` 0.10.0 (`onDemand: true`). Spot, capacity rebalance and micro fallback are disabled. The ASG retains replacement headroom. EC2 Instance Savings Plans apply automatically to eligible usage; purchase separately for `t4g` in `us-east-1`. Historical Spot notes below are superseded.
+
 # ctech-wallet CDK
 
 > HAProxy migration: the API ASG no longer creates an ALB target group or listener

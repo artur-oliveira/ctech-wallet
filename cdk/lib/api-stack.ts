@@ -5,7 +5,6 @@ import * as ssm from 'aws-cdk-lib/aws-ssm';
 import {Construct} from 'constructs';
 import {Ec2ScriptRunner, HaproxyEc2Service, SSM as CtechSSM} from '@aoctech/cdk';
 
-const API_SPOT_INSTANCE_TYPES = ['t4g.nano', 't4g.micro'] as const;
 import {Environment} from './types';
 import {
   API_CURRENT_ARTIFACT_KEY,
@@ -87,6 +86,8 @@ export class ApiStack extends cdk.Stack {
     // from S3 at boot; the prefix is their content hash, read from SSM at deploy
     // time, so editing a shared script versions this launch template.
     const userData = ec2.UserData.forLinux();
+    // Version the launch template so the migration also replaces existing Spot hosts.
+    userData.addCommands('# EC2 capacity: t4g.nano On-Demand');
     let scripts: Ec2ScriptRunner | undefined;
 
     if (isAlpine) {
@@ -309,18 +310,14 @@ export class ApiStack extends cdk.Stack {
       logRemovalPolicy: isProd ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
       asgName: this.asgName,
       minCapacity: 1,
-      // +1 over min: gives CapacityRebalance headroom to launch the
-      // replacement before terminating the spot-interrupted instance instead
-      // of waiting for it to go down first.
+      // Allow one extra instance during replacement or scaling.
       maxCapacity: 2,
       // The ASG runs only inside a narrow daytime window: up at 11:55 and down
       // at 13:15 America/Sao_Paulo. Outside it the service is off — inbound
       // webhooks fail and nothing is reachable. Deliberate for a development
       // environment on a single t4g.nano.
       // schedule: {enableCron: '55 11 * * *', disableCron: '15 13 * * *'},
-      spot: {
-        instanceTypes: API_SPOT_INSTANCE_TYPES.map((type) => new ec2.InstanceType(type)),
-      },
+      onDemand: true,
     });
 
     // ── Outputs ───────────────────────────────────────────────────────────────

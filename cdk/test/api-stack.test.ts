@@ -58,12 +58,12 @@ test('no secret value is written into the launch template', () => {
   assert.doesNotMatch(rendered, /WALLET_CLIENT_SECRET=(?!\/|\$)/);
 });
 
-test('the Spot policy can launch both nano and micro Graviton instances', () => {
+test('the API uses only nano On-Demand capacity', () => {
   synth().hasResourceProperties('AWS::AutoScaling::AutoScalingGroup', {
-    MixedInstancesPolicy: {
-      LaunchTemplate: {
-        Overrides: [{InstanceType: 't4g.nano'}, {InstanceType: 't4g.micro'}],
-      },
-    },
+    CapacityRebalance: false,
   });
+  synth().hasResourceProperties('AWS::EC2::LaunchTemplate', {
+    LaunchTemplateData: {InstanceType: 't4g.nano'},
+  });
+  assert.doesNotMatch(JSON.stringify(synth().toJSON()), /MixedInstancesPolicy|t4g.micro/);
 });
