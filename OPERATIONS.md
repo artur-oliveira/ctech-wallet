@@ -210,6 +210,13 @@ cp -a /var/log/app/app.log /tmp/app.log.bak   # setup-logs.sh also archives to S
 rc-service ctech-ec2-agent-logs-app restart
 ```
 
+## 4d. Inter Lambda failure alerts
+
+`pix-gateway` publishes failures to the shared `ctech-{env}-alerts` SNS topic (see `pix-gateway/README.md`). Confirm the
+operator's e-mail subscription is **confirmed** (`aws sns list-subscriptions-by-topic`: not `PendingConfirmation`).
+Smoke test after a deploy: invoke the webhook Lambda directly with a malformed body and expect a
+`[pix-gateway/<env>] webhook` mail. Not covered: the wallet API's own `ALARM` log lines (failed refunds/reversals).
+
 ## 5. Withdrawal reconciliation schedule
 
 Run `cmd/reconcile` on a schedule (e.g. EventBridge every 5 min). It resolves
@@ -221,6 +228,13 @@ table, the PIX deposit table, and their status GSIs. It also queries the holds
 table status GSI for stale game holds.
 `cmd/reconcile` uses `config.LoadReconcile`; it does not require the API server's
 JWT issuer, CORS, or fleet-wide Valkey settings.
+
+## 5a. Daily PIX limits (admin-only)
+
+Per-wallet overrides are set directly in DynamoDB on the `real` wallet row (`wallets` table): `daily_deposit_cap`
+(centavos, default 100000), `daily_withdraw_cap` (centavos, default 100000), `daily_withdraw_count` (default 1).
+Absent or 0 means the default. Counters (`real_daily_counters`) live on the user row in `wallet_users`; to give a
+user a fresh day by hand, remove that attribute. A paid deposit that exceeds the cap is refunded to the payer.
 
 ## 6. `GAMBLING_ENABLED` — do not turn this on yet
 

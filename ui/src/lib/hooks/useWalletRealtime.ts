@@ -48,7 +48,12 @@ const WITHDRAW_TOAST_KEY: Record<string, string> = {
   withdraw_refund_failed: 'toast.withdrawRefundFailed',
 }
 
-export function useWalletRealtime(): { wsStatus: WSStatus } {
+interface WalletRealtimeCallbacks {
+  /** Called when the bank confirmed a deposit, so an open QR dialog can close. */
+  onDepositConfirmed?: () => void
+}
+
+export function useWalletRealtime({onDepositConfirmed}: WalletRealtimeCallbacks = {}): { wsStatus: WSStatus } {
   const {t, i18n} = useTranslation()
   const qc = useQueryClient()
   const token = getAccessToken()
@@ -93,6 +98,7 @@ export function useWalletRealtime(): { wsStatus: WSStatus } {
           ? t('toast.realtimeDeposit', {amount: formatCentavos(msg.amount, i18n.language || 'pt-BR')})
           : t('toast.depositConfirmed'),
       )
+      onDepositConfirmed?.()
       return
     }
 
@@ -106,7 +112,7 @@ export function useWalletRealtime(): { wsStatus: WSStatus } {
         toast.error(t(toastKey))
       }
     }
-  }, [qc, t, i18n.language])
+  }, [qc, t, i18n.language, onDepositConfirmed])
 
   const {status: wsStatus} = useWebSocket({
     url: wsUrl,

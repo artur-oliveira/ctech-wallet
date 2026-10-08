@@ -15,7 +15,7 @@ convenience.
 - Auth: `@aoctech/auth-client` (OAuth2 PKCE). `src/lib/auth/oauth.ts`:
   scope assembled from the identity scopes plus every public `wallet:*` scope
   in `src/lib/auth/scopes.ts`; `startOAuthFlow` (`:26`). No step-up wrapper:
-  PIX deposits/withdrawals of the `real` wallet are **off** (Asaas BaaS removed) until a new provider is integrated. Refresh token is the **HttpOnly + SameSite `ctech_rt`
+  PIX deposits/withdrawals of the `real` wallet run on the Inter rail (withdrawals need step-up MFA). Refresh token is the **HttpOnly + SameSite `ctech_rt`
   cookie namespaced by OAuth client** (`:48-50,57`); the **access token is in-memory only**
   (`src/lib/api/client.ts:23`), never persisted.
 - API access is **cross-origin** in deployed environments: the browser calls

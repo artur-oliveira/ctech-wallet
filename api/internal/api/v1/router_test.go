@@ -123,3 +123,16 @@ func TestChargeRouteIsRegisteredAtTheContractPath(t *testing.T) {
 		t.Fatalf("%s is missing", path)
 	}
 }
+
+// The PIX rail routes are not behind the gambling flag: deposits and
+// withdrawals on the real wallet are always mounted.
+func TestRailRoutesRegistered(t *testing.T) {
+	for _, gambling := range []bool{false, true} {
+		paths := registeredPaths(routerApp(t, gambling))
+		for _, path := range []string{"/v1.0/wallet/deposits", "/v1.0/wallet/withdrawals"} {
+			if !paths[path] {
+				t.Errorf("%s not registered (gambling=%v)", path, gambling)
+			}
+		}
+	}
+}

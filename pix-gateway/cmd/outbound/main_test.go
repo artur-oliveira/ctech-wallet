@@ -4,9 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-lambda-go/lambda"
+
+	"gopkg.aoctech.app/api-commons/alerts"
 
 	"gopkg.aoctech.app/wallet/pix-gateway/internal/inter"
 	rpc "gopkg.aoctech.app/wallet/rpc-contract"
@@ -119,5 +123,62 @@ func TestHandleValidLambdaHandler(t *testing.T) {
 	payload, _ := json.Marshal(rpc.Request{Op: rpc.OpPing, OAuthToken: "x"})
 	if _, err := handler.Invoke(context.Background(), payload); err != nil {
 		t.Fatalf("handle is not a valid lambda handler: %v", err)
+	}
+}
+
+type alertRecorder struct{ got []alerts.Alert }
+
+func (r *alertRecorder) Alert(_ context.Context, a alerts.Alert) { r.got = append(r.got, a) }
+
+func TestOutboundAlertsOnBankFailure(t *testing.T) {
+	rec := &alertRecorder{}
+	h := &handler{pix: &fakePix{transferErr: errors.New("inter 503")}, alerts: rec}
+	payload, _ := json.Marshal(rpc.TransferArgs{PixKey: "123.456.789-09", Amount: 1000, IdemKey: "idem1"})
+	resp, err := h.handle(context.Background(), rpc.Request{Op: rpc.OpTransfer, Payload: payload})
+	if err != nil || resp.Error == "" {
+		t.Fatalf("resp=%+v err=%v", resp, err)
+	}
+	if len(rec.got) != 1 {
+		t.Fatalf("alerts = %d, want 1", len(rec.got))
+	}
+	a := rec.got[0]
+	if a.Job != jobOutbound || !strings.Contains(a.Detail, "op="+string(rpc.OpTransfer)) {
+		t.Fatalf("alert = %+v", a)
+	}
+	// The PIX key (a CPF) must never reach an e-mail.
+	if strings.Contains(a.Summary+a.Detail+fmt.Sprint(a.Err), "123.456.789-09") {
+		t.Fatalf("alert leaked the PIX key: %+v", a)
+	}
+}
+
+func TestOutboundDoesNotAlertOnUnregisteredPixKey(t *testing.T) {
+	rec := &alertRecorder{}
+	h := &handler{pix: &fakePix{transferErr: inter.ErrKeyNotFound}, alerts: rec}
+	payload, _ := json.Marshal(rpc.TransferArgs{PixKey: "unknown", Amount: 1000, IdemKey: "idem1"})
+	resp, _ := h.handle(context.Background(), rpc.Request{Op: rpc.OpTransfer, Payload: payload})
+	if resp.Error != rpc.ErrKeyNotFoundSentinel {
+		t.Fatalf("resp = %+v", resp)
+	}
+	if len(rec.got) != 0 {
+		t.Fatalf("expected business outcome alerted: %+v", rec.got)
+	}
+}
+
+func TestOutboundDoesNotAlertOnSuccess(t *testing.T) {
+	rec := &alertRecorder{}
+	h := &handler{pix: &fakePix{}, alerts: rec}
+	payload, _ := json.Marshal(rpc.CreateChargeArgs{Txid: "tx1", Amount: 12345})
+	_, _ = h.handle(context.Background(), rpc.Request{Op: rpc.OpCreateCharge, Payload: payload})
+	if len(rec.got) != 0 {
+		t.Fatalf("unexpected alerts: %+v", rec.got)
+	}
+}
+
+func TestOutboundAlertsOnUnknownOp(t *testing.T) {
+	rec := &alertRecorder{}
+	h := &handler{pix: &fakePix{}, alerts: rec}
+	_, _ = h.handle(context.Background(), rpc.Request{Op: "nope"})
+	if len(rec.got) != 1 {
+		t.Fatalf("alerts = %d, want 1", len(rec.got))
 	}
 }

@@ -15,14 +15,14 @@ Invariants. This service custodies real money — those invariants override conv
 ## Role
 
 Custodies three balances per user (real + game + sandbox), an append-only ledger, PIX purchases (sandbox, products) via
-`pix-gateway` (which fronts Inter) — user PIX deposit/withdraw is currently off, see
-`../docs/specs/2026-10-07-asaas-removal.md` — and sandbox M2M credit/debit for integrated apps. Bridges the frontend and the
+`pix-gateway` (which fronts Inter) — user PIX deposit/withdraw runs on the Inter rail with daily limits
+(`../docs/specs/2026-10-08-wallet-restoration-design.md`) — and sandbox M2M credit/debit for integrated apps. Bridges the frontend and the
 Inter partner bank; consumes auth + KYC from ctech-account.
 
 **Request flow:** `HTTP → Middleware (auth → scope/KYC/step-up) → Route → Service → Repository → DynamoDB`
 
 Not multi-tenant: no organization header, no RBAC. Access control is user JWT + M2M scopes (step-up MFA
-middleware exists but no route uses it since withdrawals were removed).
+middleware guards `POST /wallet/withdrawals`).
 
 ---
 
@@ -100,7 +100,10 @@ them inside route handlers.
 - PIX deposit range is per-wallet the same way: optional `min_deposit`/`max_deposit` override the defaults
   (R$1/R$10.000); the minimum never drops below the absolute 100-centavo floor. Checked *before* any charge is
   opened at the provider.
-- Deposit-range fields are admin-only (edited directly in DynamoDB) — never a client/API write path.
+- Daily PIX limits per wallet (`daily_deposit_cap` R$1.000, `daily_withdraw_cap` R$1.000, `daily_withdraw_count` 1):
+  `domain/wallet/daily_limits.go`; counters live on the user row (`real_daily_counters`), written under the real
+  wallet lock in the same transaction as the money movement. Deposit cap enforced at credit (excess refunded).
+- Deposit-range and daily-limit fields are admin-only (edited directly in DynamoDB) — never a client/API write path.
 - `real ↔ game` transfers carry no fee in either direction.
 - Every balance mutation is a conditional `TransactWriteItems`; debits carry `balance >= :amount`.
 - The ledger (`ledger_entries`) is append-only — never updated or deleted; the authoritative balance is
@@ -178,9 +181,9 @@ for the `file:line` map.
 9. `game` is real money (withdrawable via `real`; total = `real + game`).
 10. Consent opt‑in + auditable (`wallet_audit` append‑only).
 11. PIX webhook never source of truth — re‑query the provider (Inter) by `txid` before crediting.
-12. User money never lands in CTech's Inter account — there is currently no deposit/withdrawal rail (BaaS
-    provider removed, `../docs/specs/2026-10-07-asaas-removal.md`). A future rail custodies under the user's own
-    CPF; Inter serves product purchases only.
+12. Custody on CTech's Inter account is an explicit accepted risk for a closed KYC-approved group; deposits are
+    attributed by payer-CPF match or refunded, payouts go only to the KYC CPF
+    (`../docs/specs/2026-10-08-wallet-restoration-design.md`).
 13. *(Retired 2026-10-07 — was the BaaS verification-fee rule.)*
 14. No money in limbo — `processing` withdrawals resolved by the reconcile job.
 

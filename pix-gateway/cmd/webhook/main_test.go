@@ -2,9 +2,15 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-lambda-go/events"
+
+	"gopkg.aoctech.app/api-commons/alerts"
 )
 
 type confirmCall struct {
@@ -246,5 +252,70 @@ func TestHandleMixedTxidsRouteIndependently(t *testing.T) {
 	}
 	if len(f.sandboxCalls) != 1 || f.sandboxCalls[0] != "sbxp746d65f027b9de5e1c7a3c4aaa519ed" {
 		t.Fatalf("expected 1 ConfirmSandboxPurchase call for the sbxp txid, got %v", f.sandboxCalls)
+	}
+}
+
+type alertRecorder struct{ got []alerts.Alert }
+
+func (r *alertRecorder) Alert(_ context.Context, a alerts.Alert) { r.got = append(r.got, a) }
+
+func hmacRequest(hmac, body string) events.APIGatewayV2HTTPRequest {
+	return events.APIGatewayV2HTTPRequest{Body: body, QueryStringParameters: map[string]string{"hmac": hmac}}
+}
+
+func TestWebhookAlertsOnConfirmFailure(t *testing.T) {
+	rec := &alertRecorder{}
+	h := &handler{confirmer: &fakeConfirmer{err: errors.New("wallet 502")}, webhookSecret: "s3cret", alerts: rec}
+	resp, _ := h.handle(context.Background(), hmacRequest("s3cret", `{"pix":[{"txid":"tx-ABC123"}]}`))
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	if len(rec.got) != 1 || !strings.Contains(rec.got[0].Detail, "txid=tx-ABC123") || rec.got[0].Job != jobWebhook {
+		t.Fatalf("alerts = %+v", rec.got)
+	}
+}
+
+func TestWebhookDoesNotAlertOnSuccess(t *testing.T) {
+	rec := &alertRecorder{}
+	h := &handler{confirmer: &fakeConfirmer{}, webhookSecret: "s3cret", alerts: rec}
+	_, _ = h.handle(context.Background(), hmacRequest("s3cret", `{"pix":[{"txid":"tx-1"}]}`))
+	if len(rec.got) != 0 {
+		t.Fatalf("unexpected alerts: %+v", rec.got)
+	}
+}
+
+func TestWebhookMalformedBodyAlerts(t *testing.T) {
+	rec := &alertRecorder{}
+	h := &handler{confirmer: &fakeConfirmer{}, webhookSecret: "s3cret", alerts: rec}
+	resp, _ := h.handle(context.Background(), hmacRequest("s3cret", `{not json`))
+	if resp.StatusCode != http.StatusBadRequest || len(rec.got) != 1 {
+		t.Fatalf("status %d alerts %d", resp.StatusCode, len(rec.got))
+	}
+}
+
+func TestWebhookHMACMismatchAlertsOncePerColdStart(t *testing.T) {
+	rec := &alertRecorder{}
+	h := &handler{confirmer: &fakeConfirmer{}, webhookSecret: "s3cret", alerts: rec}
+	for range 5 {
+		resp, _ := h.handle(context.Background(), hmacRequest("wrong", `{"pix":[{"txid":"tx-1"}]}`))
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("status %d", resp.StatusCode)
+		}
+	}
+	if len(rec.got) != 1 {
+		t.Fatalf("hmac alerts = %d, want exactly 1", len(rec.got))
+	}
+}
+
+func TestWebhookAlertNeverContainsPayerData(t *testing.T) {
+	rec := &alertRecorder{}
+	h := &handler{confirmer: &fakeConfirmer{err: errors.New("wallet 502")}, webhookSecret: "s3cret", alerts: rec}
+	body := `{"pix":[{"txid":"tx-9","pagador":{"cpf":"***137303**","nome":"Fulano de Tal"}}]}`
+	_, _ = h.handle(context.Background(), hmacRequest("s3cret", body))
+	for _, a := range rec.got {
+		all := a.Summary + a.Detail + fmt.Sprint(a.Err)
+		if strings.Contains(all, "Fulano") || strings.Contains(all, "137303") {
+			t.Fatalf("alert leaked payer data: %+v", a)
+		}
 	}
 }

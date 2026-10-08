@@ -13,6 +13,8 @@ type stubUserRepo struct {
 	user             *wallet.User
 	accepted         bool
 	gamblingAccepted bool
+	// realCountersBumped records every RealDailyCounters write, in order.
+	realCountersBumped []wallet.RealDailyCounters
 }
 
 func (r *stubUserRepo) Get(_ context.Context, _ string) (*wallet.User, error) { return r.user, nil }
@@ -133,5 +135,16 @@ func (r *stubUserRepo) BumpDepositCounters(_ string, _ *wallet.GameDepositCounte
 		r.user = &wallet.User{}
 	}
 	r.user.GameDepositCounters = &next
+	return types.TransactWriteItem{}, nil
+}
+
+func (r *stubUserRepo) BumpRealDailyCounters(_ string, _ *wallet.RealDailyCounters, next wallet.RealDailyCounters) (types.TransactWriteItem, error) {
+	r.realCountersBumped = append(r.realCountersBumped, next)
+	// Mirror what the committed transaction would leave on the user row.
+	if r.user == nil {
+		r.user = &wallet.User{}
+	}
+	committed := next
+	r.user.RealDailyCounters = &committed
 	return types.TransactWriteItem{}, nil
 }

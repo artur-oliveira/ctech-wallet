@@ -17,19 +17,26 @@ import {Button} from '@/components/ui/button'
 import {QueryErrorState} from '@/components/query-error-state'
 import {LanguageSwitcher} from '@/components/language-switcher'
 import {useWalletRealtime} from '@/lib/hooks/useWalletRealtime'
+import type {DepositResult} from '@/lib/types/api'
 import Image from 'next/image'
 
-type Flow = 'credits' | 'fund-game' | 'return-game' | null
+type Flow = 'deposit' | 'withdraw' | 'credits' | 'fund-game' | 'return-game' | null
 
 const AmountDialog = dynamic(() => import('@/components/wallet/amount-dialog').then((module) => module.AmountDialog))
 const ConfirmMoneyDialog = dynamic(() => import('@/components/wallet/confirm-money-dialog').then((module) => module.ConfirmMoneyDialog))
+const PixChargeDialog = dynamic(() => import('@/components/wallet/pix-charge-dialog').then((module) => module.PixChargeDialog))
 const MoneyReceiptDialog = dynamic(() => import('@/components/wallet/money-receipt-dialog').then((module) => module.MoneyReceiptDialog))
 
 /** RFC 7807 problem type → i18n key. */
 const PROBLEM_KEY: Record<string, string> = {
   '/problems/insufficient-balance': 'errors.insufficientBalance',
   '/problems/wallet-busy': 'errors.walletBusy',
+  '/problems/withdraw-cpf-mismatch': 'errors.withdrawCpfMismatch',
+  '/problems/pix-key-not-found': 'errors.pixKeyNotFound',
   '/problems/kyc-not-verified': 'errors.kycNotVerified',
+  '/problems/step-up-required': 'errors.stepUpRequired',
+  '/problems/daily-deposit-limit': 'errors.dailyDepositLimit',
+  '/problems/daily-withdraw-limit': 'errors.dailyWithdrawLimit',
   '/problems/idempotency-conflict': 'errors.idempotencyConflict',
   '/problems/gambling-not-activated': 'errors.gamblingNotActivated',
   '/problems/gambling-terms-required': 'errors.gamblingTermsRequired',
@@ -43,6 +50,11 @@ const PROBLEM_KEY: Record<string, string> = {
 /** Turns an RFC 7807 problem from the API into copy the user can act on. */
 function problemMessage(err: unknown, t: (k: string, o?: Record<string, unknown>) => string): string {
   if (!(err instanceof ApiError)) return t('common.genericError')
+  if (err.type === '/problems/deposit-out-of-range') {
+    const {min_amount: min, max_amount: max} = (err.raw ?? {}) as { min_amount?: number; max_amount?: number }
+    if (min == null || max == null) return err.detail || t('errors.generic')
+    return t('errors.depositOutOfRange', {min: formatBRL(min), max: formatBRL(max)})
+  }
   if (err.type === '/problems/amount-above-limit') {
     const {max_amount: max} = (err.raw ?? {}) as { max_amount?: number }
     if (max == null) return err.detail || t('errors.generic')
@@ -60,13 +72,15 @@ function newIdemKey(): string {
 
 function DashboardInner() {
   const {t} = useTranslation()
-  const {profile, logout} = useAuth()
+  const {profile, logout, reverify} = useAuth()
   const qc = useQueryClient()
   const [flow, setFlow] = useState<Flow>(null)
   const [confirm, setConfirm] = useState<{
-    flow: 'fund-game' | 'return-game';
+    flow: 'withdraw' | 'fund-game' | 'return-game';
     amount: number
   } | null>(null)
+  const [charge, setCharge] = useState<DepositResult | null>(null)
+  const [stepUp, setStepUp] = useState(false)
   const [receipt, setReceipt] = useState<{
     title: string
     amountLabel: string
@@ -75,12 +89,42 @@ function DashboardInner() {
   const balances = useQuery({queryKey: ['balances'], queryFn: () => apiClient.getBalances()})
   const responsible = useQuery({queryKey: ['gambling-limits'], queryFn: () => apiClient.getGameLimits()})
 
-  const {wsStatus} = useWalletRealtime()
+  const {wsStatus} = useWalletRealtime({onDepositConfirmed: () => setCharge(null)})
 
   function refresh() {
     void qc.invalidateQueries({queryKey: ['balances']})
     void qc.invalidateQueries({queryKey: ['ledger']})
   }
+
+  const deposit = useMutation({
+    mutationFn: (amount: number) => apiClient.createDeposit(amount, newIdemKey()),
+    onSuccess: (result) => {
+      setFlow(null)
+      setCharge(result)
+    },
+    onError: (err) => toast.error(problemMessage(err, t)),
+  })
+
+  const withdraw = useMutation({
+    mutationFn: (amount: number) => apiClient.createWithdrawal(amount, newIdemKey()),
+    onSuccess: (w) => {
+      setConfirm(null)
+      setFlow(null)
+      refresh()
+      if (w.status === 'processing') {
+        toast.info(t('toast.withdrawProcessing'))
+      } else {
+        setReceipt({title: t('toast.withdrawSent'), amountLabel: formatBRL(w.amount)})
+      }
+    },
+    onError: (err) => {
+      if (err instanceof ApiError && err.type === '/problems/step-up-required') {
+        setStepUp(true)
+        return
+      }
+      toast.error(problemMessage(err, t))
+    },
+  })
 
   const buyCredits = useMutation({
     mutationFn: (amount: number) => apiClient.purchaseSandbox(amount, newIdemKey()),
@@ -119,7 +163,7 @@ function DashboardInner() {
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card">
-        <h1 className="sr-only">CTech Ledger</h1>
+        <h1 className="sr-only">CTech Wallet</h1>
         <div className="mx-auto flex max-w-4xl items-center justify-between gap-3 px-4 py-4 sm:px-6">
           <div className="flex items-center gap-2.5">
             <div className="flex size-8 items-center justify-center rounded-lg bg-brand-600 text-white">
@@ -128,7 +172,7 @@ function DashboardInner() {
                      width={32}
                      height={32}/>
             </div>
-            <span className="font-semibold text-foreground">CTech Ledger</span>
+            <span className="font-semibold text-foreground">CTech Wallet</span>
           </div>
           <div className="flex min-w-0 items-center gap-3">
                         <span
@@ -188,6 +232,8 @@ function DashboardInner() {
           <>
             <BalanceCards
               balances={balances.data}
+              onDeposit={() => setFlow('deposit')}
+              onWithdraw={() => setFlow('withdraw')}
               onBuyCredits={() => setFlow('credits')}
               onFundGame={() => setFlow('fund-game')}
               onReturnFromGame={() => setFlow('return-game')}
@@ -212,6 +258,28 @@ function DashboardInner() {
           </>
         )}
       </main>
+
+      {flow === 'deposit' && (
+        <AmountDialog
+          flow="deposit"
+          pending={deposit.isPending}
+          onSubmit={(amount) => deposit.mutate(amount)}
+          onClose={() => setFlow(null)}
+        />
+      )}
+
+      {flow === 'withdraw' && (
+        <AmountDialog
+          flow="withdraw"
+          maxCents={balances.data?.real?.balance}
+          pending={withdraw.isPending || confirm?.flow === 'withdraw'}
+          onProceed={(amount) => {
+            setStepUp(false)
+            setConfirm({flow: 'withdraw', amount})
+          }}
+          onClose={() => setFlow(null)}
+        />
+      )}
 
       {flow === 'credits' && (
         <AmountDialog
@@ -246,23 +314,38 @@ function DashboardInner() {
       {confirm && (
         <ConfirmMoneyDialog
           flow={confirm.flow}
+          stepUp={stepUp}
+          onReverify={reverify}
           amountCents={confirm.amount}
           availableCents={
             confirm.flow === 'return-game'
               ? balances.data?.game?.balance ?? 0
               : balances.data?.real?.balance ?? 0
           }
-          pending={confirm.flow === 'fund-game' ? fundGame.isPending : returnFromGame.isPending}
+          pending={
+            confirm.flow === 'withdraw'
+              ? withdraw.isPending
+              : confirm.flow === 'fund-game'
+                ? fundGame.isPending
+                : returnFromGame.isPending
+          }
           onConfirm={() => {
-            if (confirm.flow === 'fund-game') {
+            if (confirm.flow === 'withdraw') {
+              withdraw.mutate(confirm.amount)
+            } else if (confirm.flow === 'fund-game') {
               fundGame.mutate(confirm.amount)
             } else {
               returnFromGame.mutate(confirm.amount)
             }
           }}
-          onClose={() => setConfirm(null)}
+          onClose={() => {
+            setStepUp(false)
+            setConfirm(null)
+          }}
         />
       )}
+
+      {charge && <PixChargeDialog deposit={charge} onClose={() => setCharge(null)}/>}
 
       {receipt && (
         <MoneyReceiptDialog

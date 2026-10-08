@@ -2,6 +2,8 @@
 // Gated by NEXT_PUBLIC_MOCK_AUTH. No production code path reads this unless the
 // flag is set, so it is safe to leave in the tree (and harmless when off).
 import type {
+  DepositResult,
+  Withdrawal,
   Balances,
   GameLimits,
   GameLimitsInput,
@@ -145,6 +147,32 @@ export class MockApiClient {
 
   async getBalances(): Promise<Balances> {
     return {real: state.real, activated: state.activated, game: state.game, sandbox: state.sandbox}
+  }
+
+  async createDeposit(amount: number): Promise<DepositResult> {
+    addEntry(state.real, 'deposit', amount)
+    return {
+      txid: 'mock-txid',
+      amount,
+      status: 'pending',
+      pix_copia_e_cola: '00020126mock',
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+    }
+  }
+
+  async createWithdrawal(amount: number): Promise<Withdrawal> {
+    addEntry(state.real, 'withdraw', -amount)
+    const now = new Date().toISOString()
+    return {
+      withdrawal_id: 'mock-withdrawal',
+      wallet_id: state.real.wallet_id,
+      user_id: 'mock-user',
+      amount,
+      pix_key: 'mock',
+      status: 'completed',
+      created_at: now,
+      updated_at: now,
+    }
   }
 
   async purchaseSandbox(amount: number): Promise<Transfer> {

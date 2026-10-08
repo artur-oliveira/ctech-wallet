@@ -48,8 +48,7 @@ blocks the app until the current terms addendum is accepted.
 
 `balance-cards` (real/game/sandbox — color encodes semantics), `ledger-list` +
 `ledger-tabs`, `amount-dialog` (credits / fund-game / return-game),
-`confirm-money-dialog`, `money-receipt-dialog`. PIX deposits/withdrawals of the `real` wallet are **off** (Asaas BaaS removed) until a new provider is integrated: the UI has no
-deposit, withdrawal, custody-onboarding or step-up surface, and the real card says so. Shared:
+`confirm-money-dialog`, `money-receipt-dialog`. `pix-charge-dialog` shows the Inter QR code. PIX deposit and withdrawal of the `real` wallet are back (Inter rail, daily limits enforced by the API); withdrawals use the step-up re-verify in `confirm-money-dialog`. Shared:
 `language-switcher`, `query-error-state`.
 
 ## Hooks / providers / auth
@@ -82,8 +81,7 @@ deposit, withdrawal, custody-onboarding or step-up surface, and the real card sa
 WebSocket at `/v1.0/ws` (`:19`); the in-memory access JWT is passed **as the
 first frame** (`authToken`, `:101`) — mirrors `api` `ws.go`. Events:
 `deposit_confirmed` (invalidates balances/ledger + toast) and
-`withdraw_completed` / `withdraw_reversed` / `withdraw_refund_failed` (toast only —
-kept defensively; nothing emits them while PIX deposit/withdraw is off).
+`withdraw_completed` / `withdraw_reversed` / `withdraw_refund_failed` (toast only).
 
 ## Money constants (B18 — mirrored api↔ui by hand)
 

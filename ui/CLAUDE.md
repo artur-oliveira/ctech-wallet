@@ -16,10 +16,10 @@ Next.js 16 (static export) + React 19 frontend for the ctech-wallet API.
 ## Auth (`@aoctech/auth-client`)
 
 - OAuth **PKCE** (`Authorization Code + code_challenge`). `src/lib/auth/oauth.ts` wraps
-  the SDK's `startOAuthFlow`. There is no step-up flow: PIX deposits and
-  withdrawals of the `real` wallet (and custody onboarding) are **off** since the
-  Asaas BaaS removal, until a new provider is integrated, so the UI exposes no
-  deposit/withdraw/onboarding surface and no route requires `max_age=0`.
+  the SDK's `startOAuthFlow`. Withdrawals require step-up: on
+  `step-up-required` the confirm dialog offers a re-verify that calls
+  `startStepUpFlow` (`max_age=0`). PIX deposit and withdrawal of the `real` wallet
+  run on the Inter rail (QR dialog for deposits).
 - The authorization request includes `openid profile kyc` and all public active
   `wallet:*` scopes from `src/lib/auth/scopes.ts`; its contract test reads the
   API manifest so the UI cannot silently drift from the Resource Server.
