@@ -26,7 +26,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.26.6'
+          go-version: '1.27.1'
           cache-dependency-path: pix-gateway/go.sum
 
       - name: Run tests
@@ -57,7 +57,7 @@ jobs:
           # the minor line. Pin the patched toolchain because CDK synth bundles
           # pix-gateway locally; Docker fallback cannot resolve the sibling
           # rpc-contract replacement from its isolated module mount.
-          go-version: '1.26.6'
+          go-version: '1.27.1'
           cache-dependency-path: |
             api/go.sum
             pix-gateway/go.sum
@@ -151,7 +151,7 @@ jobs:
       # CDK synth bundles both api/cmd/reconcile and pix-gateway Lambdas.
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.26.6'
+          go-version: '1.27.1'
           cache-dependency-path: |
             api/go.sum
             pix-gateway/go.sum
