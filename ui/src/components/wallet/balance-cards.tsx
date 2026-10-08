@@ -9,6 +9,8 @@ import type {Balances} from '@/lib/types/api'
 
 interface BalanceCardsProps {
   balances: Balances
+  onDeposit: () => void
+  onWithdraw: () => void
   onBuyCredits: () => void
   onFundGame: () => void
   onReturnFromGame: () => void
@@ -33,6 +35,8 @@ interface BalanceCardsProps {
  */
 export function BalanceCards({
                                balances,
+                               onDeposit,
+                               onWithdraw,
                                onBuyCredits,
                                onFundGame,
                                onReturnFromGame,
@@ -50,11 +54,22 @@ export function BalanceCards({
           <p className="mt-3 font-mono text-4xl font-bold tabular-nums tracking-tight">
             {formatBRL(balances.real.balance)}
           </p>
-          {/* PIX deposits and withdrawals are off until a new provider is integrated. */}
           <p className="mt-2 text-sm text-brand-50">{t('balance.real.subtitle')}</p>
 
-          {activated && !selfExcluded && (
-            <div className="mt-6 flex flex-wrap gap-2">
+          <div className="mt-6 flex flex-wrap gap-2">
+            <Button variant="brand" onClick={onDeposit}>
+              <Plus size={16}/>
+              {t('balance.deposit')}
+            </Button>
+            <Button
+              variant="outline"
+              className="border-brand-400/60 bg-transparent text-white hover:bg-brand-700"
+              onClick={onWithdraw}
+            >
+              <ArrowUpFromLine size={16}/>
+              {t('balance.withdraw')}
+            </Button>
+            {activated && !selfExcluded && (
               <Button
                 variant="outline"
                 className="border-brand-400/60 bg-transparent text-white hover:bg-brand-700"
@@ -63,8 +78,8 @@ export function BalanceCards({
                 <Dice5 size={16}/>
                 {t('balance.fundGame')}
               </Button>
-            </div>
-          )}
+            )}
+          </div>
         </section>
 
         {/* Game — real money, ring-fenced */}

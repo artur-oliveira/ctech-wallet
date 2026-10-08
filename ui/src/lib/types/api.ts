@@ -35,6 +35,27 @@ export interface Transfer {
   credit?: LedgerEntry
 }
 
+export interface DepositResult {
+  txid: string
+  amount: number
+  status: string
+  pix_copia_e_cola: string
+  qr_code_base64?: string
+  expires_at: number // unix seconds: when the charge stops being payable
+}
+
+export interface Withdrawal {
+  withdrawal_id: string
+  wallet_id: string
+  user_id: string
+  amount: number
+  pix_key: string
+  status: 'processing' | 'completed' | 'reversed' | 'refund_failed'
+  e2e_id?: string
+  created_at: string
+  updated_at: string
+}
+
 export interface LedgerEntry {
   entry_id: string
   wallet_id: string

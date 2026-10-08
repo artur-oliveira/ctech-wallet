@@ -95,7 +95,9 @@
       "subtitle": "Virtual currency for matches, bought with your game balance. It has no monetary value and can't be withdrawn or converted back."
     },
     "activateLink": "Going to use the wallet for games? Activate the game wallet.",
-    "responsibleLink": "Responsible gaming and limits"
+    "responsibleLink": "Responsible gaming and limits",
+    "deposit": "Deposit",
+    "withdraw": "Withdraw"
   },
   "dialog": {
     "credits": {
@@ -125,7 +127,18 @@
       "required": "Enter an amount.",
       "invalid": "Enter a valid amount.",
       "maxExceeded": "The maximum amount is {{max}}.",
-      "overBalance": "Above what's available ({{amount}})."
+      "overBalance": "Above what's available ({{amount}}).",
+      "overWithdrawable": "The maximum available to withdraw is {{amount}}."
+    },
+    "deposit": {
+      "title": "Deposit via PIX",
+      "description": "We generate a PIX code for you to pay in your bank app.",
+      "submit": "Generate code"
+    },
+    "withdraw": {
+      "title": "Withdraw to PIX",
+      "description": "The entered amount is deducted in full from your balance.",
+      "submit": "Withdraw"
     }
   },
   "confirm": {
@@ -140,7 +153,16 @@
     "amount": "Amount",
     "total": "Total debited",
     "resulting": "Resulting balance",
-    "confirm": "Confirm"
+    "confirm": "Confirm",
+    "withdraw": {
+      "title": "Confirm withdrawal",
+      "description": "Review the amount before the money leaves your balance."
+    },
+    "stepUp": {
+      "title": "Identity check required",
+      "description": "For your security, withdrawals require a recent MFA check. Re-verify your identity to continue.",
+      "reverify": "Re-verify identity"
+    }
   },
   "purchases": {
     "title": "Purchase history",
@@ -189,7 +211,9 @@
     "creditsAdded": "Credits added.",
     "fundGameSent": "Balance sent to the game wallet.",
     "returned": "Balance returned to real balance.",
-    "gamblingActivated": "Game wallet activated."
+    "gamblingActivated": "Game wallet activated.",
+    "pixCopied": "PIX code copied",
+    "withdrawProcessing": "Withdrawal submitted and awaiting bank confirmation."
   },
   "terms": {
     "title": "Just one more step",
@@ -283,7 +307,13 @@
     "limitsNotConfigured": "Set your game limits before continuing.",
     "depositLimitExceeded": "This transfer exceeds one of your game limits.",
     "generic": "Something went wrong. Please try again.",
-    "accountBlocked": "This account is blocked for transactions. Contact support."
+    "accountBlocked": "This account is blocked for transactions. Contact support.",
+    "withdrawCpfMismatch": "The PIX key belongs to a different CPF. Use a key under your name.",
+    "pixKeyNotFound": "PIX key not found. Check it and try again.",
+    "stepUpRequired": "Confirm your identity with MFA and try the withdrawal again.",
+    "depositOutOfRange": "The deposit must be between {{min}} and {{max}}.",
+    "dailyDepositLimit": "Daily deposit limit reached",
+    "dailyWithdrawLimit": "Daily withdrawal limit reached"
   },
   "ledger": {
     "type": {
@@ -352,5 +382,16 @@
       "title": "Your device is offline.",
       "description": "The wallet needs a connection to show your balances. Nothing was lost in the meantime."
     }
+  },
+  "pix": {
+    "title": "Pay {{amount}} via PIX",
+    "description": "Copy the code and pay in your bank app. The balance updates as soon as the bank confirms the payment.",
+    "copy": "Copy PIX code",
+    "copied": "Copied",
+    "expiresIn": "Expires in {{time}}",
+    "expired": "This PIX code has expired. Close this window and start a new deposit.",
+    "qrAlt": "PIX payment QR code",
+    "close": "Close",
+    "confirmedToast": "Deposit confirmed"
   }
 }

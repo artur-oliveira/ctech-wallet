@@ -95,7 +95,9 @@
       "subtitle": "Moeda virtual para partidas, comprada com o saldo de jogo. Não tem valor em dinheiro e não pode ser sacada nem convertida de volta."
     },
     "activateLink": "Vai usar a carteira para jogos? Ative a carteira de jogo.",
-    "responsibleLink": "Jogo responsável e limites"
+    "responsibleLink": "Jogo responsável e limites",
+    "deposit": "Depositar",
+    "withdraw": "Sacar"
   },
   "dialog": {
     "credits": {
@@ -125,7 +127,18 @@
       "required": "Informe um valor.",
       "invalid": "Informe um valor válido.",
       "maxExceeded": "O valor máximo é {{max}}.",
-      "overBalance": "Acima do disponível ({{amount}})."
+      "overBalance": "Acima do disponível ({{amount}}).",
+      "overWithdrawable": "O máximo disponível para saque é {{amount}}."
+    },
+    "deposit": {
+      "title": "Depositar via PIX",
+      "description": "Geramos um código PIX para você pagar no app do seu banco.",
+      "submit": "Gerar código"
+    },
+    "withdraw": {
+      "title": "Sacar para o PIX",
+      "description": "O valor informado é debitado integralmente do seu saldo.",
+      "submit": "Sacar"
     }
   },
   "confirm": {
@@ -140,7 +153,16 @@
     "amount": "Valor",
     "total": "Total debitado",
     "resulting": "Saldo resultante",
-    "confirm": "Confirmar"
+    "confirm": "Confirmar",
+    "withdraw": {
+      "title": "Confirmar saque",
+      "description": "Revise o valor antes do dinheiro sair do seu saldo."
+    },
+    "stepUp": {
+      "title": "Verificação de identidade necessária",
+      "description": "Por sua segurança, saques exigem uma verificação MFA recente. Verifique sua identidade para continuar.",
+      "reverify": "Verificar identidade"
+    }
   },
   "purchases": {
     "title": "Histórico de compras",
@@ -189,7 +211,9 @@
     "creditsAdded": "Créditos adicionados.",
     "fundGameSent": "Saldo enviado para a carteira de jogo.",
     "returned": "Saldo devolvido ao saldo real.",
-    "gamblingActivated": "Carteira de jogo ativada."
+    "gamblingActivated": "Carteira de jogo ativada.",
+    "pixCopied": "Código PIX copiado",
+    "withdrawProcessing": "Saque enviado e aguardando confirmação do banco."
   },
   "terms": {
     "title": "Só mais um passo",
@@ -283,7 +307,13 @@
     "limitsNotConfigured": "Defina seus limites de jogo antes de continuar.",
     "depositLimitExceeded": "Esse envio ultrapassa um dos seus limites de jogo.",
     "generic": "Algo deu errado. Tente de novo.",
-    "accountBlocked": "Esta conta está bloqueada para movimentações. Fale com o suporte."
+    "accountBlocked": "Esta conta está bloqueada para movimentações. Fale com o suporte.",
+    "withdrawCpfMismatch": "A chave PIX pertence a outro CPF. Use uma chave no seu nome.",
+    "pixKeyNotFound": "Chave PIX não encontrada. Confira e tente de novo.",
+    "stepUpRequired": "Confirme sua identidade com MFA e tente o saque de novo.",
+    "depositOutOfRange": "O depósito precisa ser entre {{min}} e {{max}}.",
+    "dailyDepositLimit": "Limite diário de depósito atingido",
+    "dailyWithdrawLimit": "Limite diário de saque atingido"
   },
   "ledger": {
     "type": {
@@ -352,5 +382,16 @@
       "title": "Seu dispositivo está sem internet.",
       "description": "A carteira precisa de conexão para mostrar seus saldos. Nada foi perdido enquanto isso."
     }
+  },
+  "pix": {
+    "title": "Pague {{amount}} no PIX",
+    "description": "Copie o código e pague no app do seu banco. O saldo entra assim que o banco confirmar o pagamento.",
+    "copy": "Copiar código PIX",
+    "copied": "Copiado",
+    "expiresIn": "Expira em {{time}}",
+    "expired": "Este código PIX expirou. Feche esta janela e inicie um novo depósito.",
+    "qrAlt": "QR Code do pagamento PIX",
+    "close": "Fechar",
+    "confirmedToast": "Depósito confirmado"
   }
 }
