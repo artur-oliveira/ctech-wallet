@@ -20,7 +20,13 @@ func (h *handlers) getWallet(c fiber.Ctx) error {
 	if err != nil {
 		return sendProblem(c, err)
 	}
-	return c.JSON(walletBalancesResponse(realw, gamew, sandboxw))
+	out := walletBalancesResponse(realw, gamew, sandboxw)
+	limits, err := h.svc.RailLimits(c.Context(), userID, realw)
+	if err != nil {
+		return sendProblem(c, err)
+	}
+	out["limits"] = limits
+	return c.JSON(out)
 }
 
 func walletBalancesResponse(realw, gamew, sandboxw *wallet.Wallet) fiber.Map {

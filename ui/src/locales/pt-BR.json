@@ -127,7 +127,8 @@
       "invalid": "Informe um valor válido.",
       "maxExceeded": "O valor máximo é {{max}}.",
       "overBalance": "Acima do disponível ({{amount}}).",
-      "overWithdrawable": "O máximo disponível para saque é {{amount}}."
+      "overWithdrawable": "O máximo disponível para saque é {{amount}}.",
+      "belowMin": "O valor mínimo é {{min}}."
     },
     "deposit": {
       "title": "Depositar via PIX",
@@ -138,7 +139,9 @@
       "title": "Sacar para o PIX",
       "description": "O valor informado é debitado integralmente do seu saldo.",
       "submit": "Sacar"
-    }
+    },
+    "range": "Mín. {{min}} • Máx. {{max}} hoje",
+    "limitReached": "Limite diário atingido"
   },
   "confirm": {
     "fundGame": {

@@ -259,6 +259,8 @@ function DashboardInner() {
       {flow === 'deposit' && (
         <AmountDialog
           flow="deposit"
+          minCents={balances.data?.limits?.deposit.min}
+          limitCents={balances.data?.limits?.deposit.max_now}
           pending={deposit.isPending}
           onSubmit={(amount) => deposit.mutate(amount)}
           onClose={() => setFlow(null)}
@@ -269,6 +271,8 @@ function DashboardInner() {
         <AmountDialog
           flow="withdraw"
           maxCents={balances.data?.real?.balance}
+          minCents={balances.data?.limits?.withdraw.min}
+          limitCents={balances.data?.limits?.withdraw.max_now}
           pending={withdraw.isPending || confirm?.flow === 'withdraw'}
           onProceed={(amount) => {
             setStepUp(false)
