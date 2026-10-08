@@ -63,16 +63,16 @@
         "purchases": "Compras"
       },
       "loading": "Carregando extrato…",
-      "error": "Não foi possível carregar o extrato. Atualize a página para tentar de novo.",
+      "error": "Não foi possível carregar o extrato",
       "loadingMore": "Carregando movimentações anteriores…",
-      "loadMoreError": "Não foi possível carregar movimentações anteriores. Tente de novo.",
+      "loadMoreError": "Não foi possível carregar mais",
       "readOnly": {
         "title": "Somente consulta"
       },
       "empty": {
-        "real": "Nenhuma movimentação no saldo real. Faça um depósito PIX para começar.",
-        "game": "Nenhuma movimentação no saldo de jogo. Envie dinheiro do saldo real quando quiser usá-lo em jogos.",
-        "sandbox": "Nenhuma movimentação de créditos sandbox. Compre créditos com o saldo de jogo quando quiser usá-los."
+        "real": "Nenhuma movimentação",
+        "game": "Nenhuma movimentação",
+        "sandbox": "Nenhuma movimentação"
       }
     }
   },
@@ -165,10 +165,10 @@
   },
   "purchases": {
     "loading": "Carregando compras…",
-    "error": "Não foi possível carregar seu histórico de compras. Tente de novo.",
+    "error": "Não foi possível carregar as compras",
     "empty": {
-      "sandbox": "Nenhuma compra de créditos sandbox encontrada.",
-      "product": "Nenhuma compra de produto digital encontrada."
+      "sandbox": "Nenhuma compra de créditos",
+      "product": "Nenhuma compra de produto"
     },
     "loadingMore": "Carregando compras anteriores…",
     "credits": "{{credits}} créditos",

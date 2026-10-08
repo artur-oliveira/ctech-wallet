@@ -63,16 +63,16 @@
         "purchases": "Purchases"
       },
       "loading": "Loading statement…",
-      "error": "We couldn't load the statement. Refresh the page to try again.",
+      "error": "Couldn't load the statement",
       "loadingMore": "Loading older transactions…",
-      "loadMoreError": "We couldn't load older transactions. Try again.",
+      "loadMoreError": "Couldn't load more",
       "readOnly": {
         "title": "View only"
       },
       "empty": {
-        "real": "No real-balance transactions yet. Make a PIX deposit to get started.",
-        "game": "No game-balance transactions yet. Send money from your real balance when you want to use it in games.",
-        "sandbox": "No sandbox-credit transactions yet. Buy credits with your game balance when you want to use them."
+        "real": "No transactions",
+        "game": "No transactions",
+        "sandbox": "No transactions"
       }
     }
   },
@@ -165,10 +165,10 @@
   },
   "purchases": {
     "loading": "Loading purchases…",
-    "error": "We couldn't load your purchase history. Try again.",
+    "error": "Couldn't load purchases",
     "empty": {
-      "sandbox": "No sandbox credit purchases found.",
-      "product": "No digital product purchases found."
+      "sandbox": "No credit purchases",
+      "product": "No product purchases"
     },
     "loadingMore": "Loading older purchases…",
     "credits": "{{credits}} credits",
