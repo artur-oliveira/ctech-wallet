@@ -159,7 +159,7 @@ Flat by default. A surface earns a shadow only when it lifts (card hover) or ove
 
 ### [Signature Component] Balance Hierarchy
 The three balances are deliberately **not** a symmetric card set — the visual treatment encodes what each balance is, so they cannot be mistaken for one another:
-- **Real — money:** solid filled Signal Violet card, white text, R$ prefix, bold mono balance, no PIX deposit/withdraw actions while those are off (a muted line says so); Send-to-games when the game wallet is active.
+- **Real — money:** solid filled Signal Violet card, white text, R$ prefix, bold mono balance, Deposit (brand) and Withdraw (outlined) actions; Send-to-games when the game wallet is active.
 - **Game — real money, ring-fenced:** outlined card (2px Signal Violet border, white fill), R$ prefix, violet "GAME" tag. Spendable only on games, subject to the user's personal limit.
 - **Sandbox — not money:** dashed-border card, **no currency symbol**, explicit "não vira dinheiro" line; it has no monetary value and can never convert back.
 - **Not activated:** balance and action surfaces stay absent; one quiet activation link stands in. If a sandbox wallet already exists, its statement remains available as an explicitly read-only history surface so prior play and credit purchases are never hidden.
