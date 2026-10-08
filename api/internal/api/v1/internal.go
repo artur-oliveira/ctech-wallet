@@ -51,6 +51,9 @@ func (h *handlers) movement(c fiber.Ctx, op movementOp) error {
 	if p := bindJSON(c, &body); p != nil {
 		return sendProblem(c, p)
 	}
+	if p := h.checkDescription(body.Description); p != nil {
+		return sendProblem(c, p)
+	}
 	entry, err := op(c.Context(), body.UserID, body.Amount, body.IdempotencyKey, body.Reason, body.Description)
 	if err != nil {
 		return sendProblem(c, err)
@@ -94,7 +97,10 @@ func (h *handlers) cashoutGame(c fiber.Ctx) error {
 	if p := bindJSON(c, &body); p != nil {
 		return sendProblem(c, p)
 	}
-	entry, err := h.svc.CashoutGame(c.Context(), body.UserID, body.Amount, body.TableRef, body.HoldIDs, body.IdempotencyKey)
+	if p := h.checkDescription(body.Description); p != nil {
+		return sendProblem(c, p)
+	}
+	entry, err := h.svc.CashoutGame(c.Context(), body.UserID, body.Amount, body.TableRef, body.HoldIDs, body.IdempotencyKey, body.Description)
 	if err != nil {
 		return sendProblem(c, err)
 	}

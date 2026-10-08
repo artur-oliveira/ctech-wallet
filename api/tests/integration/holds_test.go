@@ -184,7 +184,7 @@ func TestCashoutGameMayConsumeMultipleHolds(t *testing.T) {
 		t.Fatalf("HoldGame A2: %v", err)
 	}
 
-	entryA, err := h.svc.CashoutGame(ctx, userA, 20000, "table-1", []string{holdA1.HoldID, holdA2.HoldID}, "idem-cashout-a")
+	entryA, err := h.svc.CashoutGame(ctx, userA, 20000, "table-1", []string{holdA1.HoldID, holdA2.HoldID}, "idem-cashout-a", "")
 	if err != nil {
 		t.Fatalf("CashoutGame A: %v", err)
 	}
@@ -236,7 +236,7 @@ func TestCashoutGameRejectsAnotherUsersHold(t *testing.T) {
 		t.Fatalf("HoldGame B: %v", err)
 	}
 
-	if _, err := h.svc.CashoutGame(ctx, userA, 5000, "table-1", []string{holdB.HoldID}, "idem-cashout-evil"); err == nil {
+	if _, err := h.svc.CashoutGame(ctx, userA, 5000, "table-1", []string{holdB.HoldID}, "idem-cashout-evil", ""); err == nil {
 		t.Fatal("expected Forbidden for another user's hold, got nil")
 	} else {
 		wantProblem(t, err, problem.TypeForbidden)
@@ -264,7 +264,7 @@ func TestCashoutGameCannotMintBeyondReservedValue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = h.svc.CashoutGame(ctx, user, 5001, "table-1", []string{hold.HoldID}, "idem-cashout")
+	_, err = h.svc.CashoutGame(ctx, user, 5001, "table-1", []string{hold.HoldID}, "idem-cashout", "")
 	wantProblem(t, err, problem.TypeBadRequest)
 	row, err := h.repo.GetHold(ctx, hold.HoldID)
 	if err != nil {
@@ -292,7 +292,7 @@ func TestCashoutGameRejectsAlreadyConsumedHold(t *testing.T) {
 		t.Fatalf("UpdateHoldStatus: %v", err)
 	}
 
-	_, err = h.svc.CashoutGame(ctx, user, 5000, "table-1", []string{hold.HoldID}, "idem-cashout-retry")
+	_, err = h.svc.CashoutGame(ctx, user, 5000, "table-1", []string{hold.HoldID}, "idem-cashout-retry", "")
 	wantProblem(t, err, problem.TypeConflict)
 }
 
@@ -348,5 +348,27 @@ func TestSweepStaleHoldsIgnoresFreshHolds(t *testing.T) {
 	_, err := h.svc.SweepStaleHolds(ctx)
 	if err != nil {
 		t.Fatalf("SweepStaleHolds: %v", err)
+	}
+}
+
+// The description is display metadata: persisted on the cashout ledger entry
+// and kept OUT of reqHash (CashoutGame hashes only table, holds and amount).
+func TestCashoutPersistsDescription(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(verified())
+	user := fundedAndActivated(t, h, 10000)
+	if _, _, err := h.svc.FundGame(ctx, user, 5000, "idem-fund"); err != nil {
+		t.Fatal(err)
+	}
+	hold, err := h.svc.HoldGame(ctx, user, 5000, "table-1", "idem-hold")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, err := h.svc.CashoutGame(ctx, user, 5000, "table-1", []string{hold.HoldID}, "idem-cash-d", "Mesa #t1, cashout")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.Description != "Mesa #t1, cashout" {
+		t.Fatalf("description = %q", e.Description)
 	}
 }

@@ -183,7 +183,7 @@ func (r *WalletRepository) ReleaseHoldAtomic(ctx context.Context, h *wallet.Hold
 // CashoutHoldsAtomic credits a bounded final stack and consumes all referenced
 // holds in one transaction. No partial status update can leave credited value
 // backed by reusable holds.
-func (r *WalletRepository) CashoutHoldsAtomic(ctx context.Context, walletID, userID string, amount int64, tableRef string, holds []*wallet.Hold, idemKey, reqHash string) (*wallet.LedgerEntry, bool, error) {
+func (r *WalletRepository) CashoutHoldsAtomic(ctx context.Context, walletID, userID string, amount int64, tableRef string, holds []*wallet.Hold, idemKey, reqHash, description string) (*wallet.LedgerEntry, bool, error) {
 	prior, conflict, err := r.checkReplay(ctx, idemKey, reqHash)
 	if err != nil {
 		return nil, false, err
@@ -198,7 +198,7 @@ func (r *WalletRepository) CashoutHoldsAtomic(ctx context.Context, walletID, use
 	if err != nil {
 		return nil, false, err
 	}
-	entry := r.newEntry(walletID, wallet.EntryGameCashoutCredit, amount, w.Balance+amount, idemKey, tableRef, "")
+	entry := r.newEntry(walletID, wallet.EntryGameCashoutCredit, amount, w.Balance+amount, idemKey, tableRef, description)
 	walletTx, err := r.balanceTx(walletID, amount, +1, w.Version)
 	if err != nil {
 		return nil, false, err

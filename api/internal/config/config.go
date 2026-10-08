@@ -22,6 +22,11 @@ type Config struct {
 	// With it off, those routes are not registered at all and 404.
 	GamblingEnabled bool `env:"GAMBLING_ENABLED" envDefault:"false"`
 
+	// RequireDescription makes the `description` field mandatory (3-255 chars
+	// after trimming) on every M2M money route. Keep it OFF until ctech-poker and
+	// ctech-billing send real descriptions, then turn it on per environment.
+	RequireDescription bool `env:"REQUIRE_DESCRIPTION" envDefault:"false"`
+
 	ReadTimeout        int64    `env:"READ_TIMEOUT" envDefault:"10"`
 	IdleTimeout        int64    `env:"IDLE_TIMEOUT" envDefault:"60"`
 	WriteTimeout       int64    `env:"WRITE_TIMEOUT" envDefault:"10"`

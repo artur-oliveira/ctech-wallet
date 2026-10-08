@@ -15,6 +15,9 @@ func (h *handlers) m2mOpenCharge(c fiber.Ctx) error {
 	if p := bindJSON(c, &body); p != nil {
 		return sendProblem(c, p)
 	}
+	if p := h.checkDescription(body.Description); p != nil {
+		return sendProblem(c, p)
+	}
 	purchase, charge, err := h.svc.OpenCharge(c.Context(), services.OpenChargeInput{
 		UserID:         body.UserID,
 		AmountCents:    body.AmountCents,

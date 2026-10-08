@@ -155,4 +155,7 @@ type CashoutRequest struct {
 	TableRef       string   `json:"table_ref" validate:"required,max=256"`
 	HoldIDs        []string `json:"hold_ids" validate:"required,min=1,max=20,dive,max=256"`
 	IdempotencyKey string   `json:"idempotency_key" validate:"required,max=128"`
+	// Description is the human sentence shown on the statement ("Mesa #abc, saída").
+	// Display metadata only: never parsed, never part of the idempotency hash.
+	Description string `json:"description" validate:"max=255"`
 }

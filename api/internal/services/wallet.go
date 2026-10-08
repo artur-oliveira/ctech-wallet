@@ -94,7 +94,7 @@ type HoldStore interface {
 	GetHold(ctx context.Context, holdID string) (*wallet.Hold, error)
 	UpdateHoldStatus(ctx context.Context, holdID, fromStatus, toStatus string) (bool, error)
 	ReleaseHoldAtomic(ctx context.Context, hold *wallet.Hold, idemKey, reqHash string) (*wallet.Hold, bool, error)
-	CashoutHoldsAtomic(ctx context.Context, walletID, userID string, amount int64, tableRef string, holds []*wallet.Hold, idemKey, reqHash string) (*wallet.LedgerEntry, bool, error)
+	CashoutHoldsAtomic(ctx context.Context, walletID, userID string, amount int64, tableRef string, holds []*wallet.Hold, idemKey, reqHash, description string) (*wallet.LedgerEntry, bool, error)
 	ScanStaleHolds(ctx context.Context, cutoff time.Time, limit int) ([]wallet.Hold, error)
 	ListOpenHoldsForWallet(ctx context.Context, walletID string, limit int) ([]wallet.Hold, error)
 }
@@ -1004,7 +1004,7 @@ func (s *WalletService) ReleaseHold(ctx context.Context, userID, holdID, idemKey
 // listed holds. Until a table-wide, zero-sum settlement contract exists, the
 // amount is fail-closed at the total value of the caller's held reservations;
 // this prevents a compromised game client from minting wallet funds.
-func (s *WalletService) CashoutGame(ctx context.Context, userID string, amount int64, tableRef string, holdIDs []string, idemKey string) (*wallet.LedgerEntry, error) {
+func (s *WalletService) CashoutGame(ctx context.Context, userID string, amount int64, tableRef string, holdIDs []string, idemKey, description string) (*wallet.LedgerEntry, error) {
 	_, game, _, err := s.requireActivated(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -1050,7 +1050,7 @@ func (s *WalletService) CashoutGame(ctx context.Context, userID string, amount i
 	}
 	entry, _, err := s.repo.CashoutHoldsAtomic(ctx, game.WalletID, userID, amount, tableRef, holds,
 		wallet.EntryGameCashoutCredit+"#"+userID+"#"+idemKey,
-		reqHash(tableRef+"#"+strings.Join(holdIDs, ","), amount))
+		reqHash(tableRef+"#"+strings.Join(holdIDs, ","), amount), description)
 	return entry, err
 }
 

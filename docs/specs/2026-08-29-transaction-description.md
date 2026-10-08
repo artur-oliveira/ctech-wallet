@@ -65,3 +65,15 @@ Atributo `description` em `wallet_ledger_entries`, `wallet_sandbox_purchases` e
 `TestLedgerDescriptionPersistedAndOutsideIdempotencyHash` (`api/tests/integration/wallet_test.go`):
 grava a descrição, confirma que `ref` não é sobrescrita, e replica a mesma chave com texto diferente
 verificando que o resultado é o lançamento original, sem conflito e sem crédito duplicado.
+
+## Obrigatoriedade (2026-10-08)
+
+A descrição passa a ser **obrigatória** nas rotas M2M que movimentam dinheiro (`sandbox/credit`, `sandbox/debit`,
+`real/debit`, `game/cashout`, `sandbox-purchase`, `product-purchase`, `charge`), atrás da flag
+`REQUIRE_DESCRIPTION` (padrão **desligada**). Ligada: 3 a 255 caracteres após trim; ausente, em branco ou curta
+é `400`; acima de 255 segue sendo rejeitada pelo validador (`422`), nunca truncada. `game/cashout` ganhou o campo
+`description` (antes não existia). Hold e release ficam fora: não geram lançamento no ledger.
+
+Ordem de rollout (o wallet rejeita campos desconhecidos, então poker enviar `description` no cashout antes do
+wallet aceitar dá `400`): 1) wallet com a flag desligada; 2) `ctech-poker` e `ctech-billing` enviando descrições
+reais; 3) ligar a flag por ambiente. Ver `docs/plans/2026-10-08-mandatory-transaction-description.md`.
