@@ -12,7 +12,7 @@ specific to selling sandbox credits: `ConfirmSandboxPurchase`'s ledger `Credit` 
 avatar frame, a premium reaction — none of them are sandbox currency, so none of them should touch
 `WalletRepository`, a wallet lock, or the ledger at all. This is a product sale (CDC), same
 enforcement posture as the sandbox-purchase sale: no KYC gate, charged directly to CTech's pooled
-account, never a wallet-to-wallet transfer, never Asaas custody.
+account, never a wallet-to-wallet transfer, never a user custody account.
 
 ## Non-goals
 

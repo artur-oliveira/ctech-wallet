@@ -35,27 +35,6 @@ export interface Transfer {
   credit?: LedgerEntry
 }
 
-export interface DepositResult {
-  txid: string
-  amount: number
-  status: string
-  pix_copia_e_cola: string
-  qr_code_base64?: string
-  expires_at: number // unix seconds — when the charge stops being payable
-}
-
-export interface Withdrawal {
-  withdrawal_id: string
-  wallet_id: string
-  user_id: string
-  amount: number
-  pix_key: string
-  status: 'processing' | 'completed' | 'reversed' | 'refund_failed'
-  e2e_id?: string
-  created_at: string
-  updated_at: string
-}
-
 export interface LedgerEntry {
   entry_id: string
   wallet_id: string
@@ -118,55 +97,10 @@ export interface Profile {
  * Wallet-side caller state. `terms_addendum_accepted` is computed server-side
  * against the current version constant — bumping the version re-gates the user.
  */
-/**
- * Why a deposit is currently blocked. Derived server-side from the very gates
- * `POST /wallet/deposits` enforces — never re-derived here from `kyc_level` or
- * `custody_status`, so the UI cannot drift from the API.
- */
-export type DepositBlockReason =
-  | 'kyc'
-  | 'custody_absent'
-  | 'custody_fee_pending'
-  | 'custody_documents'
-  | 'custody_pending'
-  | 'custody_blocked'
-
-/** The one-off charge that has to clear before the payment account is opened. */
-export interface OnboardingFee {
-  amount: number
-  qr_code: string
-  qr_code_base64?: string
-  /** Always false: the provider consumes it at account creation. */
-  refundable: boolean
-}
-
-export interface OnboardingState {
-  status: string
-  fee?: OnboardingFee
-  /**
-   * Provider-hosted document upload, when the provider hands one back. Often
-   * absent: the provider frequently drives document collection over email to
-   * the account holder instead, which is why `pending_documents` exists.
-   */
-  onboarding_url?: string
-  /** What the provider is still waiting on, in its own words. */
-  pending_documents?: string[]
-}
-
-export interface DepositReadiness {
-  allowed: boolean
-  blocked_by?: DepositBlockReason
-  kyc_level: '' | 'basic' | 'enhanced'
-  custody_required: boolean
-  custody_status?: string
-}
-
 export interface MeResponse {
   user_id: string
   terms_addendum_accepted: boolean
   terms_addendum_version: string
-  /** Absent when the server could not read it — treat as "unknown", never as blocked. */
-  deposit?: DepositReadiness
 }
 
 export interface PendingGameLimits {

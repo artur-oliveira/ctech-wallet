@@ -4,7 +4,7 @@ Digital wallet for the `aoctech.app` platform. Three balances per user:
 
 | Wallet    | Money    | Purpose                                            | Limits  |
 |-----------|----------|----------------------------------------------------|---------|
-| `real`    | Real     | PIX deposit/withdraw, subscriptions, services      | No      |
+| `real`    | Real     | Subscriptions, services (PIX rail currently off)   | No      |
 | `game`    | **Real** | Real money ring-fenced for games only              | **Yes** |
 | `sandbox` | Virtual  | Game credits; no monetary value, never convertible | Yes     |
 
@@ -31,8 +31,8 @@ Structure and conventions mirror `ctech-dfe` (fx DI, layered `handler → servic
 v2, DynamoDB single-table helpers). **Always read the relevant subproject `CLAUDE.md` before making a change.**
 
 Unlike `ctech-dfe`, the wallet is **not multi-tenant** — there is no organization header or RBAC. Access control
-is: user JWT (JWKS from `ctech-account`) for user routes, `client_credentials` M2M scopes for internal routes, and
-step-up MFA (`last_mfa_at` claim) for withdrawals.
+is: user JWT (JWKS from `ctech-account`) for user routes, `client_credentials` M2M scopes for internal routes. Step-up MFA (`last_mfa_at` claim) is
+implemented but no route currently requires it (withdrawals were removed — see the step-up contract below).
 
 ---
 
@@ -78,17 +78,11 @@ it is.
     every callback. Payer CPF is the one field Inter's re-query does not return — it is sourced from the
     webhook body itself (persisted on first sight) and used only for the CPF-match anti-fraud check, never to
     authorize crediting.
-12. **Deposits are custody-only.** A user deposit opens a PIX charge on that user's own BaaS subaccount,
-    held under their CPF — never on CTech's Inter account. There is no fallback: no approved subaccount, no
-    deposit (`409 wallet-onboarding`). CTech's Inter account receives **product purchases** only (SKU sales,
-    `OpenCharge` invoices); CTech's **master account at the BaaS provider** receives the one-off subaccount
-    verification fee, because that is the balance the provider debits its own charge from. The regression test
-    `TestDepositNeverChargesInter` is the executable form of this rule. See
-    `docs/specs/2026-08-30-asaas-only-deposits.md`.
-13. **The verification fee is charged before the subaccount exists, and never refunded.** The provider
-    consumes it at creation and does not return it when registration is refused, so a refused registration
-    returns to `pending_documents` for re-submission — never to `closed`, which would strand a paid fee and
-    force a second payment. The user is told this before paying.
+12. **User money never lands in CTech's Inter account.** There is currently no deposit and no withdrawal rail:
+    the BaaS custody provider was removed (`docs/specs/2026-10-07-asaas-removal.md`) and no route opens a user
+    deposit or pays out a withdrawal. A future rail must custody user money under the user's own CPF; CTech's
+    Inter account receives product purchases only (SKU sales, `OpenCharge` invoices).
+13. *(Retired 2026-10-07 — was the BaaS verification-fee rule; see `docs/specs/2026-10-07-asaas-removal.md`.)*
 14. **No money left in limbo.** A withdrawal whose PIX transfer call fails after the internal debit enters a
     `processing` state that a reconciliation job MUST resolve (complete or reverse). Failed refunds raise an
     operational alarm for manual reconciliation — never a silent path.
@@ -129,7 +123,7 @@ All balances and amounts are **integer centavos** — never floats.
 **There is no withdrawal fee**, per `docs/specs/2026-08-16-withdrawal-fee-removal.md`. A withdrawal debits
 exactly its `amount` and writes one `withdraw` ledger entry — no fee entry, no `fee_bps`/`fee_min`/`fee_max`
 configuration, no sweep, no flag. Historical DynamoDB fee attributes and ledger rows are immutable history that
-new code neither reads nor writes. An Asaas tariff is a provider cost, tracked separately as `transfer_fee`, and
+new code neither reads nor writes. A payment-provider tariff is a provider cost and
 is never CTech revenue.
 
 **PIX deposit range** IS per-wallet: optional `min_deposit` / `max_deposit` overrides falling back to
@@ -185,12 +179,14 @@ passwords, real customer data, or real CPFs.
   (real wallet — deliberately a separate scope, never granted to a client that only needs sandbox credit/debit,
   e.g. poker/dominó) seeded into the global catalog via `ctech-account`'s `cmd/seedscopes`. The wallet's own
   M2M client is seeded confidential + `first_party:true` with `allowed_scopes:["internal:account:kyc"]`.
-- **Step-up:** withdrawals mirror account's `RequireRecentMFA(5m)` — stateless, reads `last_mfa_at` from the JWT;
-  no call to account needed. Re-verifying a stale MFA proof redirects to `{CTECH_URL}/v1.0/authorize` with
-  `max_age=0` (OIDC-standard) — this forces `ctech-account` to require a fresh interactive login even with a valid
-  SSO session, refreshing `last_mfa_at`. A plain re-login (no `max_age`) would silently reuse the SSO session and
-  never re-prove MFA. The frontend calls this via `@aoctech/auth-client`'s `startOAuthFlow(returnTo, {maxAge: 0})`
-  (wrapped as `startStepUpFlow` in `ui/src/lib/auth/oauth.ts`).
+- **Step-up:** no route currently requires step-up — the withdrawal route that did was removed with the BaaS
+  provider (`docs/specs/2026-10-07-asaas-removal.md`). `middleware.RequireRecentMFA` remains as the mechanism a
+  future withdrawal rail must reuse: it mirrors account's `RequireRecentMFA(5m)` — stateless, reads `last_mfa_at`
+  from the JWT; no call to account needed. Re-verifying a stale MFA proof redirects to
+  `{CTECH_URL}/v1.0/authorize` with `max_age=0` (OIDC-standard) — this forces `ctech-account` to require a fresh
+  interactive login even with a valid SSO session, refreshing `last_mfa_at`. A plain re-login (no `max_age`) would
+  silently reuse the SSO session and never re-prove MFA. A future frontend flow calls `@aoctech/auth-client`'s
+  `startOAuthFlow(returnTo, {maxAge: 0})`.
 
 `ctech-account` DOES require code changes for this: `internal/handler/authorize.go` honors `max_age`, and
 `ui/src/hooks/use-redirect-if-authenticated.ts` must not bypass the login form when the `continue` target itself

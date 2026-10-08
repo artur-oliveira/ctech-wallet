@@ -26,8 +26,6 @@ func TestLoadSucceedsWithValkeyURLInProd(t *testing.T) {
 	t.Setenv("TABLE_PREFIX", "prod")
 	t.Setenv("PIX_GATEWAY_FUNCTION_NAME", "prod-pix-gateway-outbound")
 	t.Setenv("VALKEY_URL", "redis://valkey.internal:6379/0")
-	t.Setenv("ASAAS_PARENT_WALLET_ID", "0b1d4d4e-0000-0000-0000-000000000000")
-	t.Setenv("ASAAS_MASTER_PIX_KEY", "b6295ee1-0000-0000-0000-000000000000")
 
 	if _, err := Load(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -57,8 +55,6 @@ func TestLoadReconcileSucceedsWithoutAPIRuntimeConfigInProd(t *testing.T) {
 	t.Setenv("VALKEY_URL", "")
 	// Not an API-only guard: every settlement leg reconcile submits needs a
 	// destination wallet, so this one applies to both processes in production.
-	t.Setenv("ASAAS_PARENT_WALLET_ID", "0b1d4d4e-0000-0000-0000-000000000000")
-	t.Setenv("ASAAS_MASTER_PIX_KEY", "b6295ee1-0000-0000-0000-000000000000")
 
 	if _, err := LoadReconcile(); err != nil {
 		t.Fatalf("unexpected reconcile config error: %v", err)

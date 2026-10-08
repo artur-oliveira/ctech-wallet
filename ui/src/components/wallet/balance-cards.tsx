@@ -5,24 +5,13 @@ import {ArrowUpFromLine, Dice5, Gamepad2, Plus, ShieldCheck} from 'lucide-react'
 import {useTranslation} from 'react-i18next'
 import {Button} from '@/components/ui/button'
 import {formatBRL, formatCreditsAmount} from '@/lib/utils/money'
-import type {Balances, DepositReadiness} from '@/lib/types/api'
-import {DepositGate, DepositGateNote} from '@/components/wallet/deposit-gate'
-import {AsaasBadge} from '@/components/wallet/asaas-badge'
+import type {Balances} from '@/lib/types/api'
 
 interface BalanceCardsProps {
   balances: Balances
-  onDeposit: () => void
-  onWithdraw: () => void
   onBuyCredits: () => void
   onFundGame: () => void
   onReturnFromGame: () => void
-  /** Opens the payment-subaccount flow. Only reachable from the deposit gate. */
-  onOpenCustody: () => void
-  onPayCustodyFee: () => void
-  onboardingURL?: string
-  pendingDocuments?: string[]
-  /** Pre-flight deposit gate from GET /auth/me. Undefined = unknown, behaves as allowed. */
-  depositReadiness?: DepositReadiness
   selfExcluded?: boolean
 }
 
@@ -44,16 +33,9 @@ interface BalanceCardsProps {
  */
 export function BalanceCards({
                                balances,
-                               onDeposit,
-                               onWithdraw,
                                onBuyCredits,
                                onFundGame,
                                onReturnFromGame,
-                               onOpenCustody,
-                               onPayCustodyFee,
-                               onboardingURL,
-                               pendingDocuments,
-                               depositReadiness,
                                selfExcluded,
                              }: BalanceCardsProps) {
   const {t} = useTranslation()
@@ -64,34 +46,15 @@ export function BalanceCards({
       <div className={activated ? 'grid gap-4 md:grid-cols-[1.4fr_1fr]' : 'grid gap-4'}>
         {/* Real — money */}
         <section className="relative overflow-hidden rounded-2xl bg-brand-600 p-6 text-white">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="font-mono text-xs uppercase tracking-widest text-brand-50">{t('balance.real.label')}</p>
-              <p className="mt-3 font-mono text-4xl font-bold tabular-nums tracking-tight">
-                {formatBRL(balances.real.balance)}
-              </p>
-              <p className="mt-2 text-sm text-brand-50">{t('balance.real.subtitle')}</p>
-            </div>
-            <AsaasBadge variant="white" className="shrink-0"/>
-          </div>
+          <p className="font-mono text-xs uppercase tracking-widest text-brand-50">{t('balance.real.label')}</p>
+          <p className="mt-3 font-mono text-4xl font-bold tabular-nums tracking-tight">
+            {formatBRL(balances.real.balance)}
+          </p>
+          {/* PIX deposits and withdrawals are off until a new provider is integrated. */}
+          <p className="mt-2 text-sm text-brand-50">{t('balance.real.subtitle')}</p>
 
-          <div className="mt-6 flex flex-wrap gap-2">
-            <DepositGate
-              readiness={depositReadiness}
-              onDeposit={onDeposit}
-              onOpenCustody={onOpenCustody}
-              onPayCustodyFee={onPayCustodyFee}
-              onboardingURL={onboardingURL}
-            />
-            <Button
-              variant="outline"
-              className="border-brand-400/60 bg-transparent text-white hover:bg-brand-700"
-              onClick={onWithdraw}
-            >
-              <ArrowUpFromLine size={16}/>
-              {t('balance.withdraw')}
-            </Button>
-            {activated && !selfExcluded && (
+          {activated && !selfExcluded && (
+            <div className="mt-6 flex flex-wrap gap-2">
               <Button
                 variant="outline"
                 className="border-brand-400/60 bg-transparent text-white hover:bg-brand-700"
@@ -100,18 +63,7 @@ export function BalanceCards({
                 <Dice5 size={16}/>
                 {t('balance.fundGame')}
               </Button>
-            )}
-          </div>
-          <DepositGateNote
-            readiness={depositReadiness}
-            onboardingURL={onboardingURL}
-            pendingDocuments={pendingDocuments}
-          />
-          {/* Named provider attribution: the payment account is held at Asaas
-              under the user's own CPF, and the regulatory adequacy rules
-              require saying so wherever we talk to the account holder. */}
-          {depositReadiness?.custody_required && (
-            <p className="mt-2 text-xs text-brand-100/80">{t('deposit.providerNote')}</p>
+            </div>
           )}
         </section>
 

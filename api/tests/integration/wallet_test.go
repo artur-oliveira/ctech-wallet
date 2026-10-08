@@ -126,27 +126,41 @@ func wantProblem(t *testing.T, err error, typ string) {
 	}
 }
 
+// seedPendingDeposit writes a legacy Inter deposit row directly: no route opens
+// deposits any more, but rows already stored still confirm through ConfirmDeposit.
+func seedPendingDeposit(t *testing.T, h *harness, user string, amount int64) *wallet.PixDeposit {
+	t.Helper()
+	ctx := context.Background()
+	real, err := h.repo.EnsureRealWallet(ctx, user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dep := &wallet.PixDeposit{
+		Txid: "dep-" + id.New(), WalletID: real.WalletID, UserID: user,
+		AmountExpected: amount, Status: wallet.DepositPending,
+		CreatedAt: repositories.NowStr(), TTL: time.Now().Add(time.Hour).Unix(),
+	}
+	if err := h.repo.PutDeposit(ctx, dep); err != nil {
+		t.Fatal(err)
+	}
+	return dep
+}
+
 func TestDepositConfirmCreditsOnCPFMatch(t *testing.T) {
 	ctx := context.Background()
 	h := newHarness(&kycclient.KYC{Level: "enhanced", CPF: cpf})
-	user := "u-" + id.New()
-	h.onboardCustody(t, user)
+	dep := seedPendingDeposit(t, h, "u-"+id.New(), 5000)
+	h.pix.StageCharge(dep.Txid, 5000, pix.ChargeCompleted, cpf, "E2E-"+dep.Txid)
 
-	dep, _, err := h.svc.InitiateDeposit(ctx, user, "enhanced", 5000, id.New())
-	if err != nil {
-		t.Fatalf("InitiateDeposit: %v", err)
-	}
-	h.stagePaidDeposit(dep, 5000, cpf)
-
-	if err := h.svc.ConfirmAsaasDeposit(ctx, dep.ProviderQRCodeID, dep.Txid); err != nil {
-		t.Fatalf("ConfirmAsaasDeposit: %v", err)
+	if err := h.svc.ConfirmDeposit(ctx, dep.Txid, cpf, "Payer", false); err != nil {
+		t.Fatalf("ConfirmDeposit: %v", err)
 	}
 	if got := balance(t, h, dep.WalletID); got != 5000 {
 		t.Fatalf("balance = %d, want 5000", got)
 	}
 
 	// Idempotent: re-confirming does not double-credit.
-	_ = h.svc.ConfirmAsaasDeposit(ctx, dep.ProviderQRCodeID, dep.Txid)
+	_ = h.svc.ConfirmDeposit(ctx, dep.Txid, cpf, "Payer", false)
 	if got := balance(t, h, dep.WalletID); got != 5000 {
 		t.Fatalf("balance after re-confirm = %d, want 5000", got)
 	}
@@ -250,190 +264,19 @@ func TestEnsureGamblingWalletsIsAtomicAndIdempotent(t *testing.T) {
 	}
 }
 
-func TestDepositRejectsAmountOutsideGlobalRange(t *testing.T) {
-	ctx := context.Background()
-	h := newHarness(verified())
-	user := "u-" + id.New()
-	h.onboardCustody(t, user)
-
-	for _, amount := range []int64{wallet.DefaultMinDeposit - 1, wallet.DefaultMaxDeposit + 1} {
-		dep, charge, err := h.svc.InitiateDeposit(ctx, user, "enhanced", amount, id.New())
-		var p *problem.Problem
-		if !errors.As(err, &p) || p.Type != problem.TypeDepositOutOfRange {
-			t.Fatalf("InitiateDeposit(%d) err = %v, want deposit-out-of-range", amount, err)
-		}
-		// Nothing may be created for a rejected amount — no charge at the bank,
-		// no pending deposit row.
-		if dep != nil || charge != nil {
-			t.Fatalf("InitiateDeposit(%d) returned dep=%v charge=%v, want both nil", amount, dep, charge)
-		}
-		if p.MinAmount != wallet.DefaultMinDeposit || p.MaxAmount != wallet.DefaultMaxDeposit {
-			t.Errorf("problem bounds = [%d, %d], want [%d, %d]",
-				p.MinAmount, p.MaxAmount, wallet.DefaultMinDeposit, wallet.DefaultMaxDeposit)
-		}
-	}
-
-	// The boundaries themselves are accepted.
-	if _, _, err := h.svc.InitiateDeposit(ctx, user, "enhanced", wallet.DefaultMinDeposit, id.New()); err != nil {
-		t.Fatalf("InitiateDeposit at min: %v", err)
-	}
-	if _, _, err := h.svc.InitiateDeposit(ctx, user, "enhanced", wallet.DefaultMaxDeposit, id.New()); err != nil {
-		t.Fatalf("InitiateDeposit at max: %v", err)
-	}
-}
-
-func TestDepositUsesPerWalletRangeOverride(t *testing.T) {
-	ctx := context.Background()
-	h := newHarness(verified())
-	user := "u-" + id.New()
-	h.onboardCustody(t, user)
-
-	real, err := h.repo.EnsureRealWallet(ctx, user)
-	if err != nil {
-		t.Fatalf("EnsureRealWallet: %v", err)
-	}
-	setWalletDepositRange(t, real.WalletID, 5000, 20000)
-
-	// Inside the global range but below this wallet's floor → rejected.
-	if _, _, err := h.svc.InitiateDeposit(ctx, user, "enhanced", 4999, id.New()); err == nil {
-		t.Fatal("InitiateDeposit(4999) = nil, want deposit-out-of-range")
-	}
-	// Inside the global range but above this wallet's cap → rejected.
-	if _, _, err := h.svc.InitiateDeposit(ctx, user, "enhanced", 20001, id.New()); err == nil {
-		t.Fatal("InitiateDeposit(20001) = nil, want deposit-out-of-range")
-	}
-	// Within the wallet's own range → accepted.
-	if _, _, err := h.svc.InitiateDeposit(ctx, user, "enhanced", 20000, id.New()); err != nil {
-		t.Fatalf("InitiateDeposit(20000): %v", err)
-	}
-}
-
 func TestDepositRejectsAndRefundsOnCPFMismatch(t *testing.T) {
 	ctx := context.Background()
 	h := newHarness(&kycclient.KYC{Level: "enhanced", CPF: cpf})
-	user := "u-" + id.New()
-	h.onboardCustody(t, user)
+	dep := seedPendingDeposit(t, h, "u-"+id.New(), 5000)
+	h.pix.StageCharge(dep.Txid, 5000, pix.ChargeCompleted, "99999999999", "E2E-"+dep.Txid)
 
-	dep, _, err := h.svc.InitiateDeposit(ctx, user, "enhanced", 5000, id.New())
-	if err != nil {
-		t.Fatalf("InitiateDeposit: %v", err)
-	}
-	h.stagePaidDeposit(dep, 5000, "99999999999")
-
-	// Through the provider's own webhook entry point, so the payment id is
-	// persisted the way production persists it — the refund below needs it.
-	if err := h.svc.ConfirmAsaasDeposit(ctx, dep.ProviderQRCodeID, dep.Txid); err != nil {
-		t.Fatalf("ConfirmAsaasDeposit: %v", err)
-	}
+	_ = h.svc.ConfirmDeposit(ctx, dep.Txid, "99999999999", "Other", false)
 	if got := balance(t, h, dep.WalletID); got != 0 {
 		t.Fatalf("balance = %d, want 0 (rejected)", got)
 	}
-	// The money goes back through the subaccount that received it, never
-	// through CTech's own account.
-	if len(h.asaas.RefundedPayments) != 1 {
-		t.Fatalf("expected one refund at the custody provider, got %d", len(h.asaas.RefundedPayments))
+	if len(h.pix.Refunds) != 1 {
+		t.Fatalf("expected one refund to the payer, got %d", len(h.pix.Refunds))
 	}
-	if len(h.pix.Refunds) != 0 {
-		t.Fatalf("a custodied deposit was refunded through Inter: %d", len(h.pix.Refunds))
-	}
-}
-
-// TestInitiateDepositIdempotentReturnsSameCharge proves SEC-08: two POSTs with
-// the same Idempotency-Key open exactly ONE Inter charge and return the same
-// txid/QR. A retried client call must never create a second live QR code.
-func TestInitiateDepositIdempotentReturnsSameCharge(t *testing.T) {
-	ctx := context.Background()
-	h := newHarness(verified())
-	user := "u-" + id.New()
-	h.onboardCustody(t, user)
-	idemKey := "idem-deposit-" + id.New()
-
-	dep1, charge1, err := h.svc.InitiateDeposit(ctx, user, "enhanced", 5000, idemKey)
-	if err != nil {
-		t.Fatalf("first InitiateDeposit: %v", err)
-	}
-	dep2, charge2, err := h.svc.InitiateDeposit(ctx, user, "enhanced", 5000, idemKey)
-	if err != nil {
-		t.Fatalf("replay InitiateDeposit: %v", err)
-	}
-	if dep1.Txid != dep2.Txid {
-		t.Fatalf("replay returned a different txid %q, want %q (a second charge was opened)", dep2.Txid, dep1.Txid)
-	}
-	if charge1.QRCode != charge2.QRCode {
-		t.Fatalf("replay returned a different QR code — a second charge was opened")
-	}
-	// Deposits never touch Inter at all now (Invariant #14), replay or not.
-	if got := len(h.pix.CreatedCharges); got != 0 {
-		t.Fatalf("Inter charges opened = %d, want 0", got)
-	}
-}
-
-func TestWithdrawHappyPath(t *testing.T) {
-	ctx := context.Background()
-	h := newHarness(verified())
-	user := "u-" + id.New()
-	real := fund(t, h, user, 20000)
-
-	w, err := h.svc.Withdraw(ctx, user, "enhanced", 5000, "idem-"+id.New())
-	if err != nil {
-		t.Fatalf("Withdraw: %v", err)
-	}
-	if w.Status != wallet.WithdrawCompleted {
-		t.Fatalf("status = %q, want completed", w.Status)
-	}
-	if w.PixKey != cpf {
-		t.Fatalf("PixKey = %q, want the KYC CPF %q", w.PixKey, cpf)
-	}
-	want := int64(20000) - 5000
-	if got := balance(t, h, real.WalletID); got != want {
-		t.Fatalf("balance = %d, want %d", got, want)
-	}
-}
-
-// TestWithdrawKeyNotFoundRefundsImmediately proves an unregistered PIX key
-// (the CPF has no key at the bank) refunds the full amount+fee back to the
-// wallet immediately, end-to-end against DynamoDB-local — it never leaves the
-// withdrawal stuck in processing for the reconciliation job.
-func TestWithdrawKeyNotFoundRefundsImmediately(t *testing.T) {
-	ctx := context.Background()
-	h := newHarness(verified())
-	user := "u-" + id.New()
-	real := fund(t, h, user, 20000)
-	h.pix.TransferErr = pix.ErrKeyNotFound
-
-	_, err := h.svc.Withdraw(ctx, user, "enhanced", 5000, "idem-"+id.New())
-	wantProblem(t, err, problem.TypePixKeyNotFound)
-
-	if got := balance(t, h, real.WalletID); got != 20000 {
-		t.Fatalf("balance = %d, want 20000 (fully refunded)", got)
-	}
-}
-
-func TestWithdrawInsufficientBalance(t *testing.T) {
-	ctx := context.Background()
-	h := newHarness(verified())
-	user := "u-" + id.New()
-	fund(t, h, user, 100) // less than withdrawal amount
-
-	_, err := h.svc.Withdraw(ctx, user, "enhanced", 5000, "idem-"+id.New())
-	wantProblem(t, err, problem.TypeInsufficientBalance)
-}
-
-func TestWithdrawWalletBusy(t *testing.T) {
-	ctx := context.Background()
-	h := newHarness(verified())
-	user := "u-" + id.New()
-	real := fund(t, h, user, 20000)
-
-	// Hold the wallet lock via the SAME locker the service uses → forces busy.
-	release, ok, err := h.locker.Acquire(ctx, real.WalletID)
-	if err != nil || !ok {
-		t.Fatalf("setup lock: ok=%v err=%v", ok, err)
-	}
-	defer release()
-
-	_, err = h.svc.Withdraw(ctx, user, "enhanced", 5000, "idem-"+id.New())
-	wantProblem(t, err, problem.TypeWalletBusy)
 }
 
 // The purchase is atomic: game is debited and sandbox credited in one
@@ -583,43 +426,6 @@ func TestIdempotencyConflictOnDifferentPayload(t *testing.T) {
 	// Same key, different amount → conflict.
 	_, err := h.svc.CreditSandbox(ctx, user, 2000, idem, "bonus", "")
 	wantProblem(t, err, problem.TypeIdempotencyConflict)
-}
-
-// TestWithdrawConcurrentSameIdempotencyKeyExactlyOneTransfer proves F2's fix:
-// N concurrent Withdraw calls with the SAME idempotency key must debit and
-// PIX-transfer exactly once, never twice (the previous unconditional
-// PutWithdrawal + a replay check taken before the lock let two racing calls
-// both win).
-func TestWithdrawConcurrentSameIdempotencyKeyExactlyOneTransfer(t *testing.T) {
-	ctx := context.Background()
-	h := newHarness(verified())
-	user := "u-" + id.New()
-	real := fund(t, h, user, 100000)
-
-	const n = 10
-	var wg sync.WaitGroup
-	errs := make([]error, n)
-	for i := 0; i < n; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			_, errs[i] = h.svc.Withdraw(ctx, user, "enhanced", 5000, "idem-race")
-		}(i)
-	}
-	wg.Wait()
-
-	for i, err := range errs {
-		if err != nil && !isWalletBusy(err) {
-			t.Fatalf("goroutine %d: unexpected error: %v", i, err)
-		}
-	}
-	if got := len(h.pix.Transfers); got != 1 {
-		t.Fatalf("expected exactly 1 PIX transfer call, got %d", got)
-	}
-	want := int64(100000) - 5000
-	if got := balance(t, h, real.WalletID); got != want {
-		t.Fatalf("balance = %d, want %d (double-debit if lower)", got, want)
-	}
 }
 
 // TestRealDebitNeverTouchesSandboxWallet proves F3's new DebitReal only ever

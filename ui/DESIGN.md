@@ -135,7 +135,7 @@ Flat by default. A surface earns a shadow only when it lifts (card hover) or ove
 ### Buttons
 - **Shape:** gently rounded (10px radius, `rounded-lg`), height 32px, text-sm, medium weight.
 - **Primary (brand):** Signal Violet fill, white label. The single CTA per screen. Hover deepens to #6d28d9.
-- **Outline:** white surface, 1px Signal Violet border at 60% (`border-brand-400/60`), violet label — used for *secondary* money actions on the violet card (withdraw, fund-game) and for neutral secondary actions elsewhere (return, credits). Hover tints the fill.
+- **Outline:** white surface, 1px Signal Violet border at 60% (`border-brand-400/60`), violet label — used for *secondary* money actions on the violet card (fund-game) and for neutral secondary actions elsewhere (return, credits). Hover tints the fill.
 - **Ghost:** transparent, ink label; for low-emphasis controls (logout icon, dialog cancel). Hover fills a muted gray.
 - **Destructive:** red-tinted text/background for irreversible confirmations; red-600 fill where a hard delete is offered.
 - **States:** every variant carries default, hover, focus-visible (3px ring), active (1px press), disabled (50% opacity, no pointer). Loading maps to the disabled state with a pending flag.
@@ -144,7 +144,7 @@ Flat by default. A surface earns a shadow only when it lifts (card hover) or ove
 - **Style:** white fill, 1px Line border, 10px radius, 40px height, text-sm ink text, readable muted placeholder (#94a3b8 meets 4.5:1).
 - **Focus:** `focus-within` / `focus` shifts the border to Signal Violet and raises a 3px violet ring at 20% (`ring-brand-500/20`).
 - **Error:** border turns red-400, ring red-500/20, and a red-600 message sits below the field. aria-invalid is set; the message is `aria-describedby`-linked.
-- **Money input:** the amount field prefixes a muted "R$" and renders the typed value in IBM Plex Mono `tabular-nums`; a max-length guard caps entry at the R$ 1.000.000 ceiling on deposits and game funding. When a balance ceiling applies, a right-aligned "Máx {max}" link below the field fills it in one tap (it is a sibling below the input wrapper, never inside the flex row).
+- **Money input:** the amount field prefixes a muted "R$" and renders the typed value in IBM Plex Mono `tabular-nums`; a max-length guard caps entry at the R$ 1.000.000 ceiling on game funding. When a balance ceiling applies, a right-aligned "Máx {max}" link below the field fills it in one tap (it is a sibling below the input wrapper, never inside the flex row).
 
 ### Cards / Containers
 - **Corner Style:** 16px radius (`rounded-2xl`) on the balance cards; 12px (`rounded-xl`) on the ledger panel and dialogs.
@@ -159,7 +159,7 @@ Flat by default. A surface earns a shadow only when it lifts (card hover) or ove
 
 ### [Signature Component] Balance Hierarchy
 The three balances are deliberately **not** a symmetric card set — the visual treatment encodes what each balance is, so they cannot be mistaken for one another:
-- **Real — money:** solid filled Signal Violet card, white text, R$ prefix, bold mono balance, primary Deposit/Withdraw actions.
+- **Real — money:** solid filled Signal Violet card, white text, R$ prefix, bold mono balance, no PIX deposit/withdraw actions while those are off (a muted line says so); Send-to-games when the game wallet is active.
 - **Game — real money, ring-fenced:** outlined card (2px Signal Violet border, white fill), R$ prefix, violet "GAME" tag. Spendable only on games, subject to the user's personal limit.
 - **Sandbox — not money:** dashed-border card, **no currency symbol**, explicit "não vira dinheiro" line; it has no monetary value and can never convert back.
 - **Not activated:** balance and action surfaces stay absent; one quiet activation link stands in. If a sandbox wallet already exists, its statement remains available as an explicitly read-only history surface so prior play and credit purchases are never hidden.

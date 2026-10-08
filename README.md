@@ -1,7 +1,8 @@
 # CTech Wallet
 
 Serviço de carteira digital do ecossistema `aoctech.app`. Mantém **três saldos por usuário** — **real**
-(depósito/saque via PIX, banco parceiro Inter), **game** (dinheiro real cercado só para jogos, com limites de
+(dinheiro real; depósito/saque PIX desligados até um novo provedor de custódia — ver
+`docs/specs/2026-10-07-asaas-removal.md`), **game** (dinheiro real cercado só para jogos, com limites de
 jogo responsável) e **sandbox** (moeda virtual, sem valor monetário, nunca convertível em real). Dinheiro real
 entra no cercado de jogo **somente** via `real → game`. Serve de base para cobrança de assinaturas (futuro
 `ctech-dfe`/billing) e para apostas de habilidade em poker/dominó. A superfície de jogo (`game`/`sandbox`) fica
@@ -21,7 +22,7 @@ essas versões. A fonte pública de verdade é
 ## Registro de scopes OAuth
 
 A Wallet é dona do manifesto versionado
-`api/internal/oauthresource/scope-manifest.json`, atualmente com 13 permissões
+`api/internal/oauthresource/scope-manifest.json`, atualmente com 12 permissões
 públicas `wallet:*` e 11 permissões M2M `internal:wallet:*`. O teste de contrato
 compara o manifesto com as constantes realmente usadas pelo middleware. O deploy
 o publica no CTech Account depois do CDK e antes da API usando um client
@@ -29,9 +30,9 @@ confidencial vinculado somente ao Resource Server `wallet`; o papel OIDC lê
 apenas os três parâmetros necessários.
 
 `GET /.well-known/oauth-protected-resource` implementa RFC 9728 e anuncia apenas
-os 13 scopes públicos. Tokens delegados que carregam qualquer `wallet:*` são
+os 12 scopes públicos. Tokens delegados que carregam qualquer `wallet:*` são
 limitados ao scope exato de cada rota; os scopes internos nunca são anunciados.
-A UI solicita os 13 scopes junto de `openid profile kyc`. Durante a migração,
+A UI solicita os 12 scopes junto de `openid profile kyc`. Durante a migração,
 tokens first-party já emitidos sem `wallet:*` mantêm o acesso atual. Publicar
 o manifesto também acrescenta os scopes públicos ao `allowed_scopes` do OAuth
 Client first-party `wallet`, sem alterar redirects, audience ou outros clients
@@ -73,9 +74,11 @@ Este serviço custodia dinheiro real de terceiros. Invariantes não-negociáveis
 - **Idempotência obrigatória** — toda operação exige `Idempotency-Key`; replay retorna o resultado anterior.
 - **Uma operação por wallet por vez** — lock via Valkey `SETNX` com TTL curto.
 - **Webhook nunca é fonte de verdade** — pagamento só credita após reconsulta ao provedor pelo `txid`.
-- **Saque com gate** — `kyc_level == enhanced` (constante `KYCVerified`) + step-up MFA + CPF da chave PIX destino == CPF do KYC.
+- **Sem rail de depósito/saque** — o provedor de custódia foi removido; nenhum dinheiro de usuário entra na conta
+  Inter da CTech. Um rail futuro deve custodiar sob o CPF do próprio usuário e exigir `kyc_level == enhanced` +
+  step-up MFA + CPF da chave PIX destino == CPF do KYC no saque.
 - **Sem taxa de saque** — o saque debita exatamente o `amount` e grava um único lançamento `withdraw`
-  (`docs/specs/2026-08-16-withdrawal-fee-removal.md`). Tarifa da Asaas é custo de provedor (`transfer_fee`),
+  (`docs/specs/2026-08-16-withdrawal-fee-removal.md`). Tarifa de provedor de pagamento é custo de provedor,
   nunca receita da CTech.
 
 ## Início Rápido

@@ -48,14 +48,14 @@ All tables env-prefixed (`TABLE_PREFIX=env` ⇒ `dev_wallets`). **OnDemand**
 | `wallet_users` | — | consent + responsible-gambling state |
 | `wallet_holds` | `gsi_hold_status` | game buy-in holds |
 | `wallet_audit` | — | pk+sk; **append-only** (Invariant #10) |
-| `wallet_baas_accounts` | `gsi_baas_account_id`, `gsi_baas_status` | pk `user_id`; Asaas custody lifecycle (implementation plan §2.4) |
-| `wallet_transfer_intents` | `gsi_intent_status` | pk `external_reference`; transfer-authorization webhook lookup (plan §2.3) |
-| `wallet_settlement_legs` | `gsi_batch_status` | pk `batch_id`; **no application code touches this table yet** — no settlement caller exists (plan §6) |
-| `wallet_med_receivables` | `gsi_med_status` | pk `receivable_id`; MED clawback shortfall debt (plan §7.3) |
 | `wallet_sandbox_purchases` | `gsi_sandbox_purchase_status`, `gsi_sandbox_purchase_webhook_status`, `gsi_user` (`created_at` sort) | pk `purchase_id`; direct PIX→sandbox sale, decoupled from `wallet_pix_deposits` (plan §9.1/§9.3); user GSI backs newest-first purchase history without scans |
 | `wallet_product_purchases` | `gsi_product_purchase_status`, `gsi_product_purchase_webhook_status`, `gsi_user` (`created_at` sort) | pk `purchase_id`; generic digital-product PIX sales with no ledger effect; user GSI backs ownership-scoped history |
 
-`wallet_pix_deposits` also gained `gsi_deposit_provider_qr` (Asaas payment-webhook `pixQrCodeId` → txid resolution, plan §4.3).
+Retired BaaS custody tables (`wallet_baas_accounts`, `wallet_transfer_intents`, `wallet_settlement_legs`,
+`wallet_med_receivables`) are still declared in `dynamodb-stack.ts` with a forced `RETAIN` and **no IAM access**, only
+so CloudFormation does not delete them (dev defaults to `DESTROY`), and their ARN exports are kept so the DynamoDB
+stack update does not fail on "export in use". Once that has deployed to every env, delete the block; the tables are
+then orphaned (data kept) for manual deletion.
 
 Names/keys/GSIs mirror `api/internal/domain/wallet/model.go` exactly
 (`dynamodb-stack.ts:8-11`) — a mismatch silently breaks every query.

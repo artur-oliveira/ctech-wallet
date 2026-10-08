@@ -60,7 +60,7 @@ test('only safe or idempotent requests are retried', () => {
   const retryable = (config) => isRetryableFailure({response: {status: 500}, config})
 
   assert.equal(retryable({method: 'get'}), true)
-  // A POST without an idempotency key must never be replayed: two PIX charges
+  // A POST without an idempotency key must never be replayed: two charges
   // for one intent is exactly what the key exists to prevent.
   assert.equal(retryable({method: 'post'}), false)
   assert.equal(retryable({method: 'post', headers: {'Idempotency-Key': 'k1'}}), true)
@@ -73,7 +73,7 @@ test('the retry budget is finite', () => {
 
 test('a client error is an answer, not a hiccup', () => {
   const failed = (status) => isRetryableFailure({response: {status}, config: {method: 'get'}})
-  // 409 wallet-onboarding and 403 kyc-not-verified are the server telling the
+  // 409 wallet-busy and 403 kyc-not-verified are the server telling the
   // user their next step. Retrying them only delays showing it.
   for (const status of [400, 401, 403, 404, 409, 422]) {
     assert.equal(failed(status), false, `${status} must not be retried`)

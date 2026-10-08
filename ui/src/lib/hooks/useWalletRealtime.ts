@@ -6,7 +6,6 @@ import {toast} from 'sonner'
 import {useTranslation} from 'react-i18next'
 import {useWebSocket, type WSStatus} from '@aoctech/ws-client'
 import {getAccessToken, refreshAccessToken, subscribeAccessToken} from '@/lib/api/client'
-import type {RealtimeTransactionStatus} from '@/lib/utils/transaction-status'
 import {realtimeAuthAction} from '@/lib/utils/realtime-auth'
 
 // NEXT_PUBLIC_WS_URL is read, not derived, and that is the whole point: the
@@ -30,8 +29,6 @@ interface RealtimeMessage {
   type: string
   code?: string
   wallet_id?: string
-  txid?: string
-  withdrawal_id?: string
   amount?: number
 }
 
@@ -51,21 +48,7 @@ const WITHDRAW_TOAST_KEY: Record<string, string> = {
   withdraw_refund_failed: 'toast.withdrawRefundFailed',
 }
 
-const WITHDRAW_STATUS_EVENT: Record<string, RealtimeTransactionStatus['type']> = {
-  withdraw_completed: 'withdraw_completed',
-  withdraw_reversed: 'withdraw_reversed',
-  withdraw_refund_failed: 'withdraw_refund_failed',
-}
-
-interface WalletRealtimeCallbacks {
-  onDepositConfirmed?: (txid: string) => void
-  onWithdrawalStatus?: (event: RealtimeTransactionStatus) => void
-}
-
-export function useWalletRealtime({
-                                    onDepositConfirmed,
-                                    onWithdrawalStatus,
-                                  }: WalletRealtimeCallbacks = {}): { wsStatus: WSStatus } {
+export function useWalletRealtime(): { wsStatus: WSStatus } {
   const {t, i18n} = useTranslation()
   const qc = useQueryClient()
   const token = getAccessToken()
@@ -110,7 +93,6 @@ export function useWalletRealtime({
           ? t('toast.realtimeDeposit', {amount: formatCentavos(msg.amount, i18n.language || 'pt-BR')})
           : t('toast.depositConfirmed'),
       )
-      if (msg.txid) onDepositConfirmed?.(msg.txid)
       return
     }
 
@@ -123,12 +105,8 @@ export function useWalletRealtime({
       } else {
         toast.error(t(toastKey))
       }
-      const statusType = WITHDRAW_STATUS_EVENT[msg.type]
-      if (statusType && msg.withdrawal_id) {
-        onWithdrawalStatus?.({type: statusType, transactionId: msg.withdrawal_id})
-      }
     }
-  }, [qc, t, i18n.language, onDepositConfirmed, onWithdrawalStatus])
+  }, [qc, t, i18n.language])
 
   const {status: wsStatus} = useWebSocket({
     url: wsUrl,

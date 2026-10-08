@@ -181,8 +181,8 @@ scopes públicos para todas as suas capacidades de usuário:
 `wallet:ledger:read`, `wallet:deposits:write`,
 `wallet:withdrawals:write`, `wallet:sandbox-purchases:read`,
 `wallet:sandbox-purchases:write`, `wallet:product-purchases:read`,
-`wallet:game:write`, `wallet:gambling:read`, `wallet:gambling:write` e
-`wallet:custody:write`. Um token que carregue qualquer `wallet:*` é limitado ao
+`wallet:game:write`, `wallet:gambling:read` e `wallet:gambling:write`
+(`wallet:custody:write` foi removido em 2026-10-07 com a integração Asaas). Um token que carregue qualquer `wallet:*` é limitado ao
 scope exato da rota; KYC, MFA, feature flags, ownership, idempotência e limites
 financeiros continuam sendo gates adicionais. A sessão first-party legada sem
 `wallet:*` permanece compatível durante a migração. O manifesto versionado é

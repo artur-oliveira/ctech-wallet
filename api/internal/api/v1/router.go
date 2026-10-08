@@ -18,12 +18,11 @@ import (
 type handlers struct {
 	svc     *services.WalletService
 	userSvc *services.UserService
-	baas    *services.BaasService
 }
 
 // Register mounts all wallet routes under /v1.0.
-func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsclient.Clients, pixClient pix.PixClient, svc *services.WalletService, userSvc *services.UserService, baasSvc *services.BaasService, asaasWebhookToken string, wsRegistry ws.Registry) {
-	h := &handlers{svc: svc, userSvc: userSvc, baas: baasSvc}
+func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsclient.Clients, pixClient pix.PixClient, svc *services.WalletService, userSvc *services.UserService, wsRegistry ws.Registry) {
+	h := &handlers{svc: svc, userSvc: userSvc}
 	verifier := middleware.NewVerifier(cfg.CtechJWKSURL, cfg.ServiceAudience, cfg.CtechIssuerURL, c)
 	auth := verifier.Middleware()
 	oauthresource.Register(app, cfg.ServiceAudience, cfg.CtechIssuerURL)
@@ -44,8 +43,6 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 	// User routes — Bearer user JWT.
 	w := v1.Group("/wallet", auth, middleware.RequireUser)
 	w.Get("/", middleware.RequireUserScope(middleware.ScopeWalletBalancesRead), h.getWallet)
-	w.Post("/deposits", middleware.RequireUserScope(middleware.ScopeWalletDepositsWrite), middleware.RequireKYC(middleware.KYCVerified), h.createDeposit)
-	w.Post("/withdrawals", middleware.RequireUserScope(middleware.ScopeWalletWithdrawalsWrite), middleware.RequireKYC(middleware.KYCVerified), middleware.RequireRecentMFA(middleware.StepUpMaxAge), h.createWithdrawal)
 	w.Post("/sandbox/purchase", middleware.RequireUserScope(middleware.ScopeWalletSandboxPurchasesWrite), h.purchaseSandbox)
 	// Direct PIX→sandbox-credits sale (plan §9.1/§9.3) — decoupled from the
 	// ring-fence entirely, no KYC gate, no feature flag: ships live. Plural
@@ -84,20 +81,6 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 	if cfg.GamblingEnabled {
 		w.Post("/game/deposit", middleware.RequireUserScope(middleware.ScopeWalletGameWrite), middleware.RequireKYC(middleware.KYCVerified), h.gameDeposit)
 	}
-
-	// Asaas webhooks — gated on the static asaas-access-token header (plan §2.3),
-	// never the JWT/M2M auth used by every other route below: Asaas is not an
-	// account-issued client. The token check fails closed on an empty configured
-	// token. These are ordinary API routes: the mTLS-verified HTTP API in
-	// cdk/lib/pix-gateway-stack.ts exists because Inter demands a client
-	// certificate, and Asaas offers a shared token instead.
-	asaasGroup := v1.Group("/internal/asaas", middleware.RequireAsaasWebhookToken(asaasWebhookToken))
-	asaasGroup.Post("/transfer-authorization", h.asaasTransferAuthorization)
-	asaasGroup.Post("/webhook", h.asaasWebhook)
-
-	w.Post("/onboarding", middleware.RequireUserScope(middleware.ScopeWalletCustodyWrite), middleware.RequireKYC(middleware.KYCVerified), h.initiateOnboarding)
-	w.Get("/onboarding", middleware.RequireUserScope(middleware.ScopeWalletBalancesRead), h.getOnboarding)
-	w.Post("/closure", middleware.RequireUserScope(middleware.ScopeWalletCustodyWrite), middleware.RequireRecentMFA(middleware.StepUpMaxAge), h.initiateClosure)
 
 	// Internal routes — all M2M client_credentials + scope, gated after auth.
 	internal := v1.Group("/internal", auth)

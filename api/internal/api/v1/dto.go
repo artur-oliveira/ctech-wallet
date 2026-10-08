@@ -4,17 +4,6 @@ package v1
 
 const MaxIdempotencyKeyLength = 128
 
-type DepositRequest struct {
-	Amount int64 `json:"amount" validate:"required,gt=0"`
-}
-
-// WithdrawRequest carries only the amount — the PIX destination is always the
-// CPF on the caller's KYC record, never a client-supplied key (see
-// WalletService.Withdraw).
-type WithdrawRequest struct {
-	Amount int64 `json:"amount" validate:"required,gt=0"`
-}
-
 type SandboxPurchaseRequest struct {
 	Amount int64 `json:"amount" validate:"required,gt=0"`
 }
@@ -82,40 +71,6 @@ type ConfirmPurchaseRequest struct {
 // game → real). The idempotency key travels in the Idempotency-Key header.
 type GameTransferRequest struct {
 	Amount int64 `json:"amount" validate:"required,gt=0"`
-}
-
-// OnboardingRequest opens the caller's custody onboarding. IncomeValue is a
-// provider cadastral field; it is persisted only because the subaccount is
-// created later, once the verification fee clears — see
-// BaasService.RequestCustodyAccount.
-type OnboardingRequest struct {
-	IncomeValue int64 `json:"income_value" validate:"required,gt=0"`
-}
-
-// OnboardingResponse tells the client exactly one next step. Which field is
-// populated depends on Status, and the client renders that rather than
-// re-deriving the step from the status string.
-type OnboardingResponse struct {
-	Status string `json:"status"`
-	// Fee is present while the verification fee is outstanding.
-	Fee *OnboardingFee `json:"fee,omitempty"`
-	// OnboardingURL is present when the provider wants documents sent through
-	// its own hosted flow. It is the only way those documents may be sent.
-	OnboardingURL string `json:"onboarding_url,omitempty"`
-	// PendingDocuments names what the provider is waiting on. Populated even
-	// when OnboardingURL is absent — the provider does return requirements with
-	// no link, and "under review" with nothing to read is a dead end.
-	PendingDocuments []string `json:"pending_documents,omitempty"`
-}
-
-// OnboardingFee is the PIX charge for the one-off verification fee. It is a
-// purchase, not a deposit: nothing is credited to any wallet, and it is not
-// refunded if the provider later refuses the registration.
-type OnboardingFee struct {
-	Amount     int64  `json:"amount"`
-	QRCode     string `json:"qr_code"`
-	QRCodeB64  string `json:"qr_code_base64,omitempty"`
-	Refundable bool   `json:"refundable"`
 }
 
 // ActivateGamblingRequest carries the explicit consent. AcceptAddendum must be

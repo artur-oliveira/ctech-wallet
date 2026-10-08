@@ -3,21 +3,18 @@
 // flag is set, so it is safe to leave in the tree (and harmless when off).
 import type {
   Balances,
-  DepositResult,
   GameLimits,
   GameLimitsInput,
   GameLimitsStatus,
   LedgerEntry,
   LedgerPage,
   MeResponse,
-  OnboardingState,
   ProductPurchase,
   PurchasePage,
   SandboxPurchase,
   Transfer,
   Wallet,
   WalletType,
-  Withdrawal,
 } from '@/lib/types/api'
 
 export const USE_MOCK = process.env.NEXT_PUBLIC_MOCK_AUTH === 'true'
@@ -139,19 +136,7 @@ export class MockApiClient {
       user_id: 'mock_user',
       terms_addendum_accepted: true,
       terms_addendum_version: '1.0',
-      // The mock has no KYC or custody lifecycle — it is always deposit-ready,
-      // so the mock dashboard behaves exactly as it did before the gate.
-      deposit: {allowed: true, kyc_level: 'enhanced', custody_required: true},
     }
-  }
-
-  async initiateOnboarding(_incomeValue: number): Promise<OnboardingState> {
-    void _incomeValue
-    return {status: 'fee_pending', fee: {amount: 1290, qr_code: '000201-mock-custody-fee', refundable: false}}
-  }
-
-  async getOnboarding(): Promise<OnboardingState> {
-    return {status: 'fee_pending', fee: {amount: 1290, qr_code: '000201-mock-custody-fee', refundable: false}}
   }
 
   async acceptTermsAddendum(): Promise<void> {
@@ -160,34 +145,6 @@ export class MockApiClient {
 
   async getBalances(): Promise<Balances> {
     return {real: state.real, activated: state.activated, game: state.game, sandbox: state.sandbox}
-  }
-
-  async createDeposit(amount: number, _idemKey: string): Promise<DepositResult> {
-    void _idemKey
-    return {
-      txid: `tx_${Date.now()}`,
-      amount,
-      status: 'pending',
-      pix_copia_e_cola:
-        '00020126580014BR.GOV.BCB.PIX0136mock@aoctech.app5204000053039865405' +
-        '000.005802BR5913Mock User6009SAO PAULO62070503***6304MOCK',
-      expires_at: Date.now() / 1000 + 300,
-    }
-  }
-
-  async createWithdrawal(amount: number, _idempotencyKey: string): Promise<Withdrawal> {
-    void _idempotencyKey
-    addEntry(state.real, 'withdraw', -amount)
-    return {
-      withdrawal_id: `wd_${Date.now()}`,
-      wallet_id: state.real.wallet_id,
-      user_id: 'mock_user',
-      amount,
-      pix_key: '12345678901', // mock user's registered CPF — no client-supplied key anymore
-      status: 'completed',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }
   }
 
   async purchaseSandbox(amount: number): Promise<Transfer> {

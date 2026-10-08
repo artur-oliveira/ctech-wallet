@@ -8,7 +8,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -18,7 +17,6 @@ import (
 	"github.com/google/uuid"
 
 	"gopkg.aoctech.app/api-commons/observability"
-	"gopkg.aoctech.app/wallet/api/internal/domain/id"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
 	"gopkg.aoctech.app/wallet/api/internal/pix"
@@ -39,11 +37,6 @@ const (
 	eventWithdrawalComplete = "withdraw_completed"
 	eventWithdrawalFailed   = "withdraw_refund_failed"
 	eventWithdrawalReversed = "withdraw_reversed"
-	// eventCustodyChanged tells a client watching the onboarding screen that the
-	// custody account moved — the fee cleared, the subaccount opened, the
-	// provider approved it. Without it the only way to notice was polling, so a
-	// user who had just paid sat looking at an unchanged screen.
-	eventCustodyChanged = "custody_changed"
 )
 
 // interWithdrawalNamespace namespaces the deterministic UUID sent to Inter as
@@ -71,22 +64,15 @@ type LedgerStore interface {
 	Credit(ctx context.Context, m repositories.Mutation, extra ...types.TransactWriteItem) (*wallet.LedgerEntry, bool, error)
 	Debit(ctx context.Context, m repositories.Mutation, extra ...types.TransactWriteItem) (*wallet.LedgerEntry, bool, error)
 	ConfirmDepositCredit(ctx context.Context, m repositories.Mutation, txid, e2eID string) (*wallet.LedgerEntry, bool, error)
-	ApplyMedClawback(ctx context.Context, walletID, userID string, amount int64, ref, reqHash string) (debited, shortfall int64, replayed bool, err error)
 	FindMutation(ctx context.Context, idemKey, reqHash string) (*wallet.LedgerEntry, error)
-	DebitWithdrawal(ctx context.Context, w *wallet.Withdrawal, amount int64, idemKey, reqHash string) (*wallet.LedgerEntry, bool, error)
 	Transfer(ctx context.Context, from, to string, amount, creditAmount int64, debitType, creditType, ref, idemKey, reqHash string, extra ...types.TransactWriteItem) (*wallet.LedgerEntry, *wallet.LedgerEntry, bool, error)
 	Statement(ctx context.Context, walletID string, limit int, startKey map[string]types.AttributeValue) (*repositories.QueryResult, error)
 	AnyDebitSince(ctx context.Context, walletID, sinceSK string) (bool, error)
-	AmountAtSK(ctx context.Context, walletID, sk string) (int64, error)
 }
 
 // DepositStore owns PIX deposit lifecycle persistence.
 type DepositStore interface {
-	PutDeposit(ctx context.Context, d *wallet.PixDeposit) error
 	GetDeposit(ctx context.Context, txid string) (*wallet.PixDeposit, error)
-	GetDepositByProviderQRCodeID(ctx context.Context, providerQRCodeID string) (*wallet.PixDeposit, error)
-	UpdateDepositProviderPaymentID(ctx context.Context, txid, providerPaymentID string) error
-	ReserveDepositIdem(ctx context.Context, guardPK, txid, userID, reqHash string) (reservedTxid string, existing *wallet.PixDeposit, conflict *problem.Problem, err error)
 	UpdateDepositStatus(ctx context.Context, txid, status, e2eID string) error
 	TransitionDepositStatus(ctx context.Context, txid, fromStatus, toStatus, e2eID string) (bool, error)
 	UpdateDepositPayer(ctx context.Context, txid, payerCPF, payerName string) error
@@ -224,113 +210,6 @@ func (c M2MClient) MaxCharge() int64 {
 	return c.MaxChargeCents
 }
 
-// BaasProvider is the per-user Asaas custody gate WalletService reads before
-// firing any conditional settlement leg (plan §4.1, §5.1, §9.1a). Defaults to
-// a no-op that always reports "not custodied" (see noopBaasProvider) so every
-// existing NewWalletService(...) call site — and every unit test — keeps
-// working unchanged; wire the real one with SetBaas, same pattern as
-// SetBroadcaster.
-type BaasProvider interface {
-	GetIfApproved(ctx context.Context, userID string) (*wallet.BaasAccount, error)
-	// GetAccount returns the caller's BaasAccount regardless of status (nil if
-	// absent) — GetBalances' onboarding-state branch (plan §4.1) needs the
-	// in-progress states GetIfApproved deliberately collapses to nil.
-	GetAccount(ctx context.Context, userID string) (*wallet.BaasAccount, error)
-	// CreateDepositCharge opens a PIX QR code against the caller's own Asaas
-	// subaccount (plan §4.2) — only ever called once InitiateDeposit has
-	// already confirmed the subaccount is approved.
-	CreateDepositCharge(ctx context.Context, userID string, amount int64, txid string) (charge *pix.Charge, providerQRCodeID string, err error)
-	// QueryDepositPayment re-queries an Asaas-opened deposit by its provider QR
-	// code ID, normalized into a pix.Charge so ConfirmDeposit's Invariant #11
-	// re-query stays provider-agnostic (plan §4.3).
-	QueryDepositPayment(ctx context.Context, userID, providerQRCodeID string) (*pix.Charge, error)
-	// RefundDepositPayment returns an Asaas PIX payment to its original payer.
-	// QueryDepositPayment is always called first and REFUNDED is the replay
-	// observation, because Asaas allows more than one partial refund.
-	RefundDepositPayment(ctx context.Context, userID, paymentID string, amount int64, reason string) error
-	// SubmitWithdrawalPayout fires leg 1 of a custodied withdrawal (plan §5.2):
-	// a PIX transfer from the user's own subaccount to their own registered CPF
-	// key. Submission failure is non-fatal — the withdrawal stays `processing`
-	// for cmd/reconcile, same contract as every other Asaas transfer leg.
-	SubmitWithdrawalPayout(ctx context.Context, userID string, amount int64, pixKeyCPF, withdrawalID string) error
-	// GetAccountByProviderID resolves an Asaas account.id (as reported by any
-	// webhook) back to its BaasAccount row — nil if unknown (plan §7.1, §7.3).
-	GetAccountByProviderID(ctx context.Context, providerAccountID string) (*wallet.BaasAccount, error)
-	// PutMedReceivableIfAbsent records a MED clawback shortfall (plan §7.3),
-	// idempotent by the receivable's own deterministic ID.
-	PutMedReceivableIfAbsent(ctx context.Context, m *wallet.MedReceivable) error
-	// HasOpenMedReceivable reports whether walletID has an outstanding MED
-	// clawback debt — funding/withdrawal stay blocked while one is open (plan
-	// §7.3 point 3), settled automatically from the next inflow.
-	HasOpenMedReceivable(ctx context.Context, walletID string) (bool, error)
-	// SetAccountStatus transitions a BaasAccount's lifecycle status directly —
-	// used by the closure state machine (plan §7.2).
-	SetAccountStatus(ctx context.Context, userID, status string) error
-	// CountReceipt records one PIX receipt against the subaccount's monthly
-	// free allowance, rolling the window when monthKey changes. Called after a
-	// deposit is confirmed, because a receipt only costs money once it is
-	// actually received — an unpaid QR code is billed nothing.
-	CountReceipt(ctx context.Context, userID, monthKey string) error
-	// SubmitGamePurchaseSettlement/SubmitGamePurchaseReversal are §9.1a's
-	// forward/reverse settlement legs for a game-funded sandbox purchase.
-	SubmitGamePurchaseSettlement(ctx context.Context, userID, creditSK string, amount int64) error
-	SubmitGamePurchaseReversal(ctx context.Context, userID, creditSK string, amount int64) error
-}
-
-type noopBaasProvider struct{}
-
-func (noopBaasProvider) GetIfApproved(context.Context, string) (*wallet.BaasAccount, error) {
-	return nil, nil
-}
-
-func (noopBaasProvider) GetAccount(context.Context, string) (*wallet.BaasAccount, error) {
-	return nil, nil
-}
-
-func (noopBaasProvider) CreateDepositCharge(context.Context, string, int64, string) (*pix.Charge, string, error) {
-	return nil, "", errors.New("baas: custody disabled")
-}
-
-func (noopBaasProvider) QueryDepositPayment(context.Context, string, string) (*pix.Charge, error) {
-	return nil, errors.New("baas: custody disabled")
-}
-
-func (noopBaasProvider) RefundDepositPayment(context.Context, string, string, int64, string) error {
-	return errors.New("baas: custody disabled")
-}
-
-func (noopBaasProvider) SubmitWithdrawalPayout(context.Context, string, int64, string, string) error {
-	return errors.New("baas: custody disabled")
-}
-
-func (noopBaasProvider) GetAccountByProviderID(context.Context, string) (*wallet.BaasAccount, error) {
-	return nil, nil
-}
-
-func (noopBaasProvider) PutMedReceivableIfAbsent(context.Context, *wallet.MedReceivable) error {
-	return errors.New("baas: custody disabled")
-}
-
-func (noopBaasProvider) HasOpenMedReceivable(context.Context, string) (bool, error) {
-	return false, nil
-}
-
-func (noopBaasProvider) SetAccountStatus(context.Context, string, string) error {
-	return errors.New("baas: custody disabled")
-}
-
-func (noopBaasProvider) CountReceipt(context.Context, string, string) error {
-	return errors.New("baas: custody disabled")
-}
-
-func (noopBaasProvider) SubmitGamePurchaseSettlement(context.Context, string, string, int64) error {
-	return errors.New("baas: custody disabled")
-}
-
-func (noopBaasProvider) SubmitGamePurchaseReversal(context.Context, string, string, int64) error {
-	return errors.New("baas: custody disabled")
-}
-
 // WalletService implements the wallet business flows.
 type WalletService struct {
 	repo             Repo
@@ -340,8 +219,6 @@ type WalletService struct {
 	pix              pix.PixClient
 	kyc              KYCClient
 	broadcaster      Broadcaster          // optional; see SetBroadcaster
-	baas             BaasProvider         // defaults to noopBaasProvider; see SetBaas
-	receiptsPerMonth int64                // monthly PIX-receipt allowance per subaccount; see SetReceiptsPerMonth
 	sandboxPurchases SandboxPurchaseRepo  // required for PurchaseSandboxDirect/RefundSandboxPurchase/ConfirmSandboxPurchase; see SetSandboxPurchases
 	productPurchases ProductPurchaseRepo  // required for PurchaseProductDirect/ConfirmProductPurchase/RefundProductPurchase; see SetProductPurchases
 	m2mClients       map[string]M2MClient // AZP → webhook config; nil/missing entry means "don't notify"; see SetM2MClients
@@ -350,18 +227,6 @@ type WalletService struct {
 func NewWalletService(repo Repo, users UserRepo, audit Auditor, lock Locker, pixClient pix.PixClient, kyc KYCClient) *WalletService {
 	return &WalletService{
 		repo: repo, users: users, audit: audit, lock: lock, pix: pixClient, kyc: kyc,
-		baas:             noopBaasProvider{},
-		receiptsPerMonth: wallet.DefaultReceiptsPerMonth,
-	}
-}
-
-// SetReceiptsPerMonth wires config.AsaasFreeReceiptsPerMonth after
-// construction — same setter pattern as SetBroadcaster/SetBaas, so existing
-// call sites keep the safe default rather than an accidental zero (which would
-// refuse every deposit).
-func (s *WalletService) SetReceiptsPerMonth(v int64) {
-	if v > 0 {
-		s.receiptsPerMonth = v
 	}
 }
 
@@ -373,34 +238,9 @@ func (s *WalletService) SetBroadcaster(b Broadcaster) {
 	s.broadcaster = b
 }
 
-// SetBaas wires the real Asaas custody gate after construction — same setter
-// pattern as SetBroadcaster, so every existing NewWalletService(...) call
-// site keeps compiling unchanged. Without a call to SetBaas, s.baas stays the
-// noopBaasProvider set by the constructor (never custodied), matching
-// pre-migration behavior exactly.
-func (s *WalletService) SetBaas(b BaasProvider) {
-	s.baas = b
-}
-
-// CustodyEnabledForUser reports the internal real-wallet allowlist state. It
-// is intentionally not a self-service switch or public response field.
-//
-// Since deposits became Asaas-only it gates ONBOARDING, not depositing: it
-// answers "may this user open a subaccount", which is the expensive, scarce
-// action (a non-refundable verification fee and a subaccount slot per attempt).
-// Whether an already-onboarded user may deposit is decided by
-// requireCustodyForDeposit, which never consults it.
-func (s *WalletService) CustodyEnabledForUser(ctx context.Context, userID string) (bool, error) {
-	real, err := s.repo.EnsureRealWallet(ctx, userID)
-	if err != nil {
-		return false, err
-	}
-	return real.CustodyEnabled, nil
-}
-
 // SetSandboxPurchases wires the direct-PIX sandbox-purchase repository (plan
-// §9.1/§9.3) after construction — same setter pattern as SetBroadcaster/
-// SetBaas, so every existing NewWalletService(...) call site keeps compiling
+// §9.1/§9.3) after construction — same setter pattern as SetBroadcaster,
+// so every existing NewWalletService(...) call site keeps compiling
 // unchanged. Unset, PurchaseSandboxDirect/RefundSandboxPurchase/
 // ConfirmSandboxPurchase panic on first use — this feature ships live with no
 // flag, so cmd/server and cmd/reconcile must always call this.
@@ -484,394 +324,17 @@ func (s *WalletService) ActivateGambling(ctx context.Context, userID, kycLevel, 
 // access; game is nil until activation. sandbox may already exist independently
 // and is returned so its read-only history remains accessible. Its presence is
 // never evidence of gambling consent; callers derive activation from game only.
-//
-// custodyStatus reports where the caller's custody onboarding currently stands
-// ("", "fee_pending", "onboarding", ..., "approved"). It is REPORTING ONLY and
-// never suppresses a balance.
-//
-// It used to blank real/game/sandbox until the subaccount was approved, citing
-// "a real wallet may not exist before a custody account exists to back it"
-// (plan §3.2). That reasoning is about not CREATING the wallet, and it does not
-// hold here: EnsureRealWallet runs unconditionally above, so the row exists
-// either way and hiding it afterwards protects nothing. What it did do was
-// strand the `sandbox` wallet — play currency with its own lifecycle, no
-// custody involvement, and in active use — behind an unrelated onboarding step,
-// and drop `real` out of the response entirely for a client whose contract
-// requires it.
-//
-// Invariant #13 is unaffected: conservation compares a balance to the
-// subaccount's, and an un-onboarded user cannot deposit at all
-// (requireCustodyForDeposit), so the balance it starts from is zero. Depositing
-// is gated at InitiateDeposit and reported by DepositReadiness — never by
-// withholding what the user already owns.
-func (s *WalletService) GetBalances(ctx context.Context, userID string) (real, game, sandbox *wallet.Wallet, custodyStatus string, err error) {
+
+func (s *WalletService) GetBalances(ctx context.Context, userID string) (real, game, sandbox *wallet.Wallet, err error) {
 	if _, err := s.repo.EnsureRealWallet(ctx, userID); err != nil {
-		return nil, nil, nil, "", err
+		return nil, nil, nil, err
 	}
-	real, game, sandbox, err = s.repo.LoadWallets(ctx, userID)
-	if err != nil || real == nil {
-		return real, game, sandbox, "", err
-	}
-	acc, err := s.baas.GetAccount(ctx, userID)
-	if err != nil {
-		// Custody state is decoration on this response. Losing it must not cost
-		// the caller their balances.
-		slog.WarnContext(ctx, "custody status read failed", "user_id", userID, "err", err)
-		return real, game, sandbox, "", nil
-	}
-	if acc != nil {
-		custodyStatus = acc.Status
-	}
-	return real, game, sandbox, custodyStatus, nil
+	return s.repo.LoadWallets(ctx, userID)
 }
 
 // Statement returns a paginated ledger for a wallet (newest first).
 func (s *WalletService) Statement(ctx context.Context, walletID string, limit int, startKey map[string]types.AttributeValue) (*repositories.QueryResult, error) {
 	return s.repo.Statement(ctx, walletID, limit, startKey)
-}
-
-// InitiateDeposit opens a PIX charge and records a pending deposit. Gates:
-// kycLevel != "" (any verification started) and the amount within the wallet's
-// deposit range. Not a balance mutation — money is credited only at
-// ConfirmDeposit after re-querying the charge. idemKey is required for
-// idempotency: a retried POST /wallet/deposits returns the same txid/QR and
-// never opens a second Inter charge (SEC-08).
-// requireCustodyApproved gates a money-OUT flow on the caller's Asaas
-// subaccount being approved. A wallet outside the custody allowlist has no
-// subaccount and returns (nil, nil): its balance, if any, is legacy Inter money
-// and must stay withdrawable through Inter — refusing it would strand real
-// money (Invariant #12). Money-IN has no such history to honour and uses
-// requireCustodyForDeposit instead.
-func (s *WalletService) requireCustodyApproved(ctx context.Context, userID string) (*wallet.BaasAccount, error) {
-	real, err := s.repo.EnsureRealWallet(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	if !real.CustodyEnabled {
-		return nil, nil
-	}
-	return s.requireCustodyForDeposit(ctx, userID)
-}
-
-// requireCustodyForDeposit is the money-IN gate, and it never returns
-// (nil, nil): a deposit ALWAYS needs an approved Asaas subaccount to land in
-// (Invariant #14). It deliberately does not consult the real wallet's
-// custody_enabled allowlist — that flag decides who may open a subaccount, and
-// reading it here would re-open the Inter deposit path for everyone not on it,
-// which is the exact hole this replaced.
-//
-// Returns (acc, nil) once approved; otherwise a 409 wallet-onboarding carrying
-// the current lifecycle status so the UI can show the right onboarding step.
-func (s *WalletService) requireCustodyForDeposit(ctx context.Context, userID string) (*wallet.BaasAccount, error) {
-	acc, err := s.baas.GetIfApproved(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	if acc != nil {
-		if acc.ConservationDrift {
-			// Invariant #13 fail-closed kill-switch (plan §6): this user's Asaas
-			// balance and this ledger disagree — never act on either side until
-			// ops reconciles the drift and clears the flag.
-			return nil, problem.AccountBlocked()
-		}
-		return acc, nil
-	}
-	full, err := s.baas.GetAccount(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	status := wallet.BaasOnboarding
-	if full != nil {
-		status = full.Status
-	}
-	if status == wallet.BaasFrozen {
-		// Distinct problem type from every other non-approved status (plan
-		// §7.1): frozen is not "still onboarding," it is a live block on an
-		// already-approved account — the UI must never render an onboarding
-		// step for it.
-		return nil, problem.AccountBlocked()
-	}
-	return nil, problem.WalletOnboarding(status)
-}
-
-// requireReceiptAllowance refuses a new deposit charge once the caller's
-// subaccount has used its monthly PIX-receipt allowance. Asaas gives every
-// account a fixed number of free receipts per calendar month and bills each one
-// after that, so without this gate a busy wallet quietly turns into a per-PIX
-// cost with nothing capping it.
-//
-// ponytail: counts CONFIRMED receipts, not opened QR codes — an unpaid QR is
-// billed nothing, so reserving a slot at open time would count the wrong thing.
-// The configured allowance sits below the real free ceiling and that margin is
-// what covers charges opened but not yet paid (short TTL, one at a time per
-// wallet via the wallet lock). If per-user volume ever gets near the margin,
-// this becomes a reservation released on expiry.
-func (s *WalletService) requireReceiptAllowance(ctx context.Context, userID string) error {
-	acc, err := s.baas.GetAccount(ctx, userID)
-	if err != nil {
-		return err
-	}
-	now := time.Now()
-	_, _, month := wallet.WindowKeys(now)
-	used := acc.ReceiptsUsed(month)
-	if used < s.receiptsPerMonth {
-		return nil
-	}
-	_, _, resetsAt := wallet.WindowResets(now)
-	return problem.DepositReceiptsExhausted(s.receiptsPerMonth, resetsAt)
-}
-
-// Deposit gate reasons reported by DepositReadiness. They exist so the frontend
-// can render the right next step BEFORE the user types an amount, instead of
-// letting them submit into a 403/409 they could not have predicted. The client
-// renders whatever BlockedBy says and never re-derives it from KYCLevel /
-// CustodyStatus — one place decides, so UI and API cannot drift apart.
-const (
-	// DepositBlockedKYC: the caller's kyc_level is below the `enhanced` the
-	// deposit route demands (and, when custody applies, the same level
-	// POST /wallet/onboarding demands to open the subaccount).
-	DepositBlockedKYC = "kyc"
-	// DepositBlockedCustodyAbsent: no subaccount has been opened yet and the
-	// user is allowed to open one — the one case the user resolves themselves.
-	DepositBlockedCustodyAbsent = "custody_absent"
-	// DepositBlockedCustodyFeePending: onboarding started and is waiting on the
-	// one-off verification fee. The user acts on this by paying the charge.
-	DepositBlockedCustodyFeePending = "custody_fee_pending"
-	// DepositBlockedCustodyDocuments: Asaas is waiting on identity documents.
-	// The user acts on this by following the provider's onboarding link.
-	DepositBlockedCustodyDocuments = "custody_documents"
-	// DepositBlockedCustodyPending: a subaccount exists but is not approved
-	// yet. Nothing for the user to do but wait.
-	DepositBlockedCustodyPending = "custody_pending"
-	// DepositBlockedCustodyBlocked: frozen, closing/closed, or conservation
-	// drift. Never an onboarding step — this needs support.
-	DepositBlockedCustodyBlocked = "custody_blocked"
-)
-
-// DepositReadiness is the pre-flight answer to "can this user deposit right
-// now, and if not, what is their next step?" — surfaced on GET /wallet/me so
-// the dashboard already has it before the deposit button is rendered.
-type DepositReadiness struct {
-	Allowed         bool   `json:"allowed"`
-	BlockedBy       string `json:"blocked_by,omitempty"`
-	KYCLevel        string `json:"kyc_level"`
-	CustodyRequired bool   `json:"custody_required"`
-	CustodyStatus   string `json:"custody_status,omitempty"`
-}
-
-// DepositReadiness evaluates the exact gates InitiateDeposit enforces, through
-// the very same requireCustodyApproved, and reports them as data instead of as
-// a rejection. A read-only pre-flight: it opens nothing, charges nothing, and
-// its answer is advisory — InitiateDeposit still enforces every gate itself.
-//
-// The KYC bar reported here is the ROUTE's, not this service method's: POST
-// /wallet/deposits carries RequireKYC(KYCVerified), so a `basic` user is
-// refused by the middleware before InitiateDeposit's own weaker `!= ""` check
-// ever runs. Reporting "basic is enough" would send them into a 403.
-func (s *WalletService) DepositReadiness(ctx context.Context, userID, kycLevel string) (*DepositReadiness, error) {
-	// Custody is no longer conditional: there is exactly one deposit rail and it
-	// is the user's own Asaas subaccount. The field stays in the response for
-	// the frontend's benefit, always true.
-	out := &DepositReadiness{KYCLevel: kycLevel, CustodyRequired: true}
-
-	acc, err := s.baas.GetAccount(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	if acc != nil {
-		out.CustodyStatus = acc.Status
-	}
-
-	if kycLevel != wallet.KYCVerified {
-		out.BlockedBy = DepositBlockedKYC
-		return out, nil
-	}
-
-	if _, err := s.requireCustodyForDeposit(ctx, userID); err != nil {
-		var p *problem.Problem
-		if !errors.As(err, &p) {
-			// A repository/provider failure is not a gate. Fail open here so a
-			// transient read never tells a fully-onboarded user they cannot
-			// deposit; InitiateDeposit remains the enforcing edge.
-			return nil, err
-		}
-		if out.CustodyStatus == "" {
-			// No subaccount yet. "Open one" is only the next step for a user the
-			// allowlist actually lets open one; for anyone else there is no
-			// self-service action, so saying so would be a dead end.
-			allowed, aerr := s.CustodyEnabledForUser(ctx, userID)
-			if aerr != nil {
-				return nil, aerr
-			}
-			out.BlockedBy = DepositBlockedCustodyBlocked
-			if allowed {
-				out.BlockedBy = DepositBlockedCustodyAbsent
-			}
-			return out, nil
-		}
-		out.BlockedBy = custodyBlockReason(out.CustodyStatus)
-		return out, nil
-	}
-	out.Allowed = true
-	return out, nil
-}
-
-// custodyBlockReason maps a subaccount lifecycle status to the user-facing
-// next step. Only called with a non-empty status — the no-row case needs the
-// allowlist to decide and is handled by DepositReadiness itself.
-func custodyBlockReason(status string) string {
-	switch status {
-	case wallet.BaasFeePending:
-		return DepositBlockedCustodyFeePending
-	case wallet.BaasPendingDocuments:
-		return DepositBlockedCustodyDocuments
-	case wallet.BaasFrozen, wallet.BaasClosing, wallet.BaasSubaccountClosed, wallet.BaasClosed,
-		// requireCustodyForDeposit also refuses an APPROVED account under
-		// conservation drift (Invariant #13). Approved-but-refused is never an
-		// onboarding step.
-		wallet.BaasApproved:
-		return DepositBlockedCustodyBlocked
-	default:
-		return DepositBlockedCustodyPending
-	}
-}
-
-// requireNotFrozen refuses a money-moving op once AsaasCustodyEnabled and the
-// caller's Asaas subaccount is frozen (plan §7.1) — every money-out path
-// (`Withdraw`, `ringTransfer`, `CashoutGame`) must check this before acting;
-// silently proceeding would be Invariant #12 territory (money left in limbo
-// just because the wallet happens to be frozen instead of merely busy).
-// Non-custodied users (or the flag off) have no BaasAccount row and are
-// unaffected. Distinct from requireCustodyApproved: that gates the
-// deposit/withdrawal entry points on onboarding progress; this gates every
-// other money-moving path on the frozen status specifically.
-func (s *WalletService) requireNotFrozen(ctx context.Context, userID string) error {
-	real, err := s.repo.EnsureRealWallet(ctx, userID)
-	if err != nil {
-		return err
-	}
-	if !real.CustodyEnabled {
-		return nil
-	}
-	acc, err := s.baas.GetAccount(ctx, userID)
-	if err != nil {
-		return err
-	}
-	if acc != nil && acc.Status == wallet.BaasFrozen {
-		return problem.AccountBlocked()
-	}
-	return nil
-}
-
-func (s *WalletService) InitiateDeposit(ctx context.Context, userID, kycLevel string, amount int64, idemKey string) (*wallet.PixDeposit, *pix.Charge, error) {
-	if kycLevel == "" {
-		return nil, nil, problem.KYCNotVerified()
-	}
-
-	// A deposit needs an APPROVED subaccount to open a charge against — else
-	// 409 wallet-onboarding so the UI can show the right onboarding step
-	// instead of a generic failure. There is no fallback: money deposited by a
-	// user is custodied in a subaccount under their own CPF, never in CTech's
-	// Inter account (Invariant #14).
-	if _, err := s.requireCustodyForDeposit(ctx, userID); err != nil {
-		return nil, nil, err
-	}
-
-	realw, err := s.repo.EnsureRealWallet(ctx, userID)
-	if err != nil {
-		return nil, nil, err
-	}
-	if open, err := s.baas.HasOpenMedReceivable(ctx, realw.WalletID); err != nil {
-		return nil, nil, err
-	} else if open {
-		return nil, nil, problem.MedReceivableOpen()
-	}
-	// Asaas bills every PIX receipt past the monthly free allowance, so a
-	// subaccount that has used its allowance stops opening charges rather than
-	// silently costing money on each one.
-	if err := s.requireReceiptAllowance(ctx, userID); err != nil {
-		return nil, nil, err
-	}
-	// Absolute inbound ceiling — no per-wallet deposit-range override may exceed
-	// it. Reject above-cap amounts before any charge is opened at the bank.
-	if amount > wallet.MaxInboundAmount {
-		return nil, nil, problem.AmountAboveLimit(wallet.MaxInboundAmount)
-	}
-	// Check the range before opening a charge at the bank — never create a PIX
-	// charge for an amount we are going to reject.
-	if err := wallet.ValidateDepositAmount(amount, realw); err != nil {
-		minAmt, maxAmt := wallet.DepositLimits(realw)
-		return nil, nil, problem.DepositOutOfRange(minAmt, maxAmt)
-	}
-
-	// SEC-08: register the idempotency key BEFORE opening any charge so a
-	// retried POST never opens a second PIX charge. On replay we return the prior
-	// deposit + re-query its charge (idempotent).
-	rh := reqHash("deposit#"+userID+"#"+idemKey, amount)
-	guardPK := wallet.IdemPrefix + "initdep#" + userID + "#" + idemKey
-	txid, existing, conflict, err := s.repo.ReserveDepositIdem(ctx, guardPK, id.New(), userID, rh)
-	if err != nil {
-		return nil, nil, err
-	}
-	if conflict != nil {
-		return nil, nil, conflict
-	}
-	if existing != nil {
-		// Idempotent replay: hand back the original deposit and its charge. A
-		// still-unpaid charge is answered from what was stored, because a static
-		// QR has no payment at the provider until someone pays it — re-querying
-		// one would fail on the most ordinary case there is, a user refreshing
-		// the screen before paying.
-		if existing.QRCodePayload != "" && existing.Status == wallet.DepositPending {
-			return existing, &pix.Charge{
-				Txid: existing.Txid, Amount: existing.AmountExpected, QRCode: existing.QRCodePayload,
-				QRCodeB64: existing.QRCodeImage, Status: pix.ChargeActive,
-			}, nil
-		}
-		charge, qerr := s.queryDeposit(ctx, existing)
-		if qerr != nil {
-			return nil, nil, qerr
-		}
-		return existing, charge, nil
-	}
-
-	charge, providerQRCodeID, err := s.baas.CreateDepositCharge(ctx, userID, amount, txid)
-	if err != nil {
-		slog.Error("pix charge creation failed", "user_id", userID, "txid", txid, "err", err)
-		return nil, nil, problem.InternalServer("falha ao criar cobrança PIX")
-	}
-	dep := &wallet.PixDeposit{
-		Txid:             txid,
-		WalletID:         realw.WalletID,
-		UserID:           userID,
-		AmountExpected:   amount,
-		Status:           wallet.DepositPending,
-		Provider:         wallet.ProviderAsaas,
-		ProviderQRCodeID: providerQRCodeID,
-		QRCodePayload:    charge.QRCode,
-		QRCodeImage:      charge.QRCodeB64,
-		CreatedAt:        repositories.NowStr(),
-		TTL:              time.Now().Add(depositTTLMinutes * time.Minute).Unix(),
-	}
-	if err := s.repo.PutDeposit(ctx, dep); err != nil {
-		return nil, nil, err
-	}
-	return dep, charge, nil
-}
-
-// queryDeposit re-queries a deposit's charge/payment through whichever
-// provider originally opened it (plan §4.3: "payment.pixQrCodeId → txid, not
-// the other way round" for the Asaas side; ConfirmDeposit's Invariant #11
-// re-query stays provider-agnostic — this is the one place that dispatches).
-func (s *WalletService) queryDeposit(ctx context.Context, dep *wallet.PixDeposit) (*pix.Charge, error) {
-	if dep.Provider == wallet.ProviderAsaas {
-		paymentID := dep.ProviderPaymentID
-		if paymentID == "" {
-			paymentID = dep.ProviderQRCodeID
-		}
-		return s.baas.QueryDepositPayment(ctx, dep.UserID, paymentID)
-	}
-	return s.pix.QueryCharge(ctx, dep.Txid)
 }
 
 // ConfirmDeposit is invoked (indirectly) by the Inter webhook. It NEVER trusts
@@ -908,7 +371,7 @@ func (s *WalletService) ConfirmDeposit(ctx context.Context, txid, payerCPF, paye
 		dep.PayerCPF, dep.PayerName = payerCPF, payerName
 	}
 
-	charge, err := s.queryDeposit(ctx, dep)
+	charge, err := s.pix.QueryCharge(ctx, dep.Txid)
 	if err != nil {
 		return err
 	}
@@ -1005,149 +468,8 @@ func (s *WalletService) ConfirmDeposit(ctx context.Context, txid, payerCPF, paye
 	}, txid, charge.E2EID); err != nil {
 		return err
 	}
-	// Meter the receipt AFTER the credit commits, and never let a counter
-	// failure fail a deposit that already landed: the worst case is one receipt
-	// under-counted against a monthly allowance that has margin built in, which
-	// is far cheaper than a confirmed deposit reported as an error and retried.
-	// Only Asaas receipts are billed per receipt, so legacy Inter deposits
-	// draining after the cutover are not counted.
-	if dep.Provider == wallet.ProviderAsaas {
-		_, _, month := wallet.WindowKeys(time.Now())
-		if err := s.baas.CountReceipt(ctx, dep.UserID, month); err != nil {
-			slog.ErrorContext(ctx, "receipt counter update failed", "user_id", dep.UserID, "txid", txid, "err", err)
-		}
-	}
 	s.broadcastDepositConfirmed(ctx, dep.UserID, dep.WalletID, txid, charge.Amount)
 	return nil
-}
-
-// InitiateClosure runs POST /wallet/closure's state machine (plan §7.2):
-// requested → refuse if unsettleable → closing → paid_out. Idempotent: a call
-// against an already-closing/subaccount_closed/closed account returns the
-// current record rather than restarting.
-//
-// "Refuse if not settleable" (plan §7.2) is checked here as: no open game
-// hold — this codebase's nearest analog to in-flight exposure; multi-party
-// settlement batches (plan §6) have no caller anywhere in this codebase yet
-// (poker settlement isn't wired), so there is nothing else to check — and no
-// open MED receivable (plan §7.3).
-//
-// Driving the account from `closing` to `subaccount_closed`/
-// `closed` once the payout's Asaas transfer confirms DONE is not built here:
-// today's transfer-intent/reconcile machinery (plan §6) has no completion
-// hook wired to this specific transition yet — flagged as the next increment,
-// not a silent gap (the account is left `closing`, never incorrectly marked
-// closed early).
-func (s *WalletService) InitiateClosure(ctx context.Context, userID, idemKey string) (*wallet.BaasAccount, error) {
-	acc, err := s.baas.GetAccount(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	if acc == nil {
-		return nil, problem.WalletOnboarding(wallet.BaasOnboarding)
-	}
-	switch acc.Status {
-	case wallet.BaasClosing, wallet.BaasSubaccountClosed, wallet.BaasClosed:
-		return acc, nil // idempotent replay
-	case wallet.BaasApproved:
-		// proceed
-	default:
-		return nil, problem.WalletOnboarding(acc.Status)
-	}
-
-	realw, err := s.repo.EnsureRealWallet(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	if _, game, _, err := s.repo.LoadWallets(ctx, userID); err != nil {
-		return nil, err
-	} else if game != nil {
-		holds, err := s.repo.ListOpenHoldsForWallet(ctx, game.WalletID, 1)
-		if err != nil {
-			return nil, err
-		}
-		if len(holds) > 0 {
-			return nil, problem.Conflict("existe uma sessão em andamento; finalize antes de encerrar a conta")
-		}
-	}
-	if open, err := s.baas.HasOpenMedReceivable(ctx, realw.WalletID); err != nil {
-		return nil, err
-	} else if open {
-		return nil, problem.MedReceivableOpen()
-	}
-
-	if err := s.baas.SetAccountStatus(ctx, userID, wallet.BaasClosing); err != nil {
-		return nil, err
-	}
-	if _, err := s.executeWithdrawal(ctx, userID, realw, realw.Balance, idemKey, true, true); err != nil {
-		return nil, err
-	}
-	acc.Status = wallet.BaasClosing
-	return acc, nil
-}
-
-// ProcessMedClawback debits what's currently available on a custodied user's
-// real wallet for a MED clawback event, never going negative (Invariant #1
-// stays literal): any shortfall becomes a separate MedReceivable record
-// instead (plan §7.3). Idempotent across webhook redelivery — the debit's
-// idempotency key/hash are derived from the event ref and the ORIGINAL
-// clawback amount (stable across retries), never the dynamically-computed
-// debited amount, so a redelivery after balance has already moved is
-// recognized as a replay rather than re-derived incorrectly. The receivable
-// write always runs regardless of replay status (its own PK is the
-// idempotency guard), so a partial failure between the debit and the
-// receivable write is safely retried to completion by a later redelivery —
-// never left in limbo.
-func (s *WalletService) ProcessMedClawback(ctx context.Context, providerAccountID string, amount int64, ref string) error {
-	acc, err := s.baas.GetAccountByProviderID(ctx, providerAccountID)
-	if err != nil {
-		return err
-	}
-	if acc == nil {
-		return nil // unknown account — idempotent no-op, same posture as ConfirmDeposit's unknown-txid handling
-	}
-	realw, err := s.repo.EnsureRealWallet(ctx, acc.UserID)
-	if err != nil {
-		return err
-	}
-	release, err := acquireWallet(ctx, s.lock, realw.WalletID)
-	if err != nil {
-		return err
-	}
-	defer release()
-
-	_, _, _, err = s.repo.ApplyMedClawback(ctx, realw.WalletID, acc.UserID, amount, ref, reqHash(ref, amount))
-	return err
-}
-
-// ConfirmAsaasDeposit is the Asaas payment-webhook counterpart to
-// pix-gateway's confirm-deposit call for Inter: it resolves the webhook's
-// pixQrCodeId back to the deposit it belongs to (plan §4.3), then defers to
-// the existing, provider-agnostic ConfirmDeposit — which re-queries the
-// payment itself (via queryDeposit → BaasProvider.QueryDepositPayment) rather
-// than trusting this webhook body for money movement (Invariant #11). An
-// unresolvable pixQrCodeId is an idempotent no-op, same as ConfirmDeposit's
-// own unknown-txid handling.
-func (s *WalletService) ConfirmAsaasDeposit(ctx context.Context, paymentID, externalReference string) error {
-	if paymentID == "" || externalReference == "" {
-		return nil
-	}
-	dep, err := s.repo.GetDeposit(ctx, externalReference)
-	if err != nil {
-		return err
-	}
-	if dep == nil || dep.Provider != wallet.ProviderAsaas {
-		return nil
-	}
-	if dep.ProviderPaymentID != paymentID {
-		if err := s.repo.UpdateDepositProviderPaymentID(ctx, dep.Txid, paymentID); err != nil {
-			return err
-		}
-		dep.ProviderPaymentID = paymentID
-	}
-	// ConfirmDeposit re-queries paymentID and its customer record through Asaas;
-	// neither the webhook amount nor webhook customer is used as credit evidence.
-	return s.ConfirmDeposit(ctx, dep.Txid, "", "", false)
 }
 
 // refunded reports whether the charge carries any completed devolução, per
@@ -1270,17 +592,6 @@ func (s *WalletService) broadcastDepositConfirmed(ctx context.Context, userID, w
 	})
 }
 
-// BroadcastCustodyChanged pushes a custody-onboarding transition to the user's
-// connected sockets. Exported because BaasService owns those transitions while
-// the broadcaster is wired here — same best-effort contract as every other
-// broadcast: a failure to notify never fails the transition that happened.
-func (s *WalletService) BroadcastCustodyChanged(ctx context.Context, userID, status string) {
-	s.broadcastEvent(ctx, userID, eventCustodyChanged, map[string]any{
-		"type":   eventCustodyChanged,
-		"status": status,
-	})
-}
-
 // broadcastWithdrawal pushes a real-time withdrawal-outcome event to the
 // user's connected WebSocket(s), if any — same best-effort contract as
 // broadcastDepositConfirmed. Shared by the synchronous Withdraw path and the
@@ -1347,23 +658,14 @@ func (s *WalletService) refundMismatch(ctx context.Context, dep *wallet.PixDepos
 			}
 		}
 	}
-	// The provider is authoritative for whether the money already went back.
-	// In particular, Asaas permits partial refunds, so replaying an opaque
-	// timeout without observing REFUNDED could create another refund.
+	// The provider is authoritative for whether the money already went back:
+	// replaying an opaque timeout without observing the refund could create
+	// another one.
 	if refunded(charge) {
 		return s.markDepositRefunded(ctx, dep)
 	}
 
-	var refundErr error
-	if dep.Provider == wallet.ProviderAsaas {
-		if dep.ProviderPaymentID == "" {
-			refundErr = errors.New("asaas: paid deposit has no provider payment id")
-		} else {
-			refundErr = s.baas.RefundDepositPayment(ctx, dep.UserID, dep.ProviderPaymentID, charge.Amount, "CPF do pagador divergente do CPF cadastrado")
-		}
-	} else {
-		_, refundErr = s.pix.Refund(ctx, charge.E2EID, charge.Amount, "refund#"+dep.Txid)
-	}
+	_, refundErr := s.pix.Refund(ctx, charge.E2EID, charge.Amount, "refund#"+dep.Txid)
 	if refundErr != nil {
 		changed, stateErr := s.repo.TransitionDepositStatus(ctx, dep.Txid, wallet.DepositRefundPending, wallet.DepositRefundFailed, charge.E2EID)
 		if stateErr != nil {
@@ -1402,172 +704,6 @@ func (s *WalletService) markDepositRefunded(ctx context.Context, dep *wallet.Pix
 		}
 	}
 	return nil
-}
-
-// Withdraw debits amount+fee atomically then sends the PIX payout to the CPF
-// on the caller's KYC record — the client never supplies a destination key
-// (Invariant: PIX always goes to the registered owner, never an arbitrary
-// key). Gates: verified KYC (also enforced at the handler). If the CPF has no
-// PIX key registered at the bank, the debit is reversed immediately. Any
-// other payout failure leaves the withdrawal in processing for the
-// reconciliation job to resolve — money is never left in limbo.
-func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, amount int64, idemKey string) (*wallet.Withdrawal, error) {
-	if kycLevel != wallet.KYCVerified {
-		return nil, problem.KYCNotVerified()
-	}
-
-	// With AsaasCustodyEnabled, this user's real money lives in their own Asaas
-	// subaccount, not Inter's pooled account — the payout leg below must route
-	// there instead (plan §5.2). custodied stays false with the flag off, so
-	// every line below behaves exactly as it did before this branch existed.
-	acc, err := s.requireCustodyApproved(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	custodied := acc != nil
-
-	realw, err := s.repo.EnsureRealWallet(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	if custodied {
-		if open, err := s.baas.HasOpenMedReceivable(ctx, realw.WalletID); err != nil {
-			return nil, err
-		} else if open {
-			return nil, problem.MedReceivableOpen()
-		}
-	}
-	return s.executeWithdrawal(ctx, userID, realw, amount, idemKey, custodied, false)
-}
-
-// executeWithdrawal is the shared debit/payout core of Withdraw (isClosure
-// false) and the closure flow's final payout leg (isClosure true, plan
-// §7.2) — same lock/idempotency/debit/dispatch machinery. Callers have already resolved `custodied` and
-// any pre-lock gating (custody approval, MED receivables) themselves — this
-// function only ever moves money.
-func (s *WalletService) executeWithdrawal(ctx context.Context, userID string, realw *wallet.Wallet, amount int64, idemKey string, custodied, isClosure bool) (*wallet.Withdrawal, error) {
-	withdrawalID := "withdraw#" + userID + "#" + idemKey
-	kyc, err := s.kyc.Get(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	pixKey := kyc.CPF
-
-	release, err := acquireWallet(ctx, s.lock, realw.WalletID)
-	if err != nil {
-		return nil, err
-	}
-	released := false
-	defer func() {
-		if !released {
-			release()
-		}
-	}()
-
-	if isClosure {
-		// Re-read the balance under the lock — the caller's snapshot (taken
-		// before acquiring this lock) could be stale. Closure must always pay
-		// out exactly what's there NOW: a stale snapshot could either overshoot
-		// (rejected by DebitWithdrawal's balance>=amount condition, leaving closure
-		// stuck) or undershoot (leaving dust the closure was supposed to sweep).
-		fresh, err := s.repo.GetWallet(ctx, realw.WalletID)
-		if err != nil {
-			return nil, err
-		}
-		amount = fresh.Balance
-		if amount == 0 {
-			return &wallet.Withdrawal{
-				WithdrawalID: withdrawalID, WalletID: realw.WalletID, UserID: userID, Status: wallet.WithdrawCompleted,
-			}, nil
-		}
-	}
-
-	// Idempotent replay: same key → return the existing withdrawal. Checked
-	// under the wallet lock (not before it) so two concurrent identical calls
-	// can't both pass this check before either has written anything.
-	if existing, err := s.repo.GetWithdrawal(ctx, withdrawalID); err != nil {
-		return nil, err
-	} else if existing != nil {
-		return existing, nil
-	}
-
-	rh := reqHash(pixKey, amount)
-
-	// Build the withdrawal record up front so the balance debit, ledger entry,
-	// idempotency guard, AND the processing withdrawal row all
-	// commit in a single TransactWriteItems. Previously the record was written
-	// by a separate PutWithdrawal call, so a transient failure (or a crash)
-	// between the two left a committed debit with no processing row — money in
-	// limbo, unreconcilable (SEC-01, Invariant #12). Co-writing them makes the
-	// debit and its tracking row atomic: on replay the guard AND the record both
-	// exist, so GetWithdrawal returns it and there is no orphan (and no nil
-	// deref in the handler).
-	w := &wallet.Withdrawal{
-		WithdrawalID: withdrawalID,
-		WalletID:     realw.WalletID,
-		UserID:       userID,
-		Amount:       amount,
-		PixKey:       pixKey,
-		Provider: func() string {
-			if custodied {
-				return wallet.ProviderAsaas
-			}
-			return ""
-		}(),
-		Status:         wallet.WithdrawProcessing,
-		IdempotencyKey: idemKey,
-		CreatedAt:      repositories.NowStr(),
-		UpdatedAt:      repositories.NowStr(),
-	}
-	_, replayed, err := s.repo.DebitWithdrawal(ctx, w, amount, withdrawalID, rh)
-	if err != nil {
-		return nil, err
-	}
-	if replayed {
-		// The debit itself was a replay (same idempotency key already
-		// committed) — someone else is mid-flight on this withdrawal. Never
-		// re-transfer; return whatever is on record.
-		return s.repo.GetWithdrawal(ctx, withdrawalID)
-	}
-	// The durable processing row and debit now own convergence. Release the
-	// advisory wallet lock before any provider network call so its 10s lease can
-	// never expire mid-call and admit overlapping critical sections.
-	release()
-	released = true
-
-	if custodied {
-		// Asaas transfers never confirm synchronously — leg 1 (plan §5.2) is
-		// submitted and the withdrawal is always left `processing`; the
-		// transfer-authorization webhook + cmd/reconcile drive it to completed
-		// once QueryTransfer reports DONE (§6). Submission failure itself is
-		// non-fatal here (same posture as the Inter path below): the debit
-		// already committed, so this never blocks on it — it just means
-		// reconcile has to retry the submission too.
-		if err := s.baas.SubmitWithdrawalPayout(ctx, userID, amount, pixKey, withdrawalID); err != nil {
-			slog.Warn("asaas withdrawal payout submission failed, left in processing", "withdrawal_id", withdrawalID, "err", err)
-		}
-		return w, nil
-	}
-
-	res, err := s.pix.Transfer(ctx, pixKey, amount, interIdemKey(withdrawalID))
-	if err != nil {
-		if errors.Is(err, pix.ErrKeyNotFound) {
-			// Nothing to retry — the registered CPF has no PIX key at the bank.
-			// Refund now instead of leaving it processing for reconciliation.
-			s.reverse(ctx, *w)
-			return nil, problem.PixKeyNotFound()
-		}
-		// Debit already happened; leave processing for reconciliation to resolve.
-		slog.Warn("withdrawal transfer failed, left in processing", "withdrawal_id", withdrawalID, "err", err)
-		return w, nil
-	}
-	w.Status = wallet.WithdrawCompleted
-	w.E2EID = res.E2EID
-	if err := s.repo.UpdateWithdrawal(ctx, withdrawalID, map[string]any{"status": wallet.WithdrawCompleted, "e2e_id": res.E2EID}); err != nil {
-		return nil, err
-	}
-	s.broadcastWithdrawal(ctx, userID, eventWithdrawalComplete, withdrawalID, amount)
-	return w, nil
 }
 
 // WalletBalances is the M2M balance snapshot a skill game reads to show a
@@ -1614,9 +750,6 @@ func (s *WalletService) requireActivated(ctx context.Context, userID string) (re
 // and deadlock-free for any number of wallets. The ledger pair and the
 // idempotency guard are co-written in one transaction by repo.Transfer.
 func (s *WalletService) ringTransfer(ctx context.Context, from, to *wallet.Wallet, amount, creditAmount int64, debitType, creditType, ns, idemKey string, extra ...types.TransactWriteItem) (debit, credit *wallet.LedgerEntry, err error) {
-	if err := s.requireNotFrozen(ctx, from.UserID); err != nil {
-		return nil, nil, err
-	}
 	release, err := acquireWallets(ctx, s.lock, from.WalletID, to.WalletID)
 	if err != nil {
 		return nil, nil, err
@@ -1712,15 +845,6 @@ func (s *WalletService) ReturnFromGame(ctx context.Context, userID string, amoun
 // at their personal limit could simply buy sandbox directly and the limit would
 // mean nothing. Sandbox remains a sink (Invariant #6) — this conversion is
 // one-way and can never be undone.
-//
-// Once the caller's game wallet is Asaas-custodied (plan §9.1a), this also
-// settles the real money externally: subaccount → CTech's Asaas master
-// account, via the same transfer-intent/authorization/reconcile machinery as
-// every other CreateTransfer call in this plan. Pre-custody (or for a
-// non-custodied user) it stays exactly as it is today: ledger-only, no
-// external call. A settlement submission failure is logged and left for
-// cmd/reconcile — the sandbox credits are already granted and real, so this
-// never unwinds the already-committed ledger transfer.
 func (s *WalletService) PurchaseSandbox(ctx context.Context, userID string, amount int64, idemKey string) (debit, credit *wallet.LedgerEntry, err error) {
 	_, game, sandbox, err := s.requireActivated(ctx, userID)
 	if err != nil {
@@ -1735,64 +859,6 @@ func (s *WalletService) PurchaseSandbox(ctx context.Context, userID string, amou
 	)
 	if err != nil {
 		return nil, nil, err
-	}
-	if acc, aerr := s.baas.GetIfApproved(ctx, userID); aerr == nil && acc != nil {
-		if serr := s.baas.SubmitGamePurchaseSettlement(ctx, userID, credit.SK, amount); serr != nil {
-			slog.Error("ALARM asaas game-purchase settlement submission failed; left for reconcile",
-				"user_id", userID, "credit_sk", credit.SK, "err", serr)
-		}
-	}
-	return debit, credit, nil
-}
-
-// ReverseSandboxGamePurchase undoes an unused game→sandbox purchase (plan
-// §9.1a), mirroring §9.2's eligibility rule exactly: refundable iff the
-// sandbox wallet has had zero outgoing (debit) ledger entries since
-// creditSK, checked with the same AnyDebitSince query §9.2 uses. Reverses the
-// ORIGINATING transfer exactly — burns the sandbox credits this specific
-// purchase granted, credits `game` back the real-money amount it debited —
-// never a general sandbox→game conversion route (Invariant #6): this only
-// ever reverses the one named, still-untouched transaction, gated the same
-// way §9.2's refund is gated.
-//
-// Invariant #6 scope note, per root CLAUDE.md's "if a change appears to
-// require breaking an invariant, stop and ask": this reversal DOES credit
-// `game` (real money) from a sandbox-side operation, which is the literal
-// shape Invariant #6 forbids. It does not weaken the invariant in substance —
-// no arbitrary sandbox balance is ever spendable as game money, only the one
-// specific, still-untouched transaction the caller names, gated by the exact
-// same untouched-since-purchase check §9.2 already uses to carve out its own
-// narrow exception to the same invariant. The AnyDebitSince gate is the only
-// thing standing between "transaction reversal" and "conversion route" — it
-// must never be weakened or bypassed.
-func (s *WalletService) ReverseSandboxGamePurchase(ctx context.Context, userID, creditSK, idemKey string) (debit, credit *wallet.LedgerEntry, err error) {
-	_, game, sandbox, err := s.requireActivated(ctx, userID)
-	if err != nil {
-		return nil, nil, err
-	}
-	ok, err := s.repo.AnyDebitSince(ctx, sandbox.WalletID, creditSK)
-	if err != nil {
-		return nil, nil, err
-	}
-	if ok {
-		return nil, nil, problem.SandboxPurchaseUsed()
-	}
-	amount, err := s.repo.AmountAtSK(ctx, sandbox.WalletID, creditSK)
-	if err != nil {
-		return nil, nil, err
-	}
-	credits := wallet.ToSandboxCredits(amount)
-	debit, credit, err = s.ringTransfer(ctx, sandbox, game, credits, amount,
-		wallet.EntrySandboxPurchaseReversal, wallet.EntryGameFundReversal, "sandbox_purchase_reversal", idemKey,
-	)
-	if err != nil {
-		return nil, nil, err
-	}
-	if acc, aerr := s.baas.GetIfApproved(ctx, userID); aerr == nil && acc != nil {
-		if serr := s.baas.SubmitGamePurchaseReversal(ctx, userID, creditSK, amount); serr != nil {
-			slog.Error("ALARM asaas game-purchase reversal submission failed; left for reconcile",
-				"user_id", userID, "credit_sk", creditSK, "err", serr)
-		}
 	}
 	return debit, credit, nil
 }
@@ -1877,16 +943,6 @@ func (s *WalletService) HoldGame(ctx context.Context, userID string, amount int6
 	if _, err := s.requireNotExcluded(ctx, userID); err != nil { // defense in depth: an excluded user must not re-enter play
 		return nil, err
 	}
-	// Invariant #13 fail-closed kill-switch (plan §6) + frozen-account gate
-	// (plan §7.1): a new hold must never be opened against a custodied user
-	// whose Asaas balance and ledger already disagree, or whose subaccount
-	// is frozen — a not-yet-onboarded user has no BaasAccount row at all and
-	// is unaffected.
-	if acc, err := s.baas.GetAccount(ctx, userID); err != nil {
-		return nil, err
-	} else if acc != nil && (acc.ConservationDrift || acc.Status == wallet.BaasFrozen) {
-		return nil, problem.AccountBlocked()
-	}
 	release, err := acquireWallet(ctx, s.lock, game.WalletID)
 	if err != nil {
 		return nil, err
@@ -1951,9 +1007,6 @@ func (s *WalletService) ReleaseHold(ctx context.Context, userID, holdID, idemKey
 func (s *WalletService) CashoutGame(ctx context.Context, userID string, amount int64, tableRef string, holdIDs []string, idemKey string) (*wallet.LedgerEntry, error) {
 	_, game, _, err := s.requireActivated(ctx, userID)
 	if err != nil {
-		return nil, err
-	}
-	if err := s.requireNotFrozen(ctx, userID); err != nil { // plan §7.1 — money-out path
 		return nil, err
 	}
 	release, err := acquireWallet(ctx, s.lock, game.WalletID)

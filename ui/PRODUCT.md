@@ -10,7 +10,7 @@ web
 
 ## Users
 
-Brazilian end users of the `aoctech.app` platform who hold money in the wallet: people paying subscriptions and services, depositing/withdrawing via PIX, and — only after explicit opt-in — playing skill games (poker/dominó) inside a ring-fenced pot. They are in a task every time they open the app: check a balance, move money, read a statement. Primary audience is the consumer; the surface is authenticated and personal. Secondary, surfaced only through the opt-in gambling flow, is the player persona — but it is the same person, never a separate screen identity.
+Brazilian end users of the `aoctech.app` platform who hold money in the wallet: people paying subscriptions and services (PIX deposit/withdraw is currently off pending a new provider), and — only after explicit opt-in — playing skill games (poker/dominó) inside a ring-fenced pot. They are in a task every time they open the app: check a balance, move money, read a statement. Primary audience is the consumer; the surface is authenticated and personal. Secondary, surfaced only through the opt-in gambling flow, is the player persona — but it is the same person, never a separate screen identity.
 
 ## Product Purpose
 

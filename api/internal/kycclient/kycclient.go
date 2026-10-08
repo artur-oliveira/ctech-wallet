@@ -39,9 +39,6 @@ type KYCAddress struct {
 }
 
 // KYC is the unmasked identity record account returns to internal callers.
-// Email/Phone/Address are consumed by Asaas subaccount onboarding (plan
-// §3.1) — all three are confirmed present on ctech-account's internal KYC
-// endpoint (phone as "phone_number", E.164, collected at Basic KYC).
 type KYC struct {
 	Level     string     `json:"level"`
 	CPF       string     `json:"cpf"`

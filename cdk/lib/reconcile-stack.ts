@@ -26,8 +26,8 @@ const API_DIR = path.join(__dirname, '../../api');
 /**
  * Tables the reconciliation job touches unconditionally (wallet_-prefixed
  * names). The sandbox/product purchase tables are here because their pending
- * sweeps run on every invocation regardless of AsaasCustodyEnabled — omitting
- * either table makes the entire reconciliation invocation fail AccessDenied.
+ * sweeps run on every invocation — omitting either table makes the entire
+ * reconciliation invocation fail AccessDenied.
  */
 export const RECONCILE_TABLES = [
   'wallets',
@@ -40,17 +40,6 @@ export const RECONCILE_TABLES = [
 
 export const RECONCILE_DEPOSIT_TABLES = [TABLE_PIX_DEPOSITS] as const;
 export const RECONCILE_HOLD_TABLES = [TABLE_HOLDS] as const;
-
-/**
- * Asaas BaaS custody tables the reconcile job touches ONLY inside its
- * `if cfg.AsaasCustodyEnabled` branch (ReconcileTransferIntents,
- * RunConservationCheck — implementation plan §6). Granted now, inert until the
- * flag flips, same "flip = ops decision, not a CDK redeploy" posture as the
- * SSM grants below. wallet_settlement_legs is deliberately excluded: no
- * application code reads/writes it yet (no settlement caller exists —
- * dynamodb-stack.ts's own note on that table).
- */
-const RECONCILE_ASAAS_TABLES = ['wallet_baas_accounts', 'wallet_transfer_intents', 'wallet_med_receivables'];
 
 interface TableResource {
   readonly tableArn: string;
@@ -175,37 +164,16 @@ export class ReconcileStack extends cdk.Stack {
       resources: [ledgerArn, `${ledgerArn}/index/*`],
     }));
 
-    // ── Asaas BaaS custody tables (implementation plan §6) — read/write, no
-    // DeleteItem: nothing in cmd/reconcile deletes from any of these.
-    const asaasArns = tableAndIndexArns(RECONCILE_ASAAS_TABLES, dynamoDBTables);
-    role.addToPolicy(new iam.PolicyStatement({
-      actions: [
-        'dynamodb:GetItem',
-        'dynamodb:PutItem',
-        'dynamodb:UpdateItem',
-        'dynamodb:Query',
-        'dynamodb:BatchGetItem',
-        'dynamodb:ConditionCheckItem',
-      ],
-      resources: asaasArns,
-    }));
-
     // ── SSM: wallet-client-id/secret (for the internal:kyc M2M call) and the
     // account base URL — reconcile no longer talks to Inter directly, so it
     // needs none of the inter/* secrets (see pixGatewayOutboundFunctionArn
-    // above). The asaas/* leaves are read only inside cmd/reconcile's
-    // `if cfg.AsaasCustodyEnabled` branch (newBaasService) — inert until the
-    // flag flips, same posture as the DynamoDB grant above.
+    // above).
     role.addToPolicy(new iam.PolicyStatement({
       actions: ['ssm:GetParameter'],
       resources: [
         `arn:aws:ssm:*:*:parameter${SSM_WALLET(environment).walletClientId}`,
         `arn:aws:ssm:*:*:parameter${SSM_WALLET(environment).walletClientSecret}`,
         `arn:aws:ssm:*:*:parameter${SSM_ACCOUNT(environment).baseUrl}`,
-        `arn:aws:ssm:*:*:parameter${SSM_WALLET(environment).asaasApiKeyMaster}`,
-        `arn:aws:ssm:*:*:parameter${SSM_WALLET(environment).asaasWebhookToken}`,
-        `arn:aws:ssm:*:*:parameter${SSM_WALLET(environment).asaasParentApiKey}`,
-        `arn:aws:ssm:*:*:parameter${SSM_WALLET(environment).asaasParentWalletId}`,
         // M2M sandbox-purchase client registry — reconcile reads this to
         // retry failed webhook notify-back deliveries (RetryFailedM2MWebhooks).
         `arn:aws:ssm:*:*:parameter${SSM_WALLET(environment).m2mClients}`,
@@ -237,9 +205,6 @@ export class ReconcileStack extends cdk.Stack {
         // CFN template as plaintext — never do this with a SecureString).
         CTECH_URL: ssm.StringParameter.valueForStringParameter(this, SSM_ACCOUNT(environment).baseUrl),
         WALLET_CLIENT_ID: ssm.StringParameter.valueForStringParameter(this, SSM_WALLET(environment).walletClientId),
-        // Every settlement leg reconcile submits needs a destination wallet,
-        // and config.load() refuses to start in production without one.
-        ASAAS_PARENT_WALLET_ID: ssm.StringParameter.valueForStringParameter(this, SSM_WALLET(environment).asaasParentWalletId),
         // AWS_REGION is a reserved Lambda variable — set by the runtime, never here.
       },
       // NOTE: a Lambda has no /opt/app/start.sh, so WALLET_CLIENT_SECRET cannot be

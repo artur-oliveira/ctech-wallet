@@ -32,13 +32,12 @@ export const metadata: Metadata = {
   },
 
   description:
-    'Carteira digital do ecossistema CTech. Centralize seu saldo para pagar assinaturas, utilizar serviços e movimentar dinheiro via PIX.',
+    'Carteira digital do ecossistema CTech. Centralize seu saldo para pagar assinaturas e utilizar serviços.',
 
   keywords: [
     'CTech Ledger',
     'wallet',
     'digital wallet',
-    'pix',
     'saldo',
     'payments',
     'assinaturas',

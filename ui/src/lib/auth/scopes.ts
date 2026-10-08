@@ -16,7 +16,6 @@ export const WALLET_SCOPES = [
   'wallet:game:write',
   'wallet:gambling:read',
   'wallet:gambling:write',
-  'wallet:custody:write',
 ] as const
 
 export const OAUTH_SCOPE = [...IDENTITY_SCOPES, ...WALLET_SCOPES].join(' ')

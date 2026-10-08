@@ -21,7 +21,7 @@ export function QueryProvider({children}: { children: ReactNode }) {
              * from the caller's side.
              *
              * 4xx are never retried — a 403 kyc-not-verified or a 409
-             * wallet-onboarding is an answer, not a hiccup, and retrying it
+             * insufficient-balance is an answer, not a hiccup, and retrying it
              * just delays showing the user their actual next step.
              */
             retry: (failureCount, error) => {

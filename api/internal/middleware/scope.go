@@ -24,7 +24,6 @@ const (
 	ScopeWalletGameWrite             = "wallet:game:write"
 	ScopeWalletGamblingRead          = "wallet:gambling:read"
 	ScopeWalletGamblingWrite         = "wallet:gambling:write"
-	ScopeWalletCustodyWrite          = "wallet:custody:write"
 
 	ScopeWalletCredit      = "internal:wallet:credit"     // sandbox only
 	ScopeWalletDebit       = "internal:wallet:debit"      // sandbox only
@@ -94,7 +93,6 @@ var walletPublicScopes = []string{
 	ScopeWalletGameWrite,
 	ScopeWalletGamblingRead,
 	ScopeWalletGamblingWrite,
-	ScopeWalletCustodyWrite,
 }
 
 // WalletPublicScopes returns every public capability enforced by this API.

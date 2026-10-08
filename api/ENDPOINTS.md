@@ -40,7 +40,7 @@ All errors are RFC 7807 Problem JSON (`problem/*`); never raw errors or
 
 | Method | Path                               | Handler      | Auth     | Body | Behaviour                                                                                                                                                                                                                                                                                                                                                    |
 |--------|------------------------------------|--------------|----------|------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| GET    | `/v1.0/auth/me`                    | `auth.go:11` | user JWT | —    | Returns `Me{user_id, terms_addendum_accepted, terms_addendum_version, gambling_addendum_accepted, gambling_addendum_version}`. Both `*_accepted` flags are **computed** against the current version constants (`user.go:44`, `domain/wallet/user.go:53,60`) — never stored — so bumping a version re‑gates everyone at once. UI gates the whole app on this. Also carries `deposit{allowed, blocked_by, kyc_level, custody_required, custody_status}` — the pre-flight deposit gate (`services/wallet.go` `DepositReadiness`) the dashboard renders its deposit button from. Omitted entirely if the probe errors: absent means "unknown, behave as before", never "blocked". See `../docs/specs/2026-08-29-deposit-gate.md`. |
+| GET    | `/v1.0/auth/me`                    | `auth.go:11` | user JWT | —    | Returns `Me{user_id, terms_addendum_accepted, terms_addendum_version, gambling_addendum_accepted, gambling_addendum_version}`. Both `*_accepted` flags are **computed** against the current version constants (`user.go:44`, `domain/wallet/user.go:53,60`) — never stored — so bumping a version re‑gates everyone at once. UI gates the whole app on this. |
 | POST   | `/v1.0/auth/terms-addendum/accept` | `auth.go:20` | user JWT | —    | Records acceptance of the **current** terms addendum version (partial upsert, never overwrites the gambling acceptance). `204 No Content`. `repositories/user.go:39`.                                                                                                                                                                                        |
 
 ---
@@ -55,24 +55,21 @@ Public scope map:
 | `wallet:terms:write` | Accept the Wallet terms addendum. |
 | `wallet:balances:read` | Read balances and connect to the balance-update WebSocket. |
 | `wallet:ledger:read` | Read statements for real, game, and sandbox wallets. |
-| `wallet:deposits:write` | Open a PIX deposit. |
-| `wallet:withdrawals:write` | Create a PIX withdrawal; KYC and step-up MFA still apply. |
+| `wallet:deposits:write` | Declared but unused — no deposit route exists (`../docs/specs/2026-10-07-asaas-removal.md`). |
+| `wallet:withdrawals:write` | Declared but unused — no withdrawal route exists. |
 | `wallet:sandbox-purchases:read` | Read sandbox-credit purchase history. |
 | `wallet:sandbox-purchases:write` | Buy sandbox credits or refund an eligible purchase. |
 | `wallet:product-purchases:read` | Read digital-product purchase history. |
 | `wallet:game:write` | Move value `real↔game`; feature/KYC/limit gates still apply. |
 | `wallet:gambling:read` | Read responsible-gambling limits and status. |
 | `wallet:gambling:write` | Activate gambling and manage limits or self-exclusion. |
-| `wallet:custody:write` | Start custody onboarding or account closure. |
 
-Scopes add a permission gate; they never bypass KYC, recent-MFA, feature flags,
+Scopes add a permission gate; they never bypass KYC, feature flags,
 idempotency, responsible-gambling limits, ownership, or financial invariants.
 
 | Method | Path                                        | Handler         | Extra gate                                               | Body                                                           | Side‑effects / business rules                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 |--------|---------------------------------------------|-----------------|----------------------------------------------------------|----------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| GET    | `/v1.0/wallet/`                             | `wallet.go:17`  | —                                                        | —                                                              | Returns `{real, activated, [game], [sandbox], [custody_status]}`. **`real` is always present** — the response shape does not change with custody onboarding progress, and `custody_status` is a reporting-only extra a client may ignore. It used to blank all three wallets until the subaccount was approved, which dropped `real` from a response whose contract requires it and stranded `sandbox` (play currency, no custody involvement) behind an unrelated step; whether the caller may deposit is answered by the gate on `GET /auth/me`, never by withholding balances. `activated` and `game` remain tied exclusively to gambling consent. An independently created `sandbox` is returned before activation so its read-only ledger remains available; its presence never implies consent. `real` wallet is auto‑created on first access (`EnsureRealWallet`).                                                                                                                                                                                                                                                                        |
-| POST   | `/v1.0/wallet/deposits`                     | `wallet.go:32`  | `RequireKYC(enhanced)` (`router.go:47`)                  | `{amount:int64>0}` (`dto.go:5`)                                | Opens a PIX **static QR code** against the caller's own Asaas subaccount and records a pending deposit. **There is no Inter path** (Invariant #14): without an approved subaccount this is `409 wallet-onboarding`, never a charge in CTech's own account. Gates, in order: approved subaccount → no open MED receivable → monthly receipt allowance (`429 deposit-receipts-exhausted`) → `MaxInboundAmount` → the wallet's deposit range. All of them run **before** any charge is opened. Idempotency key required (`Idempotency-Key` header), registered before the charge so a retry never opens a second QR (SEC‑08); a replay of an unpaid deposit is answered from the stored QR, because a static QR has no payment at the provider until someone pays it. Returns `{txid, amount, status, pix_copia_e_cola, qr_code_base64, expires_at}`. **No balance change yet** — credit happens only at `ConfirmDeposit` after re‑query. See `../docs/specs/2026-08-30-asaas-only-deposits.md`. |
-| POST   | `/v1.0/wallet/withdrawals`                  | `wallet.go:57`  | `KYC verified` + `RequireRecentMFA(5m)` (`router.go:45`) | `{amount:int64>0}` (`dto.go:12`)                               | Debits `amount+fee` atomically, then sends a PIX payout to the **CPF on the caller's KYC record** (never a client‑supplied key — anti‑fraud). Destination is verified same‑owner at Inter. Fee per‑wallet / absolute floor (§6). If the CPF has no PIX key ⇒ immediate reverse + `pix-key-not-found`. Any other payout failure ⇒ withdrawal left in `processing` for the reconciliation job (Invariant #12). Returns the `Withdrawal` (status `completed` or `processing`→`202 Accepted`). `wallet.go:546`.                                                                                                   |
+| GET    | `/v1.0/wallet/`                             | `wallet.go:17`  | —                                                        | —                                                              | Returns `{real, activated, [game], [sandbox]}`. **`real` is always present.** `activated` and `game` remain tied exclusively to gambling consent. An independently created `sandbox` is returned before activation so its read-only ledger remains available; its presence never implies consent. `real` wallet is auto‑created on first access (`EnsureRealWallet`).                                                                                                                                                                                                                                                                        |
 | POST   | `/v1.0/wallet/sandbox/purchase`             | `wallet.go:85`  | —                                                        | `{amount:int64>0}`                                             | Converts **game→sandbox** credits (`PurchaseSandbox`). Source is `game`, **never `real`** — real money reaches sandbox only by first crossing `real→game` (Invariant #7). Sandbox is a sink (Invariant #6). Credit = `amount × 10` credits (`model.go:115`). Idempotency key required.                                                                                                                                                                                                                                                                                                                        |
 | GET    | `/v1.0/wallet/sandbox/purchases`            | `sandbox_purchase.go` | —                                                 | —                                                              | Read-only, newest-first history of the caller's sandbox-credit purchase records, including M2M-opened purchases. Ownership is enforced by `gsi_user` (`user_id`, `created_at`); supports `limit` (default 50, max 200) and opaque `cursor`. Separate from the sandbox ledger. |
 | GET    | `/v1.0/wallet/product-purchases`            | `m2m_product_purchase.go` | —                                             | —                                                              | Read-only, newest-first history of generic digital-product purchases owned by the caller, including M2M-created sales. Queries `gsi_user` and returns no requesting-client/webhook metadata. Supports `limit` and opaque `cursor`; these records have no ledger effect. |
@@ -86,37 +83,13 @@ idempotency, responsible-gambling limits, ownership, or financial invariants.
 | POST   | `/v1.0/wallet/gambling/activate`            | `wallet.go:95`  | `RequireKYC(basic)` (`router.go:76`)                     | `{accept_addendum:bool(required), daily,weekly,monthly:int64}` | Opts the caller into `game`+`sandbox`. Records gambling‑addendum acceptance (audited) then activates. Gates: `kyc_level != ""` (a **minimum** of `basic`, so `enhanced` also passes — see `ActivateGambling`) **and** current gambling addendum accepted. Mandatory limits on first activation. Idempotent (replay returns same wallets, appends nothing). `wallet.go:128`.                                                                                                                                                                                                                                                                                                              |
 | POST   | `/v1.0/wallet/game/deposit`                 | `wallet.go:115` | `RequireKYC(verified)`                                   | `{amount:int64>0}`                                             | **Registered ONLY when `GAMBLING_ENABLED=true`** (`router.go:73`) — else `404`. `real→game` (`FundGame`): the **one** edge real money enters the ring‑fence, metered by the personal limit engine (GROSS INFLOW, Invariant #8). Also capped at `MaxInboundAmount`. `wallet.go:680`.                                                                                                                                                                                                                                                                                                                           |
 
-### 3b. Custody onboarding
+### 3b. User PIX deposit / withdrawal — currently none
 
-There is one deposit rail — a PIX static QR on the user's own Asaas subaccount,
-opened under their CPF — so onboarding is a precondition for depositing at all,
-not an optional upgrade. The provider charges a **non-refundable** fee per
-subaccount at creation, which is why paying it and opening the subaccount are
-two separate durable steps. Design: `../docs/specs/2026-08-30-asaas-only-deposits.md`.
-
-Statuses: `fee_pending` → `fee_paid` → `onboarding` → `pending_documents` →
-`pending_approval` → `approved`. A provider **rejection returns to
-`pending_documents`**, never to `closed`: the fee is already spent, so the user
-re-sends documents rather than paying again.
-
-| Method | Path                        | Scope                     | Handler       | Body                              | Behaviour |
-|--------|-----------------------------|---------------------------|---------------|-----------------------------------|-----------|
-| POST   | `/v1.0/wallet/onboarding`   | `wallet:custody:write` + `RequireKYC(enhanced)` | `baas.go:33` | `{income_value:int64>0}` | Reserves the caller's custody record and opens the verification-fee charge. Creates **no** subaccount — the provider bills the moment one exists. Refused with `404` for a user outside the `custody_enabled` allowlist (operational state, not a feature). Idempotent: called again while the fee is outstanding it returns the same stored QR; called after onboarding moved on it returns the status with no charge. Returns `{status, fee?{amount, qr_code, qr_code_base64, refundable:false}, onboarding_url?}`. |
-| GET    | `/v1.0/wallet/onboarding`   | `wallet:balances:read`    | `baas.go:56`  | —                                 | The onboarding step the UI polls. Read-only: opens no charge and no subaccount. For an in-progress account older than the provider's 15s minimum it first re-queries `GET /v3/myAccount/status` and the pending-document list, so the response names the actual outstanding step (and its `onboarding_url`) instead of a generic "under review". `404` before onboarding starts. |
-| POST   | `/v1.0/wallet/closure`      | `wallet:custody:write` + `RequireRecentMFA(5m)` | `baas.go:17` | — | Starts the account-closure state machine (plan §7.2). `202 Accepted` with the new status. |
-
-### 3c. Asaas webhook routes (static token, no JWT)
-
-Gated on the `asaas-access-token` header compared in constant time against
-`/{service}/{env}/asaas/webhook-token` (`middleware/asaas_webhook.go`), which
-**fails closed on an empty configured token**. These are ordinary API routes:
-the mTLS-verified HTTP API in `cdk/lib/pix-gateway-stack.ts` exists because
-Inter demands a client certificate, and Asaas offers a shared token instead.
-
-| Method | Path                                            | Handler        | Behaviour |
-|--------|-------------------------------------------------|----------------|-----------|
-| POST   | `/v1.0/internal/asaas/webhook`                  | `baas.go:121`  | Single entry point for every asynchronous Asaas event. `ACCOUNT_STATUS_*` → re-query `GET /v3/myAccount/status` and act only on `general == APPROVED` (a `500` is returned on a failed re-query so Asaas redelivers). `PAYMENT_RECEIVED`/`PAYMENT_CONFIRMED` → split by external-reference prefix: `vfee#` is the verification fee (settled on CTech's master account, creates the subaccount), anything else is a user deposit. `TRANSFER_MED_CLAWBACK`/`PIX_MED_RETURNED` stay **quarantined with an ALARM** — no authoritative provider-side MED query exists yet, and a bearer-token webhook must never debit a wallet on its own. |
-| POST   | `/v1.0/internal/asaas/transfer-authorization`   | `asaas.go:88`  | Synchronous approve/refuse for every outbound transfer. Compares amount **and** destination against the `wallet_transfer_intents` row written before submission; any divergence, missing field, or unknown reference is `REFUSED` with a reason. Always `200` — the verdict is in the body. |
+There is no user deposit, withdrawal, custody-onboarding, closure, or Asaas
+webhook route: the BaaS custody provider was removed
+(`../docs/specs/2026-10-07-asaas-removal.md`). Legacy Inter deposit rows are still
+confirmed through `POST /internal/pix/confirm-deposit` (§4) and swept by the
+reconcile job.
 
 ---
 
@@ -205,14 +178,18 @@ non‑empty `sid` (`scope.go:42`).
     requirement (`EnsureSandboxWallet`, `repositories/wallet.go`).
 11. **Webhook never source of truth** — `ConfirmDeposit` re‑queries Inter by
     `txid` before crediting; webhook body only supplies the payer CPF/name
-    (masked‑compare, fails closed) (`wallet.go:278`, `maskedCPFMatches:392`).
-12. **No money in limbo** — withdrawal `processing` resolved by the
-    **reconcile** job (`services/reconcile.go:33`): completed ⇒ mark done,
+    (masked‑compare, fails closed) (`wallet.go:358`, `maskedCPFMatches:490`).
+12. **User money never lands in CTech's Inter account** — enforced by absence:
+    no route opens a user deposit or pays out a withdrawal
+    (`../docs/specs/2026-10-07-asaas-removal.md`).
+13. *(Retired 2026-10-07 — was the BaaS verification-fee rule.)*
+14. **No money in limbo** — legacy withdrawal `processing` resolved by the
+    **reconcile** job (`services/reconcile.go:35`): completed ⇒ mark done,
     not‑found ⇒ reverse (credit back), failed reversal ⇒ `refund_failed` +
     alarm. Deposit sweep re‑queries pending deposits, but a paid deposit with no
     verified payer identity remains quarantined and is never credited.
-    (`reconcile.go:112`). Stale `held` holds alarm only, never auto‑release
-    (`reconcile.go:135`).
+    (`reconcile.go:139`). Stale `held` holds alarm only, never auto‑release
+    (`reconcile.go:180`).
 
 ---
 

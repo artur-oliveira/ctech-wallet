@@ -49,8 +49,7 @@ func sandboxPurchaseTxID(userID, idemKey, requestingClient string) string {
 
 // PurchaseSandboxDirect sells a fixed sandbox-credit pack for a fixed PIX
 // price, charged via the existing Inter integration to CTech's own pooled
-// account — never a wallet-to-wallet transfer, never Asaas (custody is not
-// involved). No KYC gate: this is a product sale (CDC), not custody (Res.
+// account — never a wallet-to-wallet transfer (custody is not involved). No KYC gate: this is a product sale (CDC), not custody (Res.
 // Conj. 16/2025) — plan §9.1. SKUs are a fixed, server-side table — never
 // client-supplied, same "never trust the client with a money-shaped number"
 // posture as every other amount in this codebase.

@@ -50,15 +50,7 @@ const (
 	TypeDepositLimitExceeded    = "/problems/deposit-limit-exceeded"
 	TypeExclusionChangeRejected = "/problems/exclusion-change-rejected"
 
-	// Asaas BaaS custody (docs/plans/2026-07-30-asaas-baas-implementation-plan.md §8)
-	TypeWalletOnboarding    = "/problems/wallet-onboarding"
-	TypeAccountBlocked      = "/problems/account-blocked"
-	TypeMedReceivableOpen   = "/problems/med-receivable-open"
 	TypeSandboxPurchaseUsed = "/problems/sandbox-purchase-used"
-
-	// Asaas-only deposits (docs/specs/2026-08-30-asaas-only-deposits.md)
-	TypeDepositReceiptsExhausted = "/problems/deposit-receipts-exhausted"
-	TypeCustodyFeeUnpaid         = "/problems/custody-fee-unpaid"
 )
 
 // FieldError is a single field-level validation failure. It mirrors the shape
@@ -261,48 +253,6 @@ func DepositLimitExceeded(window string, limit, used int64, resetsAt time.Time) 
 // ExclusionChangeRejected: revoke too early, or a shortening re-exclusion.
 func ExclusionChangeRejected(detail string) *Problem {
 	return New(http.StatusConflict, TypeExclusionChangeRejected, "Exclusion Change Rejected", detail)
-}
-
-// WalletOnboarding: the caller's Asaas subaccount is not yet approved — status
-// carries the current custody lifecycle state (plan §4.1) so the UI can show
-// the right onboarding step instead of a balance card.
-func WalletOnboarding(status string) *Problem {
-	return New(http.StatusConflict, TypeWalletOnboarding, "Wallet Onboarding",
-		"a carteira ainda não está pronta para esta operação; status atual: "+status)
-}
-
-// AccountBlocked: the caller's Asaas subaccount is frozen (balance-block
-// webhook, possibly a regulatory freeze per Lei 15.358/2026 art. 21-A — plan
-// §7.1). Every money-out path must check this before acting.
-func AccountBlocked() *Problem {
-	return New(http.StatusConflict, TypeAccountBlocked, "Account Blocked",
-		"conta bloqueada; entre em contato com o suporte")
-}
-
-// MedReceivableOpen: a MED clawback (plan §7.3) left an open receivable on
-// this wallet — funding/withdrawal stays blocked until it settles from the
-// next inflow.
-func MedReceivableOpen() *Problem {
-	return New(http.StatusConflict, TypeMedReceivableOpen, "MED Receivable Open",
-		"há um débito pendente nesta carteira; aguarde a próxima entrada para quitação automática")
-}
-
-// DepositReceiptsExhausted: the subaccount used its monthly PIX-receipt
-// allowance. A 429 rather than a 4xx about the amount — nothing is wrong with
-// the request, the caller simply has to wait for the window to roll, which
-// Detail states in RFC3339.
-func DepositReceiptsExhausted(limit int64, resetsAt time.Time) *Problem {
-	p := New(http.StatusTooManyRequests, TypeDepositReceiptsExhausted, "Deposit Receipts Exhausted",
-		fmt.Sprintf("limite de %d depósitos por mês atingido; renova em %s", limit, resetsAt.Format(time.RFC3339)))
-	p.MaxAmount = limit
-	return p
-}
-
-// CustodyFeeUnpaid: the one-off verification fee for this subaccount has not
-// cleared yet, so the subaccount cannot be opened.
-func CustodyFeeUnpaid() *Problem {
-	return New(http.StatusConflict, TypeCustodyFeeUnpaid, "Custody Fee Unpaid",
-		"a taxa de verificação ainda não foi confirmada")
 }
 
 // SandboxPurchaseUsed: the §9.2/§9.1a eligibility check failed — the sandbox

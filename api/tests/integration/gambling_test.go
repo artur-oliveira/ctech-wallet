@@ -130,7 +130,7 @@ func TestGetBalancesHidesGamblingWalletsUntilActivated(t *testing.T) {
 	h := newHarness(verified())
 	user := "u-" + id.New()
 
-	real, game, sandbox, _, err := h.svc.GetBalances(ctx, user)
+	real, game, sandbox, err := h.svc.GetBalances(ctx, user)
 	if err != nil {
 		t.Fatalf("GetBalances: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestGetBalancesHidesGamblingWalletsUntilActivated(t *testing.T) {
 		t.Fatalf("ActivateGambling: %v", err)
 	}
 
-	real, game, sandbox, _, err = h.svc.GetBalances(ctx, user)
+	real, game, sandbox, err = h.svc.GetBalances(ctx, user)
 	if err != nil {
 		t.Fatalf("GetBalances after activation: %v", err)
 	}
@@ -392,7 +392,7 @@ func TestLegacySandboxHolderIsNotTreatedAsActivated(t *testing.T) {
 	wantProblem(t, err, problem.TypeInsufficientBalance)
 
 	// Balances hide the frozen sandbox until they activate.
-	_, game, _, _, err := h.svc.GetBalances(ctx, user)
+	_, game, _, err := h.svc.GetBalances(ctx, user)
 	if err != nil {
 		t.Fatalf("GetBalances: %v", err)
 	}

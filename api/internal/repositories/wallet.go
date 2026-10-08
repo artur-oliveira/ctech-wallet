@@ -26,7 +26,6 @@ type WalletRepository struct {
 	deposits   Base
 	withdrawal Base
 	holds      Base
-	med        Base
 }
 
 // NewWalletRepository builds the repository with one Base per wallet table.
@@ -38,7 +37,6 @@ func NewWalletRepository(db *dynamodb.Client, cfg *config.Config) *WalletReposit
 		deposits:   NewBase(db, cfg, wallet.TablePixDeposits),
 		withdrawal: NewBase(db, cfg, wallet.TableWithdrawals),
 		holds:      NewBase(db, cfg, wallet.TableHolds),
-		med:        NewBase(db, cfg, wallet.TableMedReceivables),
 	}
 }
 
@@ -325,138 +323,6 @@ func (r *WalletRepository) ConfirmDepositCredit(ctx context.Context, m Mutation,
 	return r.Credit(ctx, m, r.depositStatusTx(txid, wallet.DepositPending, wallet.DepositConfirmed, e2eID))
 }
 
-// ApplyMedClawback commits the available-balance debit and exact receivable
-// shortfall together. Replays derive the applied amount from the immutable
-// ledger entry, never from the already-reduced current balance.
-func (r *WalletRepository) ApplyMedClawback(ctx context.Context, walletID, userID string, amount int64, ref, reqHash string) (int64, int64, bool, error) {
-	idemKey := "med#" + ref
-	prior, conflict, err := r.checkReplay(ctx, idemKey, reqHash)
-	if err != nil {
-		return 0, 0, false, err
-	}
-	if conflict != nil {
-		return 0, 0, false, conflict
-	}
-	if prior != nil {
-		debited := -prior.Amount
-		shortfall := amount - debited
-		if shortfall > 0 {
-			if err := r.putMedReceivableIfAbsent(ctx, userID, walletID, shortfall, ref); err != nil {
-				return 0, 0, true, err
-			}
-		}
-		return debited, shortfall, true, nil
-	}
-
-	w, err := r.GetWallet(ctx, walletID)
-	if err != nil {
-		return 0, 0, false, err
-	}
-	if w == nil {
-		return 0, 0, false, problem.NotFound("carteira não encontrada")
-	}
-	debited := amount
-	if w.Balance < debited {
-		debited = w.Balance
-	}
-	shortfall := amount - debited
-	entry := r.newEntry(walletID, wallet.EntryMedClawback, -debited, w.Balance-debited, idemKey, ref, "")
-	ledgerTx, guardTx, err := r.ledgerAndGuardTx(entry, idemKey, reqHash)
-	if err != nil {
-		return 0, 0, false, err
-	}
-	// Even a zero-available-balance clawback writes a zero-amount ledger event
-	// and permanent guard with the receivable. This keeps every new MED event
-	// one atomic, replay-verifiable aggregate instead of relying on the
-	// receivable's key alone for the all-shortfall case.
-	items := []types.TransactWriteItem{ledgerTx, guardTx}
-	if debited > 0 {
-		walletTx, err := r.balanceTx(walletID, debited, -1, w.Version)
-		if err != nil {
-			return 0, 0, false, err
-		}
-		items = append([]types.TransactWriteItem{walletTx}, items...)
-	}
-	if shortfall > 0 {
-		items = append(items, r.med.BuildPutTxItemIfAbsent(mustEncode(newMedReceivable(userID, walletID, shortfall, ref))))
-	}
-	if err := r.wallets.TransactWrite(ctx, items); err != nil {
-		if replay, _, replayErr := r.checkReplay(ctx, idemKey, reqHash); replayErr == nil && replay != nil {
-			return -replay.Amount, amount + replay.Amount, true, nil
-		}
-		if IsConditionFailed(err) {
-			return 0, 0, false, problem.InsufficientBalance()
-		}
-		return 0, 0, false, err
-	}
-	return debited, shortfall, false, nil
-}
-
-func newMedReceivable(userID, walletID string, amount int64, ref string) *wallet.MedReceivable {
-	now := NowStr()
-	return &wallet.MedReceivable{
-		ReceivableID: "med-recv#" + ref,
-		UserID:       userID, WalletID: walletID, Amount: amount,
-		Status: wallet.MedReceivableOpen, Ref: ref, CreatedAt: now, UpdatedAt: now,
-	}
-}
-
-func (r *WalletRepository) putMedReceivableIfAbsent(ctx context.Context, userID, walletID string, amount int64, ref string) error {
-	if amount <= 0 {
-		return nil
-	}
-	item := r.med.BuildPutTxItemIfAbsent(mustEncode(newMedReceivable(userID, walletID, amount, ref)))
-	err := r.med.TransactWrite(ctx, []types.TransactWriteItem{item})
-	if IsConditionFailed(err) {
-		return nil
-	}
-	return err
-}
-
-// DebitWithdrawal commits the real-wallet balance debit, withdraw ledger entry,
-// idempotency guard, AND processing withdrawal record (w) in a
-// single TransactWriteItems. Co-writing the record with the debit is what keeps
-// money from being left in limbo: a debit is never committed without the row the
-// reconciliation job scans (SEC-01, Invariant #12). On replay the guard already
-// exists, so we return the prior entry and the caller returns the existing record.
-func (r *WalletRepository) DebitWithdrawal(ctx context.Context, w *wallet.Withdrawal, amount int64, idemKey, reqHash string) (withdrawEntry *wallet.LedgerEntry, replayed bool, err error) {
-	prior, conflict, e := r.checkReplay(ctx, idemKey, reqHash)
-	if e != nil {
-		return nil, false, e
-	}
-	if conflict != nil {
-		return nil, false, conflict
-	}
-	if prior != nil {
-		// On replay we return the withdraw entry as the primary; the fee entry is audit-only.
-		return prior, true, nil
-	}
-	wl, err := r.GetWallet(ctx, w.WalletID)
-	if err != nil {
-		return nil, false, err
-	}
-	if wl == nil {
-		return nil, false, problem.NotFound("carteira não encontrada")
-	}
-	wEntry := r.newEntry(w.WalletID, wallet.EntryWithdraw, -amount, wl.Balance-amount, idemKey, w.WithdrawalID, "")
-
-	walletTx, err := r.balanceTx(w.WalletID, amount, -1, wl.Version)
-	if err != nil {
-		return nil, false, err
-	}
-	wLedger := r.ledger.BuildPutTxItemIfAbsent(mustEncode(wEntry))
-	guardTx, err := r.guardTx(w.WalletID, wEntry.SK, idemKey, reqHash)
-	if err != nil {
-		return nil, false, err
-	}
-	withdrawalTx := r.withdrawal.BuildPutTxItemIfAbsent(mustEncode(w))
-	if err := r.wallets.TransactWrite(ctx, []types.TransactWriteItem{walletTx, wLedger, guardTx, withdrawalTx}); err != nil {
-		e, _, err2 := r.resolveTxErr(ctx, idemKey, reqHash, -1, err)
-		return e, e != nil, err2
-	}
-	return wEntry, false, nil
-}
-
 // Transfer atomically debits fromWalletID and credits toWalletID by the same
 // amount, writing two ledger entries and one idempotency guard. Used by sandbox
 // purchase (real → sandbox).
@@ -568,22 +434,10 @@ func (r *WalletRepository) AnyDebitSince(ctx context.Context, walletID, sinceSK 
 	}
 }
 
-// AmountAtSK returns the ledger entry's Amount at (walletID, sk) — the
-// read-side counterpart to AnyDebitSince, used to recover a purchase's
-// original credited amount for reversal (plan §9.1a).
-func (r *WalletRepository) AmountAtSK(ctx context.Context, walletID, sk string) (int64, error) {
-	e, err := r.loadEntry(ctx, walletID, sk)
-	if err != nil {
-		return 0, err
-	}
-	if e == nil {
-		return 0, problem.NotFound("lançamento não encontrado")
-	}
-	return e.Amount, nil
-}
-
 // --- PIX deposit persistence ---
 
+// PutDeposit persists a deposit row. No route opens deposits since custody was
+// removed; legacy Inter rows still flow through ConfirmDeposit and the sweeps.
 func (r *WalletRepository) PutDeposit(ctx context.Context, d *wallet.PixDeposit) error {
 	av, err := Encode(d)
 	if err != nil {
@@ -598,76 +452,6 @@ func (r *WalletRepository) GetDeposit(ctx context.Context, txid string) (*wallet
 		return nil, err
 	}
 	return Decode[wallet.PixDeposit](item)
-}
-
-// GetDepositByProviderQRCodeID resolves an Asaas payment webhook's
-// pixQrCodeId back to the deposit it belongs to (plan §4.3: "the webhook
-// resolves payment.pixQrCodeId → txid, not the other way round"). Returns nil
-// if unknown — the caller (ConfirmAsaasDeposit) treats that as an idempotent
-// no-op, same as ConfirmDeposit's unknown-txid handling.
-func (r *WalletRepository) GetDepositByProviderQRCodeID(ctx context.Context, providerQRCodeID string) (*wallet.PixDeposit, error) {
-	res, err := r.deposits.QueryGSI(ctx, wallet.GSIDepositProviderQR, "provider_qr_code_id", providerQRCodeID, 1, nil)
-	if err != nil {
-		return nil, err
-	}
-	if len(res.Items) == 0 {
-		return nil, nil
-	}
-	return Decode[wallet.PixDeposit](res.Items[0])
-}
-
-// ReserveDepositIdem registers an idempotency key for deposit initiation BEFORE
-// any Inter charge is opened, so a retried POST /wallet/deposits never opens a
-// second PIX charge (SEC-08). It writes a guard row carrying txid with
-// attribute_not_exists. Returns:
-//   - conflict != nil  → the same key was used with a different payload (reqHash drift)
-//   - existing != nil  → this key already initiated a deposit; the caller returns
-//     that deposit + re-queries its charge (idempotent replay)
-//   - otherwise reservedTxid is the key to use for the fresh charge
-//
-// existing is nil only on a genuine first attempt OR when a prior attempt
-// reserved the key but never persisted the deposit (charge opened, PutDeposit
-// failed); in the latter case reservedTxid is the prior attempt's txid and the
-// caller recovers by reusing it.
-func (r *WalletRepository) ReserveDepositIdem(ctx context.Context, guardPK, txid, userID, reqHash string) (reservedTxid string, existing *wallet.PixDeposit, conflict *problem.Problem, err error) {
-	g := idemGuard{
-		PK:        guardPK,
-		WalletID:  userID,
-		EntrySK:   txid,
-		ReqHash:   reqHash,
-		CreatedAt: NowStr(),
-	}
-	gav, err := Encode(g)
-	if err != nil {
-		return "", nil, nil, err
-	}
-	if err := r.idem.TransactWrite(ctx, []types.TransactWriteItem{r.idem.BuildPutTxItemIfAbsent(gav)}); err != nil {
-		if !IsConditionFailed(err) {
-			return "", nil, nil, err
-		}
-		// Guard already exists → replay (or conflict).
-		item, gerr := r.idem.GetItem(ctx, guardPK)
-		if gerr != nil {
-			return "", nil, nil, gerr
-		}
-		if item == nil {
-			// Lost the race but the row vanished (TTL) — treat as a fresh attempt.
-			return txid, nil, nil, nil
-		}
-		eg, derr := Decode[idemGuard](item)
-		if derr != nil {
-			return "", nil, nil, derr
-		}
-		if eg.ReqHash != reqHash {
-			return "", nil, problem.IdempotencyConflict(), nil
-		}
-		dep, derr := r.GetDeposit(ctx, eg.EntrySK)
-		if derr != nil {
-			return "", nil, nil, derr
-		}
-		return eg.EntrySK, dep, nil, nil
-	}
-	return txid, nil, nil, nil
 }
 
 func (r *WalletRepository) UpdateDepositStatus(ctx context.Context, txid, status, e2eID string) error {
@@ -685,11 +469,6 @@ func (r *WalletRepository) UpdateDepositPayer(ctx context.Context, txid, payerCP
 		"payer_cpf":  payerCPF,
 		"payer_name": payerName,
 	})
-	return err
-}
-
-func (r *WalletRepository) UpdateDepositProviderPaymentID(ctx context.Context, txid, providerPaymentID string) error {
-	_, err := r.deposits.UpdateItem(ctx, txid, nil, map[string]any{"provider_payment_id": providerPaymentID})
 	return err
 }
 

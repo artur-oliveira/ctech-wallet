@@ -31,20 +31,7 @@ exibida no topbar e na tela inicial, e as strings de i18n (`en.json`, `pt-BR.jso
 
 Nenhuma infraestrutura, contrato de API, schema ou comportamento mudou — apenas o texto exibido ao usuário.
 
-## Selo de atribuição Asaas
+## Selo de atribuição Asaas (removido em 2026-10-07)
 
-Mesmo playbook, seção de transparência ao cliente final (Resolução Conjunta nº 16/2025): o usuário precisa
-ser informado de que a Asaas — não a CTech — é a instituição de pagamento que processa a operação, em
-toda tela de criação de conta ou movimentação de valores. Componente novo `AsaasBadge`
-(`ui/src/components/wallet/asaas-badge.tsx`), um link para `asaas.com` com o selo oficial hospedado pela
-Asaas (variante colorida em fundos claros, variante branca sobre o card violeta sólido — a única legível
-ali), adicionado em `onboarding-dialog.tsx` (criação da conta de pagamento), `balance-cards.tsx` (card do
-saldo real) e `amount-dialog.tsx` (apenas nos fluxos `deposit`/`withdraw`, que são os únicos que tocam a
-Asaas) e no footer da home (`components/home.tsx`). Novas chaves i18n: `common.asaasBadgeAlt` em
-`en.json`/`pt-BR.json`.
-
-O selo é carregado por URL externa (`baas.asaas.com`), então a CSP `img-src` (gerada pelo workflow
-reutilizável de `ctech-cdk`, que por padrão só permite `'self' data:`) precisa do override
-`img-src 'self' data: https://baas.asaas.com` em `.github/workflows/frontend.yml`
-(mesmo mecanismo já usado pelo poker para os avatares — ver comentário em
-`ctech-cdk/.github/workflows/frontend-cloudflare.yml`).
+O selo `AsaasBadge` e o override de CSP `img-src https://baas.asaas.com` foram removidos junto com a
+integração Asaas — ver `docs/specs/2026-10-07-asaas-removal.md`. O nome "CTech Ledger" permanece.
