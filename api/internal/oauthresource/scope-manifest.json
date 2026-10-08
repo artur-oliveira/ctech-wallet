@@ -15,6 +15,7 @@
     { "name": "wallet:game:write", "descriptions": { "pt-BR": "Mover saldo entre as carteiras real e de jogos.", "en": "Move value between the real-money and game wallets." }, "visibility": "public", "status": "active" },
     { "name": "wallet:gambling:read", "descriptions": { "pt-BR": "Consultar limites e estado de jogo responsavel.", "en": "Read responsible-gambling limits and status." }, "visibility": "public", "status": "active" },
     { "name": "wallet:gambling:write", "descriptions": { "pt-BR": "Ativar jogos e gerenciar limites e autoexclusao.", "en": "Activate gambling and manage limits and self-exclusion." }, "visibility": "public", "status": "active" },
+    { "name": "wallet:custody:write", "descriptions": { "pt-BR": "Iniciar onboarding ou encerramento da conta de custodia.", "en": "Start custody-account onboarding or closure." }, "visibility": "public", "status": "deprecated" },
     { "name": "internal:wallet:credit", "descriptions": { "pt-BR": "Creditar saldo sandbox.", "en": "Credit sandbox balance." }, "visibility": "internal", "status": "active" },
     { "name": "internal:wallet:debit", "descriptions": { "pt-BR": "Debitar saldo sandbox.", "en": "Debit sandbox balance." }, "visibility": "internal", "status": "active" },
     { "name": "internal:wallet:debit-real", "descriptions": { "pt-BR": "Debitar saldo real.", "en": "Debit real-money balance." }, "visibility": "internal", "status": "active" },
