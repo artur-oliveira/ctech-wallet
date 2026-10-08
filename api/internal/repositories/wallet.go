@@ -446,6 +446,27 @@ func (r *WalletRepository) PutDeposit(ctx context.Context, d *wallet.PixDeposit)
 	return r.deposits.PutItem(ctx, av)
 }
 
+// ErrDepositExists means PutDepositIfAbsent lost a race or is a genuine replay:
+// the same txid is already registered.
+var ErrDepositExists = errors.New("repositories: deposit already exists")
+
+// PutDepositIfAbsent registers a pending deposit BEFORE any Inter charge is
+// opened (SEC-08): a retried request can never open a second charge.
+func (r *WalletRepository) PutDepositIfAbsent(ctx context.Context, d *wallet.PixDeposit) error {
+	av, err := Encode(d)
+	if err != nil {
+		return err
+	}
+	item := r.deposits.BuildPutTxItemIfAbsent(av)
+	if err := r.deposits.TransactWrite(ctx, []types.TransactWriteItem{item}); err != nil {
+		if IsConditionFailed(err) {
+			return ErrDepositExists
+		}
+		return err
+	}
+	return nil
+}
+
 func (r *WalletRepository) GetDeposit(ctx context.Context, txid string) (*wallet.PixDeposit, error) {
 	item, err := r.deposits.GetItem(ctx, txid)
 	if err != nil || item == nil {

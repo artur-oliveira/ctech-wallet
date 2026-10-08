@@ -130,6 +130,13 @@ func (s *stubRepo) Statement(_ context.Context, _ string, _ int, _ map[string]ty
 func (s *stubRepo) GetDeposit(_ context.Context, _ string) (*wallet.PixDeposit, error) {
 	return s.deposit, nil
 }
+func (s *stubRepo) PutDepositIfAbsent(_ context.Context, d *wallet.PixDeposit) error {
+	if s.deposit != nil {
+		return repositories.ErrDepositExists
+	}
+	s.deposit = d
+	return nil
+}
 func (s *stubRepo) UpdateDepositStatus(_ context.Context, _, status, e2e string) error {
 	s.depositStatus = status
 	s.depositE2E = e2e

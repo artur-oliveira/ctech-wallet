@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -33,6 +34,9 @@ import (
 // sweepAgeThreshold) a 50m window to run before the row disappears.
 const (
 	depositTTLMinutes       = 60
+	depositTxIDPrefix       = "dep"
+	depositTxIDSeparator    = "\x00"
+	depositTxIDDigestLength = 30 // Inter txids are 26-35 alphanumeric chars: 3+30
 	eventDepositConfirmed   = "deposit_confirmed"
 	eventWithdrawalComplete = "withdraw_completed"
 	eventWithdrawalFailed   = "withdraw_refund_failed"
@@ -72,6 +76,7 @@ type LedgerStore interface {
 
 // DepositStore owns PIX deposit lifecycle persistence.
 type DepositStore interface {
+	PutDepositIfAbsent(ctx context.Context, d *wallet.PixDeposit) error
 	GetDeposit(ctx context.Context, txid string) (*wallet.PixDeposit, error)
 	UpdateDepositStatus(ctx context.Context, txid, status, e2eID string) error
 	TransitionDepositStatus(ctx context.Context, txid, fromStatus, toStatus, e2eID string) (bool, error)
@@ -336,6 +341,121 @@ func (s *WalletService) GetBalances(ctx context.Context, userID string) (real, g
 // Statement returns a paginated ledger for a wallet (newest first).
 func (s *WalletService) Statement(ctx context.Context, walletID string, limit int, startKey map[string]types.AttributeValue) (*repositories.QueryResult, error) {
 	return s.repo.Statement(ctx, walletID, limit, startKey)
+}
+
+// depositTxID derives the Inter-compatible txid from the idempotency key, so a
+// retried POST /wallet/deposits maps to the same charge. Mirrors
+// sandboxPurchaseTxID: the digest keeps caller-controlled values out of the txid.
+func depositTxID(userID, idemKey string) string {
+	sum := sha256.Sum256([]byte(userID + depositTxIDSeparator + idemKey))
+	return depositTxIDPrefix + hex.EncodeToString(sum[:])[:depositTxIDDigestLength]
+}
+
+// dailyDepositBreach reads the user's counters and reports whether depositing
+// amount would overflow the wallet's daily cap. Advisory at initiation; the
+// binding check is in ConfirmDeposit, under the wallet lock.
+func (s *WalletService) dailyDepositBreach(ctx context.Context, userID string, realw *wallet.Wallet, amount int64) (*wallet.DailyBreach, error) {
+	u, err := s.users.Get(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	var c wallet.RealDailyCounters
+	if u != nil && u.RealDailyCounters != nil {
+		c = *u.RealDailyCounters
+	}
+	return wallet.CheckDailyDeposit(wallet.EffectiveDailyLimits(realw), c, amount, time.Now()), nil
+}
+
+// breachProblem maps a daily breach to its RFC 7807 problem (nil for no breach).
+func breachProblem(b *wallet.DailyBreach) *problem.Problem {
+	if b == nil {
+		return nil
+	}
+	if b.Kind == wallet.DailyBreachDepositCap {
+		return problem.DailyDepositLimit(b.Limit, b.Used, b.ResetsAt)
+	}
+	return problem.DailyWithdrawLimit(b.Kind, b.Limit, b.Used, b.ResetsAt)
+}
+
+// InitiateDeposit opens a PIX charge and records a pending deposit. Gates:
+// kycLevel != "" (any verification started), the amount within the wallet's
+// deposit range and, as an advisory pre-check, the daily deposit cap. Not a
+// balance mutation: money is credited only at ConfirmDeposit after re-querying
+// the charge. idemKey makes a retried POST return the same txid/QR and never
+// open a second Inter charge (SEC-08).
+func (s *WalletService) InitiateDeposit(ctx context.Context, userID, kycLevel string, amount int64, idemKey string) (*wallet.PixDeposit, *pix.Charge, error) {
+	if kycLevel == "" {
+		return nil, nil, problem.KYCNotVerified()
+	}
+	realw, err := s.repo.EnsureRealWallet(ctx, userID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if amount > wallet.MaxInboundAmount {
+		return nil, nil, problem.AmountAboveLimit(wallet.MaxInboundAmount)
+	}
+	// Range first: never open a PIX charge for an amount we will reject.
+	if err := wallet.ValidateDepositAmount(amount, realw); err != nil {
+		minAmt, maxAmt := wallet.DepositLimits(realw)
+		return nil, nil, problem.DepositOutOfRange(minAmt, maxAmt)
+	}
+
+	txid := depositTxID(userID, idemKey)
+
+	// Replay: the same key must mean the same request.
+	existing, err := s.repo.GetDeposit(ctx, txid)
+	if err != nil {
+		return nil, nil, err
+	}
+	if existing != nil {
+		if existing.UserID != userID || existing.AmountExpected != amount {
+			return nil, nil, problem.IdempotencyConflict()
+		}
+		charge, qerr := s.pix.QueryCharge(ctx, txid)
+		if qerr != nil {
+			// Crash between the durable reservation and CreateCharge: Inter's
+			// txid is unique, so re-creating with the same txid cannot open a
+			// second charge.
+			if charge, qerr = s.pix.CreateCharge(ctx, txid, existing.AmountExpected, ""); qerr != nil {
+				return nil, nil, qerr
+			}
+		}
+		return existing, charge, nil
+	}
+
+	// Advisory daily-cap pre-check for a NEW request. The binding enforcement is
+	// at credit time; this only avoids opening a doomed charge.
+	breach, err := s.dailyDepositBreach(ctx, userID, realw, amount)
+	if err != nil {
+		return nil, nil, err
+	}
+	if p := breachProblem(breach); p != nil {
+		return nil, nil, p
+	}
+
+	dep := &wallet.PixDeposit{
+		Txid:           txid,
+		WalletID:       realw.WalletID,
+		UserID:         userID,
+		AmountExpected: amount,
+		Status:         wallet.DepositPending,
+		CreatedAt:      repositories.NowStr(),
+		TTL:            time.Now().Add(depositTTLMinutes * time.Minute).Unix(),
+	}
+	// Reserve the txid BEFORE opening the charge (SEC-08). Losing the race to a
+	// concurrent identical request means it owns the charge: re-enter at the
+	// replay branch (the row exists now, so this recurses at most once).
+	if err := s.repo.PutDepositIfAbsent(ctx, dep); err != nil {
+		if errors.Is(err, repositories.ErrDepositExists) {
+			return s.InitiateDeposit(ctx, userID, kycLevel, amount, idemKey)
+		}
+		return nil, nil, err
+	}
+	charge, err := s.pix.CreateCharge(ctx, txid, amount, "")
+	if err != nil {
+		return nil, nil, problem.InternalServer("falha ao criar cobrança PIX: " + err.Error())
+	}
+	return dep, charge, nil
 }
 
 // ConfirmDeposit is invoked (indirectly) by the Inter webhook. It NEVER trusts
