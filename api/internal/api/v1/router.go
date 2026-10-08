@@ -16,13 +16,14 @@ import (
 
 // handlers bundles the dependencies every route closure needs.
 type handlers struct {
-	svc     *services.WalletService
-	userSvc *services.UserService
+	svc                *services.WalletService
+	userSvc            *services.UserService
+	requireDescription bool
 }
 
 // Register mounts all wallet routes under /v1.0.
 func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsclient.Clients, pixClient pix.PixClient, svc *services.WalletService, userSvc *services.UserService, wsRegistry ws.Registry) {
-	h := &handlers{svc: svc, userSvc: userSvc}
+	h := &handlers{svc: svc, userSvc: userSvc, requireDescription: cfg.RequireDescription}
 	verifier := middleware.NewVerifier(cfg.CtechJWKSURL, cfg.ServiceAudience, cfg.CtechIssuerURL, c)
 	auth := verifier.Middleware()
 	oauthresource.Register(app, cfg.ServiceAudience, cfg.CtechIssuerURL)

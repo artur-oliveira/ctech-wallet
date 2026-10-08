@@ -229,6 +229,14 @@ table status GSI for stale game holds.
 `cmd/reconcile` uses `config.LoadReconcile`; it does not require the API server's
 JWT issuer, CORS, or fleet-wide Valkey settings.
 
+## 5b. Turning on `REQUIRE_DESCRIPTION`
+
+Default off. Turn on only after ctech-poker and ctech-billing are deployed with the description changes (check each
+repo's latest release in its pipeline, not only in git). Add `REQUIRE_DESCRIPTION=true` to the static env written in
+`cdk/lib/api-stack.ts` (next to `GAMBLING_ENABLED`) and redeploy: dev first, exercise a daily reward, a table buy-in
+and cashout, a cosmetic purchase, a sandbox purchase and a billing checkout, and watch the access log for
+`400 description é obrigatório` for 24h before prod. Roll back by removing the line.
+
 ## 5a. Daily PIX limits (admin-only)
 
 Per-wallet overrides are set directly in DynamoDB on the `real` wallet row (`wallets` table): `daily_deposit_cap`

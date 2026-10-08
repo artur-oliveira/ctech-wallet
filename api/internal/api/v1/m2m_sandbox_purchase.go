@@ -54,6 +54,9 @@ func (h *handlers) m2mPurchaseSandbox(c fiber.Ctx) error {
 	if p := bindJSON(c, &body); p != nil {
 		return sendProblem(c, p)
 	}
+	if p := h.checkDescription(body.Description); p != nil {
+		return sendProblem(c, p)
+	}
 	client := middleware.GetClaims(c).AZP
 	purchase, charge, err := h.svc.PurchaseSandboxDirect(c.Context(), body.UserID, body.SKU, body.IdempotencyKey, client, body.Description)
 	if err != nil {

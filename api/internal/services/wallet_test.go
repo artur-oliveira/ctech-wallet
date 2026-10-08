@@ -223,7 +223,7 @@ func (s *stubRepo) ReleaseHoldAtomic(_ context.Context, h *wallet.Hold, _, _ str
 	}
 	return h, false, nil
 }
-func (s *stubRepo) CashoutHoldsAtomic(_ context.Context, walletID, _ string, amount int64, tableRef string, holds []*wallet.Hold, _, _ string) (*wallet.LedgerEntry, bool, error) {
+func (s *stubRepo) CashoutHoldsAtomic(_ context.Context, walletID, _ string, amount int64, tableRef string, holds []*wallet.Hold, _, _, _ string) (*wallet.LedgerEntry, bool, error) {
 	for _, h := range holds {
 		h.Status = wallet.HoldSettled
 	}
@@ -817,7 +817,7 @@ func TestCashoutGameMayConsumeMultipleHolds(t *testing.T) {
 	}
 
 	// Player A wins the whole 20000 pot — double either single hold's amount.
-	entry, err := svc.CashoutGame(context.Background(), "u1", 20000, "table-1", []string{hA.HoldID, hB.HoldID}, "idem-cashout")
+	entry, err := svc.CashoutGame(context.Background(), "u1", 20000, "table-1", []string{hA.HoldID, hB.HoldID}, "idem-cashout", "")
 	if err != nil {
 		t.Fatalf("CashoutGame: %v", err)
 	}
@@ -843,7 +843,7 @@ func TestCashoutGameCannotMintBeyondReservedHolds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HoldGame: %v", err)
 	}
-	_, err = svc.CashoutGame(context.Background(), "u1", 5001, "table-1", []string{h.HoldID}, "idem-cashout")
+	_, err = svc.CashoutGame(context.Background(), "u1", 5001, "table-1", []string{h.HoldID}, "idem-cashout", "")
 	isProblem(t, err, problem.TypeBadRequest)
 	if h.Status != wallet.HoldHeld {
 		t.Fatalf("rejected cashout consumed hold: %s", h.Status)
@@ -863,6 +863,6 @@ func TestCashoutGameRejectsAlreadyConsumedHold(t *testing.T) {
 		t.Fatalf("UpdateHoldStatus: %v", err)
 	}
 
-	_, err = svc.CashoutGame(context.Background(), "u1", 5000, "table-1", []string{h.HoldID}, "idem-cashout-retry")
+	_, err = svc.CashoutGame(context.Background(), "u1", 5000, "table-1", []string{h.HoldID}, "idem-cashout-retry", "")
 	isProblem(t, err, problem.TypeConflict)
 }
