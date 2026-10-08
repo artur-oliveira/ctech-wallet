@@ -50,3 +50,29 @@ func TestBumpDepositCountersConditionsOnPreviousValue(t *testing.T) {
 		t.Fatal("missing :prev value")
 	}
 }
+
+func TestBumpRealDailyCountersFreshRowConditionsOnAbsence(t *testing.T) {
+	r := newUnitUserRepo()
+	item, err := r.BumpRealDailyCounters("u1", nil, wallet.RealDailyCounters{DayKey: "2026-10-08", DepositSum: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := *item.Update.ConditionExpression; got != "attribute_not_exists(#c)" {
+		t.Fatalf("condition = %q", got)
+	}
+	if item.Update.ExpressionAttributeNames["#c"] != "real_daily_counters" {
+		t.Fatalf("names = %v", item.Update.ExpressionAttributeNames)
+	}
+}
+
+func TestBumpRealDailyCountersConditionsOnPreviousValue(t *testing.T) {
+	r := newUnitUserRepo()
+	prev := &wallet.RealDailyCounters{DayKey: "2026-10-08", DepositSum: 100}
+	item, err := r.BumpRealDailyCounters("u1", prev, wallet.RealDailyCounters{DayKey: "2026-10-08", DepositSum: 150})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := *item.Update.ConditionExpression; got != "#c = :prev" {
+		t.Fatalf("condition = %q", got)
+	}
+}

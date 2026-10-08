@@ -48,6 +48,8 @@ const (
 	TypeSelfExcluded            = "/problems/self-excluded"
 	TypeLimitsNotConfigured     = "/problems/limits-not-configured"
 	TypeDepositLimitExceeded    = "/problems/deposit-limit-exceeded"
+	TypeDailyDepositLimit       = "/problems/daily-deposit-limit"
+	TypeDailyWithdrawLimit      = "/problems/daily-withdraw-limit"
 	TypeExclusionChangeRejected = "/problems/exclusion-change-rejected"
 
 	TypeSandboxPurchaseUsed = "/problems/sandbox-purchase-used"
@@ -246,6 +248,32 @@ func DepositLimitExceeded(window string, limit, used int64, resetsAt time.Time) 
 	names := map[string]string{"daily": "diário", "weekly": "semanal", "monthly": "mensal"}
 	p := New(http.StatusConflict, TypeDepositLimitExceeded, "Deposit Limit Exceeded",
 		fmt.Sprintf("limite %s de depósito atingido; renova em %s", names[window], resetsAt.Format(time.RFC3339)))
+	p.MaxAmount = limit
+	return p
+}
+
+// DailyDepositLimit: the deposit would overflow the wallet's daily PIX deposit
+// cap. MaxAmount carries the cap; Detail says when the BRT day resets.
+func DailyDepositLimit(limit, used int64, resetsAt time.Time) *Problem {
+	p := New(http.StatusConflict, TypeDailyDepositLimit, "Daily Deposit Limit",
+		fmt.Sprintf("limite diário de depósito atingido; renova em %s", resetsAt.Format(time.RFC3339)))
+	p.MaxAmount = limit
+	return p
+}
+
+// dailyWithdrawCountKind mirrors wallet.DailyBreachWithdrawCount; this package
+// cannot import the wallet domain (import cycle).
+const dailyWithdrawCountKind = "withdraw_count"
+
+// DailyWithdrawLimit: the withdrawal would exceed the wallet's daily count or
+// amount cap. kind is wallet.DailyBreachWithdrawCount or DailyBreachWithdrawCap.
+func DailyWithdrawLimit(kind string, limit, used int64, resetsAt time.Time) *Problem {
+	what := "valor"
+	if kind == dailyWithdrawCountKind {
+		what = "quantidade de saques"
+	}
+	p := New(http.StatusConflict, TypeDailyWithdrawLimit, "Daily Withdraw Limit",
+		fmt.Sprintf("limite diário de %s atingido; renova em %s", what, resetsAt.Format(time.RFC3339)))
 	p.MaxAmount = limit
 	return p
 }

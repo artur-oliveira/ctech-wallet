@@ -1,5 +1,7 @@
 # Remoção da integração Asaas (BaaS de custódia)
 
+> **Atualizado 2026-10-08:** o rail Inter de depósito e saque foi restaurado; ver `2026-10-08-wallet-restoration-design.md`.
+
 **Data:** 2026-10-07
 **Status:** implementado (branch `chore/remove-asaas`)
 

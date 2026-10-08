@@ -83,13 +83,15 @@ idempotency, responsible-gambling limits, ownership, or financial invariants.
 | POST   | `/v1.0/wallet/gambling/activate`            | `wallet.go:95`  | `RequireKYC(basic)` (`router.go:76`)                     | `{accept_addendum:bool(required), daily,weekly,monthly:int64}` | Opts the caller into `game`+`sandbox`. Records gambling‑addendum acceptance (audited) then activates. Gates: `kyc_level != ""` (a **minimum** of `basic`, so `enhanced` also passes — see `ActivateGambling`) **and** current gambling addendum accepted. Mandatory limits on first activation. Idempotent (replay returns same wallets, appends nothing). `wallet.go:128`.                                                                                                                                                                                                                                                                                                              |
 | POST   | `/v1.0/wallet/game/deposit`                 | `wallet.go:115` | `RequireKYC(verified)`                                   | `{amount:int64>0}`                                             | **Registered ONLY when `GAMBLING_ENABLED=true`** (`router.go:73`) — else `404`. `real→game` (`FundGame`): the **one** edge real money enters the ring‑fence, metered by the personal limit engine (GROSS INFLOW, Invariant #8). Also capped at `MaxInboundAmount`. `wallet.go:680`.                                                                                                                                                                                                                                                                                                                           |
 
-### 3b. User PIX deposit / withdrawal — currently none
+### 3b. User PIX deposit / withdrawal (Inter)
 
-There is no user deposit, withdrawal, custody-onboarding, closure, or Asaas
-webhook route: the BaaS custody provider was removed
-(`../docs/specs/2026-10-07-asaas-removal.md`). Legacy Inter deposit rows are still
-confirmed through `POST /internal/pix/confirm-deposit` (§4) and swept by the
-reconcile job.
+Both require `Idempotency-Key`, KYC `enhanced` and their scope (`wallet:deposits:write` /
+`wallet:withdrawals:write`). Daily limits per wallet: see root `CLAUDE.md` (Money math).
+
+| Method | Path                         | Gates                                   | Body                | Notes |
+|--------|------------------------------|-----------------------------------------|---------------------|-------|
+| POST   | `/v1.0/wallet/deposits`      | KYC verified                            | `{amount:int64>0}`  | `201 {txid, amount, status, pix_copia_e_cola, qr_code_base64?, expires_at}`. Range and daily cap checked **before** `CreateCharge`; replay of the key returns the same txid/QR. Errors: `422 deposit-out-of-range`, `422 amount-above-limit`, `409 daily-deposit-limit`, `409 idempotency-conflict`. Credit happens only after the webhook wake-up re-queries Inter and the masked payer CPF matches the KYC CPF; a deposit that would exceed the daily cap at credit time is refunded to the payer. |
+| POST   | `/v1.0/wallet/withdrawals`   | KYC verified + step-up MFA (`RequireRecentMFA`) | `{amount:int64>0}`  | No destination field: the payout goes to the KYC CPF. Debits exactly `amount` (no fee). `201` completed, `202` still `processing` (the reconcile job resolves it). Errors: `403 step-up-required`, `409 daily-withdraw-limit`, `409 insufficient-balance`, `409 wallet-busy`, `422 pix-key-not-found` (debit reversed, daily slot returned). |
 
 ---
 

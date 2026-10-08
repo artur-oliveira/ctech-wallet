@@ -4,7 +4,7 @@ Digital wallet for the `aoctech.app` platform. Three balances per user:
 
 | Wallet    | Money    | Purpose                                            | Limits  |
 |-----------|----------|----------------------------------------------------|---------|
-| `real`    | Real     | Subscriptions, services (PIX rail currently off)   | No      |
+| `real`    | Real     | Subscriptions, services; PIX in/out (Inter)         | No      |
 | `game`    | **Real** | Real money ring-fenced for games only              | **Yes** |
 | `sandbox` | Virtual  | Game credits; no monetary value, never convertible | Yes     |
 
@@ -32,7 +32,7 @@ v2, DynamoDB single-table helpers). **Always read the relevant subproject `CLAUD
 
 Unlike `ctech-dfe`, the wallet is **not multi-tenant** — there is no organization header or RBAC. Access control
 is: user JWT (JWKS from `ctech-account`) for user routes, `client_credentials` M2M scopes for internal routes. Step-up MFA (`last_mfa_at` claim) is
-implemented but no route currently requires it (withdrawals were removed — see the step-up contract below).
+required by `POST /wallet/withdrawals` (see the step-up contract below).
 
 ---
 
@@ -78,10 +78,12 @@ it is.
     every callback. Payer CPF is the one field Inter's re-query does not return — it is sourced from the
     webhook body itself (persisted on first sight) and used only for the CPF-match anti-fraud check, never to
     authorize crediting.
-12. **User money never lands in CTech's Inter account.** There is currently no deposit and no withdrawal rail:
-    the BaaS custody provider was removed (`docs/specs/2026-10-07-asaas-removal.md`) and no route opens a user
-    deposit or pays out a withdrawal. A future rail must custody user money under the user's own CPF; CTech's
-    Inter account receives product purchases only (SKU sales, `OpenCharge` invoices).
+12. **Custody of user money on CTech's Inter account is an explicit, accepted risk.** Deposits and withdrawals run
+    on the Inter PIX rail for a closed group of KYC-approved users (KYC approved manually by the owner; see
+    `docs/specs/2026-10-08-wallet-restoration-design.md`). Every deposit must be attributable to its user by
+    payer-CPF match (masked CPF compared on the digits Inter reveals) or it is refunded to the payer; a paid
+    deposit with no payer identity is quarantined, never credited. Every payout goes only to the CPF on the
+    user's KYC record (the client never supplies a destination key). Daily limits apply per wallet (below).
 13. *(Retired 2026-10-07 — was the BaaS verification-fee rule; see `docs/specs/2026-10-07-asaas-removal.md`.)*
 14. **No money left in limbo.** A withdrawal whose PIX transfer call fails after the internal debit enters a
     `processing` state that a reconciliation job MUST resolve (complete or reverse). Failed refunds raise an
@@ -110,7 +112,7 @@ constant. Header names, scope strings (`internal:wallet:credit`), and DynamoDB a
 All API errors MUST be returned as RFC 7807 Problem JSON via the `problem.*` helpers (`sendProblem(c, err)`;
 services return `*problem.Problem`). Never return raw errors, `fiber.Map`, or `fiber.NewError`. Match the
 `ctech-account` / `ctech-dfe` problem type URIs and the wallet-specific codes: `insufficient-balance`,
-`wallet-busy`, `withdraw-cpf-mismatch`, `kyc-not-verified`, `idempotency-conflict`, `step-up-required`.
+`wallet-busy`, `withdraw-cpf-mismatch`, `kyc-not-verified`, `idempotency-conflict`, `step-up-required`, `daily-deposit-limit`, `daily-withdraw-limit`.
 
 ### Frontend quality gate
 
@@ -131,7 +133,13 @@ the defaults (R$1 / R$10.000). The effective minimum is **never below the absolu
 incoherent override (`max < min`) widens rather than rejecting every amount. The range is checked *before*
 `CreateCharge`, so a rejected amount never opens a charge at Inter.
 
-Deposit-range fields are **admin-only** — set directly in DynamoDB; there is no API write path for them.
+**Daily PIX limits** are per-wallet too, all in centavos/counts and falling back to defaults: `daily_deposit_cap`
+(R$1.000, GROSS inflow per São Paulo calendar day, enforced when the deposit is credited; any excess is refunded
+to the payer), `daily_withdraw_cap` (R$1.000) and `daily_withdraw_count` (1). They are checked under the real
+wallet lock with an optimistic counter written in the same transaction as the money movement. A reversed
+withdrawal returns its slot; a refunded or reversed deposit never frees deposit headroom.
+
+Deposit-range and daily-limit fields are **admin-only** — set directly in DynamoDB; there is no API write path for them.
 
 ### Testing — core functions need integration tests
 
@@ -179,14 +187,12 @@ passwords, real customer data, or real CPFs.
   (real wallet — deliberately a separate scope, never granted to a client that only needs sandbox credit/debit,
   e.g. poker/dominó) seeded into the global catalog via `ctech-account`'s `cmd/seedscopes`. The wallet's own
   M2M client is seeded confidential + `first_party:true` with `allowed_scopes:["internal:account:kyc"]`.
-- **Step-up:** no route currently requires step-up — the withdrawal route that did was removed with the BaaS
-  provider (`docs/specs/2026-10-07-asaas-removal.md`). `middleware.RequireRecentMFA` remains as the mechanism a
-  future withdrawal rail must reuse: it mirrors account's `RequireRecentMFA(5m)` — stateless, reads `last_mfa_at`
-  from the JWT; no call to account needed. Re-verifying a stale MFA proof redirects to
-  `{CTECH_URL}/v1.0/authorize` with `max_age=0` (OIDC-standard) — this forces `ctech-account` to require a fresh
-  interactive login even with a valid SSO session, refreshing `last_mfa_at`. A plain re-login (no `max_age`) would
-  silently reuse the SSO session and never re-prove MFA. A future frontend flow calls `@aoctech/auth-client`'s
-  `startOAuthFlow(returnTo, {maxAge: 0})`.
+- **Step-up:** `POST /wallet/withdrawals` requires it via `middleware.RequireRecentMFA(StepUpMaxAge)`, mirroring
+  account's `RequireRecentMFA(5m)` — stateless, reads `last_mfa_at` from the JWT; no call to account needed.
+  Re-verifying a stale MFA proof redirects to `{CTECH_URL}/v1.0/authorize` with `max_age=0` (OIDC-standard) — this
+  forces `ctech-account` to require a fresh interactive login even with a valid SSO session, refreshing
+  `last_mfa_at`. A plain re-login (no `max_age`) would silently reuse the SSO session and never re-prove MFA. The
+  frontend calls `@aoctech/auth-client`'s `startOAuthFlow(returnTo, {maxAge: 0})` (`startStepUpFlow`).
 
 `ctech-account` DOES require code changes for this: `internal/handler/authorize.go` honors `max_age`, and
 `ui/src/hooks/use-redirect-if-authenticated.ts` must not bypass the login form when the `continue` target itself

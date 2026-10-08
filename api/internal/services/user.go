@@ -18,6 +18,7 @@ type UserRepo interface {
 	SetSelfExclusion(ctx context.Context, userID string, ex *wallet.SelfExclusion) error
 	SetGameLimits(ctx context.Context, userID string, lim *wallet.GameLimits) error
 	BumpDepositCounters(userID string, prev *wallet.GameDepositCounters, next wallet.GameDepositCounters) (types.TransactWriteItem, error)
+	BumpRealDailyCounters(userID string, prev *wallet.RealDailyCounters, next wallet.RealDailyCounters) (types.TransactWriteItem, error)
 }
 
 // UserService owns the consent-acceptance state (terms + gambling addenda).

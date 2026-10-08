@@ -222,6 +222,13 @@ table status GSI for stale game holds.
 `cmd/reconcile` uses `config.LoadReconcile`; it does not require the API server's
 JWT issuer, CORS, or fleet-wide Valkey settings.
 
+## 5a. Daily PIX limits (admin-only)
+
+Per-wallet overrides are set directly in DynamoDB on the `real` wallet row (`wallets` table): `daily_deposit_cap`
+(centavos, default 100000), `daily_withdraw_cap` (centavos, default 100000), `daily_withdraw_count` (default 1).
+Absent or 0 means the default. Counters (`real_daily_counters`) live on the user row in `wallet_users`; to give a
+user a fresh day by hand, remove that attribute. A paid deposit that exceeds the cap is refunded to the payer.
+
 ## 6. `GAMBLING_ENABLED` — do not turn this on yet
 
 `GAMBLING_ENABLED` (default **`false`**) gates everything that moves money **into** the gambling ring-fence:
