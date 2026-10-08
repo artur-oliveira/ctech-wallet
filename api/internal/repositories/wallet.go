@@ -80,7 +80,8 @@ type Mutation struct {
 
 // GetWallet returns the authoritative wallet record, or nil if absent.
 func (r *WalletRepository) GetWallet(ctx context.Context, walletID string) (*wallet.Wallet, error) {
-	item, err := r.wallets.GetItem(ctx, walletID)
+	// Consistent: mutate conditions the balance write on the version read here.
+	item, err := getConsistent(ctx, r.wallets, walletID)
 	if err != nil {
 		return nil, err
 	}
@@ -617,8 +618,40 @@ func (r *WalletRepository) WithdrawalPutTx(w *wallet.Withdrawal) (types.Transact
 	return r.withdrawal.BuildPutTxItemIfAbsent(av), nil
 }
 
+// MarkWithdrawalReversed moves a withdrawal to reversed and, in the SAME
+// transaction, applies extra (the daily-slot release). The transition is
+// conditioned on the row not being reversed already, so replaying the
+// bookkeeping after a crash can never release the slot twice (reviewer finding
+// 2). If the transaction fails because the extra's optimistic condition no
+// longer holds (counters changed), the reversal is still recorded WITHOUT the
+// slot release: the money is already back, and the slot staying burned is the
+// fail-closed side (reviewer finding 1).
+func (r *WalletRepository) MarkWithdrawalReversed(ctx context.Context, withdrawalID string, extra ...types.TransactWriteItem) error {
+	now := NowStr()
+	update := r.withdrawal.BuildRawUpdateTxItem(withdrawalID, nil,
+		"SET #s = :rev, #u = :now", "#s <> :rev",
+		map[string]string{"#s": "status", "#u": "updated_at"},
+		map[string]types.AttributeValue{
+			":rev": &types.AttributeValueMemberS{Value: wallet.WithdrawReversed},
+			":now": &types.AttributeValueMemberS{Value: now},
+		})
+	err := r.withdrawal.TransactWrite(ctx, append([]types.TransactWriteItem{update}, extra...))
+	if err == nil || !IsConditionFailed(err) {
+		return err
+	}
+	w, gerr := r.GetWithdrawal(ctx, withdrawalID)
+	if gerr != nil {
+		return gerr
+	}
+	if w != nil && w.Status == wallet.WithdrawReversed {
+		return nil // already reversed: nothing to record, and the slot must not be released again
+	}
+	return r.UpdateWithdrawal(ctx, withdrawalID, map[string]any{"status": wallet.WithdrawReversed})
+}
+
 func (r *WalletRepository) GetWithdrawal(ctx context.Context, withdrawalID string) (*wallet.Withdrawal, error) {
-	item, err := r.withdrawal.GetItem(ctx, withdrawalID)
+	// Consistent: the replay check must see a row committed a moment ago.
+	item, err := getConsistent(ctx, r.withdrawal, withdrawalID)
 	if err != nil || item == nil {
 		return nil, err
 	}

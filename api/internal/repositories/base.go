@@ -65,6 +65,19 @@ func NewBase(db *dynamodb.Client, cfg *config.Config, table string) Base {
 }
 
 // Decode unmarshals DynamoDB attribute values into the target struct.
+// getConsistent reads one item by its pk with a strongly consistent read.
+// GetItem is eventually consistent, and the daily counters, the wallet version
+// and the withdrawal row are read right before an optimistic conditional write:
+// a stale read there turns into a spurious condition failure (reviewer finding
+// 1). Query with ConsistentRead on the base table is the only way to get one.
+func getConsistent(ctx context.Context, b Base, pk string) (map[string]types.AttributeValue, error) {
+	res, err := b.Query(ctx, QueryOpts{PK: pk, ConsistentRead: true, Limit: 1})
+	if err != nil || len(res.Items) == 0 {
+		return nil, err
+	}
+	return res.Items[0], nil
+}
+
 func Decode[T any](item map[string]types.AttributeValue) (*T, error) {
 	return dynamo.Decode[T](item)
 }

@@ -252,3 +252,30 @@ func TestWithdrawTransferFailureLeavesProcessing(t *testing.T) {
 		t.Fatal("must not reverse on an ambiguous bank failure; reconcile resolves it")
 	}
 }
+
+// Reviewer finding 3: the same Idempotency-Key with a different amount is a
+// conflict, never a silent replay of the first withdrawal.
+func TestWithdrawSameKeyDifferentAmountConflicts(t *testing.T) {
+	_, _, fake, svc := withdrawFixture(50000)
+	if _, err := svc.Withdraw(context.Background(), "u1", wallet.KYCVerified, 10000, "k1"); err != nil {
+		t.Fatal(err)
+	}
+	_, err := svc.Withdraw(context.Background(), "u1", wallet.KYCVerified, 20000, "k1")
+	isProblem(t, err, problem.TypeIdempotencyConflict)
+	if len(fake.Transfers) != 1 {
+		t.Fatalf("transfers = %d, want 1", len(fake.Transfers))
+	}
+}
+
+// Reviewer finding 4: no CPF on the KYC record means no payout key.
+func TestWithdrawWithoutKYCCPFIsRejectedBeforeDebit(t *testing.T) {
+	repo := newStubRepo()
+	repo.real.Balance = 50000
+	fake := pix.NewFake()
+	svc := NewWalletService(repo, &stubUserRepo{}, &stubAudit{}, &stubLocker{}, fake, &stubKYC{rec: &kycclient.KYC{Level: "enhanced"}})
+	_, err := svc.Withdraw(context.Background(), "u1", wallet.KYCVerified, 10000, "k1")
+	isProblem(t, err, problem.TypeKYCNotVerified)
+	if len(repo.debitCalls) != 0 || len(fake.Transfers) != 0 {
+		t.Fatal("money moved without a destination CPF")
+	}
+}
