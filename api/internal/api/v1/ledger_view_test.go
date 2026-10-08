@@ -2,6 +2,7 @@ package v1
 
 import (
 	"encoding/json"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"testing"
 
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
@@ -51,5 +52,22 @@ func TestLedgerEntryViewJSONShape(t *testing.T) {
 	}
 	if m["balance_before"].(float64) != 200 {
 		t.Errorf("balance_before = %v", m["balance_before"])
+	}
+}
+
+func TestCursorMatchesWallet(t *testing.T) {
+	own := map[string]types.AttributeValue{"pk": &types.AttributeValueMemberS{Value: "w1"}, "sk": &types.AttributeValueMemberS{Value: "x"}}
+	foreign := map[string]types.AttributeValue{"pk": &types.AttributeValueMemberS{Value: "w2"}, "sk": &types.AttributeValueMemberS{Value: "x"}}
+	if !cursorMatchesWallet(nil, "w1") {
+		t.Error("no cursor (first page) must pass")
+	}
+	if !cursorMatchesWallet(own, "w1") {
+		t.Error("own cursor must pass")
+	}
+	if cursorMatchesWallet(foreign, "w1") {
+		t.Error("another wallet's cursor must be rejected")
+	}
+	if cursorMatchesWallet(map[string]types.AttributeValue{"sk": &types.AttributeValueMemberS{Value: "x"}}, "w1") {
+		t.Error("a cursor without pk must be rejected")
 	}
 }

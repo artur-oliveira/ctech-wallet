@@ -128,6 +128,9 @@ func (h *handlers) getLedger(c fiber.Ctx) error {
 	}
 	limit := historyLimit(c)
 	startKey := decodeCursor(c.Query(queryParamCursor))
+	if !cursorMatchesWallet(startKey, target.WalletID) {
+		return sendProblem(c, problem.BadRequest("cursor inválido"))
+	}
 	res, err := h.svc.Statement(c.Context(), target.WalletID, limit, startKey)
 	if err != nil {
 		return sendProblem(c, err)
