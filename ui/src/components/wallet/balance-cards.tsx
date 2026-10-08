@@ -26,7 +26,7 @@ interface BalanceCardsProps {
  * - Game money is ALSO real money (withdrawable, via real), so it also carries R$ —
  *   but it is outlined rather than filled, marking it as ring-fenced: spendable
  *   only on games, and subject to the user's personal limits.
- * - Sandbox credit: flat dashed card, no currency symbol, explicit "não vira
+ * - Sandbox credit: flat dashed card, whole-number balance with the virtual symbol ₡ (never R$), explicit "não vira
  *   dinheiro" line — it has no monetary value and can never be converted back.
  *
  * A user who has not activated gambling sees ONLY the real card. Someone who came

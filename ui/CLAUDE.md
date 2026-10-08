@@ -110,3 +110,9 @@ Any modification affecting behavior, architecture, APIs, integrations, configura
 - Copy rules: no em dash (U+2014) in user-facing text (`src/locales/no-em-dash.test.mjs` enforces it); use a
   bullet to separate and a semicolon to pause. Prefer self-describing elements over sentences. Legal and
   responsible-gambling text is changed only with the owner's approval.
+
+## Virtual currency symbol
+
+Sandbox credits are whole numbers shown with **₡** (U+20A1), never "R$" and never with decimals
+(`lib/utils/credits-format.ts`, used by `formatCreditsAmount`/`formatBalance`/`formatSigned`). The glyph lives in
+IBM Plex's `latin-ext` subset, so `layout.tsx` loads it for both families; do not drop that subset.
