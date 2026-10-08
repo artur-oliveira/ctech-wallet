@@ -91,6 +91,7 @@ type DepositStore interface {
 type WithdrawalStore interface {
 	PutWithdrawal(ctx context.Context, w *wallet.Withdrawal) error
 	WithdrawalPutTx(w *wallet.Withdrawal) (types.TransactWriteItem, error)
+	MarkWithdrawalReversed(ctx context.Context, withdrawalID string, extra ...types.TransactWriteItem) error
 	GetWithdrawal(ctx context.Context, withdrawalID string) (*wallet.Withdrawal, error)
 	UpdateWithdrawal(ctx context.Context, withdrawalID string, updates map[string]any) error
 	ListProcessingWithdrawals(ctx context.Context, limit int) ([]wallet.Withdrawal, error)
@@ -886,7 +887,18 @@ func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, a
 	if existing, err := s.repo.GetWithdrawal(ctx, withdrawalID); err != nil {
 		return nil, err
 	} else if existing != nil {
+		if existing.UserID != userID || existing.Amount != amount {
+			return nil, problem.IdempotencyConflict()
+		}
 		return existing, nil
+	}
+
+	// Re-read under the lock: the wallet fetched before it can be stale, and both
+	// the full-balance exemption and the per-wallet limits depend on it.
+	if fresh, err := s.repo.GetWallet(ctx, realw.WalletID); err != nil {
+		return nil, err
+	} else if fresh != nil {
+		realw = fresh
 	}
 
 	if err := wallet.ValidateWithdrawalAmount(amount, realw, amount == realw.Balance, false); err != nil {
@@ -921,6 +933,9 @@ func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, a
 		return nil, err
 	}
 	pixKey := kyc.CPF // destination is ALWAYS the KYC owner's CPF
+	if pixKey == "" {
+		return nil, problem.KYCNotVerified() // no CPF on record means no payout destination
+	}
 
 	w := &wallet.Withdrawal{
 		WithdrawalID:   withdrawalID,
@@ -951,7 +966,14 @@ func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, a
 	}
 	if replayed {
 		// Someone else is mid-flight on this withdrawal: never re-transfer.
-		return s.repo.GetWithdrawal(ctx, withdrawalID)
+		existing, err := s.repo.GetWithdrawal(ctx, withdrawalID)
+		if err != nil {
+			return nil, err
+		}
+		if existing == nil {
+			return nil, problem.WalletBusy() // guard visible, row not yet: tell the client to retry
+		}
+		return existing, nil
 	}
 
 	res, err := s.pix.Transfer(ctx, pixKey, amount, interIdemKey(withdrawalID))

@@ -175,3 +175,81 @@ func TestWithdrawalProcessingResolvedByReconcile(t *testing.T) {
 		t.Fatalf("withdrawal = %+v err=%v", got, err)
 	}
 }
+
+// Reviewer finding 2: a reversal replayed after its credit already committed
+// must not release the daily slot a second time (it would erase a LATER
+// withdrawal's slot and hand out an extra withdrawal).
+func TestReversalReplayReleasesTheDailySlotOnlyOnce(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(verified())
+	user := "u-" + id.New()
+	fundReal(t, h, user, 100000)
+
+	h.pix.TransferErr = errors.New("bank timeout")
+	w1, err := h.svc.Withdraw(ctx, user, wallet.KYCVerified, 10000, "w1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.pix.TransferErr = nil
+	if err := h.svc.ReverseWithdrawal(ctx, w1.WithdrawalID); err != nil {
+		t.Fatal(err)
+	}
+	// The slot came back, so the user withdraws again today.
+	if _, err := h.svc.Withdraw(ctx, user, wallet.KYCVerified, 20000, "w2"); err != nil {
+		t.Fatalf("slot not released: %v", err)
+	}
+	before := realCounters(t, h, user)
+	if before.WithdrawCount != 1 || before.WithdrawSum != 20000 {
+		t.Fatalf("counters after w2 = %+v", before)
+	}
+
+	// Replay of the reversal bookkeeping (crash after the credit, before the
+	// status write): a decrement built from the CURRENT counters must be ignored.
+	next := before
+	next.WithdrawCount, next.WithdrawSum = 0, 0
+	tx, err := h.userRepo.BumpRealDailyCounters(user, &before, next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.repo.MarkWithdrawalReversed(ctx, w1.WithdrawalID, tx); err != nil {
+		t.Fatal(err)
+	}
+	if after := realCounters(t, h, user); after != before {
+		t.Fatalf("slot released twice: before %+v after %+v", before, after)
+	}
+}
+
+// Reviewer finding 1: a stale/changed counter must never block the reversal
+// bookkeeping; the money is already back, the slot is simply not released.
+func TestStaleCounterNeverBlocksReversalBookkeeping(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(verified())
+	user := "u-" + id.New()
+	fundReal(t, h, user, 100000)
+	h.pix.TransferErr = errors.New("bank timeout")
+	w, err := h.svc.Withdraw(ctx, user, wallet.KYCVerified, 10000, "w1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := wallet.RealDailyCounters{DayKey: "1999-01-01", WithdrawCount: 7} // does not match the row
+	tx, err := h.userRepo.BumpRealDailyCounters(user, &stale, wallet.RealDailyCounters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.repo.MarkWithdrawalReversed(ctx, w.WithdrawalID, tx); err != nil {
+		t.Fatalf("a stale counter blocked the reversal: %v", err)
+	}
+	got, _ := h.repo.GetWithdrawal(ctx, w.WithdrawalID)
+	if got.Status != wallet.WithdrawReversed {
+		t.Fatalf("status = %s, want reversed", got.Status)
+	}
+}
+
+func realCounters(t *testing.T, h *harness, user string) wallet.RealDailyCounters {
+	t.Helper()
+	u, err := h.userRepo.Get(context.Background(), user)
+	if err != nil || u == nil || u.RealDailyCounters == nil {
+		t.Fatalf("counters: %v %+v", err, u)
+	}
+	return *u.RealDailyCounters
+}

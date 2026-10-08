@@ -110,10 +110,9 @@ func (s *WalletService) ReverseWithdrawal(ctx context.Context, withdrawalID stri
 // idempotent reversal either way, so both notify the user identically.
 func (s *WalletService) reverse(ctx context.Context, w wallet.Withdrawal) bool {
 	total := w.Amount
-	extra, xerr := s.releaseWithdrawalSlot(ctx, w)
-	if xerr != nil {
-		slog.Warn("withdrawal slot release skipped", "withdrawal_id", w.WithdrawalID, "err", xerr)
-	}
+	// The credit-back carries NO counter write: money first, never blocked by
+	// daily-limit bookkeeping. The slot release rides with the reversed status
+	// transition below, which is once-only.
 	_, _, err := s.repo.Credit(ctx, repositories.Mutation{
 		WalletID:       w.WalletID,
 		Amount:         total,
@@ -121,7 +120,7 @@ func (s *WalletService) reverse(ctx context.Context, w wallet.Withdrawal) bool {
 		Ref:            "reverse:" + w.WithdrawalID,
 		IdempotencyKey: "reverse#" + w.WithdrawalID,
 		ReqHash:        reqHash("reverse:"+w.WithdrawalID, total),
-	}, extra...)
+	})
 	if err != nil {
 		observability.Error(ctx, "ALARM withdrawal reversal credit-back failed", err, "withdrawal_id", w.WithdrawalID, "amount", total)
 		if updateErr := s.repo.UpdateWithdrawal(ctx, w.WithdrawalID, map[string]any{"status": wallet.WithdrawRefundFail}); updateErr != nil {
@@ -130,7 +129,11 @@ func (s *WalletService) reverse(ctx context.Context, w wallet.Withdrawal) bool {
 		s.broadcastWithdrawal(ctx, w.UserID, eventWithdrawalFailed, w.WithdrawalID, w.Amount)
 		return false
 	}
-	if err := s.repo.UpdateWithdrawal(ctx, w.WithdrawalID, map[string]any{"status": wallet.WithdrawReversed}); err != nil {
+	slot, xerr := s.releaseWithdrawalSlot(ctx, w)
+	if xerr != nil {
+		slog.Warn("withdrawal slot release skipped", "withdrawal_id", w.WithdrawalID, "err", xerr)
+	}
+	if err := s.repo.MarkWithdrawalReversed(ctx, w.WithdrawalID, slot...); err != nil {
 		slog.Error("reconcile: mark reversed failed", "withdrawal_id", w.WithdrawalID, "err", err)
 	}
 	s.broadcastWithdrawal(ctx, w.UserID, eventWithdrawalReversed, w.WithdrawalID, w.Amount)

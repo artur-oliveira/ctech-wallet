@@ -23,7 +23,8 @@ func NewUserRepository(db *dynamodb.Client, cfg *config.Config) *UserRepository 
 // Get returns the user's wallet-side row, or nil if they have never accepted
 // anything yet (no row is created until acceptance).
 func (r *UserRepository) Get(ctx context.Context, userID string) (*wallet.User, error) {
-	item, err := r.users.GetItem(ctx, userID)
+	// Consistent: the daily counters read here seed an optimistic conditional write.
+	item, err := getConsistent(ctx, r.users, userID)
 	if err != nil || item == nil {
 		return nil, err
 	}

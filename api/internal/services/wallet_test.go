@@ -161,6 +161,15 @@ func (s *stubRepo) WithdrawalPutTx(w *wallet.Withdrawal) (types.TransactWriteIte
 	s.withdrawals[w.WithdrawalID] = w
 	return types.TransactWriteItem{}, nil
 }
+
+// MarkWithdrawalReversed mirrors the real transition (extras are the caller's
+// counter writes, already recorded by the stub user repo when built).
+func (s *stubRepo) MarkWithdrawalReversed(_ context.Context, id string, _ ...types.TransactWriteItem) error {
+	if w, ok := s.withdrawals[id]; ok {
+		w.Status = wallet.WithdrawReversed
+	}
+	return nil
+}
 func (s *stubRepo) GetWithdrawal(_ context.Context, id string) (*wallet.Withdrawal, error) {
 	return s.withdrawals[id], nil
 }
