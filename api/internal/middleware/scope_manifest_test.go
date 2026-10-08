@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"slices"
 	"sort"
 	"testing"
 
@@ -16,9 +15,6 @@ func TestScopeManifestMatchesEnforcedScopes(t *testing.T) {
 	if m.ResourceServerID != "wallet" || m.SchemaVersion != 1 {
 		t.Fatalf("unexpected manifest identity: %#v", m)
 	}
-	wantDeprecated := []string{
-		"wallet:custody:write",
-	}
 	wantInternal := []string{
 		ScopeWalletCredit, ScopeWalletDebit, ScopeWalletRealDebit,
 		ScopePixConfirmDeposit, ScopeWalletGameHold, ScopeWalletGameCashout,
@@ -29,10 +25,6 @@ func TestScopeManifestMatchesEnforcedScopes(t *testing.T) {
 	gotInternal := make([]string, 0, len(wantInternal))
 	gotPublic := make([]string, 0, len(wantPublic))
 	for _, scope := range m.Scopes {
-		if slices.Contains(wantDeprecated, scope.Name) {
-			continue
-		}
-
 		if scope.Status != "active" {
 			t.Fatalf("Wallet scope %q must be active", scope.Name)
 		}
