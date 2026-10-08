@@ -1,8 +1,8 @@
 /**
  * Money helpers. The API speaks integer centavos everywhere — never floats.
- * Real balance is rendered as BRL; sandbox is deliberately rendered WITHOUT a
- * currency symbol, because sandbox credit has no monetary value and is never
- * convertible to real money.
+ * Real balance is rendered as BRL. Sandbox credits are the virtual currency:
+ * whole numbers with their own symbol (₡, see credits-format.ts), never "R$",
+ * because they have no monetary value and are never convertible to real money.
  *
  * Formatting is locale-aware: callers may pass a locale, otherwise it follows
  * the active i18n language so English users see "R$1,234.56" and pt-BR users
@@ -10,6 +10,7 @@
  */
 
 import i18n from '@/lib/i18n'
+import {formatCreditValue} from './credits-format'
 
 const brlCache = new Map<string, Intl.NumberFormat>()
 const plainCache = new Map<string, Intl.NumberFormat>()
@@ -54,20 +55,20 @@ export function formatCredits(centavos: number, locale: string = i18n.language |
   return plain(locale).format(centavos / 100)
 }
 
-/** Formats raw sandbox credits (NOT centavos), e.g. 1000 → "1.000". */
+/** Formats raw sandbox credits (NOT centavos) as whole numbers with the virtual symbol, e.g. 1000 → "₡ 1.000". */
 export function formatCreditsAmount(credits: number, locale: string = i18n.language || 'pt-BR'): string {
-  return plain(locale).format(credits)
+  return formatCreditValue(credits, locale)
 }
 
-/** Wallet balance → "R$ 1.234,56" for money wallets, or "12.000" for sandbox credits. */
+/** Wallet balance → "R$ 1.234,56" for money wallets, or "₡ 12.000" for sandbox credits. */
 export function formatBalance(amount: number, monetary: boolean, locale: string = i18n.language || 'pt-BR'): string {
   return monetary ? formatBRL(amount, locale) : formatCreditsAmount(amount, locale)
 }
 
-/** Signed amount → "+R$ 10,00" / "−R$ 10,00" for monetary rows, or "+1.000" / "−1.000"
+/** Signed amount → "+R$ 10,00" / "−R$ 10,00" for monetary rows, or "+₡ 1.000" / "−₡ 1.000"
  *  for sandbox (credits) rows. `monetary` is false for sandbox. */
 export function formatSigned(amount: number, monetary: boolean, locale: string = i18n.language || 'pt-BR'): string {
   const sign = amount < 0 ? '−' : '+'
   const abs = Math.abs(amount)
-  return `${sign}${monetary ? formatBRL(abs, locale) : formatCreditsAmount(abs, locale)}`
+  return monetary ? `${sign}${formatBRL(abs, locale)}` : formatCreditValue(amount, locale, true)
 }

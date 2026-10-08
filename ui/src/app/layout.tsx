@@ -11,8 +11,8 @@ import {Toaster} from 'sonner'
 
 const LIGHT_THEME_COLOR = '#f8fafc'
 
-const sans = IBM_Plex_Sans({subsets: ['latin'], variable: '--font-sans'});
-const mono = IBM_Plex_Mono({subsets: ['latin'], weight: ['400', '500', '600', '700',], variable: '--font-mono'});
+const sans = IBM_Plex_Sans({subsets: ['latin', 'latin-ext'], variable: '--font-sans'});
+const mono = IBM_Plex_Mono({subsets: ['latin', 'latin-ext'], weight: ['400', '500', '600', '700',], variable: '--font-mono'});
 
 
 export const viewport: Viewport = {

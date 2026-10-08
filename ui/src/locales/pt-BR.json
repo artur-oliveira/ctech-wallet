@@ -118,7 +118,7 @@
       "label": "Valor",
       "placeholder": "0,00",
       "maxButton": "Máx {{max}}",
-      "creditsPreview": "Corresponde a {{credits}} créditos."
+      "creditsPreview": "Corresponde a {{credits}}."
     },
     "max": "Máximo {{max}}",
     "available": "Disponível {{amount}}",
@@ -174,7 +174,7 @@
       "product": "Nenhuma compra de produto"
     },
     "loadingMore": "Carregando compras anteriores…",
-    "credits": "{{credits}} créditos",
+    "credits": "{{credits}}",
     "kind": {
       "sandbox": "Créditos sandbox",
       "product": "Produto digital"

@@ -66,7 +66,7 @@ export function AmountDialog({
   const bounds = amountBounds({ceiling: millionCap, balance: balanceCap, limitNow: limitCents, min: minCents})
   const effectiveMax = bounds.max
   const hasServerLimit = limitCents != null
-  // Sandbox credits carry no currency symbol (contract + invariant #7) — every
+  // Credits never show R$ (contract + invariant #7); raw credit amounts use ₡ via formatCreditsAmount. Every
   // amount shown to the user in the credits flow must go through formatCredits.
   const fmt = flow === 'credits' ? formatCredits : formatBRL
 
