@@ -27,15 +27,15 @@ export const metadata: Metadata = {
   metadataBase: new URL('https://wallet.aoctech.app'),
 
   title: {
-    default: 'CTech Ledger',
-    template: '%s | CTech Ledger',
+    default: 'CTech Wallet',
+    template: '%s | CTech Wallet',
   },
 
   description:
     'Carteira digital do ecossistema CTech. Centralize seu saldo para pagar assinaturas e utilizar serviços.',
 
   keywords: [
-    'CTech Ledger',
+    'CTech Wallet',
     'wallet',
     'digital wallet',
     'saldo',
@@ -52,11 +52,11 @@ export const metadata: Metadata = {
   ],
 
   openGraph: {
-    title: 'CTech Ledger',
+    title: 'CTech Wallet',
     description:
       'Seu saldo para todo o ecossistema CTech.',
     url: 'https://wallet.aoctech.app',
-    siteName: 'CTech Ledger',
+    siteName: 'CTech Wallet',
     locale: 'pt_BR',
     type: 'website',
 
@@ -65,14 +65,14 @@ export const metadata: Metadata = {
         url: '/og-image.png',
         width: 1200,
         height: 630,
-        alt: 'CTech Ledger',
+        alt: 'CTech Wallet',
       },
     ],
   },
 
   twitter: {
     card: 'summary_large_image',
-    title: 'CTech Ledger',
+    title: 'CTech Wallet',
     description:
       'Seu saldo para todo o ecossistema CTech.',
     images: ['/og-image.png'],
