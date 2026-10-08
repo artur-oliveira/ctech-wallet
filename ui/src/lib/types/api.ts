@@ -20,8 +20,16 @@ export interface Wallet {
 // game is absent until the user activates gambling. sandbox may exist before
 // activation after virtual-credit play or a direct credit purchase. `activated`
 // therefore mirrors game presence only; sandbox presence must never imply consent.
+/** What the real wallet's PIX dialogs may offer right now (server-computed, centavos). */
+export interface RailLimits {
+  deposit: { min: number; max: number; daily_cap: number; daily_remaining: number; max_now: number }
+  withdraw: { min: number; daily_cap: number; daily_remaining: number; count_remaining: number; max_now: number }
+  resets_at: string
+}
+
 export interface Balances {
   real: Wallet
+  limits?: RailLimits
   activated: boolean
   game?: Wallet
   sandbox?: Wallet

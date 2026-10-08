@@ -346,6 +346,21 @@ func (s *WalletService) Statement(ctx context.Context, walletID string, limit in
 	return s.repo.Statement(ctx, walletID, limit, startKey)
 }
 
+// RailLimits reports what the real wallet's PIX dialogs may offer right now: the
+// per-deposit range, the daily limits and today's remaining headroom. Display
+// metadata for the UI; enforcement stays in InitiateDeposit/ConfirmDeposit/Withdraw.
+func (s *WalletService) RailLimits(ctx context.Context, userID string, realw *wallet.Wallet) (wallet.RailLimits, error) {
+	u, err := s.users.Get(ctx, userID)
+	if err != nil {
+		return wallet.RailLimits{}, err
+	}
+	var c wallet.RealDailyCounters
+	if u != nil && u.RealDailyCounters != nil {
+		c = *u.RealDailyCounters
+	}
+	return wallet.ComputeRailLimits(realw, c, time.Now()), nil
+}
+
 // depositTxID derives the Inter-compatible txid from the idempotency key, so a
 // retried POST /wallet/deposits maps to the same charge. Mirrors
 // sandboxPurchaseTxID: the digest keeps caller-controlled values out of the txid.

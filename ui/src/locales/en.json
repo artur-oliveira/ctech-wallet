@@ -127,7 +127,8 @@
       "invalid": "Enter a valid amount.",
       "maxExceeded": "The maximum amount is {{max}}.",
       "overBalance": "Above what's available ({{amount}}).",
-      "overWithdrawable": "The maximum available to withdraw is {{amount}}."
+      "overWithdrawable": "The maximum available to withdraw is {{amount}}.",
+      "belowMin": "The minimum is {{min}}."
     },
     "deposit": {
       "title": "Deposit via PIX",
@@ -138,7 +139,9 @@
       "title": "Withdraw to PIX",
       "description": "The entered amount is deducted in full from your balance.",
       "submit": "Withdraw"
-    }
+    },
+    "range": "Min. {{min}} • Max. {{max}} today",
+    "limitReached": "Daily limit reached"
   },
   "confirm": {
     "fundGame": {

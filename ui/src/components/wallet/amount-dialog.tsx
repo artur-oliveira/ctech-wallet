@@ -15,6 +15,7 @@ import {
   toCredits
 } from '@/lib/utils/money'
 import {Dialog, DialogContent, DialogDescription, DialogTitle} from '@/components/ui/dialog'
+import {amountBounds} from '@/lib/utils/amount-bounds'
 
 type Flow = 'deposit' | 'withdraw' | 'credits' | 'fund-game' | 'return-game'
 
@@ -30,6 +31,10 @@ interface AmountDialogProps {
   flow: Flow
   /** Caps the amount at the available balance (withdraw, fund-game, credits, return-game). */
   maxCents?: number
+  /** Server-reported minimum for this flow (deposit/withdraw). */
+  minCents?: number
+  /** Server-computed "allowed right now" (daily limits folded in); 0 blocks the flow. */
+  limitCents?: number
   pending?: boolean
   onSubmit?: (amount: number) => void
   /** When set, replaces the mutation: the amount is handed to a confirm step instead of committing. */
@@ -38,7 +43,16 @@ interface AmountDialogProps {
 }
 
 /** Shared amount entry used by deposit, withdrawal, and credit purchase. */
-export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onClose}: AmountDialogProps) {
+export function AmountDialog({
+                               flow,
+                               maxCents,
+                               minCents,
+                               limitCents,
+                               pending,
+                               onSubmit,
+                               onProceed,
+                               onClose
+                             }: AmountDialogProps) {
   const {t} = useTranslation()
   const flowKey = FLOW_KEY[flow]
 
@@ -49,14 +63,18 @@ export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onCl
   const capMillion = flow === 'deposit' || flow === 'fund-game'
   const balanceCap = maxCents ?? Number.POSITIVE_INFINITY
   const millionCap = capMillion ? MAX_AMOUNT_CENTS : Number.POSITIVE_INFINITY
-  const effectiveMax = Math.min(balanceCap, millionCap)
+  const bounds = amountBounds({ceiling: millionCap, balance: balanceCap, limitNow: limitCents, min: minCents})
+  const effectiveMax = bounds.max
+  const hasServerLimit = limitCents != null
   // Sandbox credits carry no currency symbol (contract + invariant #7) — every
   // amount shown to the user in the credits flow must go through formatCredits.
   const fmt = flow === 'credits' ? formatCredits : formatBRL
 
   const schema = useMemo(() => {
     const overMsg =
-      flow === 'withdraw'
+      hasServerLimit
+        ? t('dialog.error.maxExceeded', {max: formatBRL(effectiveMax)})
+        : flow === 'withdraw'
         ? t('dialog.error.overWithdrawable', {amount: formatBRL(effectiveMax)})
         : balanceCap <= millionCap && maxCents != null
           ? t('dialog.error.overBalance', {amount: fmt(maxCents)})
@@ -66,10 +84,11 @@ export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onCl
       .number({error: t('dialog.error.invalid')})
       .int()
       .positive(t('dialog.error.required'))
+      .min(bounds.min, t('dialog.error.belowMin', {min: formatBRL(bounds.min)}))
       .max(effectiveMax, overMsg)
 
     return z.object({amount})
-  }, [effectiveMax, flow, balanceCap, millionCap, maxCents, t, fmt])
+  }, [effectiveMax, bounds.min, hasServerLimit, flow, balanceCap, millionCap, maxCents, t, fmt])
 
   const {
     control,
@@ -158,7 +177,15 @@ export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onCl
           )}
         />
 
-        {capMillion && (
+        {hasServerLimit && !bounds.blocked && (
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            {t('dialog.range', {min: formatBRL(bounds.min), max: formatBRL(effectiveMax)})}
+          </p>
+        )}
+        {hasServerLimit && bounds.blocked && (
+          <p role="status" className="mt-1.5 text-sm text-destructive">{t('dialog.limitReached')}</p>
+        )}
+        {capMillion && !hasServerLimit && (
           <p className="mt-1.5 text-xs text-muted-foreground">{t('dialog.max', {max: formatBRL(MAX_AMOUNT_CENTS)})}</p>
         )}
         {maxCents != null && (
@@ -176,7 +203,7 @@ export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onCl
           <Button type="button" variant="ghost" className="w-full sm:flex-1" onClick={onClose} disabled={pending}>
             {t('common.cancel')}
           </Button>
-          <Button type="submit" variant="brand" className="w-full sm:flex-1" disabled={pending}>
+          <Button type="submit" variant="brand" className="w-full sm:flex-1" disabled={pending || bounds.blocked}>
             {pending ? t('common.loading') : t(`dialog.${flowKey}.submit`)}
           </Button>
         </div>

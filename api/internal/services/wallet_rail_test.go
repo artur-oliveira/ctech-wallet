@@ -279,3 +279,27 @@ func TestWithdrawWithoutKYCCPFIsRejectedBeforeDebit(t *testing.T) {
 		t.Fatal("money moved without a destination CPF")
 	}
 }
+
+func TestRailLimitsReflectTodaysCounters(t *testing.T) {
+	repo := newStubRepo()
+	repo.real.Balance = 300000
+	users := &stubUserRepo{user: &wallet.User{RealDailyCounters: &wallet.RealDailyCounters{DayKey: todayKey(), DepositSum: 70000}}}
+	svc := newRailSvc(repo, users, pix.NewFake())
+
+	l, err := svc.RailLimits(context.Background(), "u1", &repo.real)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l.Deposit.MaxNow != 30000 || l.Withdraw.MaxNow != 100000 {
+		t.Fatalf("limits = %+v", l)
+	}
+}
+
+func TestRailLimitsForUserWithoutARow(t *testing.T) {
+	repo := newStubRepo()
+	svc := newRailSvc(repo, &stubUserRepo{}, pix.NewFake())
+	l, err := svc.RailLimits(context.Background(), "u1", &repo.real)
+	if err != nil || l.Deposit.MaxNow != 100000 {
+		t.Fatalf("limits = %+v err=%v", l, err)
+	}
+}
