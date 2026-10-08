@@ -43,6 +43,8 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 	// User routes — Bearer user JWT.
 	w := v1.Group("/wallet", auth, middleware.RequireUser)
 	w.Get("/", middleware.RequireUserScope(middleware.ScopeWalletBalancesRead), h.getWallet)
+	w.Post("/deposits", middleware.RequireUserScope(middleware.ScopeWalletDepositsWrite), middleware.RequireKYC(middleware.KYCVerified), h.createDeposit)
+	w.Post("/withdrawals", middleware.RequireUserScope(middleware.ScopeWalletWithdrawalsWrite), middleware.RequireKYC(middleware.KYCVerified), middleware.RequireRecentMFA(middleware.StepUpMaxAge), h.createWithdrawal)
 	w.Post("/sandbox/purchase", middleware.RequireUserScope(middleware.ScopeWalletSandboxPurchasesWrite), h.purchaseSandbox)
 	// Direct PIX→sandbox-credits sale (plan §9.1/§9.3) — decoupled from the
 	// ring-fence entirely, no KYC gate, no feature flag: ships live. Plural
