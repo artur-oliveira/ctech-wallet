@@ -46,6 +46,7 @@ type User struct {
 	SelfExclusion       *SelfExclusion       `dynamodbav:"self_exclusion,omitempty" json:"-"`
 	GameLimits          *GameLimits          `dynamodbav:"game_limits,omitempty" json:"-"`
 	GameDepositCounters *GameDepositCounters `dynamodbav:"game_deposit_counters,omitempty" json:"-"`
+	RealDailyCounters   *RealDailyCounters   `dynamodbav:"real_daily_counters,omitempty" json:"-"`
 }
 
 // TermsAccepted reports whether the user has accepted the CURRENT addendum
