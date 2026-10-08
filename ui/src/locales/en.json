@@ -85,7 +85,7 @@
     "game": {
       "label": "Game balance",
       "badge": "Not directly withdrawable",
-      "subtitle": "Real money set aside for games. To withdraw it, return it to your real balance first — you can do that anytime, with no fee."
+      "subtitle": "Real money set aside for games. Return it to your real balance to withdraw."
     },
     "return": "Return",
     "credits": "Credits",
@@ -111,7 +111,7 @@
     },
     "returnGame": {
       "title": "Return to real balance",
-      "description": "No fee and no limit — moving money out of the game wallet is always allowed.",
+      "description": "No fee, no limit.",
       "submit": "Return"
     },
     "amount": {
@@ -147,7 +147,7 @@
     },
     "returnGame": {
       "title": "Confirm return to real balance",
-      "description": "No fee and no limit — money leaving the game wallet is always allowed."
+      "description": "No fee, no limit."
     },
     "amount": "Amount",
     "total": "Total debited",
@@ -204,7 +204,7 @@
     "depositConfirmed": "Deposit confirmed",
     "realtimeDeposit": "Deposit of {{amount}} confirmed",
     "withdrawSent": "Withdrawal sent.",
-    "withdrawReversed": "Withdrawal could not be completed — the amount was refunded to your balance.",
+    "withdrawReversed": "Withdrawal failed. The amount is back in your balance.",
     "withdrawRefundFailed": "Withdrawal failed and the refund is pending. Our team has been notified.",
     "creditsAdded": "Credits added.",
     "fundGameSent": "Balance sent to the game wallet.",
@@ -229,7 +229,7 @@
   },
   "gambling": {
     "title": "Activate the game wallet",
-    "description": "We create a separate wallet for games. The money in it stays yours and returns to your real balance whenever you want — no fee and no limit.",
+    "description": "A separate wallet for games. The money stays yours and returns to your real balance anytime, with no fee and no limit.",
     "bullet1": "It is the only door to games: you can't play directly from your real balance.",
     "bullet2": "Your limits apply when sending to the game wallet. Returning money does not free up limit again.",
     "bullet3": "Sandbox credits have no monetary value and never become money again.",
@@ -376,7 +376,7 @@
       "readout": "Service unavailable",
       "title": "The wallet is back in a moment.",
       "description": "The server did not respond. Deposits and withdrawals already in flight stay recorded and will settle.",
-      "detail": "We are checking on our own — you do not need to reload.",
+      "detail": "Checking automatically. No need to reload.",
       "checking": "Checking whether the service is back…"
     },
     "offline": {

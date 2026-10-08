@@ -85,7 +85,7 @@
     "game": {
       "label": "Saldo de jogo",
       "badge": "Não saca direto",
-      "subtitle": "Dinheiro real reservado para jogos. Para sacar, devolva ao saldo real primeiro — pode fazer isso quando quiser, sem taxa."
+      "subtitle": "Dinheiro real reservado para jogos. Devolva ao saldo real para sacar."
     },
     "return": "Devolver",
     "credits": "Créditos",
@@ -111,7 +111,7 @@
     },
     "returnGame": {
       "title": "Devolver ao saldo real",
-      "description": "Sem taxa e sem limite — devolver dinheiro para fora da carteira de jogo é sempre permitido.",
+      "description": "Sem taxa e sem limite.",
       "submit": "Devolver"
     },
     "amount": {
@@ -147,7 +147,7 @@
     },
     "returnGame": {
       "title": "Confirmar devolução ao saldo real",
-      "description": "Sem taxa e sem limite — dinheiro saindo da carteira de jogo é sempre permitido."
+      "description": "Sem taxa e sem limite."
     },
     "amount": "Valor",
     "total": "Total debitado",
@@ -204,7 +204,7 @@
     "depositConfirmed": "Depósito confirmado",
     "realtimeDeposit": "Depósito de {{amount}} confirmado",
     "withdrawSent": "Saque enviado.",
-    "withdrawReversed": "Não foi possível concluir o saque — o valor foi estornado para o seu saldo.",
+    "withdrawReversed": "Não foi possível concluir o saque. O valor voltou para o seu saldo.",
     "withdrawRefundFailed": "O saque falhou e o estorno está pendente. Nossa equipe já foi avisada.",
     "creditsAdded": "Créditos adicionados.",
     "fundGameSent": "Saldo enviado para a carteira de jogo.",
@@ -229,7 +229,7 @@
   },
   "gambling": {
     "title": "Ativar a carteira de jogo",
-    "description": "Criamos uma carteira separada para jogos. O dinheiro nela continua sendo seu e volta para o saldo real quando você quiser — sem taxa e sem limite.",
+    "description": "Carteira separada para jogos. O dinheiro continua seu e volta ao saldo real quando quiser, sem taxa e sem limite.",
     "bullet1": "É a única porta para jogos: não dá para jogar direto do saldo real.",
     "bullet2": "Seus limites valem no envio para a carteira de jogo. Devolver dinheiro não libera limite de volta.",
     "bullet3": "Créditos sandbox não têm valor em dinheiro e nunca voltam a virar dinheiro.",
@@ -376,7 +376,7 @@
       "readout": "Serviço indisponível",
       "title": "A carteira volta em instantes.",
       "description": "O servidor não respondeu. Depósitos e saques em andamento seguem registrados e serão concluídos.",
-      "detail": "Estamos verificando sozinhos — você não precisa recarregar a página.",
+      "detail": "Verificando automaticamente. Não precisa recarregar.",
       "checking": "Verificando se o serviço já voltou…"
     },
     "offline": {
