@@ -67,7 +67,7 @@ receiver with no benefit over a scheme every other integration already uses.
 
 **Receiver contract (mirrors Invariant #11):** the callback body is a wake-up signal only. The receiver MUST
 `GET /internal/wallet/sandbox-purchase/:id` to confirm the purchase before crediting its own currency — never
-credit off the callback body directly, exactly as the wallet itself never trusts Inter's/Asaas's webhook body for
+credit off the callback body directly, exactly as the wallet itself never trusts Inter's webhook body for
 money movement.
 
 Dispatch is synchronous (inline, ≤5s timeout) at the end of `ConfirmSandboxPurchase`/`RefundSandboxPurchase` and

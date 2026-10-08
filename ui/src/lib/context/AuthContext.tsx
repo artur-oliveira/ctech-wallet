@@ -4,14 +4,7 @@ import {createContext, ReactNode, useCallback, useEffect, useState} from 'react'
 import {apiClient, registerRefreshFn} from '@/lib/api/client'
 import type {Profile} from '@/lib/types/api'
 import {STORAGE_KEY_USER} from '@/lib/constants/storage'
-import {
-  decodeIdToken,
-  doRefresh,
-  endSessionRedirect,
-  revokeToken,
-  startOAuthFlow,
-  startStepUpFlow
-} from '@/lib/auth/oauth'
+import {decodeIdToken, doRefresh, endSessionRedirect, revokeToken, startOAuthFlow} from '@/lib/auth/oauth'
 import {MOCK_PROFILE, USE_MOCK} from '@/lib/mock'
 
 interface AuthContextType {
@@ -19,10 +12,6 @@ interface AuthContextType {
   authenticated: boolean
   loading: boolean
   login: (returnTo?: string) => void
-  /** Forces a fresh interactive login (max_age=0) for step-up flows — a
-   * plain login() would silently reuse the existing SSO session and never
-   * re-prove MFA. */
-  reverify: () => void
   logout: () => void
   handleCallback: (accessToken: string, idToken: string | null) => Promise<void>
 }
@@ -69,15 +58,6 @@ export function AuthProvider({children}: { children: ReactNode }) {
       return
     }
     void startOAuthFlow(returnTo)
-  }, [])
-
-  const reverify = useCallback(() => {
-    if (USE_MOCK) {
-      setProfile(MOCK_PROFILE)
-      setAuthenticated(true)
-      return
-    }
-    void startStepUpFlow(window.location.pathname)
   }, [])
 
   // Clearing local state is not a logout: the ctech_session SSO cookie survives
@@ -129,7 +109,7 @@ export function AuthProvider({children}: { children: ReactNode }) {
   }, [tryRefresh])
 
   return (
-    <AuthContext.Provider value={{profile, authenticated, loading, login, reverify, logout, handleCallback}}>
+    <AuthContext.Provider value={{profile, authenticated, loading, login, logout, handleCallback}}>
       {children}
     </AuthContext.Provider>
   )

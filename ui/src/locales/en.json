@@ -10,8 +10,7 @@
     "retrying": "Trying again…",
     "genericError": "Something went wrong. Please try again.",
     "close": "Close",
-    "changeLanguage": "Switch language to {{language}}",
-    "asaasBadgeAlt": "Financial services provided by Asaas Gestão Financeira S.A."
+    "changeLanguage": "Switch language to {{language}}"
   },
   "login": {
     "title": "CTech Ledger",
@@ -81,10 +80,8 @@
   "balance": {
     "real": {
       "label": "Real balance",
-      "subtitle": "Deposit and withdraw via PIX"
+      "subtitle": "PIX deposits and withdrawals are temporarily unavailable."
     },
-    "deposit": "Deposit",
-    "withdraw": "Withdraw",
     "fundGame": "Send to games",
     "game": {
       "label": "Game balance",
@@ -101,17 +98,6 @@
     "responsibleLink": "Responsible gaming and limits"
   },
   "dialog": {
-    "deposit": {
-      "title": "Deposit via PIX",
-      "description": "We generate a PIX code for you to pay in your bank app.",
-      "submit": "Generate code"
-    },
-    "withdraw": {
-      "title": "Withdraw to PIX",
-      "description": "The entered amount is deducted in full from your balance.",
-      "submit": "Withdraw",
-      "pixDestination": "The PIX will be sent to the CPF registered on your account. You must already have a PIX key registered for it at your bank."
-    },
     "credits": {
       "title": "Buy sandbox credits",
       "description": "Debited from your game balance. Sandbox credits never become money again.",
@@ -139,29 +125,10 @@
       "required": "Enter an amount.",
       "invalid": "Enter a valid amount.",
       "maxExceeded": "The maximum amount is {{max}}.",
-      "overBalance": "Above what's available ({{amount}}).",
-      "overWithdrawable": "The maximum available to withdraw is {{amount}}."
-    },
-    "onboarding": {
-      "title": "Open payment account",
-      "description": "To receive PIX in this wallet we open a payment account in your name. There is a one-off verification fee, charged before it is opened. Tell us your approximate monthly income.",
-      "incomeLabel": "Monthly income",
-      "incomeHint": "Approximate value. Used only to register the payment account.",
-      "submit": "Continue"
-    },
-    "custodyFee": {
-      "title": "Verification fee",
-      "description": "Pay the PIX below so we can open your payment account. This is a service fee: it does not go into your balance.",
-      "qrAlt": "Verification fee PIX QR code",
-      "nonRefundable": "The fee is not refundable: it is consumed when the account is opened. If a document is refused you re-send it without paying again.",
-      "copy": "Copy PIX code"
+      "overBalance": "Above what's available ({{amount}})."
     }
   },
   "confirm": {
-    "withdraw": {
-      "title": "Confirm withdrawal",
-      "description": "Review the amount before the money leaves your balance."
-    },
     "fundGame": {
       "title": "Confirm transfer to games",
       "description": "This move counts toward your game limit. Returning money later does not free it up again."
@@ -170,50 +137,10 @@
       "title": "Confirm return to real balance",
       "description": "No fee and no limit — money leaving the game wallet is always allowed."
     },
-    "stepUp": {
-      "title": "Identity check required",
-      "description": "For your security, withdrawals require a recent MFA check. Re-verify your identity to continue.",
-      "reverify": "Re-verify identity"
-    },
     "amount": "Amount",
     "total": "Total debited",
     "resulting": "Resulting balance",
     "confirm": "Confirm"
-  },
-  "pix": {
-    "title": "Pay {{amount}} via PIX",
-    "description": "Copy the code and pay in your bank app. The balance updates as soon as the bank confirms the payment.",
-    "copy": "Copy PIX code",
-    "copied": "Copied",
-    "expiresIn": "Expires in {{time}}",
-    "expired": "This PIX code has expired. Close this window and start a new deposit.",
-    "qrAlt": "PIX payment QR code",
-    "close": "Close",
-    "confirmedToast": "Deposit confirmed"
-  },
-  "transactions": {
-    "statusAnnouncement": "{{kind}} status changed to {{status}}.",
-    "title": "Transaction status",
-    "description": "Updates are tied to the reference below and remain visible after a refresh.",
-    "kind": {
-      "deposit": "PIX deposit",
-      "withdrawal": "PIX withdrawal"
-    },
-    "status": {
-      "pending": "Awaiting payment",
-      "processing": "Processing",
-      "confirmed": "Confirmed",
-      "completed": "Sent",
-      "expired": "Expired",
-      "reversed": "Refunded",
-      "refund_failed": "Refund pending"
-    },
-    "reference": "Reference {{id}}",
-    "resumeDeposit": "View PIX code",
-    "guidance": {
-      "processing": "The debit is already reflected in your balance while the bank confirms the PIX. If it cannot be completed, the amount is returned automatically. You can close this page safely.",
-      "refund_failed": "The PIX was not completed and the automatic refund still needs reconciliation. Our team has been notified; keep the reference above if you contact support."
-    }
   },
   "purchases": {
     "title": "Purchase history",
@@ -256,17 +183,13 @@
   "toast": {
     "depositConfirmed": "Deposit confirmed",
     "realtimeDeposit": "Deposit of {{amount}} confirmed",
-    "withdrawProcessing": "Withdrawal submitted and awaiting bank confirmation.",
     "withdrawSent": "Withdrawal sent.",
     "withdrawReversed": "Withdrawal could not be completed — the amount was refunded to your balance.",
     "withdrawRefundFailed": "Withdrawal failed and the refund is pending. Our team has been notified.",
     "creditsAdded": "Credits added.",
     "fundGameSent": "Balance sent to the game wallet.",
     "returned": "Balance returned to real balance.",
-    "pixCopied": "PIX code copied",
-    "gamblingActivated": "Game wallet activated.",
-    "onboardingStarted": "Payment account sent for review.",
-    "custodyFeeCreated": "Verification fee charge created"
+    "gamblingActivated": "Game wallet activated."
   },
   "terms": {
     "title": "Just one more step",
@@ -351,20 +274,15 @@
   "errors": {
     "insufficientBalance": "Insufficient balance for this operation.",
     "walletBusy": "An operation is already in progress. Wait a few seconds.",
-    "withdrawCpfMismatch": "The PIX key belongs to a different CPF. Use a key under your name.",
-    "pixKeyNotFound": "PIX key not found. Check it and try again.",
     "kycNotVerified": "Verify your identity in your account before continuing.",
-    "stepUpRequired": "Confirm your identity with MFA and try the withdrawal again.",
     "idempotencyConflict": "This operation was already sent with different data. Reload the page.",
     "gamblingNotActivated": "Activate the game wallet to use this operation.",
     "gamblingTermsRequired": "Accept the responsible gaming terms to continue.",
-    "depositOutOfRange": "The deposit must be between {{min}} and {{max}}.",
     "amountAboveLimit": "The maximum amount per operation is {{max}}.",
     "selfExcluded": "Your self-exclusion blocks deposits to the game wallet.",
     "limitsNotConfigured": "Set your game limits before continuing.",
     "depositLimitExceeded": "This transfer exceeds one of your game limits.",
     "generic": "Something went wrong. Please try again.",
-    "walletOnboarding": "Your payment account is not approved yet.",
     "accountBlocked": "This account is blocked for transactions. Contact support."
   },
   "ledger": {
@@ -398,46 +316,12 @@
       "dashboard": "Go to dashboard"
     },
     "title": "Your CTech balance",
-    "description": "Check your money, deposit or withdraw via PIX, and follow every transaction.",
+    "description": "Check your balance and follow every transaction.",
     "footer": {
       "terms": "Terms of Use",
       "privacy": "Privacy",
       "legalCenter": "Legal Center"
     }
-  },
-  "deposit": {
-    "gate": {
-      "kyc": {
-        "action": "Verify identity",
-        "note": "Deposits unlock after full identity verification: document and selfie."
-      },
-      "custodyAbsent": {
-        "action": "Open payment account",
-        "note": "One step left before this wallet can receive PIX."
-      },
-      "custodyFeePending": {
-        "action": "Pay verification fee",
-        "note": "The one-off verification fee is still outstanding — it opens your payment account."
-      },
-      "custodyDocuments": {
-        "action": "Send documents",
-        "note": "The provider needs your identity documents to release the payment account.",
-        "list": "Outstanding: {{documents}}."
-      },
-      "custodyPending": {
-        "action": "Under review",
-        "note": "Your payment account is under review. We will let you know as soon as it clears."
-      },
-      "custodyBlocked": {
-        "action": "Contact support",
-        "note": "Deposits are unavailable on this account."
-      },
-      "custodyEmail": {
-        "action": "Check your email",
-        "note": "Asaas emailed you the remaining verification steps. Finish them there and deposits open automatically."
-      }
-    },
-    "providerNote": "Payment account and PIX settlement provided by Asaas (Asaas Gestão Financeira S.A.)."
   },
   "systemState": {
     "retry": "Try again",

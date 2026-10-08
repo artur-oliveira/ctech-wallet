@@ -35,7 +35,6 @@ interface PixGatewayStackProps extends cdk.StackProps {
   interPixKey: string;
   /** api's public base URL — the webhook Lambda's confirm-deposit target. */
   walletApiUrl: string;
-  asaasBaseUrl: string;
 }
 
 /**
@@ -62,7 +61,7 @@ export class PixGatewayStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: PixGatewayStackProps) {
     super(scope, id, props);
 
-    const {environment, certificateArn, interBaseUrl, interPixKey, walletApiUrl, asaasBaseUrl} = props;
+    const {environment, certificateArn, interBaseUrl, interPixKey, walletApiUrl} = props;
     const walletSsm = SSM_WALLET(environment);
     const accountSsm = SSM_ACCOUNT(environment);
     const pixGatewaySsm = SSM_PIX_GATEWAY(environment);
@@ -102,7 +101,6 @@ export class PixGatewayStack extends cdk.Stack {
         INTER_BASE_URL: interBaseUrl,
         INTER_PIX_KEY: interPixKey,
         INTER_CLIENT_ID: ssm.StringParameter.valueForStringParameter(this, walletSsm.interClientId),
-        ASAAS_BASE_URL: asaasBaseUrl,
       },
     });
     this.outboundFunctionArn = outboundFn.functionArn;
@@ -144,7 +142,6 @@ export class PixGatewayStack extends cdk.Stack {
         CTECH_URL: ssm.StringParameter.valueForStringParameter(this, accountSsm.baseUrl),
         PIX_GATEWAY_CLIENT_ID: ssm.StringParameter.valueForStringParameter(this, pixGatewaySsm.clientId),
         WALLET_API_URL: walletApiUrl,
-        ASAAS_BASE_URL: asaasBaseUrl,
       },
     });
 

@@ -25,23 +25,20 @@ export type TableName = (
   'wallet_withdrawals' |
   'wallet_users' |
   typeof TABLE_HOLDS |
-  // Asaas BaaS custody tables (docs/plans/2026-07-30-asaas-baas-implementation-plan.md
-  // §2.4). Names are provider-neutral on purpose — Asaas is today's provider,
-  // not a permanent commitment.
-  'wallet_baas_accounts' |
-  'wallet_transfer_intents' |
-  'wallet_settlement_legs' |
-  'wallet_med_receivables' |
   'wallet_sandbox_purchases' |
   'wallet_product_purchases'
   );
+
+/** Retired tables: kept provisioned (RETAIN) for data preservation only. */
+type RetiredTableName =
+  'wallet_baas_accounts' | 'wallet_transfer_intents' | 'wallet_settlement_legs' | 'wallet_med_receivables';
 
 // GSI names — must match internal/domain/wallet/model.go.
 const GSI_USER = 'gsi_user';
 const GSI_IDEM = 'gsi_idem';
 const GSI_STATUS = 'gsi_status';
 const GSI_HOLD_STATUS = 'gsi_hold_status';
-const GSI_DEPOSIT_PROVIDER_QR = 'gsi_deposit_provider_qr';
+// Retired-table GSIs (see the retired BaaS block below).
 const GSI_BAAS_ACCOUNT_ID = 'gsi_baas_account_id';
 const GSI_BAAS_STATUS = 'gsi_baas_status';
 const GSI_INTENT_STATUS = 'gsi_intent_status';
@@ -60,7 +57,6 @@ const ATTR_IDEMPOTENCY_KEY = 'idempotency_key';
 const ATTR_STATUS = 'status';
 const ATTR_TTL = 'ttl';
 const ATTR_PROVIDER_ACCOUNT_ID = 'provider_account_id';
-const ATTR_PROVIDER_QR_CODE_ID = 'provider_qr_code_id';
 const ATTR_WEBHOOK_STATUS = 'webhook_status';
 const ATTR_CREATED_AT = 'created_at';
 
@@ -74,6 +70,8 @@ interface TableOptions {
   sortKey?: boolean;
   /** Enable DynamoDB TTL on the `ttl` attribute. */
   ttl?: boolean;
+  /** Retired: force RETAIN and keep it out of `tables` (so it gets no IAM access). */
+  retired?: boolean;
 }
 
 export class DynamoDBStack extends cdk.Stack {
@@ -94,7 +92,7 @@ export class DynamoDBStack extends cdk.Stack {
     const pointInTimeRecoverySpecification =
       environment === 'prod' ? {pointInTimeRecoveryEnabled: true} : undefined;
 
-    const table = (name: TableName, opts: TableOptions = {}): dynamodb.TableV2 => {
+    const table = (name: TableName | RetiredTableName, opts: TableOptions = {}): dynamodb.TableV2 => {
       const tableName = `${tablePrefix}_${name}`;
       const t = new dynamodb.TableV2(this, tableName, {
         tableName,
@@ -105,11 +103,15 @@ export class DynamoDBStack extends cdk.Stack {
           maxReadRequestUnits: 1000,
           maxWriteRequestUnits: 1000,
         }),
-        removalPolicy,
+        removalPolicy: opts.retired ? RemovalPolicy.RETAIN : removalPolicy,
         pointInTimeRecoverySpecification,
         encryption: dynamodb.TableEncryptionV2.awsManagedKey(),
       });
-      this.tables.set(name, t);
+      if (!opts.retired) this.tables.set(name as TableName, t);
+      // The IAM/Reconcile stacks imported this ARN until now; keep the export
+      // until they have deployed without it, or this stack's update fails with
+      // "export in use".
+      else this.exportValue(t.tableArn);
       return t;
     };
 
@@ -139,14 +141,8 @@ export class DynamoDBStack extends cdk.Stack {
     // ── wallet_pix_deposits: durable charges keyed by txid ────────────────────
     // gsi_status backs reconciliation of pending deposits. Business expiration
     // closes charges but never deletes their idempotency/audit record.
-    // gsi_deposit_provider_qr
-    // resolves an Asaas payment webhook's pixQrCodeId back to the deposit it
-    // belongs to (plan §4.3: "the webhook resolves payment.pixQrCodeId → txid,
-    // not the other way round") — Asaas-opened deposits only, empty for every
-    // Inter-opened row.
     const depositsTable = table(TABLE_PIX_DEPOSITS);
     gsi(depositsTable, GSI_STATUS, ATTR_STATUS);
-    gsi(depositsTable, GSI_DEPOSIT_PROVIDER_QR, ATTR_PROVIDER_QR_CODE_ID);
 
     // ── wallet_withdrawals: payouts; gsi_status drives the reconciliation job ──
     const withdrawalsTable = table('wallet_withdrawals');
@@ -168,40 +164,21 @@ export class DynamoDBStack extends cdk.Stack {
     // because it is evidence. Already wallet_-prefixed, so unchanged.
     const auditTable = table('wallet_audit', {sortKey: true});
 
-    // ── Asaas BaaS custody tables (implementation plan §2.4) ───────────────────
-    // Deliberately their own tables, decoupled from the real/game/sandbox
-    // ledger core, which "survives... none of it changes" (design spec §3.1).
-
-    // wallet_baas_accounts: 1 row per user, pk = user_id. gsi_baas_account_id
-    // resolves an Asaas account.id (from any webhook) back to the user;
-    // gsi_baas_status backs the conservation-check sweep (plan §6) and the
-    // account-status webhook's frozen/approved lookups.
-    const baasAccountsTable = table('wallet_baas_accounts');
+    // ── Retired BaaS custody tables ───────────────────────────────────────────
+    // The BaaS custody integration was abandoned and all its code removed. These
+    // tables stay declared ONLY so CloudFormation does not delete them: dev's
+    // default policy is DESTROY, so dropping the constructs outright would delete
+    // dev's tables. Forced to RETAIN, with no IAM access (not in `tables`). Next
+    // step, after this has deployed to every env: delete this block — the tables
+    // are then orphaned (kept) in the account for manual deletion. Keys/GSIs are
+    // unchanged on purpose (no table update beyond the DeletionPolicy). The ARN
+    // exports are kept for the same two-step reason (see table()).
+    const baasAccountsTable = table('wallet_baas_accounts', {retired: true});
     gsi(baasAccountsTable, GSI_BAAS_ACCOUNT_ID, ATTR_PROVIDER_ACCOUNT_ID);
     gsi(baasAccountsTable, GSI_BAAS_STATUS, ATTR_STATUS);
-
-    // wallet_transfer_intents: pk = external_reference — the transfer-
-    // authorization webhook's single GetItem lookup (plan §2.3), and the
-    // reconcile job's work queue via gsi_intent_status (awaiting_authorization/
-    // processing).
-    const transferIntentsTable = table('wallet_transfer_intents');
-    gsi(transferIntentsTable, GSI_INTENT_STATUS, ATTR_STATUS);
-
-    // wallet_settlement_legs: pk = batch_id (plan §6 netting batches). No
-    // application code reads/writes this table yet — real-money multi-party
-    // settlement (poker/dominó) has no caller anywhere in this codebase
-    // (games gate not started, per plan §0/§10) — provisioned now for schema
-    // completeness per the plan's own §2.4 table list, not because code needs
-    // it today.
-    const settlementLegsTable = table('wallet_settlement_legs');
-    gsi(settlementLegsTable, GSI_BATCH_STATUS, ATTR_STATUS);
-
-    // wallet_med_receivables: pk = receivable_id. A MED clawback shortfall
-    // becomes a receivable here instead of a negative balance (Invariant #1
-    // stays literal). gsi_med_status backs the open-debt scan that blocks
-    // funding/withdrawal on the affected wallet (plan §7.3).
-    const medReceivablesTable = table('wallet_med_receivables');
-    gsi(medReceivablesTable, GSI_MED_STATUS, ATTR_STATUS);
+    gsi(table('wallet_transfer_intents', {retired: true}), GSI_INTENT_STATUS, ATTR_STATUS);
+    gsi(table('wallet_settlement_legs', {retired: true}), GSI_BATCH_STATUS, ATTR_STATUS);
+    gsi(table('wallet_med_receivables', {retired: true}), GSI_MED_STATUS, ATTR_STATUS);
 
     // wallet_sandbox_purchases: pk = purchase_id, TTL for never-confirmed
     // purchases. Deliberately its own table, decoupled from wallet_pix_deposits:

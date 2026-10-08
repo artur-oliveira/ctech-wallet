@@ -15,13 +15,10 @@ import {
   toCredits
 } from '@/lib/utils/money'
 import {Dialog, DialogContent, DialogDescription, DialogTitle} from '@/components/ui/dialog'
-import {AsaasBadge} from '@/components/wallet/asaas-badge'
 
-type Flow = 'deposit' | 'withdraw' | 'credits' | 'fund-game' | 'return-game'
+type Flow = 'credits' | 'fund-game' | 'return-game'
 
-const FLOW_KEY: Record<Flow, 'deposit' | 'withdraw' | 'credits' | 'fundGame' | 'returnGame'> = {
-  deposit: 'deposit',
-  withdraw: 'withdraw',
+const FLOW_KEY: Record<Flow, 'credits' | 'fundGame' | 'returnGame'> = {
   credits: 'credits',
   'fund-game': 'fundGame',
   'return-game': 'returnGame',
@@ -29,7 +26,7 @@ const FLOW_KEY: Record<Flow, 'deposit' | 'withdraw' | 'credits' | 'fundGame' | '
 
 interface AmountDialogProps {
   flow: Flow
-  /** Caps the amount at the available balance (withdraw, fund-game, credits, return-game). */
+  /** Caps the amount at the available balance (fund-game, credits, return-game). */
   maxCents?: number
   pending?: boolean
   onSubmit?: (amount: number) => void
@@ -38,16 +35,15 @@ interface AmountDialogProps {
   onClose: () => void
 }
 
-/** Shared amount entry used by deposit, withdrawal, and credit purchase. */
+/** Shared amount entry used by game funding, game return, and credit purchase. */
 export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onClose}: AmountDialogProps) {
   const {t} = useTranslation()
   const flowKey = FLOW_KEY[flow]
 
   // The R$ 1.000.000 ceiling applies ONLY to money entering the game ring-fence:
-  // a PIX deposit and a real → game transfer. Withdrawals and returns out of the
-  // ring-fence are capped only by the current balance (maxCents) — never by the
-  // million cap. See CLAUDE.md invariant 7.
-  const capMillion = flow === 'deposit' || flow === 'fund-game'
+  // a real → game transfer. Returns out of the ring-fence are capped only by the
+  // current balance (maxCents) — never by the million cap. See CLAUDE.md invariant 7.
+  const capMillion = flow === 'fund-game'
   const balanceCap = maxCents ?? Number.POSITIVE_INFINITY
   const millionCap = capMillion ? MAX_AMOUNT_CENTS : Number.POSITIVE_INFINITY
   const effectiveMax = Math.min(balanceCap, millionCap)
@@ -57,11 +53,9 @@ export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onCl
 
   const schema = useMemo(() => {
     const overMsg =
-      flow === 'withdraw'
-        ? t('dialog.error.overWithdrawable', {amount: formatBRL(effectiveMax)})
-        : balanceCap <= millionCap && maxCents != null
-          ? t('dialog.error.overBalance', {amount: fmt(maxCents)})
-          : t('dialog.error.maxExceeded', {max: formatBRL(MAX_AMOUNT_CENTS)})
+      balanceCap <= millionCap && maxCents != null
+        ? t('dialog.error.overBalance', {amount: fmt(maxCents)})
+        : t('dialog.error.maxExceeded', {max: formatBRL(MAX_AMOUNT_CENTS)})
 
     const amount = z
       .number({error: t('dialog.error.invalid')})
@@ -70,7 +64,7 @@ export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onCl
       .max(effectiveMax, overMsg)
 
     return z.object({amount})
-  }, [effectiveMax, flow, balanceCap, millionCap, maxCents, t, fmt])
+  }, [effectiveMax, balanceCap, millionCap, maxCents, t, fmt])
 
   const {
     control,
@@ -100,13 +94,8 @@ export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onCl
       }}
     >
       <DialogContent render={<form onSubmit={submit} noValidate/>}>
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <DialogTitle>{t(`dialog.${flowKey}.title`)}</DialogTitle>
-            <DialogDescription className="mt-1">{t(`dialog.${flowKey}.description`)}</DialogDescription>
-          </div>
-          {(flow === 'deposit' || flow === 'withdraw') && <AsaasBadge className="mt-0.5 shrink-0"/>}
-        </div>
+        <DialogTitle>{t(`dialog.${flowKey}.title`)}</DialogTitle>
+        <DialogDescription className="mt-1">{t(`dialog.${flowKey}.description`)}</DialogDescription>
 
         <label className="mt-5 block text-sm font-medium text-foreground" htmlFor="amount">
           {t('dialog.amount.label')}
@@ -174,12 +163,6 @@ export function AmountDialog({flow, maxCents, pending, onSubmit, onProceed, onCl
         {errors.amount && (
           <p id="amount-error" role="alert" className="mt-1.5 text-sm text-destructive">
             {errors.amount.message}
-          </p>
-        )}
-
-        {flow === 'withdraw' && (
-          <p className="mt-4 rounded-lg bg-muted p-3 text-xs leading-relaxed text-muted-foreground">
-            {t('dialog.withdraw.pixDestination')}
           </p>
         )}
 

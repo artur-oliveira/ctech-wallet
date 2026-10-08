@@ -16,23 +16,15 @@ import (
 // never be interpreted as gambling consent or used to expose game actions.
 func (h *handlers) getWallet(c fiber.Ctx) error {
 	userID := middleware.GetUserID(c)
-	realw, gamew, sandboxw, custodyStatus, err := h.svc.GetBalances(c.Context(), userID)
+	realw, gamew, sandboxw, err := h.svc.GetBalances(c.Context(), userID)
 	if err != nil {
 		return sendProblem(c, err)
 	}
-	// The response shape does not change with onboarding progress: `real` is
-	// always present, and custody_status is an extra field the client may
-	// ignore. An in-progress subaccount must never blank the balances — the
-	// deposit gate on GET /auth/me is what tells the UI the next step, and the
-	// sandbox wallet has nothing to do with custody at all.
-	return c.JSON(walletBalancesResponse(realw, gamew, sandboxw, custodyStatus))
+	return c.JSON(walletBalancesResponse(realw, gamew, sandboxw))
 }
 
-func walletBalancesResponse(realw, gamew, sandboxw *wallet.Wallet, custodyStatus string) fiber.Map {
+func walletBalancesResponse(realw, gamew, sandboxw *wallet.Wallet) fiber.Map {
 	out := fiber.Map{"real": realw, "activated": gamew != nil}
-	if custodyStatus != "" {
-		out["custody_status"] = custodyStatus
-	}
 	if gamew != nil {
 		out["game"] = gamew
 	}
@@ -40,58 +32,6 @@ func walletBalancesResponse(realw, gamew, sandboxw *wallet.Wallet, custodyStatus
 		out["sandbox"] = sandboxw
 	}
 	return out
-}
-
-// createDeposit opens a PIX charge for the caller's real wallet.
-func (h *handlers) createDeposit(c fiber.Ctx) error {
-	var body DepositRequest
-	if p := bindJSON(c, &body); p != nil {
-		return sendProblem(c, p)
-	}
-	cl := middleware.GetClaims(c)
-	idemKey, p := requireIdempotencyKey(c)
-	if p != nil {
-		return sendProblem(c, p)
-	}
-	dep, charge, err := h.svc.InitiateDeposit(c.Context(), cl.Sub, cl.KYCLevel, body.Amount, idemKey)
-	if err != nil {
-		return sendProblem(c, err)
-	}
-	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
-		"txid":             dep.Txid,
-		"amount":           dep.AmountExpected,
-		"status":           dep.Status,
-		"pix_copia_e_cola": charge.QRCode,
-		"qr_code_base64":   charge.QRCodeB64,
-		"expires_at":       dep.TTL,
-	})
-}
-
-// createWithdrawal debits amount+fee and initiates a PIX payout.
-func (h *handlers) createWithdrawal(c fiber.Ctx) error {
-	var body WithdrawRequest
-	if p := bindJSON(c, &body); p != nil {
-		return sendProblem(c, p)
-	}
-	idemKey, p := requireIdempotencyKey(c)
-	if p != nil {
-		return sendProblem(c, p)
-	}
-	cl := middleware.GetClaims(c)
-	w, err := h.svc.Withdraw(c.Context(), cl.Sub, cl.KYCLevel, body.Amount, idemKey)
-	if err != nil {
-		return sendProblem(c, err)
-	}
-	if w == nil {
-		// Defensive: Withdraw should always return a record or an error. A nil
-		// record would nil-deref on w.Status below; surface a 500 instead.
-		return sendProblem(c, problem.InternalServer("saque indisponível no momento"))
-	}
-	status := fiber.StatusCreated
-	if w.Status == wallet.WithdrawProcessing {
-		status = fiber.StatusAccepted // payout still in flight; reconciliation will resolve
-	}
-	return c.Status(status).JSON(w)
 }
 
 // purchaseSandbox debits game and credits sandbox atomically. The source is the
@@ -167,7 +107,7 @@ func (h *handlers) walletTransfer(c fiber.Ctx, op transferOp, amount int64) erro
 func (h *handlers) getLedger(c fiber.Ctx) error {
 	walletType := c.Params("type")
 	userID := middleware.GetUserID(c)
-	realw, gamew, sandboxw, _, err := h.svc.GetBalances(c.Context(), userID)
+	realw, gamew, sandboxw, err := h.svc.GetBalances(c.Context(), userID)
 	if err != nil {
 		return sendProblem(c, err)
 	}

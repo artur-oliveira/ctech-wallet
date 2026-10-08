@@ -2,8 +2,9 @@
 
 Go REST API (Fiber v3) for the `aoctech.app` digital wallet. Custodies **real
 third‑party money** across three balances per user (`real`, `game`, `sandbox`)
-with an append‑only ledger, PIX (Banco Inter) deposits/withdrawals, and
-skill‑game holds/cash‑outs. Talks to Inter **only through `pix-gateway`** (a
+with an append‑only ledger, PIX (Banco Inter) sandbox/product purchases, and
+skill‑game holds/cash‑outs. User PIX deposits/withdrawals are currently off
+(`../docs/specs/2026-10-07-asaas-removal.md`). Talks to Inter **only through `pix-gateway`** (a
 Lambda) — it never opens an mTLS connection itself.
 
 > **This service custodies real money.** The 14 Financial Safety Invariants in
@@ -16,7 +17,7 @@ api/
 ├── cmd/server/main.go        # fx.New(app.Module).Run() — the HTTP API
 ├── cmd/reconcile/main.go     # scheduled Lambda / CLI: resolves stuck withdrawals
 ├── internal/
-│   ├── lambdarpc/             # shared Lambda RPC transport for Inter and Asaas
+│   ├── lambdarpc/             # shared Lambda RPC transport (pix-gateway)
 │   ├── app/                  # fx wiring (DI), Fiber app, error handler
 │   ├── config/               # 12-Factor env (caarlos0/env)
 │   ├── problem/              # RFC 7807 Problem + wallet codes
@@ -60,7 +61,7 @@ account KYC). `GAMBLING_ENABLED` (default `false`) gates the entire
 `real→game` funding + activation surface (routes 404 when off).
 
 `cmd/reconcile` uses `config.LoadReconcile`: it shares required storage/PIX
-configuration and custody validation, but deliberately skips HTTP-only
+configuration validation, but deliberately skips HTTP-only
 issuer/audience/CORS checks and the API server's fleet-wide Valkey requirement.
 It verifies no JWTs, serves no browser traffic, and uses its in-memory locker;
 an optional `VALKEY_URL` is only used for best-effort WebSocket broadcasts.
@@ -102,9 +103,6 @@ co‑written in the same transaction (`repositories/wallet.go:275`).
   initiation atomically writes the reversal debit and `refund_pending`; retries
   reuse the purchase ID at the provider and never debit twice. Reconciliation
   resumes non-terminal refunds.
-- A MED event applies the exact available-balance debit, exact remaining
-  receivable, ledger entry, and permanent event guard in one transaction. A
-  retry therefore cannot recalculate and overstate the receivable.
 
 ## Endpoint reference
 

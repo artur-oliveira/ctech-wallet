@@ -39,9 +39,6 @@ func (s *WalletService) ReconcileWithdrawals(ctx context.Context) (resolved, rev
 	}
 	for i := range ws {
 		w := ws[i]
-		if w.Provider == wallet.ProviderAsaas {
-			continue // resolved by BaasService.ReconcileTransferIntents
-		}
 		res, qErr := s.pix.QueryTransfer(ctx, interIdemKey(w.WithdrawalID))
 		if qErr != nil {
 			slog.Warn("reconcile: query transfer failed, will retry", "withdrawal_id", w.WithdrawalID, "err", qErr)
@@ -83,8 +80,6 @@ func (s *WalletService) ReconcileWithdrawals(ctx context.Context) (resolved, rev
 }
 
 // ReverseWithdrawal serializes and idempotently restores a failed payout.
-// It is exported so the provider-specific Asaas reconciler can use the same
-// reversal primitive as the Inter reconciler.
 func (s *WalletService) ReverseWithdrawal(ctx context.Context, withdrawalID string) error {
 	w, err := s.repo.GetWithdrawal(ctx, withdrawalID)
 	if err != nil {

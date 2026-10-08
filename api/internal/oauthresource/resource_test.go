@@ -29,8 +29,8 @@ func TestProtectedResourceMetadataAdvertisesOnlyPublicScopes(t *testing.T) {
 	if body.Resource != "https://wallet.example.test" {
 		t.Fatalf("unexpected metadata: %#v", body)
 	}
-	if len(body.Scopes) != 13 {
-		t.Fatalf("scopes_supported = %v, want 13 public scopes", body.Scopes)
+	if len(body.Scopes) != 12 {
+		t.Fatalf("scopes_supported = %v, want 12 public scopes", body.Scopes)
 	}
 	for _, scope := range body.Scopes {
 		if len(scope) >= len("internal:") && scope[:len("internal:")] == "internal:" {

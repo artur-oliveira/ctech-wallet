@@ -135,17 +135,6 @@ export class IAMStack extends cdk.Stack {
             `arn:aws:ssm:*:*:parameter${accountSsm.internalJwksUrl}`,
             `arn:aws:ssm:*:*:parameter${walletSsm.appUrl}`,
             `arn:aws:ssm:*:*:parameter${SSM_SHARED(environment).valkeyUrl}`,
-            // Asaas BaaS custody — read in-process by api itself (unlike the
-            // inter/* SecureStrings above, which pix-gateway's own role reads).
-            // Deposits have no other rail, so these are load-bearing, not
-            // optional (docs/specs/2026-08-30-asaas-only-deposits.md).
-            `arn:aws:ssm:*:*:parameter${walletSsm.asaasApiKeyMaster}`,
-            `arn:aws:ssm:*:*:parameter${walletSsm.asaasWebhookToken}`,
-            `arn:aws:ssm:*:*:parameter${walletSsm.asaasParentApiKey}`,
-            `arn:aws:ssm:*:*:parameter${walletSsm.asaasParentWalletId}`,
-            `arn:aws:ssm:*:*:parameter${walletSsm.asaasMasterAccountId}`,
-            `arn:aws:ssm:*:*:parameter${walletSsm.asaasMasterPixKey}`,
-            `arn:aws:ssm:*:*:parameter${walletSsm.asaasVerificationFeeCents}`,
             // M2M sandbox-purchase client registry (webhook notify-back
             // config) — optional; unset means no M2M client is registered yet.
             `arn:aws:ssm:*:*:parameter${walletSsm.m2mClients}`,

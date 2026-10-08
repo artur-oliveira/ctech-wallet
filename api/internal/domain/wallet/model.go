@@ -35,20 +35,6 @@ const (
 
 	EntryBillingDebit = "billing_debit" // real debited by an authorized M2M client (ctech-billing)
 
-	// EntryMedClawback debits what's currently available when Asaas reports a
-	// MED (Mecanismo Especial de Devolução) clawback (plan §7.3). Never goes
-	// below zero — any shortfall becomes a separate MedReceivable record.
-	EntryMedClawback = "med_clawback"
-
-	// §9.1a — reversal of a game-funded sandbox purchase (PurchaseSandbox).
-	// Deliberately distinct from EntryGameReturnDebit/Credit (ReturnFromGame):
-	// that is a user CHOOSING to exit the ring-fence; this UNDOES one specific,
-	// still-untouched purchase transaction. Conflating the two would make the
-	// audit trail unreadable and would double-count against Invariant #8's
-	// gross-inflow limit accounting.
-	EntrySandboxPurchaseReversal = "sandbox_purchase_reversal" // debit sandbox
-	EntryGameFundReversal        = "game_fund_reversal"        // credit game
-
 	// §9.2 — revoking unused credits from a direct PIX sandbox purchase
 	// (wallet_sandbox_purchases, decoupled from the ring-fence entirely). A
 	// debit that zeroes out the entitlement — never a conversion: sandbox
@@ -102,13 +88,6 @@ const (
 	TableAudit       = "wallet_audit"
 	TableHolds       = "wallet_holds"
 
-	// Asaas BaaS custody tables (docs/plans/2026-07-30-asaas-baas-implementation-plan.md
-	// §2.4). Names are provider-neutral on purpose — Asaas is today's provider,
-	// not a permanent commitment.
-	TableBaasAccounts     = "wallet_baas_accounts"     // 1 row per user, custody lifecycle state
-	TableTransferIntents  = "wallet_transfer_intents"  // §2.3 — transfer-authorization lookup
-	TableSettlementLegs   = "wallet_settlement_legs"   // §6 netting batches
-	TableMedReceivables   = "wallet_med_receivables"   // §7.3 clawback debt
 	TableSandboxPurchases = "wallet_sandbox_purchases" // §9 — decoupled from wallet ledger tables on purpose
 )
 
@@ -119,12 +98,6 @@ const (
 	GSIStatus     = "gsi_status"      // withdrawals.status → reconciliation scan; deposits.status → pending sweep
 	GSIHoldStatus = "gsi_hold_status" // holds.status → stale-hold reconciliation scan
 
-	GSIDepositProviderQR     = "gsi_deposit_provider_qr"     // wallet_pix_deposits.provider_qr_code_id → Asaas payment webhook resolution (plan §4.3)
-	GSIBaasAccountID         = "gsi_baas_account_id"         // wallet_baas_accounts.provider_account_id → webhook resolution
-	GSIBaasStatus            = "gsi_baas_status"             // wallet_baas_accounts.status → conservation-check sweep (approved accounts only)
-	GSIIntentStatus          = "gsi_intent_status"           // wallet_transfer_intents.status → convergence/reconcile scan
-	GSIBatchStatus           = "gsi_batch_status"            // wallet_settlement_legs.status → drift/convergence scan
-	GSIMedStatus             = "gsi_med_status"              // wallet_med_receivables.status → open-debt scan, blocks withdrawal
 	GSISandboxPurchaseStatus = "gsi_sandbox_purchase_status" // wallet_sandbox_purchases.status → pending sweep
 
 	// GSISandboxPurchaseWebhookStatus backs the M2M webhook-notify-back retry
@@ -152,13 +125,6 @@ const (
 	MaxInboundAmount = rpccontract.MaxAmountCents // centavos, shared with ui (B18)
 	MaxInboundReais  = MaxInboundAmount / 100
 )
-
-// DefaultReceiptsPerMonth is the fallback PIX-receipt allowance per subaccount
-// per calendar month, used when no configured value is wired in. The provider
-// gives 100 free receipts a month and bills each one after that; the gap is
-// deliberate headroom for charges opened but not yet paid (see
-// WalletService.requireReceiptAllowance).
-const DefaultReceiptsPerMonth = 95
 
 // SandboxCreditsPerCent is the fixed conversion applied when real money is
 // turned into sandbox credits (game → sandbox). R$ 1,00 (100 centavos) becomes
@@ -191,10 +157,6 @@ type Wallet struct {
 	Version    int64  `dynamodbav:"version" json:"version"`
 	MinDeposit int64  `dynamodbav:"min_deposit,omitempty" json:"min_deposit,omitempty"`
 	MaxDeposit int64  `dynamodbav:"max_deposit,omitempty" json:"max_deposit,omitempty"`
-	// CustodyEnabled is the admin-only production rollout allowlist for a real
-	// wallet. When true (and the fleet capability is enabled), its PIX custody
-	// rail is Asaas; false keeps the established Inter rail.
-	CustodyEnabled bool `dynamodbav:"custody_enabled,omitempty" json:"-"`
 	// MinWithdrawal is the OPTIONAL per-wallet withdrawal-amount floor override
 	// (plan §5.2) — admin-only, same convention as MinDeposit above.
 	MinWithdrawal int64  `dynamodbav:"min_withdrawal,omitempty" json:"min_withdrawal,omitempty"`
@@ -243,14 +205,6 @@ type PixDeposit struct {
 	// omits them. PayerCPF may be partially masked by Inter (e.g. "***137303**").
 	PayerCPF  string `dynamodbav:"payer_cpf,omitempty" json:"payer_cpf,omitempty"`
 	PayerName string `dynamodbav:"payer_name,omitempty" json:"payer_name,omitempty"`
-	// Provider names which PIX rail opened this charge — "" (the default,
-	// meaning Inter) for every deposit before Asaas custody existed, and for
-	// every deposit made by a non-custodied user afterward. ProviderQRCodeID is
-	// the Asaas-side handle the deposit-confirmation webhook resolves
-	// payment.pixQrCodeId → txid through (plan §4.2, §4.3) — meaningless when
-	// Provider is empty.
-	Provider         string `dynamodbav:"provider,omitempty" json:"-"`
-	ProviderQRCodeID string `dynamodbav:"provider_qr_code_id,omitempty" json:"-"`
 	// QRCodePayload/QRCodeImage are the copyable PIX string and its rendered
 	// image, stored at creation so a client that asks again — a refresh, a
 	// retried POST — gets its charge back without a provider call. That matters
@@ -259,17 +213,9 @@ type PixDeposit struct {
 	// payable data, never a secret.
 	QRCodePayload string `dynamodbav:"qr_code_payload,omitempty" json:"-"`
 	QRCodeImage   string `dynamodbav:"qr_code_image,omitempty" json:"-"`
-	// ProviderPaymentID is the immutable Asaas payment ID learned from its
-	// webhook. It is required to re-query the payment and its linked customer.
-	ProviderPaymentID string `dynamodbav:"provider_payment_id,omitempty" json:"-"`
-	CreatedAt         string `dynamodbav:"created_at" json:"created_at"`
-	TTL               int64  `dynamodbav:"expires_at" json:"-"` // business expiry; retained for durable idempotency/audit
+	CreatedAt     string `dynamodbav:"created_at" json:"created_at"`
+	TTL           int64  `dynamodbav:"expires_at" json:"-"` // business expiry; retained for durable idempotency/audit
 }
-
-// ProviderAsaas marks a PixDeposit opened against a user's Asaas subaccount
-// rather than Inter's pooled account (plan §4.2). There is no ProviderInter
-// constant — the empty string is Inter, matching every pre-migration row.
-const ProviderAsaas = "asaas"
 
 // Withdrawal tracks a PIX payout; the processing state is resolved by the
 // reconciliation job so money is never left in limbo.
@@ -279,7 +225,6 @@ type Withdrawal struct {
 	UserID         string `dynamodbav:"user_id" json:"user_id"`
 	Amount         int64  `dynamodbav:"amount" json:"amount"`
 	PixKey         string `dynamodbav:"pix_key" json:"pix_key"`
-	Provider       string `dynamodbav:"provider,omitempty" json:"provider,omitempty"`
 	Status         string `dynamodbav:"status" json:"status"`
 	E2EID          string `dynamodbav:"e2e_id" json:"e2e_id,omitempty"`
 	IdempotencyKey string `dynamodbav:"idempotency_key" json:"-"`
@@ -303,120 +248,6 @@ type Hold struct {
 	CreatedAt      string `dynamodbav:"created_at" json:"created_at"`
 	UpdatedAt      string `dynamodbav:"updated_at" json:"updated_at"`
 }
-
-// BaaS custody lifecycle states (wallet_baas_accounts.status). See
-// docs/plans/2026-07-30-asaas-baas-implementation-plan.md §2.4, §3, §7.
-// BaasFeePending/BaasFeePaid front the sequence: the provider charges a
-// non-refundable verification fee per subaccount at creation, so the user pays
-// it to CTech first and the subaccount is only opened once that charge clears
-// (docs/specs/2026-08-30-asaas-only-deposits.md).
-const (
-	BaasFeePending       = "fee_pending"
-	BaasFeePaid          = "fee_paid"
-	BaasOnboarding       = "onboarding"
-	BaasPendingDocuments = "pending_documents"
-	BaasPendingApproval  = "pending_approval"
-	BaasApproved         = "approved"
-	BaasFrozen           = "frozen"
-	BaasClosing          = "closing"
-	BaasSubaccountClosed = "subaccount_closed"
-	BaasClosed           = "closed"
-)
-
-// BaasAccount is a user's Asaas custody lifecycle record — deliberately its
-// own table, not a field bag on Wallet: the real/game/sandbox rows in
-// `wallets` stay exactly as they are pre-migration (plan §2.4). ProviderID/
-// ProviderWalletID are named generically (Asaas's account.id/walletId today)
-// because a future provider's IDs land in the same columns.
-//
-// APIKeyCiphertext/APIKeyNonce hold the subaccount's Asaas API key, AES-256-GCM
-// encrypted under the single fleet-wide master key fetched once from SSM at
-// startup (plan §3.3) — never plaintext at rest.
-type BaasAccount struct {
-	UserID            string `dynamodbav:"pk" json:"user_id"`
-	Status            string `dynamodbav:"status" json:"status"`
-	ProviderAccountID string `dynamodbav:"provider_account_id,omitempty" json:"provider_account_id,omitempty"`
-	ProviderWalletID  string `dynamodbav:"provider_wallet_id,omitempty" json:"provider_wallet_id,omitempty"`
-	APIKeyCiphertext  []byte `dynamodbav:"api_key_ciphertext,omitempty" json:"-"`
-	APIKeyNonce       []byte `dynamodbav:"api_key_nonce,omitempty" json:"-"`
-	EVPPixKey         string `dynamodbav:"evp_pix_key,omitempty" json:"-"` // created once, ever, per subaccount (plan §3.2 step 6)
-	// ConservationDrift is Invariant #13's fail-closed kill-switch (plan §6):
-	// set by the reconcile job's conservation-check sweep when this user's
-	// Asaas subaccount balance stops matching real.Balance + game.Balance +
-	// open game holds. While true, HoldGame and Withdraw refuse this user with
-	// AccountBlocked rather than acting on data that may no longer be trustworthy
-	// — cleared only by ops, once the drift is manually reconciled and explained.
-	ConservationDrift bool `dynamodbav:"conservation_drift,omitempty" json:"-"`
-	// FeePurchaseID links the verification-fee charge this onboarding is waiting
-	// on. Set once, when onboarding opens; kept afterwards as the audit trail of
-	// what the user paid for. The fee is never refunded (the provider consumes
-	// it at subaccount creation and a rejected subaccount does not give it
-	// back), so a rejected account is re-submitted, never re-charged.
-	FeePurchaseID string `dynamodbav:"fee_purchase_id,omitempty" json:"-"`
-	// FeeQRPayload/FeeQRImage are the verification fee's copyable PIX string and
-	// its rendered image, stored when the charge is opened so the onboarding
-	// screen can show it again on a reload without opening a second QR code at
-	// the provider. Public payable data, never a secret — the same reasoning as
-	// PixDeposit.QRCodePayload.
-	FeeQRPayload string `dynamodbav:"fee_qr_payload,omitempty" json:"-"`
-	FeeQRImage   string `dynamodbav:"fee_qr_image,omitempty" json:"-"`
-	// PendingDocuments names what the provider is still waiting on, in its own
-	// words. Kept alongside OnboardingURL rather than instead of it: the
-	// provider returns requirements with no link, and "under review" with no
-	// list is a dead end for the user.
-	PendingDocuments []string `dynamodbav:"pending_documents,omitempty" json:"-"`
-	// OnboardingURL is the provider-hosted document upload link, when the
-	// provider says a pending document must be sent that way. Never a document
-	// we relay ourselves: uploading a document that carries this URL through the
-	// API is rejected by the provider.
-	OnboardingURL string `dynamodbav:"onboarding_url,omitempty" json:"-"`
-	// IncomeValue is the declared monthly income the provider requires on the
-	// subaccount. Captured when onboarding is requested and used when the
-	// subaccount is finally created, which is a separate step (the fee clears
-	// in between).
-	IncomeValue int64 `dynamodbav:"income_value,omitempty" json:"-"`
-	// ReceiptsMonthKey/ReceiptsCount meter PIX receipts against the provider's
-	// monthly free allowance, in the same window-key shape as
-	// GameDepositCounters: a key that is not the current month means the window
-	// rolled and the count is logically zero.
-	ReceiptsMonthKey string `dynamodbav:"receipts_month_key,omitempty" json:"-"`
-	ReceiptsCount    int64  `dynamodbav:"receipts_count,omitempty" json:"-"`
-	CreatedAt        string `dynamodbav:"created_at" json:"created_at"`
-	UpdatedAt        string `dynamodbav:"updated_at" json:"updated_at"`
-}
-
-// ReceiptsUsed reports how many PIX receipts this subaccount has taken in
-// monthKey. A stale window key counts as zero — the counter is never reset by a
-// writer, it is simply superseded when the month rolls.
-func (a *BaasAccount) ReceiptsUsed(monthKey string) int64 {
-	if a == nil || a.ReceiptsMonthKey != monthKey {
-		return 0
-	}
-	return a.ReceiptsCount
-}
-
-// Transfer-intent statuses (wallet_transfer_intents.status). See plan §2.3.
-const (
-	IntentAwaitingAuthorization = "awaiting_authorization"
-	IntentProcessing            = "processing"
-	IntentDone                  = "done"
-	IntentFailed                = "failed"
-	IntentSuperseded            = "superseded" // §9.1a — reversed before the forward leg ever reached done
-	IntentCancelled             = "cancelled"  // Asaas auto-cancelled after 3 failed authorization responses
-)
-
-const (
-	TransferDestinationPIX    = "pix"
-	TransferDestinationWallet = "wallet"
-)
-
-// Transfer-intent kinds — what CreateTransfer call this row is tracking.
-const (
-	IntentKindWithdrawalPayout       = "withdrawal_payout"
-	IntentKindSettlementLeg          = "settlement_leg"
-	IntentKindSandboxPurchaseSettle  = "sandbox_purchase_settlement" // §9.1a forward leg
-	IntentKindSandboxPurchaseReverse = "sandbox_purchase_reversal"   // §9.1a reversal leg
-)
 
 // Direct PIX→sandbox purchase statuses (plan §9.3). Deliberately its own
 // status set, not DepositPending/Confirmed — this is a sale, not custody.
@@ -503,11 +334,6 @@ const (
 const (
 	ProductPurchaseKindProduct = "product"
 	ProductPurchaseKindCharge  = "charge"
-	// ProductPurchaseKindCustodyFee is the one-off fee a user pays to have their
-	// custody subaccount opened. A sale like any other here, with two traits the
-	// others do not share: it is collected at the custody provider rather than
-	// at Inter, and it is never refunded (see services/custody_fee.go).
-	ProductPurchaseKindCustodyFee = "custody_fee"
 )
 
 // ProductPurchase mirrors SandboxPurchase's shape minus everything about
@@ -538,53 +364,4 @@ type ProductPurchase struct {
 	CreatedAt        string `dynamodbav:"created_at" json:"created_at"`
 	UpdatedAt        string `dynamodbav:"updated_at" json:"updated_at"`
 	TTL              int64  `dynamodbav:"expires_at,omitempty" json:"-"`
-}
-
-// MED receivable statuses (plan §7.3).
-const (
-	MedReceivableOpen    = "open"
-	MedReceivableSettled = "settled"
-)
-
-// MedReceivable is a debt record created when a MED (Mecanismo Especial de
-// Devolução) clawback exceeds what's currently in the wallet — never a
-// negative balance (Invariant #1 stays literal), a separate record instead
-// (plan §7.3). Deliberately excluded from Invariant #13's conservation-check
-// "everything is explained" set on its own line: a receivable is not custody
-// drift, and conflating the two would hide a real drift behind a legitimate
-// receivable or vice versa.
-type MedReceivable struct {
-	ReceivableID string `dynamodbav:"pk" json:"receivable_id"`
-	UserID       string `dynamodbav:"user_id" json:"user_id"`
-	WalletID     string `dynamodbav:"wallet_id" json:"wallet_id"`
-	Amount       int64  `dynamodbav:"amount" json:"amount"` // outstanding centavos
-	Status       string `dynamodbav:"status" json:"status"`
-	Ref          string `dynamodbav:"ref,omitempty" json:"ref,omitempty"` // Asaas MED event id
-	CreatedAt    string `dynamodbav:"created_at" json:"created_at"`
-	UpdatedAt    string `dynamodbav:"updated_at" json:"updated_at"`
-}
-
-// TransferIntent records what a CreateTransfer call SHOULD be, before it is
-// ever sent — the transfer-authorization webhook (plan §2.3) does one GetItem
-// by ExternalReference and compares the callback's amount/destination against
-// this row, approving only on an exact match. This is the single choke point
-// that catches a transfer built for the wrong amount/destination before Asaas
-// ever moves money.
-type TransferIntent struct {
-	ExternalReference string `dynamodbav:"pk" json:"external_reference"`
-	Kind              string `dynamodbav:"kind" json:"kind"`
-	Status            string `dynamodbav:"status" json:"status"`
-	UserID            string `dynamodbav:"user_id" json:"user_id"`
-	Amount            int64  `dynamodbav:"amount" json:"amount"`
-	// Destination is whichever identifier the transfer targets — a PIX key
-	// (withdrawal payout, plan §5.2 leg 1) or an Asaas walletId (fee sweep,
-	// settlement leg, sandbox-purchase settlement/reversal) — compared
-	// verbatim against the authorization webhook's payload (plan §2.3 step 2).
-	Destination        string `dynamodbav:"destination,omitempty" json:"destination,omitempty"`
-	DestinationType    string `dynamodbav:"destination_type,omitempty" json:"destination_type,omitempty"`
-	Ref                string `dynamodbav:"ref,omitempty" json:"ref,omitempty"` // e.g. withdrawal ID, batch leg, ledger credit SK (§9.1a)
-	ProviderTransferID string `dynamodbav:"provider_transfer_id,omitempty" json:"provider_transfer_id,omitempty"`
-	TransferFee        int64  `dynamodbav:"transfer_fee,omitempty" json:"transfer_fee,omitempty"` // §5.2 — Asaas's own leg-1 fee, read back from the response
-	CreatedAt          string `dynamodbav:"created_at" json:"created_at"`
-	UpdatedAt          string `dynamodbav:"updated_at" json:"updated_at"`
 }

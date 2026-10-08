@@ -8,17 +8,14 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
-	"math"
 	"os"
 
 	"github.com/aws/aws-lambda-go/lambda"
 	awscfg "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 
-	"gopkg.aoctech.app/wallet/pix-gateway/internal/asaas"
 	"gopkg.aoctech.app/wallet/pix-gateway/internal/config"
 	"gopkg.aoctech.app/wallet/pix-gateway/internal/inter"
 	"gopkg.aoctech.app/wallet/pix-gateway/internal/secrets"
@@ -26,8 +23,7 @@ import (
 )
 
 type handler struct {
-	pix   inter.PixClient
-	asaas *asaas.AsaasClient
+	pix inter.PixClient
 }
 
 func main() {
@@ -45,9 +41,7 @@ func main() {
 	}
 	// pixClient (and the SSM store + mTLS HTTP transport it wraps) is built once
 	// at cold start and reused for every invocation — no per-call SSM/SSM-KMS.
-	// asaasClient needs no SSM/cold-start secret at all — every Asaas call
-	// carries its credential in the non-logged OAuthToken envelope field.
-	h := &handler{pix: pixClient, asaas: asaas.NewAsaasClient(cfg.AsaasBaseURL)}
+	h := &handler{pix: pixClient}
 	lambda.Start(h.handle)
 }
 
@@ -155,167 +149,6 @@ func (h *handler) dispatch(ctx context.Context, req rpc.Request) rpc.Response {
 		}
 		return okResp(rpc.GetTokenResult{Token: t.Token, ExpiresIn: t.ExpiresIn})
 
-	case rpc.OpAsaasCreateAccount:
-		a, err := decodePayload[rpc.AsaasCreateAccountArgs](req.Payload)
-		if err != nil {
-			return toResp(err)
-		}
-		// The parent account's own API key travels as req.OAuthToken — reusing
-		// that transport field (not a new one) since it already exists to carry
-		// "the credential this call authenticates with," exactly its purpose for
-		// Inter's bearer above.
-		acc, err := h.asaas.CreateAccount(ctx, req.OAuthToken, asaas.CreateAccountArgs{
-			Name: a.Name, CPF: a.CPF, Email: a.Email, MobilePhone: a.MobilePhone, BirthDate: a.BirthDate,
-			Address: a.Address, AddressNumber: a.AddressNumber, Complement: a.Complement,
-			Province: a.Province, City: a.City, State: a.State, PostalCode: a.PostalCode, IncomeValue: a.IncomeValue,
-		})
-		if err != nil {
-			return errResp(err)
-		}
-		return okResp(rpc.AsaasAccountResult{ID: acc.ID, WalletID: acc.WalletID, APIKey: acc.APIKey, Status: acc.Status})
-
-	case rpc.OpAsaasUploadDocument:
-		a, err := decodePayload[rpc.AsaasUploadDocumentArgs](req.Payload)
-		if err != nil {
-			return toResp(err)
-		}
-		if err := h.asaas.UploadDocument(ctx, req.OAuthToken, a.DocumentID, a.File); err != nil {
-			return errResp(err)
-		}
-		return rpc.Response{}
-
-	case rpc.OpAsaasCreateStaticPixKey:
-		_, err := decodePayload[rpc.AsaasCreateStaticPixKeyArgs](req.Payload)
-		if err != nil {
-			return toResp(err)
-		}
-		k, err := h.asaas.CreateStaticPixKey(ctx, req.OAuthToken)
-		if err != nil {
-			return errResp(err)
-		}
-		return okResp(rpc.AsaasPixAddressKeyResult{Key: k.Key, Status: k.Status})
-
-	case rpc.OpAsaasCreatePixQRCode:
-		a, err := decodePayload[rpc.AsaasCreatePixQRCodeArgs](req.Payload)
-		if err != nil {
-			return toResp(err)
-		}
-		qr, err := h.asaas.CreatePixQRCode(ctx, req.OAuthToken, asaas.CreatePixQRCodeArgs{
-			AddressKey: a.AddressKey, Value: a.Value, Format: a.Format,
-			ExpirationSeconds: a.ExpirationSeconds, AllowsMultiplePayments: a.AllowsMultiplePayments,
-			ExternalReference: a.ExternalReference,
-		})
-		if err != nil {
-			return errResp(err)
-		}
-		return okResp(rpc.AsaasQRCodeResult{
-			PixQRCodeID: qr.ID, Payload: qr.Payload, EncodedImage: qr.EncodedImage, ExpirationDate: qr.ExpirationDate,
-		})
-
-	case rpc.OpAsaasQueryPayment:
-		a, err := decodePayload[rpc.AsaasQueryPaymentArgs](req.Payload)
-		if err != nil {
-			return toResp(err)
-		}
-		p, err := h.asaas.QueryPayment(ctx, req.OAuthToken, a.PaymentID)
-		if err != nil {
-			return errResp(err)
-		}
-		return okResp(rpc.AsaasPaymentResult{
-			ID: p.ID, Value: asaasCentavos(p.Value), Status: p.Status, ExternalReference: p.ExternalReference,
-			CustomerID: p.CustomerID,
-		})
-
-	case rpc.OpAsaasQueryCustomer:
-		a, err := decodePayload[rpc.AsaasQueryCustomerArgs](req.Payload)
-		if err != nil {
-			return toResp(err)
-		}
-		customer, err := h.asaas.QueryCustomer(ctx, req.OAuthToken, a.CustomerID)
-		if err != nil {
-			return errResp(err)
-		}
-		return okResp(rpc.AsaasCustomerResult{ID: customer.ID, Name: customer.Name, CPFCNPJ: customer.CPFCNPJ})
-
-	case rpc.OpAsaasRefundPayment:
-		a, err := decodePayload[rpc.AsaasRefundPaymentArgs](req.Payload)
-		if err != nil {
-			return toResp(err)
-		}
-		if err := h.asaas.RefundPayment(ctx, req.OAuthToken, a.PaymentID, a.Amount, a.Description); err != nil {
-			return errResp(err)
-		}
-		return rpc.Response{}
-
-	case rpc.OpAsaasCreateTransfer:
-		a, err := decodePayload[rpc.AsaasCreateTransferArgs](req.Payload)
-		if err != nil {
-			return toResp(err)
-		}
-		t, err := h.asaas.CreateTransfer(ctx, req.OAuthToken, asaas.CreateTransferArgs{
-			Value: a.Value, PixAddressKey: a.PixAddressKey, PixAddressKeyType: a.PixAddressKeyType,
-			WalletID: a.WalletID, ExternalReference: a.ExternalReference,
-		})
-		if err != nil {
-			return errResp(err)
-		}
-		return okResp(asaasTransferResult(t.ID, t.Status, t.TransferFee, t.ExternalReference))
-
-	case rpc.OpAsaasQueryTransfer:
-		a, err := decodePayload[rpc.AsaasQueryTransferArgs](req.Payload)
-		if err != nil {
-			return toResp(err)
-		}
-		t, err := h.asaas.QueryTransfer(ctx, req.OAuthToken, a.ExternalReference)
-		if errors.Is(err, asaas.ErrTransferNotFound) {
-			return rpc.Response{Error: rpc.ErrTransferNotFoundSentinel}
-		}
-		if err != nil {
-			return errResp(err)
-		}
-		return okResp(asaasTransferResult(t.ID, t.Status, t.TransferFee, t.ExternalReference))
-
-	case rpc.OpAsaasQueryAccountBalance:
-		_, err := decodePayload[rpc.AsaasQueryAccountBalanceArgs](req.Payload)
-		if err != nil {
-			return toResp(err)
-		}
-		balance, err := h.asaas.QueryAccountBalance(ctx, req.OAuthToken)
-		if err != nil {
-			return errResp(err)
-		}
-		return okResp(rpc.AsaasBalanceResult{Balance: balance})
-
-	case rpc.OpAsaasQueryAccountStatus:
-		if _, err := decodePayload[rpc.AsaasQueryAccountStatusArgs](req.Payload); err != nil {
-			return toResp(err)
-		}
-		st, err := h.asaas.QueryAccountStatus(ctx, req.OAuthToken)
-		if err != nil {
-			return errResp(err)
-		}
-		return okResp(rpc.AsaasAccountStatusResult{
-			ID: st.ID, CommercialInfo: st.CommercialInfo, BankAccountInfo: st.BankAccountInfo,
-			Documentation: st.Documentation, General: st.General,
-		})
-
-	case rpc.OpAsaasListPendingDocuments:
-		if _, err := decodePayload[rpc.AsaasListPendingDocumentsArgs](req.Payload); err != nil {
-			return toResp(err)
-		}
-		docs, err := h.asaas.ListPendingDocuments(ctx, req.OAuthToken)
-		if err != nil {
-			return errResp(err)
-		}
-		out := rpc.AsaasPendingDocumentsResult{Documents: make([]rpc.AsaasPendingDocument, 0, len(docs))}
-		for _, d := range docs {
-			out.Documents = append(out.Documents, rpc.AsaasPendingDocument{
-				ID: d.ID, Type: d.Type, Status: d.Status,
-				Title: d.Title, Description: d.Description, OnboardingURL: d.OnboardingURL,
-			})
-		}
-		return okResp(out)
-
 	default:
 		return errResp(fmt.Errorf("unknown op %q", req.Op))
 	}
@@ -325,20 +158,6 @@ func decodePayload[T any](payload json.RawMessage) (T, error) {
 	var value T
 	err := json.Unmarshal(payload, &value)
 	return value, err
-}
-
-// asaasCentavos rounds a decimal-reais float (as Asaas reports it on the
-// wire) to integer centavos — the one conversion point on the response side,
-// mirroring internal/asaas/money.go's reaisToCentavos without exporting it
-// across packages.
-func asaasCentavos(reais float64) int64 {
-	return int64(math.Round(reais * 100))
-}
-
-func asaasTransferResult(id, status string, transferFee float64, externalReference string) rpc.AsaasTransferResult {
-	return rpc.AsaasTransferResult{
-		ID: id, Status: status, TransferFee: asaasCentavos(transferFee), ExternalReference: externalReference,
-	}
 }
 
 func chargeResult(c *inter.Charge) rpc.ChargeResult {

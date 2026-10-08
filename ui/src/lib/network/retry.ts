@@ -44,8 +44,8 @@ export function httpRetryDelay(attempt: number, retryAfter?: string, random: () 
  *
  * Safe methods always may. A mutation may only if it carries an
  * Idempotency-Key, because the server collapses that replay (Invariant #3).
- * Retrying a POST /wallet/deposits without one would open a second PIX charge
- * for one intent — the precise failure the key exists to prevent.
+ * Retrying a money-moving POST without one would apply it twice for one
+ * intent — the precise failure the key exists to prevent.
  */
 export function retryAllowed(config?: RetryTarget): boolean {
   if (!config || (config._networkRetryCount || 0) >= MAX_HTTP_RETRIES) return false

@@ -20,7 +20,7 @@ wiring in `internal/app/app.go` + `cmd/reconcile/main.go`.
 ## Global Constraints
 
 - No KYC gate; charged to CTech's pooled account via the existing Inter PIX integration
-  (`pix.PixClient`) — never a wallet-to-wallet transfer, never Asaas custody.
+  (`pix.PixClient`) — never a wallet-to-wallet transfer, never a user custody account.
 - No ledger effect whatsoever: `ConfirmProductPurchase` must never call `s.repo.Credit`/`Debit` or
   touch `WalletRepository`.
 - No refund-eligibility/usage check in wallet — that is the caller's domain fact, not wallet's

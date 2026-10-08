@@ -47,8 +47,9 @@ blocks the app until the current terms addendum is accepted.
 ## Components (`src/components/wallet/`)
 
 `balance-cards` (real/game/sandbox — color encodes semantics), `ledger-list` +
-`ledger-tabs`, `pix-charge-dialog` (opens deposit → QR), `amount-dialog`,
-`confirm-money-dialog`, `money-receipt-dialog`, `transaction-status-list`. Shared:
+`ledger-tabs`, `amount-dialog` (credits / fund-game / return-game),
+`confirm-money-dialog`, `money-receipt-dialog`. PIX deposits/withdrawals of the `real` wallet are **off** (Asaas BaaS removed) until a new provider is integrated: the UI has no
+deposit, withdrawal, custody-onboarding or step-up surface, and the real card says so. Shared:
 `language-switcher`, `query-error-state`.
 
 ## Hooks / providers / auth
@@ -60,8 +61,7 @@ blocks the app until the current terms addendum is accepted.
   - requests `openid profile kyc` plus every public active `wallet:*` scope
     defined in `src/lib/auth/scopes.ts`; a contract test pins that list to the
     API's Resource Server manifest.
-  - `startOAuthFlow` (`:26`), `startStepUpFlow` (`:36`) → `startOAuthFlow(returnTo,{maxAge:0})`
-    for withdrawal step-up (forces ctech-account to re-prove MFA, see root CLAUDE.md §Cross-project).
+  - `startOAuthFlow` (`:26`). No step-up wrapper: the only step-up route (withdrawals) is gone.
   - `doRefresh` (`:57`): refresh token is the **HttpOnly + SameSite `ctech_rt` cookie**
     set by ctech-account; JS never reads it.
   - `endSessionRedirect` (`:69`) ends the SSO session on logout.
@@ -72,7 +72,6 @@ blocks the app until the current terms addendum is accepted.
 - **Cross-origin**: `API_BASE_URL = NEXT_PUBLIC_API_URL ?? ''` (`:20`); deployed environments always set it, so calls go to the API host and CORS applies. The `''` fallback is `next dev` only.
 - **Idempotency**: mutating calls send `Idempotency-Key` via `idemConfig` (`:115`).
 - Method map (→ `api` routes): `me`→`GET /v1.0/auth/me`, `getBalances`→`GET /v1.0/wallet`,
-  `createDeposit`→`POST /v1.0/wallet/deposits`, `createWithdrawal`→`POST /v1.0/wallet/withdrawals`,
   `purchaseSandbox`→`POST /v1.0/wallet/sandbox/purchase`, `activateGambling`→`POST /v1.0/wallet/gambling/activate`,
   `fundGame`→`POST /v1.0/wallet/game/deposit`, `returnFromGame`→`POST /v1.0/wallet/game/withdraw`,
   `getLedger`→`GET /v1.0/wallet/:type/ledger`.
@@ -83,7 +82,8 @@ blocks the app until the current terms addendum is accepted.
 WebSocket at `/v1.0/ws` (`:19`); the in-memory access JWT is passed **as the
 first frame** (`authToken`, `:101`) — mirrors `api` `ws.go`. Events:
 `deposit_confirmed` (invalidates balances/ledger + toast) and
-`withdraw_completed` / `withdraw_reversed` / `withdraw_refund_failed`.
+`withdraw_completed` / `withdraw_reversed` / `withdraw_refund_failed` (toast only —
+kept defensively; nothing emits them while PIX deposit/withdraw is off).
 
 ## Money constants (B18 — mirrored api↔ui by hand)
 

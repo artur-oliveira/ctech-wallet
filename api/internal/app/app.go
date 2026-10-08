@@ -13,7 +13,6 @@ import (
 	fiberobs "gopkg.aoctech.app/api-commons/observability/fiber"
 	"gopkg.aoctech.app/api-commons/ws"
 	apiv1 "gopkg.aoctech.app/wallet/api/internal/api/v1"
-	"gopkg.aoctech.app/wallet/api/internal/asaas"
 	"gopkg.aoctech.app/wallet/api/internal/awsclient"
 	"gopkg.aoctech.app/wallet/api/internal/config"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
@@ -50,12 +49,8 @@ var Module = fx.Options(
 		repositories.NewWalletRepository,
 		repositories.NewUserRepository,
 		repositories.NewAuditRepository,
-		repositories.NewBaasRepository,
 		repositories.NewSandboxPurchaseRepository,
 		repositories.NewProductPurchaseRepository,
-		newAsaasSecrets,
-		newAsaasClient,
-		newBaasService,
 		newM2MClients,
 		newWalletService,
 		newUserService,
@@ -166,75 +161,18 @@ func newKYCClient(cfg *config.Config) services.KYCClient {
 	return kycclient.New(cfg)
 }
 
-// asaasSecrets bundles the two SSM SecureString values api fetches once at
-// startup and caches for the process lifetime (plan §3.3, §2.3): the AES-256
-// master key encrypting every subaccount's Asaas API key at rest, and the
-// static token Asaas echoes back on every inbound webhook.
-type asaasSecrets struct {
-	MasterKey    []byte
-	WebhookToken string
-	ParentAPIKey string
-}
-
-func newAsaasSecrets(cfg *config.Config, clients *awsclient.Clients) (*asaasSecrets, error) {
-	store := secrets.NewStore(clients.SSM, cfg.Env)
-	ctx := context.Background()
-	hexKey, err := store.LoadAsaasMasterKey(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("asaas master key: %w", err)
-	}
-	masterKey, err := asaas.MasterKeyFromHex(hexKey)
-	if err != nil {
-		return nil, err
-	}
-	token, err := store.LoadAsaasWebhookToken(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("asaas webhook token: %w", err)
-	}
-	parentAPIKey, err := store.LoadAsaasParentAPIKey(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("asaas parent api key: %w", err)
-	}
-	return &asaasSecrets{MasterKey: masterKey, WebhookToken: token, ParentAPIKey: parentAPIKey}, nil
-}
-
-// newAsaasClient wires the real Lambda-backed AsaasClient — api never talks
-// to Asaas directly, same posture as Inter (plan §2.2). Reuses the same
-// pix-gateway outbound Lambda and *lambda.Client Inter already invokes; only
-// the Op discriminator in the wire payload differs.
-func newAsaasClient(client *lambda.Client, cfg *config.Config) asaas.AsaasClient {
-	return asaas.NewLambdaAsaasClient(client, cfg.PixGatewayFunctionName)
-}
-
-func newBaasService(repo *repositories.BaasRepository, walletRepo *repositories.WalletRepository, asaasClient asaas.AsaasClient, audit *repositories.AuditRepository, kyc services.KYCClient, productPurchases *repositories.ProductPurchaseRepository, s *asaasSecrets, cfg *config.Config) *services.BaasService {
-	svc := services.NewBaasService(repo, walletRepo, asaasClient, audit, kyc, s.MasterKey, cfg.AsaasParentWalletID, s.ParentAPIKey)
-	svc.SetCustodyFee(services.CustodyFeeConfig{
-		MasterAccountID: cfg.AsaasMasterAccountID,
-		MasterPixKey:    cfg.AsaasMasterPixKey,
-		AmountCents:     cfg.AsaasVerificationFeeCents,
-	}, productPurchases)
-	return svc
-}
-
-func newWalletService(repo *repositories.WalletRepository, users *repositories.UserRepository, audit *repositories.AuditRepository, l *lock.Locker, p pix.PixClient, k services.KYCClient, baas *services.BaasService, sandboxPurchases *repositories.SandboxPurchaseRepository, productPurchases *repositories.ProductPurchaseRepository, m2mClients map[string]services.M2MClient, cfg *config.Config) *services.WalletService {
+func newWalletService(repo *repositories.WalletRepository, users *repositories.UserRepository, audit *repositories.AuditRepository, l *lock.Locker, p pix.PixClient, k services.KYCClient, sandboxPurchases *repositories.SandboxPurchaseRepository, productPurchases *repositories.ProductPurchaseRepository, m2mClients map[string]services.M2MClient) *services.WalletService {
 	svc := services.NewWalletService(repo, users, audit, l, p, k)
-	svc.SetBaas(baas)
-	svc.SetReceiptsPerMonth(cfg.AsaasFreeReceiptsPerMonth)
 	svc.SetSandboxPurchases(sandboxPurchases)
 	svc.SetProductPurchases(productPurchases)
 	svc.SetM2MClients(m2mClients)
-	baas.SetWithdrawalReverser(svc.ReverseWithdrawal)
-	// Onboarding transitions happen in BaasService but the socket registry lives
-	// on WalletService, so the notifier is wired here — same shape as the
-	// withdrawal reverser above.
-	baas.SetCustodyNotifier(svc.BroadcastCustodyChanged)
 	return svc
 }
 
 // newM2MClients loads the M2M sandbox-purchase client registry (client_id →
 // webhook config) from a single SSM SecureString JSON blob (plan: M2M
 // sandbox-purchase integration) — admin-provisioned, no API write path, same
-// posture as newAsaasSecrets above. An unset parameter is a valid "no M2M
+// posture as every other SSM-loaded value. An unset parameter is a valid "no M2M
 // client registered yet" state, not a startup failure.
 func newM2MClients(cfg *config.Config, clients *awsclient.Clients) (map[string]services.M2MClient, error) {
 	store := secrets.NewStore(clients.SSM, cfg.Env)
@@ -295,9 +233,9 @@ func newFiberApp(cfg *config.Config) *fiber.App {
 	return app
 }
 
-func registerRoutes(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsclient.Clients, pixClient pix.PixClient, svc *services.WalletService, userSvc *services.UserService, baasSvc *services.BaasService, s *asaasSecrets, wsRegistry ws.Registry) {
+func registerRoutes(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsclient.Clients, pixClient pix.PixClient, svc *services.WalletService, userSvc *services.UserService, wsRegistry ws.Registry) {
 	svc.SetBroadcaster(wsRegistry)
-	apiv1.Register(app, c, cfg, clients, pixClient, svc, userSvc, baasSvc, s.WebhookToken, wsRegistry)
+	apiv1.Register(app, c, cfg, clients, pixClient, svc, userSvc, wsRegistry)
 }
 
 func startServer(lc fx.Lifecycle, app *fiber.App, cfg *config.Config) {

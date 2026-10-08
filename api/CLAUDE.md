@@ -14,13 +14,15 @@ Invariants. This service custodies real money — those invariants override conv
 
 ## Role
 
-Custodies three balances per user (real + game + sandbox), an append-only ledger, PIX deposit/withdraw via
-`pix-gateway` (which fronts Inter), and sandbox M2M credit/debit for integrated apps. Bridges the frontend and the
+Custodies three balances per user (real + game + sandbox), an append-only ledger, PIX purchases (sandbox, products) via
+`pix-gateway` (which fronts Inter) — user PIX deposit/withdraw is currently off, see
+`../docs/specs/2026-10-07-asaas-removal.md` — and sandbox M2M credit/debit for integrated apps. Bridges the frontend and the
 Inter partner bank; consumes auth + KYC from ctech-account.
 
 **Request flow:** `HTTP → Middleware (auth → scope/KYC/step-up) → Route → Service → Repository → DynamoDB`
 
-Not multi-tenant: no organization header, no RBAC. Access control is user JWT + M2M scopes + step-up MFA.
+Not multi-tenant: no organization header, no RBAC. Access control is user JWT + M2M scopes (step-up MFA
+middleware exists but no route uses it since withdrawals were removed).
 
 ---
 
@@ -97,8 +99,7 @@ them inside route handlers.
 - All amounts are integer **centavos**. Never float.
 - PIX deposit range is per-wallet the same way: optional `min_deposit`/`max_deposit` override the defaults
   (R$1/R$10.000); the minimum never drops below the absolute 100-centavo floor. Checked *before* any charge is
-  opened at the provider — and so is the monthly PIX-receipt allowance (`ASAAS_FREE_RECEIPTS_PER_MONTH`,
-  default 95 of the provider's 100 free receipts; the margin covers charges opened but not yet paid).
+  opened at the provider.
 - Deposit-range fields are admin-only (edited directly in DynamoDB) — never a client/API write path.
 - `real ↔ game` transfers carry no fee in either direction.
 - Every balance mutation is a conditional `TransactWriteItems`; debits carry `balance >= :amount`.
@@ -176,14 +177,11 @@ for the `file:line` map.
 8. `real → game` limit counts GROSS INFLOW (returns never refund headroom).
 9. `game` is real money (withdrawable via `real`; total = `real + game`).
 10. Consent opt‑in + auditable (`wallet_audit` append‑only).
-11. PIX webhook never source of truth — re‑query the provider before crediting. Same posture for onboarding:
-    an `ACCOUNT_STATUS_*` webhook only triggers `GET /v3/myAccount/status`, which decides.
-12. Deposits are custody‑only — a user deposit opens a charge on that user's own Asaas subaccount, never on
-    CTech's Inter account. No approved subaccount, no deposit. Inter serves product purchases; the Asaas
-    master account collects the subaccount verification fee. See
-    `../docs/specs/2026-08-30-asaas-only-deposits.md`.
-13. The verification fee is never refunded — a refused registration reopens document submission rather than
-    closing the account and charging again.
+11. PIX webhook never source of truth — re‑query the provider (Inter) by `txid` before crediting.
+12. User money never lands in CTech's Inter account — there is currently no deposit/withdrawal rail (BaaS
+    provider removed, `../docs/specs/2026-10-07-asaas-removal.md`). A future rail custodies under the user's own
+    CPF; Inter serves product purchases only.
+13. *(Retired 2026-10-07 — was the BaaS verification-fee rule.)*
 14. No money in limbo — `processing` withdrawals resolved by the reconcile job.
 
 ## Internal M2M scopes (constant table: `middleware/scope.go:11`)

@@ -29,7 +29,7 @@ func routerApp(t *testing.T, gamblingEnabled bool) *fiber.App {
 		TablePrefix:     "test",
 		GamblingEnabled: gamblingEnabled,
 	}
-	Register(app, cache.NewMemoryBackend(testCacheSize), cfg, nil, nil, nil, nil, nil, "", nil)
+	Register(app, cache.NewMemoryBackend(testCacheSize), cfg, nil, nil, nil, nil, nil)
 	return app
 }
 
@@ -61,8 +61,8 @@ func TestGatedRoutesAreNotRegisteredWhenFlagDisabled(t *testing.T) {
 		}
 	}
 	// The rest of the wallet is unaffected by the flag.
-	if !paths["/v1.0/wallet/deposits"] {
-		t.Error("the flag must not remove the ordinary PIX deposit route")
+	if !paths["/v1.0/wallet/sandbox/purchases"] {
+		t.Error("the flag must not remove the ordinary sandbox purchase route")
 	}
 }
 

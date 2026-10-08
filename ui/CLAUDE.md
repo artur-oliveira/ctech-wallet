@@ -16,7 +16,10 @@ Next.js 16 (static export) + React 19 frontend for the ctech-wallet API.
 ## Auth (`@aoctech/auth-client`)
 
 - OAuth **PKCE** (`Authorization Code + code_challenge`). `src/lib/auth/oauth.ts` wraps
-  the SDK's `startOAuthFlow` / `startStepUpFlow` (`maxAge: 0` for step-up).
+  the SDK's `startOAuthFlow`. There is no step-up flow: PIX deposits and
+  withdrawals of the `real` wallet (and custody onboarding) are **off** since the
+  Asaas BaaS removal, until a new provider is integrated, so the UI exposes no
+  deposit/withdraw/onboarding surface and no route requires `max_age=0`.
 - The authorization request includes `openid profile kyc` and all public active
   `wallet:*` scopes from `src/lib/auth/scopes.ts`; its contract test reads the
   API manifest so the UI cannot silently drift from the Resource Server.
@@ -62,7 +65,7 @@ Four things carry the app through a failing API, and each has exactly one owner:
 - **`src/lib/network/retry.ts`** — retry policy, pure and separately tested. Safe methods
   and Idempotency-Key-carrying mutations only, max 2 attempts, jittered backoff,
   Retry-After honoured. **A mutation without an Idempotency-Key is never retried** — two
-  PIX charges for one intent is the exact failure the key exists to prevent. `retry` in
+  charges for one intent is the exact failure the key exists to prevent. `retry` in
   QueryProvider is aligned with this rather than stacked on top of it.
 - **`src/components/system-state.tsx`** — the one treatment for 404 / 500 / 503, so a
   dead end never reads as a different kind of failure depending on which one you hit.

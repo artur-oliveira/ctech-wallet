@@ -10,7 +10,7 @@ func TestWalletBalancesResponseExposesSandboxHistoryWithoutActivation(t *testing
 	realw := &wallet.Wallet{WalletID: "w-real", Type: wallet.TypeReal}
 	sandboxw := &wallet.Wallet{WalletID: "w-sandbox", Type: wallet.TypeSandbox}
 
-	out := walletBalancesResponse(realw, nil, sandboxw, "")
+	out := walletBalancesResponse(realw, nil, sandboxw)
 
 	if activated, ok := out["activated"].(bool); !ok || activated {
 		t.Fatalf("activated = %#v, want false without a game wallet", out["activated"])
@@ -26,7 +26,7 @@ func TestWalletBalancesResponseExposesSandboxHistoryWithoutActivation(t *testing
 func TestWalletBalancesResponseDoesNotInventSandbox(t *testing.T) {
 	realw := &wallet.Wallet{WalletID: "w-real", Type: wallet.TypeReal}
 
-	out := walletBalancesResponse(realw, nil, nil, "")
+	out := walletBalancesResponse(realw, nil, nil)
 
 	if _, exists := out["sandbox"]; exists {
 		t.Fatal("sandbox must stay absent when no sandbox wallet exists")

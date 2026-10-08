@@ -6,10 +6,8 @@ these Lambdas over `lambda:Invoke` with an Inter OAuth bearer supplied per call.
 Split into two functions:
 
 - **`cmd/outbound`** — performs the actual Inter calls (CreateCharge, QueryCharge,
-  Transfer, QueryTransfer, Refund, Ping, GetToken) and the Asaas BaaS custody
-  calls (account creation, document upload, static PIX key/QR, payment/transfer
-  query, refund, balance/status — see `../rpc-contract/README.md`). Dispatches
-  on the `rpc-contract` `Op` enum (`cmd/outbound/main.go:89`).
+  Transfer, QueryTransfer, Refund, Ping, GetToken). Dispatches on the
+  `rpc-contract` `Op` enum (`cmd/outbound/main.go:83`).
 - **`cmd/webhook`** — receives Inter's PIX callback, validates it, and asks `api`
   to re‑derive + credit the deposit. Carries **no Inter credentials at all**
   (`cmd/webhook/main.go:1`).
@@ -22,9 +20,8 @@ Split into two functions:
 
 Both Lambdas speak `rpc-contract` (`../rpc-contract/README.md`): `api` sends
 `Request{Op, OAuthToken, Payload}`, `pix-gateway` returns `Response{Error,
-Payload}` with sentinels `key_not_found`, `unauthorized`, and
-`transfer_not_found`
-(`cmd/outbound/main.go:199`).
+Payload}` with sentinels `key_not_found` and `unauthorized`
+(`cmd/outbound/main.go:198`).
 
 ## Outbound — Inter client (`internal/inter`)
 
@@ -95,10 +92,9 @@ Payload}` with sentinels `key_not_found`, `unauthorized`, and
 
 ## Secrets — SSM SecureString (`internal/secrets/ssm.go:16`)
 
-Asaas account credentials travel only in the Lambda request's redacted
-`oauth_token` transport field. They are never duplicated into the logged JSON
-payload. Request/response logs redact credentials, documents, CPF fields, and
-encoded QR images; raw Inter/webhook bodies are not logged.
+The Inter bearer travels only in the Lambda request's `oauth_token` transport
+field. Request/response payloads are never logged (operation metadata only);
+raw Inter/webhook bodies are not logged.
 
 All read with `WithDecryption: true`; none hit disk or logs.
 
