@@ -20,6 +20,7 @@ import {
   pixGatewayWebhookRoleName,
   SERVICE,
   SSM_ACCOUNT,
+  SSM_ALERTS_TOPIC_ARN,
   SSM_PIX_GATEWAY,
   SSM_WALLET,
 } from './constants';
@@ -65,6 +66,9 @@ export class PixGatewayStack extends cdk.Stack {
     const walletSsm = SSM_WALLET(environment);
     const accountSsm = SSM_ACCOUNT(environment);
     const pixGatewaySsm = SSM_PIX_GATEWAY(environment);
+    // The account's shared alert topic (ctech-cdk AlertsStack). Looked up by SSM,
+    // never created here: every service publishes its own failures to the same one.
+    const alertsTopicArn = ssm.StringParameter.valueForStringParameter(this, SSM_ALERTS_TOPIC_ARN(environment));
 
     // ── Outbound function ───────────────────────────────────────────────────
     const outboundRole = new iam.Role(this, 'OutboundRole', {
@@ -86,6 +90,12 @@ export class PixGatewayStack extends cdk.Stack {
       ],
     }));
 
+    // Failure alerts go to the shared SNS topic (not CloudWatch metrics).
+    outboundRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['sns:Publish'],
+      resources: [alertsTopicArn],
+    }));
+
     const outboundFn = new lambda.Function(this, 'OutboundFunction', {
       functionName: pixGatewayOutboundFunctionName(environment),
       runtime: lambda.Runtime.PROVIDED_AL2023,
@@ -101,6 +111,7 @@ export class PixGatewayStack extends cdk.Stack {
         INTER_BASE_URL: interBaseUrl,
         INTER_PIX_KEY: interPixKey,
         INTER_CLIENT_ID: ssm.StringParameter.valueForStringParameter(this, walletSsm.interClientId),
+        ALERTS_TOPIC_ARN: alertsTopicArn,
       },
     });
     this.outboundFunctionArn = outboundFn.functionArn;
@@ -127,6 +138,11 @@ export class PixGatewayStack extends cdk.Stack {
       ],
     }));
 
+    webhookRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['sns:Publish'],
+      resources: [alertsTopicArn],
+    }));
+
     const webhookFn = new lambda.Function(this, 'WebhookFunction', {
       functionName: pixGatewayWebhookFunctionName(environment),
       runtime: lambda.Runtime.PROVIDED_AL2023,
@@ -142,6 +158,7 @@ export class PixGatewayStack extends cdk.Stack {
         CTECH_URL: ssm.StringParameter.valueForStringParameter(this, accountSsm.baseUrl),
         PIX_GATEWAY_CLIENT_ID: ssm.StringParameter.valueForStringParameter(this, pixGatewaySsm.clientId),
         WALLET_API_URL: walletApiUrl,
+        ALERTS_TOPIC_ARN: alertsTopicArn,
       },
     });
 

@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -16,32 +17,46 @@ import (
 	awscfg "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 
+	"gopkg.aoctech.app/api-commons/alerts"
+	"gopkg.aoctech.app/wallet/pix-gateway/internal/alerting"
 	"gopkg.aoctech.app/wallet/pix-gateway/internal/config"
 	"gopkg.aoctech.app/wallet/pix-gateway/internal/inter"
 	"gopkg.aoctech.app/wallet/pix-gateway/internal/secrets"
 	rpc "gopkg.aoctech.app/wallet/rpc-contract"
 )
 
+// Alert job names, shown in the e-mail subject: "[pix-gateway/<env>] <job>".
+const (
+	jobOutbound = "outbound"
+	jobStartup  = "outbound-startup"
+)
+
 type handler struct {
-	pix inter.PixClient
+	pix    inter.PixClient
+	alerts alerts.Publisher // nil-safe: handlers built without one (tests) stay valid
 }
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+	ctx := context.Background()
+	// Built first and from the environment, so even a config failure can report.
+	notify := alerting.FromEnv(ctx)
 
 	cfg, err := config.Load()
 	if err != nil {
 		slog.Error("config load failed", "err", err)
+		alerting.Failure(ctx, notify, jobStartup, "outbound Lambda did not start: config load failed", alerting.SanitizedErr(err), "")
 		os.Exit(1)
 	}
-	pixClient, err := newInter(context.Background(), cfg)
+	pixClient, err := newInter(ctx, cfg)
 	if err != nil {
 		slog.Error("inter client init failed", "err", err)
+		alerting.Failure(ctx, notify, jobStartup, "outbound Lambda did not start: Inter client init failed", alerting.SanitizedErr(err), "")
 		os.Exit(1)
 	}
 	// pixClient (and the SSM store + mTLS HTTP transport it wraps) is built once
 	// at cold start and reused for every invocation — no per-call SSM/SSM-KMS.
-	h := &handler{pix: pixClient}
+	h := &handler{pix: pixClient, alerts: notify}
 	lambda.Start(h.handle)
 }
 
@@ -70,7 +85,13 @@ func (h *handler) handle(ctx context.Context, req rpc.Request) (rpc.Response, er
 	// Seed the bearer api passed per call; inter reads it from ctx in do/doIdem.
 	ctx = inter.WithBearer(ctx, req.OAuthToken)
 	resp := h.dispatch(ctx, req)
-	slog.InfoContext(ctx, "outbound response", "op", req.Op, "failed", resp.Error != "")
+	failed := resp.Error != ""
+	slog.InfoContext(ctx, "outbound response", "op", req.Op, "failed", failed)
+	if failed && !isExpectedOutcome(resp.Error) {
+		// Op and the redacted error only: the payload (PIX key, CPF, QR) never leaves this process.
+		alerting.Failure(ctx, h.alerts, jobOutbound, "Inter operation failed",
+			alerting.SanitizedErr(errors.New(resp.Error)), "op="+string(req.Op))
+	}
 	return resp, nil
 }
 
@@ -207,4 +228,11 @@ func toResp(err error) rpc.Response {
 
 func errResp(err error) rpc.Response {
 	return rpc.Response{Error: err.Error()}
+}
+
+// isExpectedOutcome reports Response.Error values that are normal business
+// results, not failures: an unregistered PIX key is a client error the API
+// handles by reversing the debit.
+func isExpectedOutcome(respError string) bool {
+	return respError == rpc.ErrKeyNotFoundSentinel
 }
