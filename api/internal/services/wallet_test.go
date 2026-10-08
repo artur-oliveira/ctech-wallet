@@ -147,6 +147,9 @@ func (s *stubRepo) PutWithdrawal(_ context.Context, w *wallet.Withdrawal) error 
 	s.withdrawals[w.WithdrawalID] = w
 	return nil
 }
+func (s *stubRepo) WithdrawalPutTx(_ *wallet.Withdrawal) (types.TransactWriteItem, error) {
+	return types.TransactWriteItem{}, nil
+}
 func (s *stubRepo) GetWithdrawal(_ context.Context, id string) (*wallet.Withdrawal, error) {
 	return s.withdrawals[id], nil
 }

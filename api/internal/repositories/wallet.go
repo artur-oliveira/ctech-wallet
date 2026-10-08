@@ -584,6 +584,17 @@ func (r *WalletRepository) PutWithdrawal(ctx context.Context, w *wallet.Withdraw
 	return nil
 }
 
+// WithdrawalPutTx builds the put-if-absent item for a processing withdrawal so
+// it commits in the same TransactWriteItems as the debit that funds it
+// (SEC-01 / Invariant 14): never a debit without its tracking row.
+func (r *WalletRepository) WithdrawalPutTx(w *wallet.Withdrawal) (types.TransactWriteItem, error) {
+	av, err := Encode(w)
+	if err != nil {
+		return types.TransactWriteItem{}, err
+	}
+	return r.withdrawal.BuildPutTxItemIfAbsent(av), nil
+}
+
 func (r *WalletRepository) GetWithdrawal(ctx context.Context, withdrawalID string) (*wallet.Withdrawal, error) {
 	item, err := r.withdrawal.GetItem(ctx, withdrawalID)
 	if err != nil || item == nil {

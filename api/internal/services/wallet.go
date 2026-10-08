@@ -83,6 +83,7 @@ type DepositStore interface {
 // WithdrawalStore owns withdrawal state-machine persistence.
 type WithdrawalStore interface {
 	PutWithdrawal(ctx context.Context, w *wallet.Withdrawal) error
+	WithdrawalPutTx(w *wallet.Withdrawal) (types.TransactWriteItem, error)
 	GetWithdrawal(ctx context.Context, withdrawalID string) (*wallet.Withdrawal, error)
 	UpdateWithdrawal(ctx context.Context, withdrawalID string, updates map[string]any) error
 	ListProcessingWithdrawals(ctx context.Context, limit int) ([]wallet.Withdrawal, error)
