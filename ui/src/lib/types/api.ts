@@ -61,9 +61,10 @@ export interface LedgerEntry {
   wallet_id: string
   type: string
   amount: number // signed; unit matches the owning wallet (centavos for real/game, credits for sandbox)
+  balance_before: number // derived by the server: balance_after - amount
   balance_after: number
   ref?: string
-  /** Optional free-form text supplied by the service that moved the money. */
+  /** Free-form text supplied by the service that moved the money. */
   description?: string
   created_at: string
 }

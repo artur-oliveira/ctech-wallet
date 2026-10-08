@@ -63,7 +63,6 @@
       },
       "loading": "Loading statement…",
       "error": "We couldn't load the statement. Refresh the page to try again.",
-      "loadMore": "Load older transactions",
       "loadingMore": "Loading older transactions…",
       "loadMoreError": "We couldn't load older transactions. Try again.",
       "readOnly": {
@@ -332,6 +331,10 @@
       "game_fund_credit": "Received from real balance",
       "game_return_debit": "Returned to real balance",
       "game_return_credit": "Received from game wallet"
+    },
+    "balance": {
+      "before": "Previous balance",
+      "after": "Balance after"
     }
   },
   "notFound": {

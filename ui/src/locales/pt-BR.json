@@ -63,7 +63,6 @@
       },
       "loading": "Carregando extrato…",
       "error": "Não foi possível carregar o extrato. Atualize a página para tentar de novo.",
-      "loadMore": "Carregar movimentações anteriores",
       "loadingMore": "Carregando movimentações anteriores…",
       "loadMoreError": "Não foi possível carregar movimentações anteriores. Tente de novo.",
       "readOnly": {
@@ -332,6 +331,10 @@
       "game_fund_credit": "Recebido do saldo real",
       "game_return_debit": "Devolução ao saldo real",
       "game_return_credit": "Recebido do jogo"
+    },
+    "balance": {
+      "before": "Saldo anterior",
+      "after": "Saldo atual"
     }
   },
   "notFound": {
