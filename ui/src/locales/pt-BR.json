@@ -55,25 +55,24 @@
     "connecting": "Conectando…",
     "offline": "Offline",
     "ledger": {
-      "label": "Extratos das carteiras",
+      "label": "Extratos",
       "tab": {
-        "real": "Extrato real",
-        "game": "Extrato de jogo",
-        "sandbox": "Extrato sandbox"
+        "real": "Real",
+        "game": "Jogo",
+        "sandbox": "Sandbox",
+        "purchases": "Compras"
       },
       "loading": "Carregando extrato…",
-      "error": "Não foi possível carregar o extrato. Atualize a página para tentar de novo.",
-      "loadMore": "Carregar movimentações anteriores",
+      "error": "Não foi possível carregar o extrato",
       "loadingMore": "Carregando movimentações anteriores…",
-      "loadMoreError": "Não foi possível carregar movimentações anteriores. Tente de novo.",
+      "loadMoreError": "Não foi possível carregar mais",
       "readOnly": {
-        "title": "Histórico disponível somente para consulta",
-        "description": "Você ainda não ativou a carteira de jogo. Aqui aparecem suas partidas sandbox e compras de créditos anteriores, sem liberar operações com dinheiro real."
+        "title": "Somente consulta"
       },
       "empty": {
-        "real": "Nenhuma movimentação no saldo real. Faça um depósito PIX para começar.",
-        "game": "Nenhuma movimentação no saldo de jogo. Envie dinheiro do saldo real quando quiser usá-lo em jogos.",
-        "sandbox": "Nenhuma movimentação de créditos sandbox. Compre créditos com o saldo de jogo quando quiser usá-los."
+        "real": "Nenhuma movimentação",
+        "game": "Nenhuma movimentação",
+        "sandbox": "Nenhuma movimentação"
       }
     }
   },
@@ -86,7 +85,7 @@
     "game": {
       "label": "Saldo de jogo",
       "badge": "Não saca direto",
-      "subtitle": "Dinheiro real reservado para jogos. Para sacar, devolva ao saldo real primeiro — pode fazer isso quando quiser, sem taxa."
+      "subtitle": "Dinheiro real reservado para jogos. Devolva ao saldo real para sacar."
     },
     "return": "Devolver",
     "credits": "Créditos",
@@ -112,7 +111,7 @@
     },
     "returnGame": {
       "title": "Devolver ao saldo real",
-      "description": "Sem taxa e sem limite — devolver dinheiro para fora da carteira de jogo é sempre permitido.",
+      "description": "Sem taxa e sem limite.",
       "submit": "Devolver"
     },
     "amount": {
@@ -148,7 +147,7 @@
     },
     "returnGame": {
       "title": "Confirmar devolução ao saldo real",
-      "description": "Sem taxa e sem limite — dinheiro saindo da carteira de jogo é sempre permitido."
+      "description": "Sem taxa e sem limite."
     },
     "amount": "Valor",
     "total": "Total debitado",
@@ -165,15 +164,12 @@
     }
   },
   "purchases": {
-    "title": "Histórico de compras",
-    "description": "Compras de créditos sandbox e produtos digitais, separadas dos extratos das carteiras.",
     "loading": "Carregando compras…",
-    "error": "Não foi possível carregar seu histórico de compras. Tente de novo.",
+    "error": "Não foi possível carregar as compras",
     "empty": {
-      "sandbox": "Nenhuma compra de créditos sandbox encontrada.",
-      "product": "Nenhuma compra de produto digital encontrada."
+      "sandbox": "Nenhuma compra de créditos",
+      "product": "Nenhuma compra de produto"
     },
-    "loadMore": "Carregar compras anteriores",
     "loadingMore": "Carregando compras anteriores…",
     "credits": "{{credits}} créditos",
     "kind": {
@@ -200,13 +196,15 @@
       "refund_pending": "Estorno em andamento",
       "refunded": "Estornada",
       "expired": "Expirada"
-    }
+    },
+    "filter": "Tipo de compra",
+    "loadMoreError": "Não foi possível carregar mais compras"
   },
   "toast": {
     "depositConfirmed": "Depósito confirmado",
     "realtimeDeposit": "Depósito de {{amount}} confirmado",
     "withdrawSent": "Saque enviado.",
-    "withdrawReversed": "Não foi possível concluir o saque — o valor foi estornado para o seu saldo.",
+    "withdrawReversed": "Não foi possível concluir o saque. O valor voltou para o seu saldo.",
     "withdrawRefundFailed": "O saque falhou e o estorno está pendente. Nossa equipe já foi avisada.",
     "creditsAdded": "Créditos adicionados.",
     "fundGameSent": "Saldo enviado para a carteira de jogo.",
@@ -231,7 +229,7 @@
   },
   "gambling": {
     "title": "Ativar a carteira de jogo",
-    "description": "Criamos uma carteira separada para jogos. O dinheiro nela continua sendo seu e volta para o saldo real quando você quiser — sem taxa e sem limite.",
+    "description": "Carteira separada para jogos. O dinheiro continua seu e volta ao saldo real quando quiser, sem taxa e sem limite.",
     "bullet1": "É a única porta para jogos: não dá para jogar direto do saldo real.",
     "bullet2": "Seus limites valem no envio para a carteira de jogo. Devolver dinheiro não libera limite de volta.",
     "bullet3": "Créditos sandbox não têm valor em dinheiro e nunca voltam a virar dinheiro.",
@@ -332,6 +330,10 @@
       "game_fund_credit": "Recebido do saldo real",
       "game_return_debit": "Devolução ao saldo real",
       "game_return_credit": "Recebido do jogo"
+    },
+    "balance": {
+      "before": "Saldo anterior",
+      "after": "Saldo atual"
     }
   },
   "notFound": {
@@ -374,7 +376,7 @@
       "readout": "Serviço indisponível",
       "title": "A carteira volta em instantes.",
       "description": "O servidor não respondeu. Depósitos e saques em andamento seguem registrados e serão concluídos.",
-      "detail": "Estamos verificando sozinhos — você não precisa recarregar a página.",
+      "detail": "Verificando automaticamente. Não precisa recarregar.",
       "checking": "Verificando se o serviço já voltou…"
     },
     "offline": {

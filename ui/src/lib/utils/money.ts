@@ -59,6 +59,11 @@ export function formatCreditsAmount(credits: number, locale: string = i18n.langu
   return plain(locale).format(credits)
 }
 
+/** Wallet balance → "R$ 1.234,56" for money wallets, or "12.000" for sandbox credits. */
+export function formatBalance(amount: number, monetary: boolean, locale: string = i18n.language || 'pt-BR'): string {
+  return monetary ? formatBRL(amount, locale) : formatCreditsAmount(amount, locale)
+}
+
 /** Signed amount → "+R$ 10,00" / "−R$ 10,00" for monetary rows, or "+1.000" / "−1.000"
  *  for sandbox (credits) rows. `monetary` is false for sandbox. */
 export function formatSigned(amount: number, monetary: boolean, locale: string = i18n.language || 'pt-BR'): string {

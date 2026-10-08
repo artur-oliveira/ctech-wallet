@@ -119,6 +119,7 @@ function addEntry(wallet: Wallet, type: string, amount: number): LedgerEntry {
     wallet_id: wallet.wallet_id,
     type,
     amount,
+    balance_before: wallet.balance - amount,
     balance_after: wallet.balance,
     created_at: new Date().toISOString(),
   }

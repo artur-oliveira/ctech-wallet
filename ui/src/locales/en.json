@@ -55,25 +55,24 @@
     "connecting": "Connecting…",
     "offline": "Offline",
     "ledger": {
-      "label": "Wallet statements",
+      "label": "Statements",
       "tab": {
-        "real": "Real statement",
-        "game": "Game statement",
-        "sandbox": "Sandbox statement"
+        "real": "Real",
+        "game": "Game",
+        "sandbox": "Sandbox",
+        "purchases": "Purchases"
       },
       "loading": "Loading statement…",
-      "error": "We couldn't load the statement. Refresh the page to try again.",
-      "loadMore": "Load older transactions",
+      "error": "Couldn't load the statement",
       "loadingMore": "Loading older transactions…",
-      "loadMoreError": "We couldn't load older transactions. Try again.",
+      "loadMoreError": "Couldn't load more",
       "readOnly": {
-        "title": "History available for viewing only",
-        "description": "You haven't activated the game wallet. Your previous sandbox play and credit purchases appear here without enabling real-money operations."
+        "title": "View only"
       },
       "empty": {
-        "real": "No real-balance transactions yet. Make a PIX deposit to get started.",
-        "game": "No game-balance transactions yet. Send money from your real balance when you want to use it in games.",
-        "sandbox": "No sandbox-credit transactions yet. Buy credits with your game balance when you want to use them."
+        "real": "No transactions",
+        "game": "No transactions",
+        "sandbox": "No transactions"
       }
     }
   },
@@ -86,7 +85,7 @@
     "game": {
       "label": "Game balance",
       "badge": "Not directly withdrawable",
-      "subtitle": "Real money set aside for games. To withdraw it, return it to your real balance first — you can do that anytime, with no fee."
+      "subtitle": "Real money set aside for games. Return it to your real balance to withdraw."
     },
     "return": "Return",
     "credits": "Credits",
@@ -112,7 +111,7 @@
     },
     "returnGame": {
       "title": "Return to real balance",
-      "description": "No fee and no limit — moving money out of the game wallet is always allowed.",
+      "description": "No fee, no limit.",
       "submit": "Return"
     },
     "amount": {
@@ -148,7 +147,7 @@
     },
     "returnGame": {
       "title": "Confirm return to real balance",
-      "description": "No fee and no limit — money leaving the game wallet is always allowed."
+      "description": "No fee, no limit."
     },
     "amount": "Amount",
     "total": "Total debited",
@@ -165,15 +164,12 @@
     }
   },
   "purchases": {
-    "title": "Purchase history",
-    "description": "Sandbox credit and digital product purchases, kept separate from wallet statements.",
     "loading": "Loading purchases…",
-    "error": "We couldn't load your purchase history. Try again.",
+    "error": "Couldn't load purchases",
     "empty": {
-      "sandbox": "No sandbox credit purchases found.",
-      "product": "No digital product purchases found."
+      "sandbox": "No credit purchases",
+      "product": "No product purchases"
     },
-    "loadMore": "Load older purchases",
     "loadingMore": "Loading older purchases…",
     "credits": "{{credits}} credits",
     "kind": {
@@ -200,13 +196,15 @@
       "refund_pending": "Refund in progress",
       "refunded": "Refunded",
       "expired": "Expired"
-    }
+    },
+    "filter": "Purchase type",
+    "loadMoreError": "Couldn't load more purchases"
   },
   "toast": {
     "depositConfirmed": "Deposit confirmed",
     "realtimeDeposit": "Deposit of {{amount}} confirmed",
     "withdrawSent": "Withdrawal sent.",
-    "withdrawReversed": "Withdrawal could not be completed — the amount was refunded to your balance.",
+    "withdrawReversed": "Withdrawal failed. The amount is back in your balance.",
     "withdrawRefundFailed": "Withdrawal failed and the refund is pending. Our team has been notified.",
     "creditsAdded": "Credits added.",
     "fundGameSent": "Balance sent to the game wallet.",
@@ -231,7 +229,7 @@
   },
   "gambling": {
     "title": "Activate the game wallet",
-    "description": "We create a separate wallet for games. The money in it stays yours and returns to your real balance whenever you want — no fee and no limit.",
+    "description": "A separate wallet for games. The money stays yours and returns to your real balance anytime, with no fee and no limit.",
     "bullet1": "It is the only door to games: you can't play directly from your real balance.",
     "bullet2": "Your limits apply when sending to the game wallet. Returning money does not free up limit again.",
     "bullet3": "Sandbox credits have no monetary value and never become money again.",
@@ -332,6 +330,10 @@
       "game_fund_credit": "Received from real balance",
       "game_return_debit": "Returned to real balance",
       "game_return_credit": "Received from game wallet"
+    },
+    "balance": {
+      "before": "Previous balance",
+      "after": "Balance after"
     }
   },
   "notFound": {
@@ -374,7 +376,7 @@
       "readout": "Service unavailable",
       "title": "The wallet is back in a moment.",
       "description": "The server did not respond. Deposits and withdrawals already in flight stay recorded and will settle.",
-      "detail": "We are checking on our own — you do not need to reload.",
+      "detail": "Checking automatically. No need to reload.",
       "checking": "Checking whether the service is back…"
     },
     "offline": {

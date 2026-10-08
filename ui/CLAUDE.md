@@ -95,3 +95,18 @@ probe.
 There are NO exceptions.
 
 Any modification affecting behavior, architecture, APIs, integrations, configuration, deployment, security, business rules, or developer workflow MUST include the corresponding documentation update in the same change.
+
+## Statements, purchases and copy
+
+- The dashboard statement is a four-tab control: Real, Jogo (game), Sandbox and **Compras** (purchases). Purchases
+  keep two filters (sandbox credits, digital products) because they are different objects with their own
+  endpoints; each list is its own paginated query.
+- Lists load by infinite scroll: `useInfiniteSentinel` (`lib/hooks`) plus the pure `shouldLoadMore`
+  (`lib/utils/infinite-scroll.ts`). A failed next page keeps the loaded rows and shows a retry button; queries set
+  `refetchOnWindowFocus: false` so a focus does not re-request every loaded page. The hook is a candidate for the
+  shared `ctech-ui` library; propose it there instead of copying it into other repos.
+- Statement rows show the service-supplied description, the signed amount and `balance_before → balance_after`
+  (both from the server; the client never derives money).
+- Copy rules: no em dash (U+2014) in user-facing text (`src/locales/no-em-dash.test.mjs` enforces it); use a
+  bullet to separate and a semicolon to pause. Prefer self-describing elements over sentences. Legal and
+  responsible-gambling text is changed only with the owner's approval.
