@@ -36,3 +36,30 @@ func TestFailureBuildsAlert(t *testing.T) {
 func TestFailureWithNilPublisherIsSafe(t *testing.T) {
 	Failure(context.Background(), nil, "job", "summary", nil, "") // existing handlers are built without a publisher
 }
+
+func TestRedactRemovesCPFAndTruncates(t *testing.T) {
+	cases := map[string]string{
+		"key 123.456.789-09 not found": "key [redacted] not found",
+		"key 12345678909 not found":    "key [redacted] not found",
+		"cnpj 12.345.678/0001-95 bad":  "cnpj [redacted] bad",
+		"status 503 from inter":        "status 503 from inter",
+	}
+	for in, want := range cases {
+		if got := Redact(in); got != want {
+			t.Errorf("Redact(%q) = %q, want %q", in, got, want)
+		}
+	}
+	long := Redact(string(make([]byte, 5000)))
+	if len(long) > maxAlertText+len("...") {
+		t.Errorf("not truncated: %d", len(long))
+	}
+}
+
+func TestSanitizedErrKeepsMessageWithoutPII(t *testing.T) {
+	if got := SanitizedErr(errors.New("cpf 123.456.789-09 rejected")).Error(); got != "cpf [redacted] rejected" {
+		t.Fatalf("got %q", got)
+	}
+	if SanitizedErr(nil) != nil {
+		t.Fatal("nil must stay nil")
+	}
+}
