@@ -136,3 +136,19 @@ Lambda runtime: provided.al2023; deployed by `cdk/lib/pix-gateway-stack.ts`.
 | B30/B36 | `DictAccount` / DICT same‑owner verify dead (no `OpDictLookup`, no `PixClient.DictLookup`). `WithdrawCPFMismatch` same‑owner check unimplemented. | Open — documented. |
 | B35 | Webhook secret in `?hmac=` query string (`cmd/webhook/main.go:114`). Not a body signature. | Open — documented. |
 | — | `PayerHintCPF` accepted but never sent to Inter (`inter.go:155`). | Dead param. |
+
+## Failure alerts (SNS)
+
+Both Lambdas report failures to the account's shared SNS topic (`ctech-{env}-alerts`, SSM
+`/ctech/{env}/alerts/topic-arn`, owned by ctech-cdk `AlertsStack`) through `api-commons/alerts`, the same way
+ctech-billing does. The topic ARN arrives as `ALERTS_TOPIC_ARN`; unset means no-op.
+
+| Job | Alert when |
+|-----|------------|
+| `outbound` | any Inter operation returns an error (op name and a redacted error), except an unregistered PIX key |
+| `outbound-startup` / `webhook-startup` | the Lambda failed to start (config, SSM secret, Inter client) |
+| `webhook` | malformed body; confirmation call to the wallet failed (with `txid`; Inter retries, so a burst is expected); hmac mismatch (once per cold start) |
+
+An alert never carries CPF, payer name, PIX key, QR code or secrets: only job, op/`txid` and an error string
+passed through `alerting.Redact` (CPF/CNPJ-looking numbers removed, 500 chars max). The e-mail subscription must be
+confirmed by the recipient; a pending subscription looks identical to a working one to the publisher.

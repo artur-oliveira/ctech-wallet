@@ -109,6 +109,9 @@ export const SSM_SHARED = (env: Environment) => ({
   logsBucket: `/ctech/${env}/s3/logs-bucket`,
 });
 
+/** SSM path of the account's shared alert topic ARN (ctech-cdk AlertsStack). */
+export const SSM_ALERTS_TOPIC_ARN = (env: Environment) => `/ctech/${env}/alerts/topic-arn`;
+
 /**
  * Valkey logical DB owned by the wallet.
  * ctech-cdk convention: /0 = ctech-dfe cache, /1 = ws pub/sub (dfe/account),

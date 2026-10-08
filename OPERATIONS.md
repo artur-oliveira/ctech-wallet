@@ -210,6 +210,13 @@ cp -a /var/log/app/app.log /tmp/app.log.bak   # setup-logs.sh also archives to S
 rc-service ctech-ec2-agent-logs-app restart
 ```
 
+## 4d. Inter Lambda failure alerts
+
+`pix-gateway` publishes failures to the shared `ctech-{env}-alerts` SNS topic (see `pix-gateway/README.md`). Confirm the
+operator's e-mail subscription is **confirmed** (`aws sns list-subscriptions-by-topic`: not `PendingConfirmation`).
+Smoke test after a deploy: invoke the webhook Lambda directly with a malformed body and expect a
+`[pix-gateway/<env>] webhook` mail. Not covered: the wallet API's own `ALARM` log lines (failed refunds/reversals).
+
 ## 5. Withdrawal reconciliation schedule
 
 Run `cmd/reconcile` on a schedule (e.g. EventBridge every 5 min). It resolves
