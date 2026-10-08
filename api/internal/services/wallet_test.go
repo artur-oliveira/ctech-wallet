@@ -154,7 +154,11 @@ func (s *stubRepo) PutWithdrawal(_ context.Context, w *wallet.Withdrawal) error 
 	s.withdrawals[w.WithdrawalID] = w
 	return nil
 }
-func (s *stubRepo) WithdrawalPutTx(_ *wallet.Withdrawal) (types.TransactWriteItem, error) {
+
+// WithdrawalPutTx records the row as if the transaction it joins had committed,
+// so replay lookups (GetWithdrawal) see it.
+func (s *stubRepo) WithdrawalPutTx(w *wallet.Withdrawal) (types.TransactWriteItem, error) {
+	s.withdrawals[w.WithdrawalID] = w
 	return types.TransactWriteItem{}, nil
 }
 func (s *stubRepo) GetWithdrawal(_ context.Context, id string) (*wallet.Withdrawal, error) {

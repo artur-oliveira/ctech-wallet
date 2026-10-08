@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -141,5 +142,113 @@ func TestConfirmDepositPaidWithoutPayerCPFStaysPendingAndCreditsNothing(t *testi
 	}
 	if repo.deposit.Status != wallet.DepositPending {
 		t.Fatalf("deposit left pending state: %s", repo.deposit.Status)
+	}
+}
+
+func withdrawFixture(balance int64) (*stubRepo, *stubUserRepo, *pix.FakePixClient, *WalletService) {
+	repo := newStubRepo()
+	repo.real.Balance = balance
+	users := &stubUserRepo{}
+	fake := pix.NewFake()
+	return repo, users, fake, newRailSvc(repo, users, fake)
+}
+
+func TestWithdrawDebitsExactAmountNoFeeToKYCCPF(t *testing.T) {
+	repo, _, fake, svc := withdrawFixture(50000)
+	w, err := svc.Withdraw(context.Background(), "u1", wallet.KYCVerified, 30000, "k1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.Status != wallet.WithdrawCompleted {
+		t.Fatalf("status %s", w.Status)
+	}
+	if len(repo.debitCalls) != 1 || repo.debitCalls[0].Amount != 30000 || repo.debitCalls[0].EntryType != wallet.EntryWithdraw {
+		t.Fatalf("debits = %+v", repo.debitCalls)
+	}
+	if len(fake.Transfers) != 1 || fake.Transfers[0].PixKey != railKYC.CPF {
+		t.Fatalf("payout did not go to the KYC CPF: %+v", fake.Transfers)
+	}
+}
+
+func TestWithdrawSecondOfTheDayIsRejected(t *testing.T) {
+	_, _, fake, svc := withdrawFixture(50000)
+	if _, err := svc.Withdraw(context.Background(), "u1", wallet.KYCVerified, 10000, "k1"); err != nil {
+		t.Fatal(err)
+	}
+	_, err := svc.Withdraw(context.Background(), "u1", wallet.KYCVerified, 10000, "k2")
+	isProblem(t, err, problem.TypeDailyWithdrawLimit)
+	if len(fake.Transfers) != 1 {
+		t.Fatalf("transfers = %d, want 1", len(fake.Transfers))
+	}
+}
+
+func TestWithdrawOverDailyAmountCap(t *testing.T) {
+	_, _, fake, svc := withdrawFixture(500000)
+	_, err := svc.Withdraw(context.Background(), "u1", wallet.KYCVerified, 100001, "k1")
+	isProblem(t, err, problem.TypeDailyWithdrawLimit)
+	if len(fake.Transfers) != 0 {
+		t.Fatal("payout sent for a rejected withdrawal")
+	}
+}
+
+func TestWithdrawReplaySameKeyNoSecondPayout(t *testing.T) {
+	repo, _, fake, svc := withdrawFixture(50000)
+	a, err := svc.Withdraw(context.Background(), "u1", wallet.KYCVerified, 10000, "k1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := svc.Withdraw(context.Background(), "u1", wallet.KYCVerified, 10000, "k1")
+	if err != nil || a.WithdrawalID != b.WithdrawalID {
+		t.Fatalf("replay: %+v %v", b, err)
+	}
+	if len(fake.Transfers) != 1 || len(repo.debitCalls) != 1 {
+		t.Fatalf("transfers=%d debits=%d, want 1 each", len(fake.Transfers), len(repo.debitCalls))
+	}
+}
+
+func TestWithdrawKeyNotFoundReverseGivesTheSlotBack(t *testing.T) {
+	repo, users, fake, svc := withdrawFixture(50000)
+	fake.TransferErr = pix.ErrKeyNotFound
+	_, err := svc.Withdraw(context.Background(), "u1", wallet.KYCVerified, 10000, "k1")
+	isProblem(t, err, problem.TypePixKeyNotFound)
+	if len(repo.creditCalls) != 1 || repo.creditCalls[0].EntryType != wallet.EntryReversal {
+		t.Fatalf("not refunded: %+v", repo.creditCalls)
+	}
+	if got := users.user.RealDailyCounters; got == nil || got.WithdrawCount != 0 || got.WithdrawSum != 0 {
+		t.Fatalf("daily slot not released: %+v", got)
+	}
+	fake.TransferErr = nil
+	if _, err := svc.Withdraw(context.Background(), "u1", wallet.KYCVerified, 10000, "k2"); err != nil {
+		t.Fatalf("slot was not released after the reversal: %v", err)
+	}
+}
+
+func TestWithdrawBelowMinimumUnlessFullBalance(t *testing.T) {
+	_, _, _, svc := withdrawFixture(5000)
+	if _, err := svc.Withdraw(context.Background(), "u1", wallet.KYCVerified, 50, "k1"); err == nil {
+		t.Fatal("below minimum must be rejected")
+	}
+	_, _, _, svc2 := withdrawFixture(50)
+	if _, err := svc2.Withdraw(context.Background(), "u1", wallet.KYCVerified, 50, "k2"); err != nil {
+		t.Fatalf("emptying the whole balance below the minimum must pass: %v", err)
+	}
+}
+
+func TestWithdrawRequiresEnhancedKYC(t *testing.T) {
+	_, _, _, svc := withdrawFixture(50000)
+	if _, err := svc.Withdraw(context.Background(), "u1", "basic", 10000, "k1"); err == nil {
+		t.Fatal("basic KYC must be rejected")
+	}
+}
+
+func TestWithdrawTransferFailureLeavesProcessing(t *testing.T) {
+	repo, _, fake, svc := withdrawFixture(50000)
+	fake.TransferErr = errors.New("bank timeout")
+	w, err := svc.Withdraw(context.Background(), "u1", wallet.KYCVerified, 10000, "k1")
+	if err != nil || w.Status != wallet.WithdrawProcessing {
+		t.Fatalf("w=%+v err=%v", w, err)
+	}
+	if len(repo.creditCalls) != 0 {
+		t.Fatal("must not reverse on an ambiguous bank failure; reconcile resolves it")
 	}
 }

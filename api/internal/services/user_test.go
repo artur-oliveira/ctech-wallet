@@ -140,5 +140,11 @@ func (r *stubUserRepo) BumpDepositCounters(_ string, _ *wallet.GameDepositCounte
 
 func (r *stubUserRepo) BumpRealDailyCounters(_ string, _ *wallet.RealDailyCounters, next wallet.RealDailyCounters) (types.TransactWriteItem, error) {
 	r.realCountersBumped = append(r.realCountersBumped, next)
+	// Mirror what the committed transaction would leave on the user row.
+	if r.user == nil {
+		r.user = &wallet.User{}
+	}
+	committed := next
+	r.user.RealDailyCounters = &committed
 	return types.TransactWriteItem{}, nil
 }

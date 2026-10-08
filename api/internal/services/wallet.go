@@ -36,6 +36,8 @@ const (
 	depositTTLMinutes       = 60
 	depositTxIDPrefix       = "dep"
 	depositTxIDSeparator    = "\x00"
+	withdrawalIDPrefix      = "withdraw#"
+	withdrawalDescription   = "Saque via PIX"
 	depositTxIDDigestLength = 30 // Inter txids are 26-35 alphanumeric chars: 3+30
 	eventDepositConfirmed   = "deposit_confirmed"
 	eventWithdrawalComplete = "withdraw_completed"
@@ -855,6 +857,119 @@ func (s *WalletService) markDepositRefunded(ctx context.Context, dep *wallet.Pix
 		}
 	}
 	return nil
+}
+
+// Withdraw debits exactly amount (no fee) and sends the PIX payout to the CPF on
+// the caller's KYC record: the client never supplies a destination key, so a
+// payout can only reach the registered owner. The debit, its ledger entry, the
+// idempotency guard, the processing withdrawal row and the daily counters commit
+// in ONE TransactWriteItems. If the CPF has no PIX key at the bank the debit is
+// reversed immediately (and the daily slot returned); any other payout failure
+// leaves the withdrawal processing for the reconciliation job (Invariant 14).
+func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, amount int64, idemKey string) (*wallet.Withdrawal, error) {
+	if kycLevel != wallet.KYCVerified {
+		return nil, problem.KYCNotVerified()
+	}
+	withdrawalID := withdrawalIDPrefix + userID + "#" + idemKey
+
+	realw, err := s.repo.EnsureRealWallet(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	release, err := acquireWallet(ctx, s.lock, realw.WalletID)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+
+	// Replay under the lock, so two concurrent identical calls cannot both pass.
+	if existing, err := s.repo.GetWithdrawal(ctx, withdrawalID); err != nil {
+		return nil, err
+	} else if existing != nil {
+		return existing, nil
+	}
+
+	if err := wallet.ValidateWithdrawalAmount(amount, realw, amount == realw.Balance, false); err != nil {
+		return nil, problem.BadRequest("valor abaixo do mínimo de saque")
+	}
+
+	u, err := s.users.Get(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	var prev *wallet.RealDailyCounters
+	var cur wallet.RealDailyCounters
+	if u != nil && u.RealDailyCounters != nil {
+		prev = u.RealDailyCounters
+		cur = *prev
+	}
+	now := time.Now()
+	if p := breachProblem(wallet.CheckDailyWithdraw(wallet.EffectiveDailyLimits(realw), cur, amount, now)); p != nil {
+		return nil, p
+	}
+	day, _, _ := wallet.WindowKeys(now)
+	next := cur.ForDay(day)
+	next.WithdrawCount++
+	next.WithdrawSum += amount
+	counterTx, err := s.users.BumpRealDailyCounters(userID, prev, next)
+	if err != nil {
+		return nil, err
+	}
+
+	kyc, err := s.kyc.Get(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	pixKey := kyc.CPF // destination is ALWAYS the KYC owner's CPF
+
+	w := &wallet.Withdrawal{
+		WithdrawalID:   withdrawalID,
+		WalletID:       realw.WalletID,
+		UserID:         userID,
+		Amount:         amount,
+		PixKey:         pixKey,
+		Status:         wallet.WithdrawProcessing,
+		IdempotencyKey: idemKey,
+		CreatedAt:      repositories.NowStr(),
+		UpdatedAt:      repositories.NowStr(),
+	}
+	putTx, err := s.repo.WithdrawalPutTx(w)
+	if err != nil {
+		return nil, err
+	}
+	_, replayed, err := s.repo.Debit(ctx, repositories.Mutation{
+		WalletID:       realw.WalletID,
+		Amount:         amount,
+		EntryType:      wallet.EntryWithdraw,
+		Ref:            withdrawalID,
+		Description:    withdrawalDescription,
+		IdempotencyKey: withdrawalID,
+		ReqHash:        reqHash(pixKey, amount),
+	}, putTx, counterTx)
+	if err != nil {
+		return nil, err
+	}
+	if replayed {
+		// Someone else is mid-flight on this withdrawal: never re-transfer.
+		return s.repo.GetWithdrawal(ctx, withdrawalID)
+	}
+
+	res, err := s.pix.Transfer(ctx, pixKey, amount, interIdemKey(withdrawalID))
+	if err != nil {
+		if errors.Is(err, pix.ErrKeyNotFound) {
+			// Nothing to retry: refund now instead of leaving it processing.
+			s.reverse(ctx, *w)
+			return nil, problem.PixKeyNotFound()
+		}
+		slog.Warn("withdrawal transfer failed, left in processing", "withdrawal_id", withdrawalID, "err", err)
+		return w, nil
+	}
+	w.Status, w.E2EID = wallet.WithdrawCompleted, res.E2EID
+	if err := s.repo.UpdateWithdrawal(ctx, withdrawalID, map[string]any{"status": wallet.WithdrawCompleted, "e2e_id": res.E2EID}); err != nil {
+		return nil, err
+	}
+	s.broadcastWithdrawal(ctx, userID, eventWithdrawalComplete, withdrawalID, amount)
+	return w, nil
 }
 
 // WalletBalances is the M2M balance snapshot a skill game reads to show a

@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+
 	"gopkg.aoctech.app/api-commons/observability"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/pix"
@@ -108,6 +110,10 @@ func (s *WalletService) ReverseWithdrawal(ctx context.Context, withdrawalID stri
 // idempotent reversal either way, so both notify the user identically.
 func (s *WalletService) reverse(ctx context.Context, w wallet.Withdrawal) bool {
 	total := w.Amount
+	extra, xerr := s.releaseWithdrawalSlot(ctx, w)
+	if xerr != nil {
+		slog.Warn("withdrawal slot release skipped", "withdrawal_id", w.WithdrawalID, "err", xerr)
+	}
 	_, _, err := s.repo.Credit(ctx, repositories.Mutation{
 		WalletID:       w.WalletID,
 		Amount:         total,
@@ -115,7 +121,7 @@ func (s *WalletService) reverse(ctx context.Context, w wallet.Withdrawal) bool {
 		Ref:            "reverse:" + w.WithdrawalID,
 		IdempotencyKey: "reverse#" + w.WithdrawalID,
 		ReqHash:        reqHash("reverse:"+w.WithdrawalID, total),
-	})
+	}, extra...)
 	if err != nil {
 		observability.Error(ctx, "ALARM withdrawal reversal credit-back failed", err, "withdrawal_id", w.WithdrawalID, "amount", total)
 		if updateErr := s.repo.UpdateWithdrawal(ctx, w.WithdrawalID, map[string]any{"status": wallet.WithdrawRefundFail}); updateErr != nil {
@@ -190,4 +196,32 @@ func (s *WalletService) SweepStaleHolds(ctx context.Context) (alarmed int, err e
 		alarmed++
 	}
 	return alarmed, nil
+}
+
+// releaseWithdrawalSlot builds the counter decrement that returns a reversed
+// withdrawal's daily slot. It only applies while the counters still belong to the
+// day the withdrawal was created; a reversal on a later day changes nothing. A
+// failure here must never block the money reversal, so callers log and continue.
+func (s *WalletService) releaseWithdrawalSlot(ctx context.Context, w wallet.Withdrawal) ([]types.TransactWriteItem, error) {
+	u, err := s.users.Get(ctx, w.UserID)
+	if err != nil || u == nil || u.RealDailyCounters == nil {
+		return nil, err
+	}
+	created, err := time.Parse(time.RFC3339Nano, w.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	day, _, _ := wallet.WindowKeys(created)
+	prev := u.RealDailyCounters
+	if prev.DayKey != day {
+		return nil, nil
+	}
+	next := *prev
+	next.WithdrawCount = max(0, next.WithdrawCount-1)
+	next.WithdrawSum = max(0, next.WithdrawSum-w.Amount)
+	tx, err := s.users.BumpRealDailyCounters(w.UserID, prev, next)
+	if err != nil {
+		return nil, err
+	}
+	return []types.TransactWriteItem{tx}, nil
 }
