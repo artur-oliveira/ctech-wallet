@@ -67,20 +67,38 @@ func (r *UserRepository) SetGameLimits(ctx context.Context, userID string, lim *
 	})
 }
 
+const (
+	attrGameDepositCounters = "game_deposit_counters"
+	attrRealDailyCounters   = "real_daily_counters"
+)
+
 // BumpDepositCounters returns a TransactWriteItem replacing the user's
 // game_deposit_counters with next, conditioned on the row still holding prev
-// (attribute absent when prev == nil). Ran inside the same transaction as the
-// game-fund transfer, the optimistic condition serializes concurrent deposits:
-// the loser's transaction cancels and surfaces as WalletBusy.
+// (attribute absent when prev == nil). See bumpCounters.
 func (r *UserRepository) BumpDepositCounters(userID string, prev *wallet.GameDepositCounters, next wallet.GameDepositCounters) (types.TransactWriteItem, error) {
+	return r.bumpCounters(attrGameDepositCounters, userID, prev != nil, prev, next)
+}
+
+// BumpRealDailyCounters is BumpDepositCounters for the real wallet's daily PIX
+// counters. Always called under the real wallet lock.
+func (r *UserRepository) BumpRealDailyCounters(userID string, prev *wallet.RealDailyCounters, next wallet.RealDailyCounters) (types.TransactWriteItem, error) {
+	return r.bumpCounters(attrRealDailyCounters, userID, prev != nil, prev, next)
+}
+
+// bumpCounters writes next into attr, conditioned on attr still holding prev
+// (or being absent when hasPrev is false). Ran inside the same transaction as
+// the money movement, the optimistic condition serializes concurrent writers:
+// the loser's transaction cancels. hasPrev is explicit because a typed nil
+// pointer boxed in `any` is not == nil.
+func (r *UserRepository) bumpCounters(attr, userID string, hasPrev bool, prev, next any) (types.TransactWriteItem, error) {
 	nextAV, err := attributevalue.Marshal(next)
 	if err != nil {
 		return types.TransactWriteItem{}, err
 	}
 	values := map[string]types.AttributeValue{":next": nextAV, ":now": &types.AttributeValueMemberS{Value: NowStr()}}
 	cond := "attribute_not_exists(#c)"
-	if prev != nil {
-		prevAV, err := attributevalue.Marshal(*prev)
+	if hasPrev {
+		prevAV, err := attributevalue.Marshal(prev)
 		if err != nil {
 			return types.TransactWriteItem{}, err
 		}
@@ -89,7 +107,7 @@ func (r *UserRepository) BumpDepositCounters(userID string, prev *wallet.GameDep
 	}
 	return r.users.BuildRawUpdateTxItem(userID, nil,
 		"SET #c = :next, #u = :now", cond,
-		map[string]string{"#c": "game_deposit_counters", "#u": "updated_at"}, values), nil
+		map[string]string{"#c": attr, "#u": "updated_at"}, values), nil
 }
 
 // AcceptGamblingAddendum stamps the current gambling addendum version and the
