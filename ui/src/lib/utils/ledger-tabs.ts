@@ -1,14 +1,12 @@
-import type {WalletType} from '@/lib/types/api'
-
 export const LEDGER_TAB_KEYS = ['ArrowLeft', 'ArrowRight', 'Home', 'End'] as const
 
 export type LedgerTabKey = typeof LEDGER_TAB_KEYS[number]
 
-export function nextLedgerTab(
-  tabs: WalletType[],
-  current: WalletType,
+export function nextLedgerTab<T extends string>(
+  tabs: T[],
+  current: T,
   key: string,
-): WalletType | null {
+): T | null {
   if (!LEDGER_TAB_KEYS.some((supportedKey) => supportedKey === key)) return null
   if (tabs.length === 0) return null
 

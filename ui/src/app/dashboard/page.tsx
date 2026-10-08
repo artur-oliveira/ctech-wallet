@@ -12,7 +12,6 @@ import {useAuth} from '@/lib/hooks/useAuth'
 import {ProtectedRoute} from '@/components/protected-route'
 import {BalanceCards} from '@/components/wallet/balance-cards'
 import {LedgerTabs} from '@/components/wallet/ledger-tabs'
-import {PurchaseHistory} from '@/components/wallet/purchase-history'
 import {Button} from '@/components/ui/button'
 import {QueryErrorState} from '@/components/query-error-state'
 import {LanguageSwitcher} from '@/components/language-switcher'
@@ -253,8 +252,6 @@ function DashboardInner() {
               activated={balances.data.activated}
               hasSandbox={!!balances.data.sandbox}
             />
-
-            <PurchaseHistory/>
           </>
         )}
       </main>

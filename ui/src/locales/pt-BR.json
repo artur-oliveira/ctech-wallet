@@ -55,19 +55,19 @@
     "connecting": "Conectando…",
     "offline": "Offline",
     "ledger": {
-      "label": "Extratos das carteiras",
+      "label": "Extratos",
       "tab": {
-        "real": "Extrato real",
-        "game": "Extrato de jogo",
-        "sandbox": "Extrato sandbox"
+        "real": "Real",
+        "game": "Jogo",
+        "sandbox": "Sandbox",
+        "purchases": "Compras"
       },
       "loading": "Carregando extrato…",
       "error": "Não foi possível carregar o extrato. Atualize a página para tentar de novo.",
       "loadingMore": "Carregando movimentações anteriores…",
       "loadMoreError": "Não foi possível carregar movimentações anteriores. Tente de novo.",
       "readOnly": {
-        "title": "Histórico disponível somente para consulta",
-        "description": "Você ainda não ativou a carteira de jogo. Aqui aparecem suas partidas sandbox e compras de créditos anteriores, sem liberar operações com dinheiro real."
+        "title": "Somente consulta"
       },
       "empty": {
         "real": "Nenhuma movimentação no saldo real. Faça um depósito PIX para começar.",
@@ -164,15 +164,12 @@
     }
   },
   "purchases": {
-    "title": "Histórico de compras",
-    "description": "Compras de créditos sandbox e produtos digitais, separadas dos extratos das carteiras.",
     "loading": "Carregando compras…",
     "error": "Não foi possível carregar seu histórico de compras. Tente de novo.",
     "empty": {
       "sandbox": "Nenhuma compra de créditos sandbox encontrada.",
       "product": "Nenhuma compra de produto digital encontrada."
     },
-    "loadMore": "Carregar compras anteriores",
     "loadingMore": "Carregando compras anteriores…",
     "credits": "{{credits}} créditos",
     "kind": {
@@ -199,7 +196,9 @@
       "refund_pending": "Estorno em andamento",
       "refunded": "Estornada",
       "expired": "Expirada"
-    }
+    },
+    "filter": "Tipo de compra",
+    "loadMoreError": "Não foi possível carregar mais compras"
   },
   "toast": {
     "depositConfirmed": "Depósito confirmado",

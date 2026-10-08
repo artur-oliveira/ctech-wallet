@@ -55,19 +55,19 @@
     "connecting": "Connecting…",
     "offline": "Offline",
     "ledger": {
-      "label": "Wallet statements",
+      "label": "Statements",
       "tab": {
-        "real": "Real statement",
-        "game": "Game statement",
-        "sandbox": "Sandbox statement"
+        "real": "Real",
+        "game": "Game",
+        "sandbox": "Sandbox",
+        "purchases": "Purchases"
       },
       "loading": "Loading statement…",
       "error": "We couldn't load the statement. Refresh the page to try again.",
       "loadingMore": "Loading older transactions…",
       "loadMoreError": "We couldn't load older transactions. Try again.",
       "readOnly": {
-        "title": "History available for viewing only",
-        "description": "You haven't activated the game wallet. Your previous sandbox play and credit purchases appear here without enabling real-money operations."
+        "title": "View only"
       },
       "empty": {
         "real": "No real-balance transactions yet. Make a PIX deposit to get started.",
@@ -164,15 +164,12 @@
     }
   },
   "purchases": {
-    "title": "Purchase history",
-    "description": "Sandbox credit and digital product purchases, kept separate from wallet statements.",
     "loading": "Loading purchases…",
     "error": "We couldn't load your purchase history. Try again.",
     "empty": {
       "sandbox": "No sandbox credit purchases found.",
       "product": "No digital product purchases found."
     },
-    "loadMore": "Load older purchases",
     "loadingMore": "Loading older purchases…",
     "credits": "{{credits}} credits",
     "kind": {
@@ -199,7 +196,9 @@
       "refund_pending": "Refund in progress",
       "refunded": "Refunded",
       "expired": "Expired"
-    }
+    },
+    "filter": "Purchase type",
+    "loadMoreError": "Couldn't load more purchases"
   },
   "toast": {
     "depositConfirmed": "Deposit confirmed",

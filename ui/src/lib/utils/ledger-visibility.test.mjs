@@ -8,6 +8,7 @@ const dashboardSource = await readFile(new URL('../../app/dashboard/page.tsx', i
 
 test('an existing sandbox statement stays visible without gambling activation', () => {
   assert.match(tabsSource, /hasSandbox \? \['real', 'sandbox'\] : \['real'\]/)
+  assert.match(tabsSource, /\[\.\.\.wallets, PURCHASES_TAB\]/)
   assert.match(tabsSource, /!activated && hasSandbox && selectedTab === 'sandbox'/)
   assert.match(dashboardSource, /hasSandbox=\{!!balances\.data\.sandbox\}/)
 })

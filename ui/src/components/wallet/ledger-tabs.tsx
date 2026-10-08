@@ -3,33 +3,37 @@
 import {type KeyboardEvent, useRef, useState} from 'react'
 import {useTranslation} from 'react-i18next'
 import {LedgerList} from '@/components/wallet/ledger-list'
+import {PurchasesPanel} from '@/components/wallet/purchases-panel'
 import type {WalletType} from '@/lib/types/api'
 import {nextLedgerTab} from '@/lib/utils/ledger-tabs'
 
 const TAB_ID_PREFIX = 'ledger-tab-'
 const PANEL_ID_PREFIX = 'ledger-panel-'
 
-export function availableLedgerTabs(activated: boolean, hasSandbox: boolean): WalletType[] {
-  if (activated) return ['real', 'game', 'sandbox']
-  return hasSandbox ? ['real', 'sandbox'] : ['real']
+export const PURCHASES_TAB = 'purchases'
+export type LedgerTab = WalletType | typeof PURCHASES_TAB
+
+export function availableLedgerTabs(activated: boolean, hasSandbox: boolean): LedgerTab[] {
+  const wallets: WalletType[] = activated ? ['real', 'game', 'sandbox'] : hasSandbox ? ['real', 'sandbox'] : ['real']
+  return [...wallets, PURCHASES_TAB]
 }
 
-function tabID(type: WalletType): string {
+function tabID(type: LedgerTab): string {
   return `${TAB_ID_PREFIX}${type}`
 }
 
-function panelID(type: WalletType): string {
+function panelID(type: LedgerTab): string {
   return `${PANEL_ID_PREFIX}${type}`
 }
 
 export function LedgerTabs({activated, hasSandbox}: { activated: boolean; hasSandbox: boolean }) {
   const {t} = useTranslation()
-  const [tab, setTab] = useState<WalletType>('real')
-  const tabRefs = useRef<Partial<Record<WalletType, HTMLButtonElement | null>>>({})
+  const [tab, setTab] = useState<LedgerTab>('real')
+  const tabRefs = useRef<Partial<Record<LedgerTab, HTMLButtonElement | null>>>({})
   const tabs = availableLedgerTabs(activated, hasSandbox)
   const selectedTab = tabs.includes(tab) ? tab : tabs[0]
 
-  function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>, current: WalletType) {
+  function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>, current: LedgerTab) {
     const next = nextLedgerTab(tabs, current, event.key)
     if (!next) return
 
@@ -74,9 +78,6 @@ export function LedgerTabs({activated, hasSandbox}: { activated: boolean; hasSan
       {!activated && hasSandbox && selectedTab === 'sandbox' && (
         <div className="border-b border-border bg-muted/40 px-5 py-3">
           <p className="text-sm font-medium text-foreground">{t('dashboard.ledger.readOnly.title')}</p>
-          <p className="mt-0.5 max-w-[70ch] text-xs leading-relaxed text-muted-foreground">
-            {t('dashboard.ledger.readOnly.description')}
-          </p>
         </div>
       )}
 
@@ -89,7 +90,7 @@ export function LedgerTabs({activated, hasSandbox}: { activated: boolean; hasSan
           tabIndex={0}
           hidden={selectedTab !== type}
         >
-          {selectedTab === type && <LedgerList type={type}/>}
+          {selectedTab === type && (type === PURCHASES_TAB ? <PurchasesPanel/> : <LedgerList type={type}/>)}
         </div>
       ))}
     </section>
