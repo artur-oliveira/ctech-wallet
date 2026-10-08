@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/problem"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
 	"gopkg.aoctech.app/wallet/api/internal/validation"
@@ -139,13 +140,13 @@ func decodeCursor(cursor string) map[string]types.AttributeValue {
 
 // sendStatement writes a ledger page as a paginated JSON response.
 func sendStatement(c fiber.Ctx, result *repositories.QueryResult) error {
-	items := make([]map[string]any, 0, len(result.Items))
-	for _, it := range result.Items {
-		var m map[string]any
-		if err := attributevalue.UnmarshalMap(it, &m); err != nil {
-			return sendProblem(c, err)
-		}
-		items = append(items, m)
+	entries, err := repositories.DecodeItems[wallet.LedgerEntry](result.Items)
+	if err != nil {
+		return sendProblem(c, err)
+	}
+	items := make([]ledgerEntryView, 0, len(entries))
+	for _, e := range entries {
+		items = append(items, newLedgerEntryView(e))
 	}
 	return c.JSON(PaginatedResponse{
 		Items:      items,

@@ -1,6 +1,7 @@
 import axios, {AxiosError, type AxiosInstance, type AxiosRequestConfig, type AxiosResponse,} from 'axios'
 import type {
   Balances,
+  DepositResult,
   GameLimits,
   GameLimitsInput,
   GameLimitsStatus,
@@ -12,6 +13,7 @@ import type {
   Transfer,
   Wallet,
   WalletType,
+  Withdrawal,
 } from '@/lib/types/api'
 import {MockApiClient, USE_MOCK} from '@/lib/mock'
 import {
@@ -221,6 +223,18 @@ class ApiClient {
 
   async getBalances(): Promise<Balances> {
     return (await this.http.get<Balances>('/v1.0/wallet')).data
+  }
+
+  async createDeposit(amount: number, idempotencyKey: string): Promise<DepositResult> {
+    return (
+      await this.http.post<DepositResult>('/v1.0/wallet/deposits', {amount}, idemConfig(idempotencyKey))
+    ).data
+  }
+
+  async createWithdrawal(amount: number, idempotencyKey: string): Promise<Withdrawal> {
+    return (
+      await this.http.post<Withdrawal>('/v1.0/wallet/withdrawals', {amount}, idemConfig(idempotencyKey))
+    ).data
   }
 
   /** Buys sandbox credits with the GAME balance — never with the real balance. */

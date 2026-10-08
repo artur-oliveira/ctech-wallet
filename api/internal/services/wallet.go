@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -33,6 +34,11 @@ import (
 // sweepAgeThreshold) a 50m window to run before the row disappears.
 const (
 	depositTTLMinutes       = 60
+	depositTxIDPrefix       = "dep"
+	depositTxIDSeparator    = "\x00"
+	withdrawalIDPrefix      = "withdraw#"
+	withdrawalDescription   = "Saque via PIX"
+	depositTxIDDigestLength = 30 // Inter txids are 26-35 alphanumeric chars: 3+30
 	eventDepositConfirmed   = "deposit_confirmed"
 	eventWithdrawalComplete = "withdraw_completed"
 	eventWithdrawalFailed   = "withdraw_refund_failed"
@@ -63,7 +69,7 @@ type WalletStore interface {
 type LedgerStore interface {
 	Credit(ctx context.Context, m repositories.Mutation, extra ...types.TransactWriteItem) (*wallet.LedgerEntry, bool, error)
 	Debit(ctx context.Context, m repositories.Mutation, extra ...types.TransactWriteItem) (*wallet.LedgerEntry, bool, error)
-	ConfirmDepositCredit(ctx context.Context, m repositories.Mutation, txid, e2eID string) (*wallet.LedgerEntry, bool, error)
+	ConfirmDepositCredit(ctx context.Context, m repositories.Mutation, txid, e2eID string, extra ...types.TransactWriteItem) (*wallet.LedgerEntry, bool, error)
 	FindMutation(ctx context.Context, idemKey, reqHash string) (*wallet.LedgerEntry, error)
 	Transfer(ctx context.Context, from, to string, amount, creditAmount int64, debitType, creditType, ref, idemKey, reqHash string, extra ...types.TransactWriteItem) (*wallet.LedgerEntry, *wallet.LedgerEntry, bool, error)
 	Statement(ctx context.Context, walletID string, limit int, startKey map[string]types.AttributeValue) (*repositories.QueryResult, error)
@@ -72,6 +78,7 @@ type LedgerStore interface {
 
 // DepositStore owns PIX deposit lifecycle persistence.
 type DepositStore interface {
+	PutDepositIfAbsent(ctx context.Context, d *wallet.PixDeposit) error
 	GetDeposit(ctx context.Context, txid string) (*wallet.PixDeposit, error)
 	UpdateDepositStatus(ctx context.Context, txid, status, e2eID string) error
 	TransitionDepositStatus(ctx context.Context, txid, fromStatus, toStatus, e2eID string) (bool, error)
@@ -83,6 +90,8 @@ type DepositStore interface {
 // WithdrawalStore owns withdrawal state-machine persistence.
 type WithdrawalStore interface {
 	PutWithdrawal(ctx context.Context, w *wallet.Withdrawal) error
+	WithdrawalPutTx(w *wallet.Withdrawal) (types.TransactWriteItem, error)
+	MarkWithdrawalReversed(ctx context.Context, withdrawalID string, extra ...types.TransactWriteItem) error
 	GetWithdrawal(ctx context.Context, withdrawalID string) (*wallet.Withdrawal, error)
 	UpdateWithdrawal(ctx context.Context, withdrawalID string, updates map[string]any) error
 	ListProcessingWithdrawals(ctx context.Context, limit int) ([]wallet.Withdrawal, error)
@@ -337,6 +346,121 @@ func (s *WalletService) Statement(ctx context.Context, walletID string, limit in
 	return s.repo.Statement(ctx, walletID, limit, startKey)
 }
 
+// depositTxID derives the Inter-compatible txid from the idempotency key, so a
+// retried POST /wallet/deposits maps to the same charge. Mirrors
+// sandboxPurchaseTxID: the digest keeps caller-controlled values out of the txid.
+func depositTxID(userID, idemKey string) string {
+	sum := sha256.Sum256([]byte(userID + depositTxIDSeparator + idemKey))
+	return depositTxIDPrefix + hex.EncodeToString(sum[:])[:depositTxIDDigestLength]
+}
+
+// dailyDepositBreach reads the user's counters and reports whether depositing
+// amount would overflow the wallet's daily cap. Advisory at initiation; the
+// binding check is in ConfirmDeposit, under the wallet lock.
+func (s *WalletService) dailyDepositBreach(ctx context.Context, userID string, realw *wallet.Wallet, amount int64) (*wallet.DailyBreach, error) {
+	u, err := s.users.Get(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	var c wallet.RealDailyCounters
+	if u != nil && u.RealDailyCounters != nil {
+		c = *u.RealDailyCounters
+	}
+	return wallet.CheckDailyDeposit(wallet.EffectiveDailyLimits(realw), c, amount, time.Now()), nil
+}
+
+// breachProblem maps a daily breach to its RFC 7807 problem (nil for no breach).
+func breachProblem(b *wallet.DailyBreach) *problem.Problem {
+	if b == nil {
+		return nil
+	}
+	if b.Kind == wallet.DailyBreachDepositCap {
+		return problem.DailyDepositLimit(b.Limit, b.Used, b.ResetsAt)
+	}
+	return problem.DailyWithdrawLimit(b.Kind, b.Limit, b.Used, b.ResetsAt)
+}
+
+// InitiateDeposit opens a PIX charge and records a pending deposit. Gates:
+// kycLevel != "" (any verification started), the amount within the wallet's
+// deposit range and, as an advisory pre-check, the daily deposit cap. Not a
+// balance mutation: money is credited only at ConfirmDeposit after re-querying
+// the charge. idemKey makes a retried POST return the same txid/QR and never
+// open a second Inter charge (SEC-08).
+func (s *WalletService) InitiateDeposit(ctx context.Context, userID, kycLevel string, amount int64, idemKey string) (*wallet.PixDeposit, *pix.Charge, error) {
+	if kycLevel == "" {
+		return nil, nil, problem.KYCNotVerified()
+	}
+	realw, err := s.repo.EnsureRealWallet(ctx, userID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if amount > wallet.MaxInboundAmount {
+		return nil, nil, problem.AmountAboveLimit(wallet.MaxInboundAmount)
+	}
+	// Range first: never open a PIX charge for an amount we will reject.
+	if err := wallet.ValidateDepositAmount(amount, realw); err != nil {
+		minAmt, maxAmt := wallet.DepositLimits(realw)
+		return nil, nil, problem.DepositOutOfRange(minAmt, maxAmt)
+	}
+
+	txid := depositTxID(userID, idemKey)
+
+	// Replay: the same key must mean the same request.
+	existing, err := s.repo.GetDeposit(ctx, txid)
+	if err != nil {
+		return nil, nil, err
+	}
+	if existing != nil {
+		if existing.UserID != userID || existing.AmountExpected != amount {
+			return nil, nil, problem.IdempotencyConflict()
+		}
+		charge, qerr := s.pix.QueryCharge(ctx, txid)
+		if qerr != nil {
+			// Crash between the durable reservation and CreateCharge: Inter's
+			// txid is unique, so re-creating with the same txid cannot open a
+			// second charge.
+			if charge, qerr = s.pix.CreateCharge(ctx, txid, existing.AmountExpected, ""); qerr != nil {
+				return nil, nil, qerr
+			}
+		}
+		return existing, charge, nil
+	}
+
+	// Advisory daily-cap pre-check for a NEW request. The binding enforcement is
+	// at credit time; this only avoids opening a doomed charge.
+	breach, err := s.dailyDepositBreach(ctx, userID, realw, amount)
+	if err != nil {
+		return nil, nil, err
+	}
+	if p := breachProblem(breach); p != nil {
+		return nil, nil, p
+	}
+
+	dep := &wallet.PixDeposit{
+		Txid:           txid,
+		WalletID:       realw.WalletID,
+		UserID:         userID,
+		AmountExpected: amount,
+		Status:         wallet.DepositPending,
+		CreatedAt:      repositories.NowStr(),
+		TTL:            time.Now().Add(depositTTLMinutes * time.Minute).Unix(),
+	}
+	// Reserve the txid BEFORE opening the charge (SEC-08). Losing the race to a
+	// concurrent identical request means it owns the charge: re-enter at the
+	// replay branch (the row exists now, so this recurses at most once).
+	if err := s.repo.PutDepositIfAbsent(ctx, dep); err != nil {
+		if errors.Is(err, repositories.ErrDepositExists) {
+			return s.InitiateDeposit(ctx, userID, kycLevel, amount, idemKey)
+		}
+		return nil, nil, err
+	}
+	charge, err := s.pix.CreateCharge(ctx, txid, amount, "")
+	if err != nil {
+		return nil, nil, problem.InternalServer("falha ao criar cobrança PIX: " + err.Error())
+	}
+	return dep, charge, nil
+}
+
 // ConfirmDeposit is invoked (indirectly) by the Inter webhook. It NEVER trusts
 // the webhook payload for money movement: it re-queries the charge by txid and
 // credits only when the charge is paid AND the payer CPF matches the user's KYC
@@ -458,6 +582,36 @@ func (s *WalletService) ConfirmDeposit(ctx context.Context, txid, payerCPF, paye
 	}
 	defer release()
 
+	// Daily cap, enforced HERE (not only at initiation): two charges opened in
+	// parallel can each pass the advisory pre-check. Counters are read and bumped
+	// under the real wallet lock, so this check cannot race itself.
+	u, err := s.users.Get(ctx, dep.UserID)
+	if err != nil {
+		return err
+	}
+	realw, err := s.repo.GetWallet(ctx, dep.WalletID)
+	if err != nil {
+		return err
+	}
+	var prev *wallet.RealDailyCounters
+	var cur wallet.RealDailyCounters
+	if u != nil && u.RealDailyCounters != nil {
+		prev = u.RealDailyCounters
+		cur = *prev
+	}
+	now := time.Now()
+	if breach := wallet.CheckDailyDeposit(wallet.EffectiveDailyLimits(realw), cur, charge.Amount, now); breach != nil {
+		slog.Warn("deposit over daily cap; refunding payer", "txid", txid, "limit", breach.Limit, "used", breach.Used)
+		return s.rejectMismatch(ctx, dep, charge)
+	}
+	day, _, _ := wallet.WindowKeys(now)
+	next := cur.ForDay(day)
+	next.DepositSum += charge.Amount
+	counterTx, err := s.users.BumpRealDailyCounters(dep.UserID, prev, next)
+	if err != nil {
+		return err
+	}
+
 	if _, _, err := s.repo.ConfirmDepositCredit(ctx, repositories.Mutation{
 		WalletID:       dep.WalletID,
 		Amount:         charge.Amount,
@@ -465,7 +619,7 @@ func (s *WalletService) ConfirmDeposit(ctx context.Context, txid, payerCPF, paye
 		Ref:            txid,
 		IdempotencyKey: "deposit#" + txid,
 		ReqHash:        reqHash(txid, charge.Amount),
-	}, txid, charge.E2EID); err != nil {
+	}, txid, charge.E2EID, counterTx); err != nil {
 		return err
 	}
 	s.broadcastDepositConfirmed(ctx, dep.UserID, dep.WalletID, txid, charge.Amount)
@@ -704,6 +858,140 @@ func (s *WalletService) markDepositRefunded(ctx context.Context, dep *wallet.Pix
 		}
 	}
 	return nil
+}
+
+// Withdraw debits exactly amount (no fee) and sends the PIX payout to the CPF on
+// the caller's KYC record: the client never supplies a destination key, so a
+// payout can only reach the registered owner. The debit, its ledger entry, the
+// idempotency guard, the processing withdrawal row and the daily counters commit
+// in ONE TransactWriteItems. If the CPF has no PIX key at the bank the debit is
+// reversed immediately (and the daily slot returned); any other payout failure
+// leaves the withdrawal processing for the reconciliation job (Invariant 14).
+func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, amount int64, idemKey string) (*wallet.Withdrawal, error) {
+	if kycLevel != wallet.KYCVerified {
+		return nil, problem.KYCNotVerified()
+	}
+	withdrawalID := withdrawalIDPrefix + userID + "#" + idemKey
+
+	realw, err := s.repo.EnsureRealWallet(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	release, err := acquireWallet(ctx, s.lock, realw.WalletID)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+
+	// Replay under the lock, so two concurrent identical calls cannot both pass.
+	if existing, err := s.repo.GetWithdrawal(ctx, withdrawalID); err != nil {
+		return nil, err
+	} else if existing != nil {
+		if existing.UserID != userID || existing.Amount != amount {
+			return nil, problem.IdempotencyConflict()
+		}
+		return existing, nil
+	}
+
+	// Re-read under the lock: the wallet fetched before it can be stale, and both
+	// the full-balance exemption and the per-wallet limits depend on it.
+	if fresh, err := s.repo.GetWallet(ctx, realw.WalletID); err != nil {
+		return nil, err
+	} else if fresh != nil {
+		realw = fresh
+	}
+
+	if err := wallet.ValidateWithdrawalAmount(amount, realw, amount == realw.Balance, false); err != nil {
+		return nil, problem.BadRequest("valor abaixo do mínimo de saque")
+	}
+
+	u, err := s.users.Get(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	var prev *wallet.RealDailyCounters
+	var cur wallet.RealDailyCounters
+	if u != nil && u.RealDailyCounters != nil {
+		prev = u.RealDailyCounters
+		cur = *prev
+	}
+	now := time.Now()
+	if p := breachProblem(wallet.CheckDailyWithdraw(wallet.EffectiveDailyLimits(realw), cur, amount, now)); p != nil {
+		return nil, p
+	}
+	day, _, _ := wallet.WindowKeys(now)
+	next := cur.ForDay(day)
+	next.WithdrawCount++
+	next.WithdrawSum += amount
+	counterTx, err := s.users.BumpRealDailyCounters(userID, prev, next)
+	if err != nil {
+		return nil, err
+	}
+
+	kyc, err := s.kyc.Get(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	pixKey := kyc.CPF // destination is ALWAYS the KYC owner's CPF
+	if pixKey == "" {
+		return nil, problem.KYCNotVerified() // no CPF on record means no payout destination
+	}
+
+	w := &wallet.Withdrawal{
+		WithdrawalID:   withdrawalID,
+		WalletID:       realw.WalletID,
+		UserID:         userID,
+		Amount:         amount,
+		PixKey:         pixKey,
+		Status:         wallet.WithdrawProcessing,
+		IdempotencyKey: idemKey,
+		CreatedAt:      repositories.NowStr(),
+		UpdatedAt:      repositories.NowStr(),
+	}
+	putTx, err := s.repo.WithdrawalPutTx(w)
+	if err != nil {
+		return nil, err
+	}
+	_, replayed, err := s.repo.Debit(ctx, repositories.Mutation{
+		WalletID:       realw.WalletID,
+		Amount:         amount,
+		EntryType:      wallet.EntryWithdraw,
+		Ref:            withdrawalID,
+		Description:    withdrawalDescription,
+		IdempotencyKey: withdrawalID,
+		ReqHash:        reqHash(pixKey, amount),
+	}, putTx, counterTx)
+	if err != nil {
+		return nil, err
+	}
+	if replayed {
+		// Someone else is mid-flight on this withdrawal: never re-transfer.
+		existing, err := s.repo.GetWithdrawal(ctx, withdrawalID)
+		if err != nil {
+			return nil, err
+		}
+		if existing == nil {
+			return nil, problem.WalletBusy() // guard visible, row not yet: tell the client to retry
+		}
+		return existing, nil
+	}
+
+	res, err := s.pix.Transfer(ctx, pixKey, amount, interIdemKey(withdrawalID))
+	if err != nil {
+		if errors.Is(err, pix.ErrKeyNotFound) {
+			// Nothing to retry: refund now instead of leaving it processing.
+			s.reverse(ctx, *w)
+			return nil, problem.PixKeyNotFound()
+		}
+		slog.Warn("withdrawal transfer failed, left in processing", "withdrawal_id", withdrawalID, "err", err)
+		return w, nil
+	}
+	w.Status, w.E2EID = wallet.WithdrawCompleted, res.E2EID
+	if err := s.repo.UpdateWithdrawal(ctx, withdrawalID, map[string]any{"status": wallet.WithdrawCompleted, "e2e_id": res.E2EID}); err != nil {
+		return nil, err
+	}
+	s.broadcastWithdrawal(ctx, userID, eventWithdrawalComplete, withdrawalID, amount)
+	return w, nil
 }
 
 // WalletBalances is the M2M balance snapshot a skill game reads to show a

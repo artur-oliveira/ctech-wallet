@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -20,6 +21,8 @@ import (
 	awscfg "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 
+	"gopkg.aoctech.app/api-commons/alerts"
+	"gopkg.aoctech.app/wallet/pix-gateway/internal/alerting"
 	"gopkg.aoctech.app/wallet/pix-gateway/internal/config"
 	"gopkg.aoctech.app/wallet/pix-gateway/internal/secrets"
 	"gopkg.aoctech.app/wallet/pix-gateway/internal/walletclient"
@@ -45,9 +48,19 @@ type confirmer interface {
 	ConfirmProductPurchase(ctx context.Context, txid string) error
 }
 
+// Alert job names, shown in the e-mail subject: "[pix-gateway/<env>] <job>".
+const (
+	jobWebhook        = "webhook"
+	jobWebhookStartup = "webhook-startup"
+)
+
 type handler struct {
 	confirmer     confirmer
 	webhookSecret string
+	alerts        alerts.Publisher // nil-safe: handlers built without one (tests) stay valid
+	// hmacAlerted limits the hmac-mismatch alert to one per cold start, so a
+	// scanner hitting the endpoint cannot flood the inbox.
+	hmacAlerted atomic.Bool
 }
 
 // webhookPayload is the minimal shape read from Inter's PIX webhook — a
@@ -80,26 +93,32 @@ type pixWebhookPayloadDetail struct {
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+	ctx := context.Background()
+	// Built first and from the environment, so even a config failure can report.
+	notify := alerting.FromEnv(ctx)
 
 	cfg, err := config.Load()
 	if err != nil {
 		slog.Error("config load failed", "err", err)
+		alerting.Failure(ctx, notify, jobWebhookStartup, "webhook Lambda did not start: config load failed", alerting.SanitizedErr(err), "")
 		os.Exit(1)
 	}
-	client, err := newWalletClient(context.Background(), cfg)
+	client, err := newWalletClient(ctx, cfg)
 	if err != nil {
 		slog.Error("walletclient init failed", "err", err)
+		alerting.Failure(ctx, notify, jobWebhookStartup, "webhook Lambda did not start: wallet client init failed", alerting.SanitizedErr(err), "")
 		os.Exit(1)
 	}
-	secret, err := loadWebhookSecret(context.Background(), cfg)
+	secret, err := loadWebhookSecret(ctx, cfg)
 	if err != nil {
 		slog.Error("webhook secret load failed", "err", err)
+		alerting.Failure(ctx, notify, jobWebhookStartup, "webhook Lambda did not start: webhook secret load failed", alerting.SanitizedErr(err), "")
 		os.Exit(1)
 	}
 	// client and secret (and the SSM-backed M2M secret + HTTP transport client
 	// wraps) are built once at cold start and reused for every invocation — no
 	// per-call SSM.
-	h := &handler{confirmer: client, webhookSecret: secret}
+	h := &handler{confirmer: client, webhookSecret: secret, alerts: notify}
 	lambda.Start(h.handle)
 }
 
@@ -133,11 +152,16 @@ func (h *handler) handle(ctx context.Context, req events.APIGatewayV2HTTPRequest
 	// Gateway access logs must never include $request.querystring.
 	if subtle.ConstantTimeCompare([]byte(req.QueryStringParameters["hmac"]), []byte(h.webhookSecret)) != 1 {
 		slog.WarnContext(ctx, "webhook rejected: hmac mismatch")
+		if h.hmacAlerted.CompareAndSwap(false, true) {
+			alerting.Failure(ctx, h.alerts, jobWebhook, "webhook rejected: hmac mismatch (possible misconfiguration or probing)", nil, "")
+		}
 		return events.APIGatewayV2HTTPResponse{StatusCode: 401, Body: "unauthorized"}, nil
 	}
 	var body pixWebhookPayload
 	if err := json.Unmarshal([]byte(req.Body), &body); err != nil {
 		slog.ErrorContext(ctx, "webhook request malformed", "err", err)
+		// A JSON syntax error names offsets and token kinds, never values.
+		alerting.Failure(ctx, h.alerts, jobWebhook, "webhook payload malformed", alerting.SanitizedErr(err), "")
 		return events.APIGatewayV2HTTPResponse{StatusCode: 400, Body: "malformed webhook payload"}, nil
 	}
 	details := body.Pix
@@ -169,6 +193,8 @@ func (h *handler) handle(ctx context.Context, req events.APIGatewayV2HTTPRequest
 		failureBody, err := h.confirm(ctx, p)
 		if err != nil {
 			slog.ErrorContext(ctx, "webhook response", "status", http.StatusInternalServerError, "txid", p.Txid, "err", err)
+			// txid only: the payer (CPF, name) never leaves this process.
+			alerting.Failure(ctx, h.alerts, jobWebhook, "webhook confirmation failed; Inter will retry", alerting.SanitizedErr(err), "txid="+p.Txid)
 			// Non-200 so Inter retries the whole payload later; ConfirmDeposit is
 			// idempotent per txid so a retry never double-credits.
 			return events.APIGatewayV2HTTPResponse{StatusCode: http.StatusInternalServerError, Body: failureBody}, nil

@@ -80,7 +80,8 @@ type Mutation struct {
 
 // GetWallet returns the authoritative wallet record, or nil if absent.
 func (r *WalletRepository) GetWallet(ctx context.Context, walletID string) (*wallet.Wallet, error) {
-	item, err := r.wallets.GetItem(ctx, walletID)
+	// Consistent: mutate conditions the balance write on the version read here.
+	item, err := getConsistent(ctx, r.wallets, walletID)
 	if err != nil {
 		return nil, err
 	}
@@ -319,8 +320,9 @@ func (r *WalletRepository) FindMutation(ctx context.Context, idemKey, reqHash st
 // ConfirmDepositCredit atomically creates value and transitions the source
 // deposit pending→confirmed. The replay path repairs legacy rows where an older
 // release committed the credit before updating the deposit status.
-func (r *WalletRepository) ConfirmDepositCredit(ctx context.Context, m Mutation, txid, e2eID string) (*wallet.LedgerEntry, bool, error) {
-	return r.Credit(ctx, m, r.depositStatusTx(txid, wallet.DepositPending, wallet.DepositConfirmed, e2eID))
+func (r *WalletRepository) ConfirmDepositCredit(ctx context.Context, m Mutation, txid, e2eID string, extra ...types.TransactWriteItem) (*wallet.LedgerEntry, bool, error) {
+	items := append([]types.TransactWriteItem{r.depositStatusTx(txid, wallet.DepositPending, wallet.DepositConfirmed, e2eID)}, extra...)
+	return r.Credit(ctx, m, items...)
 }
 
 // Transfer atomically debits fromWalletID and credits toWalletID by the same
@@ -444,6 +446,27 @@ func (r *WalletRepository) PutDeposit(ctx context.Context, d *wallet.PixDeposit)
 		return err
 	}
 	return r.deposits.PutItem(ctx, av)
+}
+
+// ErrDepositExists means PutDepositIfAbsent lost a race or is a genuine replay:
+// the same txid is already registered.
+var ErrDepositExists = errors.New("repositories: deposit already exists")
+
+// PutDepositIfAbsent registers a pending deposit BEFORE any Inter charge is
+// opened (SEC-08): a retried request can never open a second charge.
+func (r *WalletRepository) PutDepositIfAbsent(ctx context.Context, d *wallet.PixDeposit) error {
+	av, err := Encode(d)
+	if err != nil {
+		return err
+	}
+	item := r.deposits.BuildPutTxItemIfAbsent(av)
+	if err := r.deposits.TransactWrite(ctx, []types.TransactWriteItem{item}); err != nil {
+		if IsConditionFailed(err) {
+			return ErrDepositExists
+		}
+		return err
+	}
+	return nil
 }
 
 func (r *WalletRepository) GetDeposit(ctx context.Context, txid string) (*wallet.PixDeposit, error) {
@@ -584,8 +607,51 @@ func (r *WalletRepository) PutWithdrawal(ctx context.Context, w *wallet.Withdraw
 	return nil
 }
 
+// WithdrawalPutTx builds the put-if-absent item for a processing withdrawal so
+// it commits in the same TransactWriteItems as the debit that funds it
+// (SEC-01 / Invariant 14): never a debit without its tracking row.
+func (r *WalletRepository) WithdrawalPutTx(w *wallet.Withdrawal) (types.TransactWriteItem, error) {
+	av, err := Encode(w)
+	if err != nil {
+		return types.TransactWriteItem{}, err
+	}
+	return r.withdrawal.BuildPutTxItemIfAbsent(av), nil
+}
+
+// MarkWithdrawalReversed moves a withdrawal to reversed and, in the SAME
+// transaction, applies extra (the daily-slot release). The transition is
+// conditioned on the row not being reversed already, so replaying the
+// bookkeeping after a crash can never release the slot twice (reviewer finding
+// 2). If the transaction fails because the extra's optimistic condition no
+// longer holds (counters changed), the reversal is still recorded WITHOUT the
+// slot release: the money is already back, and the slot staying burned is the
+// fail-closed side (reviewer finding 1).
+func (r *WalletRepository) MarkWithdrawalReversed(ctx context.Context, withdrawalID string, extra ...types.TransactWriteItem) error {
+	now := NowStr()
+	update := r.withdrawal.BuildRawUpdateTxItem(withdrawalID, nil,
+		"SET #s = :rev, #u = :now", "#s <> :rev",
+		map[string]string{"#s": "status", "#u": "updated_at"},
+		map[string]types.AttributeValue{
+			":rev": &types.AttributeValueMemberS{Value: wallet.WithdrawReversed},
+			":now": &types.AttributeValueMemberS{Value: now},
+		})
+	err := r.withdrawal.TransactWrite(ctx, append([]types.TransactWriteItem{update}, extra...))
+	if err == nil || !IsConditionFailed(err) {
+		return err
+	}
+	w, gerr := r.GetWithdrawal(ctx, withdrawalID)
+	if gerr != nil {
+		return gerr
+	}
+	if w != nil && w.Status == wallet.WithdrawReversed {
+		return nil // already reversed: nothing to record, and the slot must not be released again
+	}
+	return r.UpdateWithdrawal(ctx, withdrawalID, map[string]any{"status": wallet.WithdrawReversed})
+}
+
 func (r *WalletRepository) GetWithdrawal(ctx context.Context, withdrawalID string) (*wallet.Withdrawal, error) {
-	item, err := r.withdrawal.GetItem(ctx, withdrawalID)
+	// Consistent: the replay check must see a row committed a moment ago.
+	item, err := getConsistent(ctx, r.withdrawal, withdrawalID)
 	if err != nil || item == nil {
 		return nil, err
 	}

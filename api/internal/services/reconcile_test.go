@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
@@ -172,5 +173,24 @@ func TestReconcileBroadcastsOnAlarmedReversal(t *testing.T) {
 	}
 	if msg["type"] != "withdraw_refund_failed" {
 		t.Fatalf("bad payload: %+v", msg)
+	}
+}
+
+func TestReconcileReversalReturnsTheDailyWithdrawSlot(t *testing.T) {
+	created := time.Now().Format(time.RFC3339Nano)
+	repo := &reconRepo{stubRepo: newStubRepo(), processing: []wallet.Withdrawal{
+		{WithdrawalID: "wd4", WalletID: "w-real", UserID: "u1", Amount: 5000, Status: wallet.WithdrawProcessing, CreatedAt: created},
+	}}
+	repo.withdrawals["wd4"] = &repo.processing[0]
+	day, _, _ := wallet.WindowKeys(time.Now())
+	users := &stubUserRepo{user: &wallet.User{RealDailyCounters: &wallet.RealDailyCounters{DayKey: day, WithdrawCount: 1, WithdrawSum: 5000}}}
+	svc := NewWalletService(repo, users, &stubAudit{}, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+
+	if _, reversed, _, err := svc.ReconcileWithdrawals(context.Background()); err != nil || reversed != 1 {
+		t.Fatalf("reversed=%d err=%v", reversed, err)
+	}
+	got := users.user.RealDailyCounters
+	if got.WithdrawCount != 0 || got.WithdrawSum != 0 {
+		t.Fatalf("slot not returned: %+v", got)
 	}
 }

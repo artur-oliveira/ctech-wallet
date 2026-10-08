@@ -1,5 +1,7 @@
 # Customer-facing product name: "CTech Wallet" → "CTech Ledger"
 
+> **Superseded 2026-10-08:** the Asaas BaaS integration was refused; the customer-facing name is "CTech Wallet" again. See `2026-10-08-wallet-restoration-design.md`.
+
 **Data:** 2026-09-08
 **Status:** implementado
 

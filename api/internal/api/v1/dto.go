@@ -4,6 +4,17 @@ package v1
 
 const MaxIdempotencyKeyLength = 128
 
+// DepositRequest opens a PIX charge for the caller's real wallet.
+type DepositRequest struct {
+	Amount int64 `json:"amount" validate:"required,gt=0"`
+}
+
+// WithdrawRequest asks for a PIX payout. There is deliberately NO destination
+// field: the payout always goes to the CPF on the caller's KYC record.
+type WithdrawRequest struct {
+	Amount int64 `json:"amount" validate:"required,gt=0"`
+}
+
 type SandboxPurchaseRequest struct {
 	Amount int64 `json:"amount" validate:"required,gt=0"`
 }

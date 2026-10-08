@@ -99,7 +99,7 @@ func (s *stubRepo) Debit(_ context.Context, m repositories.Mutation, _ ...types.
 	}
 	return entry, false, nil
 }
-func (s *stubRepo) ConfirmDepositCredit(ctx context.Context, m repositories.Mutation, _ string, e2eID string) (*wallet.LedgerEntry, bool, error) {
+func (s *stubRepo) ConfirmDepositCredit(ctx context.Context, m repositories.Mutation, _ string, e2eID string, _ ...types.TransactWriteItem) (*wallet.LedgerEntry, bool, error) {
 	entry, replayed, err := s.Credit(ctx, m)
 	if err == nil {
 		s.depositStatus, s.depositE2E = wallet.DepositConfirmed, e2eID
@@ -130,6 +130,13 @@ func (s *stubRepo) Statement(_ context.Context, _ string, _ int, _ map[string]ty
 func (s *stubRepo) GetDeposit(_ context.Context, _ string) (*wallet.PixDeposit, error) {
 	return s.deposit, nil
 }
+func (s *stubRepo) PutDepositIfAbsent(_ context.Context, d *wallet.PixDeposit) error {
+	if s.deposit != nil {
+		return repositories.ErrDepositExists
+	}
+	s.deposit = d
+	return nil
+}
 func (s *stubRepo) UpdateDepositStatus(_ context.Context, _, status, e2e string) error {
 	s.depositStatus = status
 	s.depositE2E = e2e
@@ -145,6 +152,22 @@ func (s *stubRepo) UpdateDepositPayer(_ context.Context, _, cpf, name string) er
 }
 func (s *stubRepo) PutWithdrawal(_ context.Context, w *wallet.Withdrawal) error {
 	s.withdrawals[w.WithdrawalID] = w
+	return nil
+}
+
+// WithdrawalPutTx records the row as if the transaction it joins had committed,
+// so replay lookups (GetWithdrawal) see it.
+func (s *stubRepo) WithdrawalPutTx(w *wallet.Withdrawal) (types.TransactWriteItem, error) {
+	s.withdrawals[w.WithdrawalID] = w
+	return types.TransactWriteItem{}, nil
+}
+
+// MarkWithdrawalReversed mirrors the real transition (extras are the caller's
+// counter writes, already recorded by the stub user repo when built).
+func (s *stubRepo) MarkWithdrawalReversed(_ context.Context, id string, _ ...types.TransactWriteItem) error {
+	if w, ok := s.withdrawals[id]; ok {
+		w.Status = wallet.WithdrawReversed
+	}
 	return nil
 }
 func (s *stubRepo) GetWithdrawal(_ context.Context, id string) (*wallet.Withdrawal, error) {

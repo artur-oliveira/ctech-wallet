@@ -159,9 +159,14 @@ type Wallet struct {
 	MaxDeposit int64  `dynamodbav:"max_deposit,omitempty" json:"max_deposit,omitempty"`
 	// MinWithdrawal is the OPTIONAL per-wallet withdrawal-amount floor override
 	// (plan §5.2) — admin-only, same convention as MinDeposit above.
-	MinWithdrawal int64  `dynamodbav:"min_withdrawal,omitempty" json:"min_withdrawal,omitempty"`
-	CreatedAt     string `dynamodbav:"created_at" json:"created_at"`
-	UpdatedAt     string `dynamodbav:"updated_at" json:"updated_at"`
+	MinWithdrawal int64 `dynamodbav:"min_withdrawal,omitempty" json:"min_withdrawal,omitempty"`
+	// Daily PIX limits (admin-only, same convention as MinDeposit/MaxDeposit).
+	// Zero means "use the default" (EffectiveDailyLimits).
+	DailyDepositCap    int64  `dynamodbav:"daily_deposit_cap,omitempty" json:"daily_deposit_cap,omitempty"`
+	DailyWithdrawCap   int64  `dynamodbav:"daily_withdraw_cap,omitempty" json:"daily_withdraw_cap,omitempty"`
+	DailyWithdrawCount int64  `dynamodbav:"daily_withdraw_count,omitempty" json:"daily_withdraw_count,omitempty"`
+	CreatedAt          string `dynamodbav:"created_at" json:"created_at"`
+	UpdatedAt          string `dynamodbav:"updated_at" json:"updated_at"`
 }
 
 // DescriptionMaxLen caps the optional free-form Description carried by ledger

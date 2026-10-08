@@ -34,6 +34,57 @@ func walletBalancesResponse(realw, gamew, sandboxw *wallet.Wallet) fiber.Map {
 	return out
 }
 
+// createDeposit opens a PIX charge for the caller's real wallet.
+func (h *handlers) createDeposit(c fiber.Ctx) error {
+	var body DepositRequest
+	if p := bindJSON(c, &body); p != nil {
+		return sendProblem(c, p)
+	}
+	cl := middleware.GetClaims(c)
+	idemKey, p := requireIdempotencyKey(c)
+	if p != nil {
+		return sendProblem(c, p)
+	}
+	dep, charge, err := h.svc.InitiateDeposit(c.Context(), cl.Sub, cl.KYCLevel, body.Amount, idemKey)
+	if err != nil {
+		return sendProblem(c, err)
+	}
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+		"txid":             dep.Txid,
+		"amount":           dep.AmountExpected,
+		"status":           dep.Status,
+		"pix_copia_e_cola": charge.QRCode,
+		"qr_code_base64":   charge.QRCodeB64,
+		"expires_at":       dep.TTL,
+	})
+}
+
+// createWithdrawal debits amount and initiates a PIX payout to the caller's KYC CPF.
+func (h *handlers) createWithdrawal(c fiber.Ctx) error {
+	var body WithdrawRequest
+	if p := bindJSON(c, &body); p != nil {
+		return sendProblem(c, p)
+	}
+	idemKey, p := requireIdempotencyKey(c)
+	if p != nil {
+		return sendProblem(c, p)
+	}
+	cl := middleware.GetClaims(c)
+	w, err := h.svc.Withdraw(c.Context(), cl.Sub, cl.KYCLevel, body.Amount, idemKey)
+	if err != nil {
+		return sendProblem(c, err)
+	}
+	if w == nil {
+		// Defensive: Withdraw always returns a record or an error.
+		return sendProblem(c, problem.InternalServer("saque indisponível no momento"))
+	}
+	status := fiber.StatusCreated
+	if w.Status == wallet.WithdrawProcessing {
+		status = fiber.StatusAccepted // payout still in flight; reconciliation will resolve
+	}
+	return c.Status(status).JSON(w)
+}
+
 // purchaseSandbox debits game and credits sandbox atomically. The source is the
 // game wallet, never real — see PurchaseSandbox.
 func (h *handlers) purchaseSandbox(c fiber.Ctx) error {
@@ -128,6 +179,9 @@ func (h *handlers) getLedger(c fiber.Ctx) error {
 	}
 	limit := historyLimit(c)
 	startKey := decodeCursor(c.Query(queryParamCursor))
+	if !cursorMatchesWallet(startKey, target.WalletID) {
+		return sendProblem(c, problem.BadRequest("cursor inválido"))
+	}
 	res, err := h.svc.Statement(c.Context(), target.WalletID, limit, startKey)
 	if err != nil {
 		return sendProblem(c, err)
