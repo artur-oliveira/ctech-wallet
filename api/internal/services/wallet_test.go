@@ -99,7 +99,7 @@ func (s *stubRepo) Debit(_ context.Context, m repositories.Mutation, _ ...types.
 	}
 	return entry, false, nil
 }
-func (s *stubRepo) ConfirmDepositCredit(ctx context.Context, m repositories.Mutation, _ string, e2eID string) (*wallet.LedgerEntry, bool, error) {
+func (s *stubRepo) ConfirmDepositCredit(ctx context.Context, m repositories.Mutation, _ string, e2eID string, _ ...types.TransactWriteItem) (*wallet.LedgerEntry, bool, error) {
 	entry, replayed, err := s.Credit(ctx, m)
 	if err == nil {
 		s.depositStatus, s.depositE2E = wallet.DepositConfirmed, e2eID

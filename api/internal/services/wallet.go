@@ -67,7 +67,7 @@ type WalletStore interface {
 type LedgerStore interface {
 	Credit(ctx context.Context, m repositories.Mutation, extra ...types.TransactWriteItem) (*wallet.LedgerEntry, bool, error)
 	Debit(ctx context.Context, m repositories.Mutation, extra ...types.TransactWriteItem) (*wallet.LedgerEntry, bool, error)
-	ConfirmDepositCredit(ctx context.Context, m repositories.Mutation, txid, e2eID string) (*wallet.LedgerEntry, bool, error)
+	ConfirmDepositCredit(ctx context.Context, m repositories.Mutation, txid, e2eID string, extra ...types.TransactWriteItem) (*wallet.LedgerEntry, bool, error)
 	FindMutation(ctx context.Context, idemKey, reqHash string) (*wallet.LedgerEntry, error)
 	Transfer(ctx context.Context, from, to string, amount, creditAmount int64, debitType, creditType, ref, idemKey, reqHash string, extra ...types.TransactWriteItem) (*wallet.LedgerEntry, *wallet.LedgerEntry, bool, error)
 	Statement(ctx context.Context, walletID string, limit int, startKey map[string]types.AttributeValue) (*repositories.QueryResult, error)
@@ -579,6 +579,36 @@ func (s *WalletService) ConfirmDeposit(ctx context.Context, txid, payerCPF, paye
 	}
 	defer release()
 
+	// Daily cap, enforced HERE (not only at initiation): two charges opened in
+	// parallel can each pass the advisory pre-check. Counters are read and bumped
+	// under the real wallet lock, so this check cannot race itself.
+	u, err := s.users.Get(ctx, dep.UserID)
+	if err != nil {
+		return err
+	}
+	realw, err := s.repo.GetWallet(ctx, dep.WalletID)
+	if err != nil {
+		return err
+	}
+	var prev *wallet.RealDailyCounters
+	var cur wallet.RealDailyCounters
+	if u != nil && u.RealDailyCounters != nil {
+		prev = u.RealDailyCounters
+		cur = *prev
+	}
+	now := time.Now()
+	if breach := wallet.CheckDailyDeposit(wallet.EffectiveDailyLimits(realw), cur, charge.Amount, now); breach != nil {
+		slog.Warn("deposit over daily cap; refunding payer", "txid", txid, "limit", breach.Limit, "used", breach.Used)
+		return s.rejectMismatch(ctx, dep, charge)
+	}
+	day, _, _ := wallet.WindowKeys(now)
+	next := cur.ForDay(day)
+	next.DepositSum += charge.Amount
+	counterTx, err := s.users.BumpRealDailyCounters(dep.UserID, prev, next)
+	if err != nil {
+		return err
+	}
+
 	if _, _, err := s.repo.ConfirmDepositCredit(ctx, repositories.Mutation{
 		WalletID:       dep.WalletID,
 		Amount:         charge.Amount,
@@ -586,7 +616,7 @@ func (s *WalletService) ConfirmDeposit(ctx context.Context, txid, payerCPF, paye
 		Ref:            txid,
 		IdempotencyKey: "deposit#" + txid,
 		ReqHash:        reqHash(txid, charge.Amount),
-	}, txid, charge.E2EID); err != nil {
+	}, txid, charge.E2EID, counterTx); err != nil {
 		return err
 	}
 	s.broadcastDepositConfirmed(ctx, dep.UserID, dep.WalletID, txid, charge.Amount)

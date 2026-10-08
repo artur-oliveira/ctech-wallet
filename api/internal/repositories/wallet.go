@@ -319,8 +319,9 @@ func (r *WalletRepository) FindMutation(ctx context.Context, idemKey, reqHash st
 // ConfirmDepositCredit atomically creates value and transitions the source
 // deposit pending→confirmed. The replay path repairs legacy rows where an older
 // release committed the credit before updating the deposit status.
-func (r *WalletRepository) ConfirmDepositCredit(ctx context.Context, m Mutation, txid, e2eID string) (*wallet.LedgerEntry, bool, error) {
-	return r.Credit(ctx, m, r.depositStatusTx(txid, wallet.DepositPending, wallet.DepositConfirmed, e2eID))
+func (r *WalletRepository) ConfirmDepositCredit(ctx context.Context, m Mutation, txid, e2eID string, extra ...types.TransactWriteItem) (*wallet.LedgerEntry, bool, error) {
+	items := append([]types.TransactWriteItem{r.depositStatusTx(txid, wallet.DepositPending, wallet.DepositConfirmed, e2eID)}, extra...)
+	return r.Credit(ctx, m, items...)
 }
 
 // Transfer atomically debits fromWalletID and credits toWalletID by the same

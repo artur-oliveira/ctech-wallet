@@ -85,3 +85,61 @@ func TestInitiateDepositAmountOutsideRange(t *testing.T) {
 		t.Fatal("charge opened for out-of-range amount")
 	}
 }
+
+func paidDepositFixture(amount int64) (*stubRepo, *pix.FakePixClient) {
+	repo := newStubRepo()
+	repo.deposit = &wallet.PixDeposit{Txid: "tx1", WalletID: "w-real", UserID: "u1", AmountExpected: amount, Status: wallet.DepositPending}
+	fake := pix.NewFake()
+	fake.StageCharge("tx1", amount, pix.ChargeCompleted, "", "E2E-1")
+	return repo, fake
+}
+
+func TestConfirmDepositOverDailyCapIsRefundedNotCredited(t *testing.T) {
+	repo, fake := paidDepositFixture(20000)
+	users := &stubUserRepo{user: &wallet.User{RealDailyCounters: &wallet.RealDailyCounters{DayKey: todayKey(), DepositSum: 90000}}}
+	svc := newRailSvc(repo, users, fake)
+
+	if err := svc.ConfirmDeposit(context.Background(), "tx1", "***456789**", "Pagador", false); err != nil {
+		t.Fatalf("ConfirmDeposit: %v", err)
+	}
+	if len(repo.creditCalls) != 0 {
+		t.Fatalf("over-cap deposit was credited: %+v", repo.creditCalls)
+	}
+	if len(fake.Refunds) != 1 {
+		t.Fatalf("refunds = %d, want 1 (payer must get the money back)", len(fake.Refunds))
+	}
+	if len(users.realCountersBumped) != 0 {
+		t.Fatal("counter bumped for a refunded deposit")
+	}
+}
+
+func TestConfirmDepositWithinCapCreditsAndBumpsCounter(t *testing.T) {
+	repo, fake := paidDepositFixture(30000)
+	users := &stubUserRepo{}
+	svc := newRailSvc(repo, users, fake)
+
+	if err := svc.ConfirmDeposit(context.Background(), "tx1", "***456789**", "Pagador", false); err != nil {
+		t.Fatalf("ConfirmDeposit: %v", err)
+	}
+	if len(repo.creditCalls) != 1 || repo.creditCalls[0].Amount != 30000 {
+		t.Fatalf("credits = %+v", repo.creditCalls)
+	}
+	if len(users.realCountersBumped) != 1 || users.realCountersBumped[0].DepositSum != 30000 || users.realCountersBumped[0].DayKey != todayKey() {
+		t.Fatalf("counter bumps = %+v", users.realCountersBumped)
+	}
+}
+
+func TestConfirmDepositPaidWithoutPayerCPFStaysPendingAndCreditsNothing(t *testing.T) {
+	repo, fake := paidDepositFixture(10000)
+	svc := newRailSvc(repo, &stubUserRepo{}, fake)
+
+	if err := svc.ConfirmDeposit(context.Background(), "tx1", "", "", true); err == nil {
+		t.Fatal("a paid deposit with no payer identity must be quarantined with an error")
+	}
+	if len(repo.creditCalls) != 0 {
+		t.Fatal("credited without payer identity")
+	}
+	if repo.deposit.Status != wallet.DepositPending {
+		t.Fatalf("deposit left pending state: %s", repo.deposit.Status)
+	}
+}
