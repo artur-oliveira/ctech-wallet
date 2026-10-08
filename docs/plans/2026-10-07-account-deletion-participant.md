@@ -28,7 +28,7 @@ Wallet-local context: `docs/specs/2026-10-07-asaas-removal.md`. The BaaS provide
 - `gopkg.aoctech.app/api-commons` stays at **v1.13.1** in `api/` and `pix-gateway/` (already pinned; do not bump).
 - Service id: `wallet`. Inbound scope: `internal:wallet:erasure-eligibility`. Outbound ack scope: `internal:account:erasure-ack`.
 - Eligibility route: `GET /v1.0/internal/erasure/eligibility/:sub`. It returns `erasure.Eligibility`. An unknown `sub` returns `{"eligible":true,"blockers":[]}` and creates nothing. It must answer in under 2 s.
-- Ack URL: `{CTECH_URL}/v1.0/internal/erasure/ack`. Token URL: `{CTECH_URL}/v1.0/token`. Client: the wallet's own M2M client (`WALLET_CLIENT_ID`).
+- Ack URL: `{CTECH_URL}/v1.0/internal/erasure/ack`. Token URL: `{CTECH_URL}/v1.0/token`. Client: a **dedicated** confidential client (`ERASURE_CLIENT_ID`/`ERASURE_CLIENT_SECRET`, SSM `/ctech-wallet/{env}/erasure-client-id` and `/ctech-wallet/{env}/erasure-client-secret`). Its only grant is `internal:account:erasure-ack`. The existing KYC client (`WALLET_CLIENT_ID`) is not reused.
 - SNS topic ARN comes from SSM `/ctech/{env}/account/erasure-topic-arn`. The subscription uses raw delivery and FilterPolicy `{"services":["wallet"]}` at the default **MessageAttributes** scope.
 - Queue `{env}-ctech-wallet-erasure`: visibility timeout 300 s, `maxReceiveCount` 5, then DLQ `{env}-ctech-wallet-erasure-dlq`. DLQ depth > 0 alarms on the ctech-cdk alerts topic.
 - Tables:
@@ -37,7 +37,7 @@ Wallet-local context: `docs/specs/2026-10-07-asaas-removal.md`. The BaaS provide
   - `{env}_wallet_users` gains TTL on `ttl`.
 - Retention horizon: **5 years from the purge** (`ErasureRetentionYears = 5`), for retained PII and for a carried indefinite self-exclusion (D13).
 - Revocation entries are read from Valkey **DB 0** (`VALKEY_REVOCATION_URL` = the shared base URL). The check fails open on every route (D3) and fails **closed** on user state-changing routes.
-- The erasure feature is ON if and only if `ERASURE_QUEUE_URL` is set. In `ENVIRONMENT=prod`, both `ERASURE_QUEUE_URL` and `VALKEY_REVOCATION_URL` are required (fail closed at boot).
+- The erasure feature is ON if and only if `ERASURE_QUEUE_URL` is set. In `ENVIRONMENT=prod`, both `ERASURE_QUEUE_URL` and `VALKEY_REVOCATION_URL` are required, and whenever `ERASURE_QUEUE_URL` is set, `ERASURE_CLIENT_ID`/`ERASURE_CLIENT_SECRET` are required too (fail closed at boot).
 - Blocker codes (stable, translated by the account UI): `wallet.balance_nonzero`, `wallet.hold_open`, `wallet.deposit_pending`, `wallet.withdrawal_pending`, `wallet.purchase_pending`.
 - Financial Safety Invariants are untouched. Erasure moves **no** money and never updates or deletes a ledger entry. The only change to an append-only table is REMOVE of `ip`/`user_agent` on `wallet_audit`, enforced in IAM.
 - Never log a CPF, a `cpf_hmac`, a payer name or a PIX key.
@@ -47,10 +47,11 @@ Wallet-local context: `docs/specs/2026-10-07-asaas-removal.md`. The BaaS provide
 ## Prerequisites outside this repo (gate before enabling in prod)
 
 1. ctech-account phases 1–3 merged and deployed: topic, revocation, eligibility client, ack endpoint.
-2. **ctech-account adds `cpf_hmac` to `GET /v1.0/internal/kyc/:user_id`** (ruling R5 and Open question Q1). It is one line in `ctech-account/api/internal/handler/kyc.go` `internalGet`: `"cpf_hmac": h.cpfMAC(u.CPF)`, where `cpfMAC` is the phase-2a `sealer.MAC("cpf-hmac", cpf)` and returns `""` for an empty CPF. Without it, the purge of a self-excluded user fails and is redelivered (it never drops the exclusion).
+2. **ctech-account adds `cpf_hmac` to `GET /v1.0/internal/kyc/:user_id`.** APPROVED (2026-10-08). It ships as a task in ctech-account's phase 3 plan (`ctech-account/docs/plans/2026-10-07-account-deletion-phase3-participants.md`); see ruling R5. It is one line in `ctech-account/api/internal/handler/kyc.go` `internalGet`: `"cpf_hmac": h.cpfMAC(u.CPF)`, where `cpfMAC` is the phase-2a `sealer.MAC("cpf-hmac", cpf)` and returns `""` for an empty CPF. Without it, the purge of a self-excluded user fails and is redelivered (it never drops the exclusion).
 3. Operational seeding, documented in Task 11:
-   - grant `internal:account:erasure-ack` to the wallet M2M client;
-   - add the wallet entry to account's `ERASURE_PARTICIPANTS`;
+   - create the **dedicated** wallet erasure client (confidential, `first_party: true`, `allowed_scopes: ["internal:account:erasure-ack"]`), store its id and secret in SSM `/ctech-wallet/{env}/erasure-client-id` and `/ctech-wallet/{env}/erasure-client-secret` (SecureString);
+   - add the wallet entry to account's `ERASURE_PARTICIPANTS`, with `client_id` = the dedicated erasure client (acks are matched on `azp`);
+   - deployment check: the eligibility token ctech-account mints carries `iss` = account's issuer, which must equal the wallet's `CTECH_ISSUER_URL` (SSM `/ctech-account/{env}/app-url`). Otherwise every eligibility call is a 401 and every deletion stays pending;
    - publish `internal:wallet:erasure-eligibility` through the wallet scope manifest.
 
 ## Rulings (each with its cost if wrong)
@@ -65,35 +66,39 @@ Wallet-local context: `docs/specs/2026-10-07-asaas-removal.md`. The BaaS provide
   - Moving the ledger would break Invariant #2 and its IAM DENY.
   - What stays in place is keyed by the opaque `sub`, which the spec allows ("the `sub` stays as an opaque key"): ledger, wallets, holds, purchases, idempotency guards. No route serves an erased `sub`.
   - The person's identity (name, CPF) is retained by ctech-account under D6 (`KYCRET#{sub}`). The `sub` links it to these rows for a PLD request.
-  - Cost if wrong: if legal demands a physical move of the money rows, the Invariant #2 amendment and the copy migration come later. No data is lost, because nothing here is deleted.
+  - **Legal confirmed (2026-10-08):** pseudonymous in-place retention of the money rows counts as segregated.
+  - Cost if wrong: if legal ever revisits it, the Invariant #2 amendment and the copy migration come later. No data is lost, because nothing here is deleted.
 - **R3 `wallet_users` is anonymized, not deleted.**
   - REMOVE: `self_exclusion`, `game_limits`, `game_deposit_counters`. SET `erased_at`.
   - Kept: terms and gambling addendum versions and timestamps, as proof of consent. This mirrors account's tombstone keeping ToS acceptance.
   - Cost if wrong: one more REMOVE.
 - **R4 `wallet_audit` is anonymized through a narrowly conditioned IAM allow**, `UpdateItem` only when `dynamodb:Attributes ⊆ {pk, sk, ip, user_agent}`. The append-only DENY is not lifted.
+  - Verified by an execution step in dev (Task 10 Step 10) before prod.
   - Cost if wrong: if `dynamodb:Attributes` does not behave as documented, the purge gets AccessDenied, goes to the DLQ and alarms (fails safe). Then fix the IAM.
 - **R5 The self-exclusion key is ctech-account's `cpf_hmac`.**
-  - Account serves it from its existing internal KYC endpoint (new field, prerequisite 2). The wallet never holds account's `SECRET_ENC_KEY`.
+  - Account serves it from its existing internal KYC endpoint (new field). **Approved; it is a task in ctech-account's phase 3 plan** and a cross-repo prerequisite (prerequisite 2). The wallet never holds account's `SECRET_ENC_KEY`.
   - It is stored as `wallet_users` item `SELFEXCL#{cpf_hmac}` with `ttl`: the end of the timed exclusion, or purge + 5 y for an indefinite one. The longer exclusion wins.
   - It is checked in `ActivateGambling` only. Real-money play, poker included, requires activation.
   - An indefinite exclusion is re-applied as indefinite.
-  - Cost if wrong: if account refuses the field, switch to a wallet-owned key **before** the first prod purge. Rows written with one key cannot be re-keyed later (the CPF is gone). That is why this is a deploy gate.
+  - Cost if wrong: if the field is not deployed before the first purge of a self-excluded user, that purge errors and is redelivered (never dropped). The key must never change after the first prod purge, because rows cannot be re-keyed (the CPF is gone).
 - **R6 No Asaas closure, no transfer-intent or MED blockers.** The provider was removed (`asaas-removal.md`). The retired tables never held prod data and get no IAM access, so they are not purged.
   - Cost if wrong: none until a new custody provider ships. That plan adds its closure call and blockers.
 - **R7 D7 (closing withdrawal has no minimum) is already satisfied by `wallet.ValidateWithdrawalAmount(amount, w, fullBalance=true, …)`.**
   - It waives the minimum whenever the withdrawal empties the wallet, so a closing withdrawal needs no UI flag: the API derives it from `amount == balance`.
   - No withdrawal rail exists today. Task 11 writes this into the "future provider" requirements.
   - Cost if wrong: a future rail that forgets it traps dust balances; the doc line and the existing domain test guard it.
-- **R8 `wallet.balance_nonzero` action_url.**
-  - `game` → the wallet home (`SERVICE_AUDIENCE`), where `game → real` is always open (Invariant #9).
-  - `real` → **no** action_url: there is no withdrawal rail, so support settles it.
-  - Cost if wrong: the account UI shows a link to nothing, or no link (Q2).
+- **R8 `wallet.balance_nonzero` is about the `game` balance.**
+  - Decided 2026-10-08: there is no valid real-money balance in the wallet today, because no rail can credit `real`. The blocker applies to `game`, with `action_url` = the wallet home (`SERVICE_AUDIENCE`), where `game → real` is always open (Invariant #9).
+  - A `real` balance ≠ 0 is **unreachable today**. The check stays as a defensive guard (no link, no support path), so a stray credit can never be erased with the user. If it ever fires, treat it as an incident.
+  - Cost if wrong: one blocker line with no link.
 - **R9 The lock is one guard (`checkErasure`) at the top of 19 service methods** that open new exposure.
   - Accepted for a locked `sub`: `ConfirmDeposit`, `ConfirmSandboxPurchase`, `ConfirmProductPurchase`, `ReleaseHold`, `CashoutGame`, every reconcile sweep. Refusing them would strand money (saga §4.2: inbound money that cannot be refused becomes a blocker).
   - Cost if wrong in the strict direction: refusing a poker cash-out leaves real money in limbo (Invariant #14).
 - **R10 Fail-closed revocation = middleware `RequireUnrevoked`.**
   - It calls `jwtverify.CheckRevoked` on the claims the auth middleware already verified, instead of a second `VerifyClaimsStrict` parse. Same semantics, one parse.
   - Cost: one extra Valkey GET per money request.
+- **R17 Acks use a dedicated confidential client** (`ERASURE_CLIENT_ID`/`ERASURE_CLIENT_SECRET`), granted only `internal:account:erasure-ack`. The KYC client keeps only `internal:account:kyc`, and a leak of one credential never grants the other capability.
+  - Cost: one more client and two SSM parameters to seed.
 - **R11 The feature switch is `ERASURE_QUEUE_URL`.** Unset means no gate, no consumer and no carry-over check (local dev only). Prod refuses to boot without it.
   - Cost if wrong: a prod deploy without the CDK env fails to boot, which is the intended fail-closed behaviour.
 - **R12 A `sandbox` balance is not a blocker.** It is virtual and has no monetary value (Invariant #6), so it is forfeited.
@@ -1305,7 +1310,7 @@ func TestBlockers_ReportsEveryMoneyCondition(t *testing.T) {
 			}
 		case wallet.TypeReal:
 			if b.ActionURL != "" || b.Detail["amount_cents"] != int64(1250) {
-				t.Fatalf("real blocker = %+v, want amount 1250 and no link (no withdrawal rail)", b)
+				t.Fatalf("real blocker = %+v, want amount 1250 and no link (unreachable today, defensive guard)", b)
 			}
 		}
 	}
@@ -1489,8 +1494,9 @@ func (e *ErasureService) Blockers(ctx context.Context, sub string) ([]erasure.Bl
 			continue
 		}
 		b := erasure.Blocker{Code: wallet.BlockerBalanceNonzero, Detail: map[string]any{"wallet": w.Type, "amount_cents": w.Balance}}
-		// game → real is always open (Invariant #9). real has no withdrawal
-		// rail today (asaas-removal), so support settles it: no link.
+		// game → real is always open (Invariant #9): link to the wallet home.
+		// real ≠ 0 is unreachable today (no rail credits real, R8); it stays
+		// a blocker so a stray credit is never erased with the user.
 		if w.Type == wallet.TypeGame && e.walletURL != "" {
 			b.ActionURL = e.walletURL
 		}
@@ -2272,9 +2278,9 @@ git commit -m "feat(api): erasure eligibility endpoint for ctech-account"
 - Consumes:
   - `erasure.NewStore`, `erasure.NewConsumer`, `erasure.NewAckClient`, `oauth2client.New`;
   - `services.NewErasureService`, `(*WalletService).SetErasure`, `(*UserService).SetErasureGate`, `repositories.NewErasureRepository`.
-- Produces: env `ERASURE_QUEUE_URL`, `VALKEY_REVOCATION_URL` (config fields `ErasureQueueURL`, `ValkeyRevocationURL`); `kycclient.PathToken`.
+- Produces: env `ERASURE_QUEUE_URL`, `VALKEY_REVOCATION_URL`, `ERASURE_CLIENT_ID`, `ERASURE_CLIENT_SECRET` (config fields `ErasureQueueURL`, `ValkeyRevocationURL`, `ErasureClientID`, `ErasureClientSecret`); `kycclient.PathToken`.
 
-- [ ] **Step 1: Write the failing config tests.** In `api/internal/config/config_test.go`, add `t.Setenv("ERASURE_QUEUE_URL", "https://sqs.us-east-1.amazonaws.com/868899309401/prod-ctech-wallet-erasure")` and `t.Setenv("VALKEY_REVOCATION_URL", "redis://valkey.internal:6379")` to `TestLoadSucceedsWithValkeyURLInProd` and `TestLoadFailsClosedWithoutValkeyURLInProd`. Then append:
+- [ ] **Step 1: Write the failing config tests.** In `api/internal/config/config_test.go`, add `t.Setenv("ERASURE_QUEUE_URL", "https://sqs.us-east-1.amazonaws.com/868899309401/prod-ctech-wallet-erasure")`, `t.Setenv("VALKEY_REVOCATION_URL", "redis://valkey.internal:6379")`, `t.Setenv("ERASURE_CLIENT_ID", "wallet-erasure")` and `t.Setenv("ERASURE_CLIENT_SECRET", "s")` to `TestLoadSucceedsWithValkeyURLInProd` and `TestLoadFailsClosedWithoutValkeyURLInProd`. Then append:
 
 ```go
 func prodEnv(t *testing.T) {
@@ -2289,12 +2295,14 @@ func prodEnv(t *testing.T) {
 	t.Setenv("VALKEY_URL", "redis://valkey.internal:6379/2")
 	t.Setenv("ERASURE_QUEUE_URL", "https://sqs.us-east-1.amazonaws.com/868899309401/prod-ctech-wallet-erasure")
 	t.Setenv("VALKEY_REVOCATION_URL", "redis://valkey.internal:6379")
+	t.Setenv("ERASURE_CLIENT_ID", "wallet-erasure")
+	t.Setenv("ERASURE_CLIENT_SECRET", "s")
 }
 
 // D1/D3: in prod the wallet must neither skip the deletion lock nor read the
 // revocation list from the wrong Valkey DB.
 func TestLoadFailsClosedWithoutErasureConfigInProd(t *testing.T) {
-	for _, unset := range []string{"ERASURE_QUEUE_URL", "VALKEY_REVOCATION_URL"} {
+	for _, unset := range []string{"ERASURE_QUEUE_URL", "VALKEY_REVOCATION_URL", "ERASURE_CLIENT_ID", "ERASURE_CLIENT_SECRET"} {
 		prodEnv(t)
 		t.Setenv(unset, "")
 		if _, err := Load(); err == nil {
@@ -2330,6 +2338,12 @@ Expected: `TestLoadFailsClosedWithoutErasureConfigInProd` FAILs (Load succeeds).
 	// deletion lock, the purge consumer and the self-exclusion carry-over
 	// are ON; empty = OFF (local dev only).
 	ErasureQueueURL string `env:"ERASURE_QUEUE_URL"`
+
+	// ErasureClientID/Secret is the DEDICATED confidential client that acks
+	// purges to ctech-account (scope internal:account:erasure-ack only). It is
+	// deliberately not WALLET_CLIENT_ID, which holds internal:account:kyc.
+	ErasureClientID     string `env:"ERASURE_CLIENT_ID"`
+	ErasureClientSecret string `env:"ERASURE_CLIENT_SECRET"`
 ```
 
 and in `Load`, before `return cfg, nil`:
@@ -2342,6 +2356,10 @@ and in `Load`, before `return cfg, nil`:
 	}
 	if cfg.ValkeyRevocationURL == "" && cfg.Env == "prod" {
 		return nil, fmt.Errorf("config: VALKEY_REVOCATION_URL must be set in production (JWT revocation list, Valkey DB 0)")
+	}
+	if cfg.ErasureQueueURL != "" && (cfg.ErasureClientID == "" || cfg.ErasureClientSecret == "") {
+		// Without the ack client every purge would run and never be acked.
+		return nil, fmt.Errorf("config: ERASURE_CLIENT_ID and ERASURE_CLIENT_SECRET must be set when ERASURE_QUEUE_URL is")
 	}
 ```
 
@@ -2407,7 +2425,7 @@ func startErasureConsumer(lc fx.Lifecycle, cfg *config.Config, sqsClient *sqs.Cl
 	httpClient := &http.Client{Timeout: 10 * time.Second}
 	base := strings.TrimRight(cfg.CtechURL, "/")
 	acks := erasure.NewAckClient(httpClient, base+wallet.PathAccountErasureAck,
-		oauth2client.New(httpClient, nil, base+kycclient.PathToken, cfg.WalletClientID, cfg.WalletClientSecret, wallet.ScopeAccountErasureAck))
+		oauth2client.New(httpClient, nil, base+kycclient.PathToken, cfg.ErasureClientID, cfg.ErasureClientSecret, wallet.ScopeAccountErasureAck))
 	consumer := erasure.NewConsumer(sqsClient, cfg.ErasureQueueURL, wallet.ErasureServiceID, store, svc.Purge, acks)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -2584,6 +2602,8 @@ test('api role: retention write-only, audit updatable only on ip/user_agent, led
   assert.equal(ledger.Effect, 'Deny');
   assert.equal(ledger.Condition, undefined, 'the ledger deny must stay unconditional (Invariant #2)');
   assert.ok(actions(bySid('ErasureQueueConsume')).includes('sqs:ReceiveMessage'));
+  const ssmResources = JSON.stringify(statements.filter((s: any) => actions(s).includes('ssm:GetParameter')));
+  assert.match(ssmResources, /\/ctech-wallet\/prod\/erasure-client-secret/, 'the API must read the dedicated ack client secret');
 });
 ```
 
@@ -2595,6 +2615,9 @@ test('user data wires the erasure queue and the revocation Valkey (DB 0 base URL
   assert.match(text, /ERASURE_QUEUE_URL=https:\/\/sqs\./);
   assert.match(text, /VALKEY_REVOCATION_URL="\$VALKEY_BASE"/);
   assert.match(text, /export VALKEY_URL VALKEY_REVOCATION_URL CORS_ALLOWED_ORIGINS/);
+  // The dedicated ack client comes from SSM at service start, never inlined.
+  assert.match(text, /'ERASURE_CLIENT_SECRET=\/ctech-wallet\/prod\/erasure-client-secret'/);
+  assert.match(text, /'ERASURE_CLIENT_ID=\/ctech-wallet\/prod\/erasure-client-id'/);
 });
 ```
 
@@ -2603,7 +2626,16 @@ test('user data wires the erasure queue and the revocation Valkey (DB 0 base URL
 Run: `cd cdk && npm test 2>&1 | tail -20`
 Expected: FAIL — `Cannot find module '../lib/erasure-stack'` (plus TS errors for the new props).
 
-- [ ] **Step 3: Constants** — append to `cdk/lib/constants.ts`:
+- [ ] **Step 3: Constants** — in `cdk/lib/constants.ts`, add to `SSM_WALLET` after `walletClientSecret`:
+
+```ts
+  // Dedicated confidential client that acks account-deletion purges
+  // (allowed_scopes ["internal:account:erasure-ack"] only). Seeded operationally.
+  erasureClientId: `/${SERVICE}/${env}/erasure-client-id`,
+  erasureClientSecret: `/${SERVICE}/${env}/erasure-client-secret`, // SecureString
+```
+
+  Then append:
 
 ```ts
 // ── Account deletion (LGPD) participant ─────────────────────────────────────
@@ -2734,6 +2766,7 @@ export class ErasureStack extends cdk.Stack {
 - [ ] **Step 6: IAM** — in `cdk/lib/iam-stack.ts`:
   - add `erasureQueueArn: string;` and `retentionTableArn: string;` to `IAMStackProps` and destructure them;
   - import `AUDIT_ANONYMIZABLE_ATTRIBUTES`, `TABLE_AUDIT`, `TABLE_LEDGER`;
+  - in the `SsmPolicy` resources, after the `walletSsm.walletClientSecret` entry, add `` `arn:aws:ssm:*:*:parameter${walletSsm.erasureClientId}`, `` and `` `arn:aws:ssm:*:*:parameter${walletSsm.erasureClientSecret}`, ``;
   - after `appendOnlyArns`, add:
 
 ```ts
@@ -2821,6 +2854,7 @@ export class ErasureStack extends cdk.Stack {
 - [ ] **Step 7: API env** — in `cdk/lib/api-stack.ts`:
   - add the prop `/** The wallet's account-deletion SQS queue (ErasureStack). */ erasureQueueUrl: string;` and destructure it;
   - in the static env heredoc, after `PIX_GATEWAY_FUNCTION_NAME=...`, add the line `` `ERASURE_QUEUE_URL=${erasureQueueUrl}`, ``;
+  - in `ssmEnvArgs`, after `WALLET_CLIENT_SECRET=...`, add `` `ERASURE_CLIENT_ID=${wallet.erasureClientId}`, `` and `` `ERASURE_CLIENT_SECRET=${wallet.erasureClientSecret}`, ``;
   - replace the `service-env.sh` lines:
 
 ```ts
@@ -2849,7 +2883,21 @@ const erasureStack = new ErasureStack(app, id('Erasure'), {
 Run: `cd cdk && npx tsc --noEmit && npm test 2>&1 | tail -20 && ENVIRONMENT=dev npx cdk synth "CtechWallet-Dev-*" --profile ctech > /dev/null && echo SYNTH_OK`
 Expected: no TS errors; `# pass` covering every test in `api-stack.test.ts`, `reconcile-stack.test.ts` and `erasure.test.ts`, with `# fail 0`; `SYNTH_OK`. If synth cannot resolve SSM lookups offline, the `cdk synth` part may be skipped; `npm test` is the gate.
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 10: IAM `dynamodb:Attributes` check in dev (execution step, before any prod deploy)**
+
+After `ENVIRONMENT=dev` deploy, seed one audit row with `ip`, then run the two calls with the dev API role (`aws sts assume-role --role-arn <dev-ctech-wallet-api-role arn> --profile ctech`, export the credentials):
+
+```bash
+aws dynamodb update-item --table-name dev_wallet_audit --key '{"pk":{"S":"<sub>"},"sk":{"S":"<sk>"}}' \
+  --update-expression 'REMOVE #ip, #ua' --expression-attribute-names '{"#ip":"ip","#ua":"user_agent"}' \
+  --condition-expression 'attribute_exists(pk)'
+aws dynamodb update-item --table-name dev_wallet_audit --key '{"pk":{"S":"<sub>"},"sk":{"S":"<sk>"}}' \
+  --update-expression 'SET event_type = :x' --expression-attribute-values '{":x":{"S":"forged"}}'
+```
+
+Expected: the first succeeds; the second fails with `AccessDeniedException`. If the first is denied, stop: fix the IAM conditions before prod (R4).
+
+- [ ] **Step 11: Commit**
 
 ```bash
 git add cdk/lib/ cdk/test/ cdk/bin/ctech-wallet-cdk.ts
@@ -2887,7 +2935,7 @@ git commit -m "feat(cdk): erasure queue, state and retention tables, scoped IAM,
 ```
 
 - [ ] **Step 2: `OPERATIONS.md`.**
-  - In §2, change `allowed_scopes: ["internal:account:kyc"]` to `allowed_scopes: ["internal:account:kyc", "internal:account:erasure-ack"]`, and add the sentence: "The wallet acks account-deletion purges with this same client (`POST {CTECH_URL}/v1.0/internal/erasure/ack`)."
+  - After §2, add a "§2a. Seed the wallet's erasure ack client" section: a **dedicated** confidential client in `{env}_account_oauth_clients` with `first_party: true` and `allowed_scopes: ["internal:account:erasure-ack"]` (nothing else); its id and secret go to SSM `/ctech-wallet/{env}/erasure-client-id` and `/ctech-wallet/{env}/erasure-client-secret` (SecureString). The KYC client in §2 is **not** granted the ack scope.
   - Append a new section:
 
 ```markdown
@@ -2902,11 +2950,14 @@ Plan: `docs/plans/2026-10-07-account-deletion-participant.md`. Contract: ctech-a
    `cpf_hmac` on `GET /v1.0/internal/kyc/:user_id`.
 2. `cdk deploy` the wallet (`CtechWallet-{Env}-Erasure`, `-DynamoDB`, `-IAM`, `-API`). The API refuses to boot in prod
    without `ERASURE_QUEUE_URL` and `VALKEY_REVOCATION_URL`.
-3. Wallet M2M client granted `internal:account:erasure-ack` (§2).
+3. Dedicated erasure ack client seeded (§2a) and its SSM parameters set.
 4. Publish the scope manifest (§1). It now includes `internal:wallet:erasure-eligibility`.
 5. In ctech-account, add to `ERASURE_PARTICIPANTS`:
-   `{"service":"wallet","url":"https://wallet-api.aoctech.app/v1.0","audience":"<value of /ctech-wallet/{env}/app-url>","client_id":"<WALLET_CLIENT_ID>"}`.
-   The token account mints must have `iss` equal to the wallet's `CTECH_ISSUER_URL`.
+   `{"service":"wallet","url":"https://wallet-api.aoctech.app/v1.0","audience":"<value of /ctech-wallet/{env}/app-url>","client_id":"<erasure ack client id>"}`.
+6. **Deployment check:** ctech-account mints the eligibility token with `iss` = its own issuer. Confirm that value
+   equals the wallet's `CTECH_ISSUER_URL` (SSM `/ctech-account/{env}/app-url`). Then call
+   `GET https://wallet-api.aoctech.app/v1.0/internal/erasure/eligibility/<test-sub>` with such a token and expect `200`;
+   a `401` means the issuer or audience differ.
 
 **What the purge does.** It moves no money and never touches the ledger.
 
@@ -2945,9 +2996,9 @@ LOCKED, typically a legacy PIX deposit confirmed or a poker cash-out credited af
 purged after the restore point (ctech-account deletion-requests table, see its runbook) and re-publish `user.erase`
 for each. The purge reruns idempotently.
 
-**`real` balance blocker.** There is no withdrawal rail today (`docs/specs/2026-10-07-asaas-removal.md`), so a user
-with `real` balance cannot reach zero alone. Support pays out to an account of the same CPF and debits the wallet
-with a reconciled ledger entry. A `game` balance can be returned to `real` from the wallet UI.
+**Balance blocker.** It concerns the `game` balance; the user returns it to `real` from the wallet UI (the blocker
+links there). No rail credits `real` today, so a `real` balance ≠ 0 should never happen. If the blocker ever reports
+`detail.wallet = "real"`, treat it as an incident, not a support routine.
 ```
 
 - [ ] **Step 3: Root `CLAUDE.md`.** In "Cross-project contract (`ctech-account`)", append:
@@ -2957,7 +3008,8 @@ with a reconciled ledger entry. A `game` balance can be returned to `real` from 
   (`docs/plans/2026-10-07-account-deletion-participant.md`).
   - It serves `GET /v1.0/internal/erasure/eligibility/:sub` (scope `internal:wallet:erasure-eligibility`, token
     minted by account).
-  - It consumes `{env}-ctech-wallet-erasure` (SNS filter `services=wallet`) and acks with `internal:account:erasure-ack`.
+  - It consumes `{env}-ctech-wallet-erasure` (SNS filter `services=wallet`) and acks with `internal:account:erasure-ack`
+    through a **dedicated** confidential client (`ERASURE_CLIENT_ID`), never the KYC client.
   - It reads the JWT revocation list from Valkey DB 0 (`VALKEY_REVOCATION_URL`).
   - From the start of grace, every operation that opens new exposure for the user is refused (`checkErasure`);
     settlement is never refused.
@@ -2982,7 +3034,8 @@ with a reconciled ledger entry. A `game` balance can be returned to `real` from 
 - **Saque de encerramento sem mínimo (exclusão de conta, decisão D7):** saque do saldo integral passa por
   `wallet.ValidateWithdrawalAmount(..., fullBalance=true, ...)`, que dispensa o mínimo; o cliente não sinaliza nada.
   O saque precisa ser possível **antes** do pedido de exclusão (a carteira trava no início da carência).
-- O blocker `wallet.balance_nonzero` de `real` passa a ter `action_url` para a tela de saque.
+- O blocker `wallet.balance_nonzero` hoje só ocorre para `game` (nenhum rail credita `real`); quando um rail voltar,
+  o caso `real` passa a ter `action_url` para a tela de saque.
 - Bloqueadores próprios do provedor (subconta não encerrável, MED aberto, transfer intent) entram em
   `ErasureService.Blockers`, e o encerramento da subconta no `Purge`, com o id da solicitação de encerramento nos
   counts do ack.
@@ -3005,12 +3058,13 @@ git commit -m "docs: wallet account-deletion participant contract and runbooks"
 ## Cross-project impact
 
 - **ctech-account:**
-  - add `cpf_hmac` to the internal KYC response (prerequisite 2, Q1);
-  - add a `wallet` entry to `ERASURE_PARTICIPANTS`;
-  - grant `internal:account:erasure-ack` to the wallet client;
-  - add UI copy for `wallet.hold_open`, `wallet.deposit_pending`, `wallet.withdrawal_pending`,
-    `wallet.purchase_pending`, and for `wallet.balance_nonzero` **without** `action_url` (Q2).
-  - Its phase-4 UI example link `https://ledger.aoctech.app/withdraw` does not exist.
+  - add `cpf_hmac` to the internal KYC response (approved; a task in its phase 3 plan);
+  - add a `wallet` entry to `ERASURE_PARTICIPANTS`, `client_id` = the dedicated erasure ack client;
+  - seed that dedicated client with `internal:account:erasure-ack` only;
+  - mint the eligibility token with `iss` = its issuer (deployment check against the wallet's `CTECH_ISSUER_URL`);
+  - add UI copy for `wallet.hold_open`, `wallet.deposit_pending`, `wallet.withdrawal_pending`, `wallet.purchase_pending`.
+    `wallet.balance_nonzero` copy should speak of the game balance and link to `action_url` (the wallet home); its
+    phase-4 example link `https://ledger.aoctech.app/withdraw` does not exist.
 - **ctech-poker:** `internal/wallet/game/hold`, `sandbox/credit|debit` and `sandbox-purchase` answer
   `409 /problems/account-erasure-pending` for a locked user. Poker must treat that as "not eligible" and must keep
   sending cash-outs and releases, which are always accepted.
@@ -3024,19 +3078,16 @@ git commit -m "docs: wallet account-deletion participant contract and runbooks"
 - **wallet ui:** no change. Users in deletion have no session; problem details render generically.
 - **pix-gateway:** none. It verifies no user JWT and stays on go-common v1.13.1.
 
+## Decisions applied (2026-10-08)
+
+- `cpf_hmac` on `GET /internal/kyc/:user_id`: **approved**; ctech-account's phase 3 plan carries the task (R5, prerequisite 2).
+- No valid real-money balance exists: the balance blocker is about `game`; `real` is a defensive, unreachable-today guard (R8).
+- Legal: pseudonymous in-place retention of money rows counts as segregated (R2).
+- IAM `dynamodb:Attributes`: accepted; verified by Task 10 Step 10 in dev.
+- Acks use a dedicated confidential client (R17, Task 9, Task 10, OPERATIONS §2a).
+- ctech-account mints the eligibility token with its own issuer; deployment check in OPERATIONS §7.
+
 ## Open questions
 
-- **Q1 (blocking for prod, ctech-account owner):** approve adding `cpf_hmac` to `GET /v1.0/internal/kyc/:user_id`.
-  - It is the minimal contract change: it reuses account's existing `Sealer.MAC("cpf-hmac", …)` and needs no secret
-    shared with the wallet.
-  - The alternative is a wallet-owned HMAC key. It must be chosen before the first prod purge, because rows cannot be
-    re-keyed afterwards.
-- **Q2 (account UI):** copy for `wallet.balance_nonzero` without `action_url` ("fale com o suporte para sacar"). There
-  is no withdrawal rail, so support settles `real` balances by hand. Who owns that procedure?
-- **Q3 (legal):** does pseudonymous in-place retention of money rows (keyed by the opaque `sub`, identity retained by
-  account under D6) satisfy "segregated"? Physical move would need an Invariant #2 amendment.
-- **Q4 (verify in dev before prod):** confirm IAM `dynamodb:Attributes` evaluates the REMOVE attributes of an
-  `UpdateItem` as expected. Two checks against `dev_wallet_audit` with the API role: a purge succeeds, and a manual
-  `UpdateItem SET event_type` is denied.
 - **Q5:** service-scope unlink. The wallet needs `Store.Clear(sub)` on re-consent once ctech-account ships scope
   `service`.
