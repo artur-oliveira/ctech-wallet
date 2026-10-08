@@ -1,7 +1,7 @@
 # Restauração da CTech Wallet (rail Inter, limites, descrições, extrato)
 
 **Data:** 2026-10-08
-**Status:** rascunho para revisão
+**Status:** aprovado para planejamento; planos em `docs/plans/2026-10-08-*.md`
 **Substitui parcialmente:** `2026-10-07-asaas-removal.md` (seção "O que um provedor futuro precisa reintroduzir") e as Invariantes #12/#13.
 
 ## Contexto e objetivo
@@ -26,7 +26,17 @@ Sucesso significa:
 4. Frontend
 5. Alertas SNS nas Lambdas Inter
 
-Cada sub-projeto vira um plano próprio. Itens 2, 3 e 5 são independentes entre si.
+Cada sub-projeto vira um plano próprio (ordem sugerida: 1, 3, 5, 2, 4):
+
+| # | Plano |
+|---|-------|
+| 1 | `docs/plans/2026-10-08-wallet-inter-rail-and-limits.md` |
+| 2 | `docs/plans/2026-10-08-mandatory-transaction-description.md` (wallet, poker, billing; flag `REQUIRE_DESCRIPTION`) |
+| 3 | `docs/plans/2026-10-08-statement-api-balance-before.md` |
+| 4 | `docs/plans/2026-10-08-wallet-ui-statements-and-copy.md` (depende de 1 e 3 no dashboard e nos locales) |
+| 5 | `docs/plans/2026-10-08-inter-lambda-sns-alerts.md` |
+
+Itens 2, 3 e 5 são independentes entre si.
 
 ---
 
@@ -50,8 +60,8 @@ Ring-fence, holds, sandbox e jogo responsável não mudam. `TestSandboxPurchaseN
 O Inter mascara o CPF do pagador no webhook (ex.: `***137303**`); `maskedCPFMatches` compara só os dígitos
 revelados. No saque a chave destino traz o CPF completo.
 
-**Fechar o buraco do sweep:** hoje o reconcile (`sweep=true`, SEC-03) credita depósitos cujo webhook nunca
-chegou sem checar CPF. Passa a **estornar** o depósito sem CPF de pagador registrado, em vez de creditar.
+**Sweep já falha fechado (verificado no código atual):** `ConfirmDeposit` coloca em quarentena (ALARM + erro) um
+depósito pago sem CPF de pagador registrado; nunca o credita. Nada a mudar aqui, apenas não regredir isso.
 
 ### Limites por carteira
 
@@ -84,15 +94,15 @@ houver) e remover resquícios do selo Asaas.
 ### Testes
 
 Integração (DynamoDB-local): teto diário de depósito sob concorrência; limite de saque; replay idempotente;
-saque `processing` resolvido pelo reconcile; sweep sem CPF estorna; `wallet-busy`.
+saque `processing` resolvido pelo reconcile; depósito pago sem CPF de pagador segue em quarentena; `wallet-busy`.
 
 ---
 
 ## 2. `description` obrigatória
 
 Hoje é opcional (spec 2026-08-29). Passa a `validate:"required,min=3,max=255"` em todas as rotas M2M
-(`sandbox/credit`, `sandbox/debit`, `real/debit`, `sandbox-purchase`, `product-purchase`, `charge`, game hold
-e cashout). Ausente ou em branco => 400. Continua **fora** do hash de idempotência e é só metadado de exibição.
+(`sandbox/credit`, `sandbox/debit`, `real/debit`, `sandbox-purchase`, `product-purchase`, `charge` e game
+cashout; o hold não gera lançamento no ledger e fica de fora). Ausente ou em branco => 400. Continua **fora** do hash de idempotência e é só metadado de exibição.
 
 **Ordem de rollout (mudança quebrável):**
 
