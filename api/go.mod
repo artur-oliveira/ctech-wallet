@@ -20,14 +20,13 @@ require (
 	github.com/oklog/ulid/v2 v2.1.2
 	github.com/valyala/fasthttp v1.75.0
 	go.uber.org/fx v1.24.0
-	gopkg.aoctech.app/api-commons v1.13.1
+	gopkg.aoctech.app/api-commons v1.16.0
 	gopkg.aoctech.app/wallet/rpc-contract v0.0.0
 )
 
 replace gopkg.aoctech.app/wallet/rpc-contract => ../rpc-contract
 
 require (
-	github.com/andybalholm/brotli v1.2.6 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.20 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.20.1 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.4 // indirect
