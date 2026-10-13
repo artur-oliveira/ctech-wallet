@@ -53,6 +53,9 @@ type OpenChargeInput struct {
 // a replay return the original charge instead of opening a second one. Any one
 // of them alone is not enough.
 func (s *WalletService) OpenCharge(ctx context.Context, in OpenChargeInput) (*wallet.ProductPurchase, *pix.Charge, error) {
+	if err := checkErasure(ctx, s.erasureGate, in.UserID); err != nil {
+		return nil, nil, err
+	}
 	if in.AmountCents <= 0 {
 		return nil, nil, problem.BadRequest("amount_cents deve ser positivo")
 	}

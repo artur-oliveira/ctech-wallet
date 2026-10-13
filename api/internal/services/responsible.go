@@ -34,6 +34,9 @@ func (s *WalletService) requireNotExcluded(ctx context.Context, userID string) (
 // SelfExclude records a self-exclusion. Extension-only: a new exclusion may
 // never end earlier than the one it replaces, and nothing extends indefinite.
 func (s *WalletService) SelfExclude(ctx context.Context, userID, period, ip, userAgent string) (*wallet.SelfExclusion, error) {
+	if err := checkErasure(ctx, s.erasureGate, userID); err != nil {
+		return nil, err
+	}
 	now := time.Now()
 	until, err := wallet.ExclusionUntil(period, now)
 	if err != nil {
@@ -71,6 +74,9 @@ func (s *WalletService) SelfExclude(ctx context.Context, userID, period, ip, use
 // RevokeSelfExclusion lifts an indefinite exclusion after its 90-day floor.
 // Fixed periods are not revocable — they expire on their own.
 func (s *WalletService) RevokeSelfExclusion(ctx context.Context, userID, ip, userAgent string) error {
+	if err := checkErasure(ctx, s.erasureGate, userID); err != nil {
+		return err
+	}
 	now := time.Now()
 	u, err := s.users.Get(ctx, userID)
 	if err != nil {
@@ -100,6 +106,9 @@ func (s *WalletService) RevokeSelfExclusion(ctx context.Context, userID, ip, use
 // (7 days; 14 when the monthly limit grows). One pending set at a time — a new
 // call replaces it wholesale and re-derives the cooldown.
 func (s *WalletService) SetGameLimits(ctx context.Context, userID string, daily, weekly, monthly int64, ip, userAgent string) (*wallet.GameLimits, error) {
+	if err := checkErasure(ctx, s.erasureGate, userID); err != nil {
+		return nil, err
+	}
 	if err := wallet.ValidateLimits(daily, weekly, monthly); err != nil {
 		return nil, problem.BadRequest(err.Error())
 	}
@@ -147,6 +156,9 @@ func (s *WalletService) SetGameLimits(ctx context.Context, userID string, daily,
 // CancelPendingLimits drops a scheduled increase. Always allowed — cancelling
 // an increase keeps the stricter current limits.
 func (s *WalletService) CancelPendingLimits(ctx context.Context, userID string) (*wallet.GameLimits, error) {
+	if err := checkErasure(ctx, s.erasureGate, userID); err != nil {
+		return nil, err
+	}
 	u, err := s.users.Get(ctx, userID)
 	if err != nil {
 		return nil, err

@@ -227,10 +227,12 @@ type WalletService struct {
 	lock             Locker
 	pix              pix.PixClient
 	kyc              KYCClient
-	broadcaster      Broadcaster          // optional; see SetBroadcaster
-	sandboxPurchases SandboxPurchaseRepo  // required for PurchaseSandboxDirect/RefundSandboxPurchase/ConfirmSandboxPurchase; see SetSandboxPurchases
-	productPurchases ProductPurchaseRepo  // required for PurchaseProductDirect/ConfirmProductPurchase/RefundProductPurchase; see SetProductPurchases
-	m2mClients       map[string]M2MClient // AZP → webhook config; nil/missing entry means "don't notify"; see SetM2MClients
+	broadcaster      Broadcaster           // optional; see SetBroadcaster
+	sandboxPurchases SandboxPurchaseRepo   // required for PurchaseSandboxDirect/RefundSandboxPurchase/ConfirmSandboxPurchase; see SetSandboxPurchases
+	productPurchases ProductPurchaseRepo   // required for PurchaseProductDirect/ConfirmProductPurchase/RefundProductPurchase; see SetProductPurchases
+	m2mClients       map[string]M2MClient  // AZP → webhook config; nil/missing entry means "don't notify"; see SetM2MClients
+	erasureGate      ErasureGate           // optional; see SetErasure
+	carried          CarriedExclusionStore // optional; see SetErasure
 }
 
 func NewWalletService(repo Repo, users UserRepo, audit Auditor, lock Locker, pixClient pix.PixClient, kyc KYCClient) *WalletService {
@@ -280,6 +282,9 @@ func (s *WalletService) SetM2MClients(m map[string]M2MClient) {
 // Idempotent: activating twice returns the same wallets. Writes an audit event,
 // because consent must be provable after the fact.
 func (s *WalletService) ActivateGambling(ctx context.Context, userID, kycLevel, ip, userAgent string, daily, weekly, monthly int64) (game, sandbox *wallet.Wallet, err error) {
+	if err := checkErasure(ctx, s.erasureGate, userID); err != nil {
+		return nil, nil, err
+	}
 	if kycLevel == "" {
 		return nil, nil, problem.KYCNotVerified()
 	}
@@ -1076,6 +1081,9 @@ func (s *WalletService) ringTransfer(ctx context.Context, from, to *wallet.Walle
 // indefinitely (fund → return → fund). The limit check itself belongs here, right
 // before the transfer, and is added by the limit-engine plan.
 func (s *WalletService) FundGame(ctx context.Context, userID string, amount int64, idemKey string) (debit, credit *wallet.LedgerEntry, err error) {
+	if err := checkErasure(ctx, s.erasureGate, userID); err != nil {
+		return nil, nil, err
+	}
 	// Absolute inbound ceiling — real money enters the gambling ring-fence only
 	// here, so this is the single door the cap must guard.
 	if amount > wallet.MaxInboundAmount {
@@ -1133,6 +1141,9 @@ func (s *WalletService) FundGame(ctx context.Context, userID string, amount int6
 // encourage. This is not a PIX payout — to reach a bank account the user then
 // withdraws from `real` as usual.
 func (s *WalletService) ReturnFromGame(ctx context.Context, userID string, amount int64, idemKey string) (debit, credit *wallet.LedgerEntry, err error) {
+	if err := checkErasure(ctx, s.erasureGate, userID); err != nil {
+		return nil, nil, err
+	}
 	rl, game, _, err := s.requireActivated(ctx, userID)
 	if err != nil {
 		return nil, nil, err
@@ -1149,6 +1160,9 @@ func (s *WalletService) ReturnFromGame(ctx context.Context, userID string, amoun
 // mean nothing. Sandbox remains a sink (Invariant #6) — this conversion is
 // one-way and can never be undone.
 func (s *WalletService) PurchaseSandbox(ctx context.Context, userID string, amount int64, idemKey string) (debit, credit *wallet.LedgerEntry, err error) {
+	if err := checkErasure(ctx, s.erasureGate, userID); err != nil {
+		return nil, nil, err
+	}
 	_, game, sandbox, err := s.requireActivated(ctx, userID)
 	if err != nil {
 		return nil, nil, err
@@ -1168,11 +1182,17 @@ func (s *WalletService) PurchaseSandbox(ctx context.Context, userID string, amou
 
 // CreditSandbox grants sandbox currency to a user (M2M, e.g. poker/dominó bonus).
 func (s *WalletService) CreditSandbox(ctx context.Context, userID string, amount int64, idemKey, reason, description string) (*wallet.LedgerEntry, error) {
+	if err := checkErasure(ctx, s.erasureGate, userID); err != nil {
+		return nil, err
+	}
 	return s.sandboxOp(ctx, userID, amount, idemKey, reason, description, wallet.EntryGameCredit, true)
 }
 
 // DebitSandbox spends sandbox currency (M2M, e.g. a bet). Respects balance.
 func (s *WalletService) DebitSandbox(ctx context.Context, userID string, amount int64, idemKey, reason, description string) (*wallet.LedgerEntry, error) {
+	if err := checkErasure(ctx, s.erasureGate, userID); err != nil {
+		return nil, err
+	}
 	return s.sandboxOp(ctx, userID, amount, idemKey, reason, description, wallet.EntryGameDebit, false)
 }
 
@@ -1209,6 +1229,9 @@ func (s *WalletService) sandboxOp(ctx context.Context, userID string, amount int
 // ctech-billing charging a subscription). No PIX leg — this only moves money
 // within the ledger, same shape as DebitSandbox but against `real`.
 func (s *WalletService) DebitReal(ctx context.Context, userID string, amount int64, idemKey, reason, description string) (*wallet.LedgerEntry, error) {
+	if err := checkErasure(ctx, s.erasureGate, userID); err != nil {
+		return nil, err
+	}
 	realw, err := s.repo.EnsureRealWallet(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -1239,6 +1262,9 @@ func (s *WalletService) DebitReal(ctx context.Context, userID string, amount int
 // audit, and stale-hold detection (see the reconciliation sweep in
 // reconcile.go).
 func (s *WalletService) HoldGame(ctx context.Context, userID string, amount int64, tableRef, idemKey string) (*wallet.Hold, error) {
+	if err := checkErasure(ctx, s.erasureGate, userID); err != nil {
+		return nil, err
+	}
 	_, game, _, err := s.requireActivated(ctx, userID)
 	if err != nil {
 		return nil, err
