@@ -39,6 +39,7 @@ func TestErasureGateRefusesEveryNewExposure(t *testing.T) {
 	svc, userSvc := gatedServices(&stubGate{blocked: true})
 	ops := map[string]func() error{
 		"ActivateGambling": func() error { _, _, err := svc.ActivateGambling(ctx, "u1", "basic", "", "", 100, 200, 300); return err },
+		"InitiateDeposit":  func() error { _, _, err := svc.InitiateDeposit(ctx, "u1", "enhanced", 100, "k"); return err },
 		"FundGame":         func() error { _, _, err := svc.FundGame(ctx, "u1", 100, "k"); return err },
 		"ReturnFromGame":   func() error { _, _, err := svc.ReturnFromGame(ctx, "u1", 100, "k"); return err },
 		"PurchaseSandbox":  func() error { _, _, err := svc.PurchaseSandbox(ctx, "u1", 100, "k"); return err },

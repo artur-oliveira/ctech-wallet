@@ -235,7 +235,7 @@ func newFiberApp(cfg *config.Config) *fiber.App {
 
 func registerRoutes(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsclient.Clients, pixClient pix.PixClient, svc *services.WalletService, userSvc *services.UserService, wsRegistry ws.Registry) {
 	svc.SetBroadcaster(wsRegistry)
-	apiv1.Register(app, c, cfg, clients, pixClient, svc, userSvc, wsRegistry)
+	apiv1.Register(app, c, nil, cfg, clients, pixClient, svc, userSvc, nil, wsRegistry)
 }
 
 func startServer(lc fx.Lifecycle, app *fiber.App, cfg *config.Config) {

@@ -411,6 +411,9 @@ func breachProblem(b *wallet.DailyBreach) *problem.Problem {
 // the charge. idemKey makes a retried POST return the same txid/QR and never
 // open a second Inter charge (SEC-08).
 func (s *WalletService) InitiateDeposit(ctx context.Context, userID, kycLevel string, amount int64, idemKey string) (*wallet.PixDeposit, *pix.Charge, error) {
+	if err := checkErasure(ctx, s.erasureGate, userID); err != nil {
+		return nil, nil, err
+	}
 	if kycLevel == "" {
 		return nil, nil, problem.KYCNotVerified()
 	}
