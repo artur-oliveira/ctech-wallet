@@ -260,3 +260,34 @@ func (s *WalletService) GameEligibilityFor(ctx context.Context, userID string) (
 		LimitsConfigured: u.LimitsConfigured(),
 	}, nil
 }
+
+// applyCarriedExclusion re-applies a self-exclusion kept from an erased
+// account of the same CPF (D13) and refuses activation while it lasts. It is
+// a no-op when the deletion feature is off (no store) or account serves no
+// cpf_hmac. A KYC read error fails activation: activation happens once per
+// user, and letting it through unchecked is the one outcome D13 forbids.
+func (s *WalletService) applyCarriedExclusion(ctx context.Context, userID string) error {
+	if s.carried == nil {
+		return nil
+	}
+	k, err := s.kyc.Get(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if k == nil || k.CPFHMAC == "" {
+		return nil
+	}
+	ex, err := s.carried.GetCarriedSelfExclusion(ctx, k.CPFHMAC, time.Now())
+	if err != nil || ex == nil {
+		return err
+	}
+	if err := s.users.SetSelfExclusion(ctx, userID, ex); err != nil {
+		return err
+	}
+	if err := s.audit.Append(ctx, &wallet.AuditEvent{
+		UserID: userID, EventType: wallet.EventSelfExclusionCarried, Actor: wallet.ActorErasureCarryOver, After: ex.Period,
+	}); err != nil {
+		return err
+	}
+	return problem.SelfExcluded(ex.Until)
+}

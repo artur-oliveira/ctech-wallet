@@ -293,6 +293,9 @@ func (s *WalletService) ActivateGambling(ctx context.Context, userID, kycLevel, 
 	if err != nil {
 		return nil, nil, err
 	}
+	if err := s.applyCarriedExclusion(ctx, userID); err != nil {
+		return nil, nil, err
+	}
 	if !u.GamblingAccepted() {
 		return nil, nil, problem.GamblingTermsRequired()
 	}
