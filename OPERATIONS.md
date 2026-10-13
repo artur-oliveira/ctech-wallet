@@ -74,6 +74,13 @@ Direct DynamoDB put into `{env}_account_oauth_clients` (`pk=CLIENT_<id>`), exact
 
 Set the wallet's `WALLET_CLIENT_ID` / `WALLET_CLIENT_SECRET` env to match.
 
+## 2a. Seed the wallet's erasure ack client
+
+The account-deletion saga needs a **dedicated** confidential client (not the KYC client of §2): a direct DynamoDB put
+into `{env}_account_oauth_clients` with `first_party: true` and `allowed_scopes: ["internal:account:erasure-ack"]`
+(nothing else). Store its id and secret in SSM `/ctech-wallet/{env}/erasure-client-id` and
+`/ctech-wallet/{env}/erasure-client-secret` (SecureString). The KYC client is **not** granted the ack scope.
+
 ## 3. Seed each consumer app's M2M client
 
 Poker, dominó, and future billing each get a confidential M2M client whose
@@ -274,3 +281,77 @@ verified KYC plus explicit acceptance of the gambling addendum.
 Turning it back **off** is safe as a kill switch: it stops new money entering the ring-fence and stops new
 activations, but does not delete anyone's `game`/`sandbox` wallet or their balances, and users can still return
 their money to `real` because that route is never gated.
+
+## 7. Account deletion (LGPD) participant
+
+Plan: `docs/plans/2026-10-07-account-deletion-participant.md`. Contract: ctech-account
+`docs/specs/2026-10-06-account-deletion-saga-protocol.md`.
+
+**Prerequisites (in this order):**
+
+1. ctech-account deployed with the deletion topic (SSM `/ctech/{env}/account/erasure-topic-arn` exists) and serving
+   `cpf_hmac` on `GET /v1.0/internal/kyc/:user_id`.
+2. `cdk deploy` the wallet: **DynamoDB first** and wait until the three new `gsi_user` indexes (deposits, withdrawals,
+   holds) read `ACTIVE` (`aws dynamodb describe-table --table-name {env}_wallet_pix_deposits --query
+   'Table.GlobalSecondaryIndexes[].IndexStatus'`; existing rows are indexed by DynamoDB, nothing to backfill), then
+   `CtechWallet-{Env}-Erasure`, `-IAM`, `-API`. The API refuses to boot in prod without `ERASURE_QUEUE_URL`,
+   `VALKEY_REVOCATION_URL` and the erasure client.
+3. Dedicated erasure ack client seeded (§2a) and its SSM parameters set.
+4. Publish the scope manifest (§1). It now includes `internal:wallet:erasure-eligibility`.
+5. In ctech-account, add to `ERASURE_PARTICIPANTS`:
+   `{"service":"wallet","url":"https://wallet-api.aoctech.app/v1.0","audience":"<value of /ctech-wallet/{env}/app-url>","client_id":"<erasure ack client id>"}`.
+6. **Deployment check:** ctech-account mints the eligibility token with `iss` = its own issuer. Confirm that value
+   equals the wallet's `CTECH_ISSUER_URL` (SSM `/ctech-account/{env}/app-url`). Then call
+   `GET https://wallet-api.aoctech.app/v1.0/internal/erasure/eligibility/<test-sub>` with such a token and expect `200`;
+   a `401` means the issuer or audience differ.
+7. **IAM check in dev, before prod (R4):** with the dev API role, `REMOVE ip, user_agent` on a `wallet_audit` row must
+   succeed and `SET event_type = :x` on the same row must fail with `AccessDeniedException`. If the first is denied,
+   fix the IAM conditions before prod.
+
+**What the purge does.** It moves no money and never touches the ledger.
+
+- Payer CPF/name (deposits) and PIX keys (withdrawals) are copied to `{env}_wallet_erasure_retention`
+  (pk `SUB#{sub}`, sk `{table}#{id}`, TTL 5 years), then removed from the rows.
+- `wallet_users` loses limits, counters and self-exclusion. Consent versions stay.
+- `wallet_audit` loses `ip`/`user_agent`.
+- An active self-exclusion is kept as `wallet_users` `SELFEXCL#{cpf_hmac}` until it ends (indefinite: 5 years) and is
+  re-applied if the same CPF activates gambling again.
+- A `sandbox` balance is forfeited (virtual).
+
+**Reading retained data (PLD/COAF request, legal).** The API role cannot read the retention table (IAM deny). Use
+the console/CLI with an admin role, `--profile ctech`:
+`aws dynamodb query --table-name prod_wallet_erasure_retention --key-condition-expression "pk = :p" --expression-attribute-values '{":p":{"S":"SUB#<sub>"}}'`.
+Join with ctech-account's `KYCRET#{sub}` for the identity. Never copy results into tickets or logs.
+
+**DLQ alarm (`{env}-ctech-wallet-erasure-dlq-not-empty`).**
+
+- Read the message: `aws sqs receive-message --queue-url <dlq-url> --profile ctech`.
+- Check the API logs for `erasure: message left for redelivery` with the same `message_id`.
+- Typical causes: `cpf_hmac` missing (account not upgraded), the IAM audit condition (AccessDenied on
+  `wallet_audit`), KYC endpoint down.
+- Fix, then redrive: `aws sqs start-message-move-task --source-arn <dlq-arn> --profile ctech`.
+- The purge is idempotent; redriving is always safe.
+
+**Blocked ack after the point of no return (request `stalled` in ctech-account).** A blocker appeared after
+LOCKED, typically a PIX deposit confirmed or a poker cash-out credited after the lock. The user cannot act
+(no tokens).
+
+- Support settles the money: PIX refund to the payer, or a payout to an account of the same CPF (the withdrawal
+  flow cannot be used: the user has no tokens), with the usual reconciliation records.
+- Confirm `GET /v1.0/internal/erasure/eligibility/<sub>` returns eligible.
+- Redrive from ctech-account admin.
+
+**Backup restore (PITR).** Restoring any wallet table can bring back erased PII. After a restore, list the requests
+purged after the restore point (ctech-account deletion-requests table, see its runbook) and re-publish `user.erase`
+for each. The purge reruns idempotently.
+
+**Balance blocker.** It covers `real` and `game` (both are the user's money). `game` returns to `real` from the wallet
+UI; `real` leaves by PIX to an account of the same CPF. The daily withdrawal limits apply (default R$ 1.000 and one
+withdrawal a day), so `detail.days_needed` can be more than one: the user must reach zero **before** requesting the
+deletion, because the account is locked from confirmation. Ask support to raise the wallet's `daily_withdraw_cap` /
+`daily_withdraw_count` (admin fields in DynamoDB) only after verifying the person.
+
+**Deposits during and after the saga.** A deposit paid while the user is LOCKED credits and shows up as a balance
+blocker. A deposit paid after the user is ERASED is refunded to the payer automatically (R18); check the refund
+in the logs (`deposit for an erased user; refunding payer`) and the `ALARM` on failure. A paid charge with no payer
+identity stays `pending` (quarantined) and blocks (`wallet.deposit_quarantined`): support attributes or refunds it.

@@ -44,6 +44,7 @@ Client first-party `wallet`, sem alterar redirects, audience ou outros clients
 |----------------------------------------------------------------------------------------|--------------------------------------------------------|
 | [`docs/specs/2026-07-10-wallet-design.md`](docs/specs/2026-07-10-wallet-design.md)     | Design aprovado — ledger, PIX, sandbox, escopos OAuth  |
 | [`docs/legal/wallet-terms-addendum.md`](docs/legal/wallet-terms-addendum.md)           | Aditivo aos Termos de Uso (rascunho)                   |
+| [`docs/plans/2026-10-07-account-deletion-participant.md`](docs/plans/2026-10-07-account-deletion-participant.md) | Exclusão de conta (LGPD): participante da saga |
 | [`CLAUDE.md`](CLAUDE.md)                                                                | Instruções para Claude Code                            |
 | [`AGENTS.md`](AGENTS.md)                                                                | Contexto para agentes de IA (idêntico ao `CLAUDE.md`)  |
 

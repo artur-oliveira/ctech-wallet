@@ -114,6 +114,7 @@ non‑empty `sid` (`scope.go:42`).
 | POST   | `/v1.0/internal/wallet/game/cashout`               | `internal:wallet:game-cashout` (`scope.go:24`)    | `internal.go:95`  | `{user_id, amount>0, table_ref, hold_ids[], idempotency_key, description?}` (`dto.go:97`; description required when `REQUIRE_DESCRIPTION=true`) | Fail-closed settlement: amount may not exceed the referenced held value. Wallet credit, ledger/idempotency guard, and every `held→settled` transition commit atomically. Multi-player winnings require the future zero-sum settlement protocol.                |
 | GET    | `/v1.0/internal/wallet/game/status/:user_id`       | `internal:wallet:game-status` (`scope.go:27`)     | `internal.go:111` | —                                                                           | Real‑money eligibility for a skill game: `{activated, self_excluded, limits_configured}`. Registered unconditionally so poker sees "not eligible" even while the flag is off. `responsible.go:236`.                                                            |
 | GET    | `/v1.0/internal/wallet/balance/:user_id`           | `internal:wallet:balance` (`scope.go:32`)         | `internal.go:121` | —                                                                           | Read‑only `{game_balance, sandbox_balance}` (centavos). `real` deliberately excluded — poker never touches real money directly. Never creates a wallet; a wallet that doesn't exist reports `0`. `wallet.go` `BalancesFor`.                                    |
+| GET    | `/v1.0/internal/erasure/eligibility/:sub`          | `internal:wallet:erasure-eligibility`             | `erasure.go`      | —                                                                           | Account-deletion pre-check, called by **ctech-account** with a token it mints (aud = wallet, M2M). Returns `{eligible, blockers[]}` (`erasure.Eligibility`). Codes: `wallet.balance_nonzero` (`detail.wallet`, `detail.amount_cents`; `action_url` = wallet home; for `real` also `daily_withdraw_cap_cents`, `daily_withdraw_count`, `days_needed`), `wallet.hold_open`, `wallet.deposit_pending`, `wallet.deposit_quarantined`, `wallet.withdrawal_pending`, `wallet.purchase_pending`. Unknown `sub` → eligible, nothing created. Never creates a wallet. |
 
 > **Scope naming note (divergence B2/B3).** The scope guarding
 > `/internal/pix/confirm-deposit` is `internal:wallet:confirm-deposit`
@@ -125,6 +126,14 @@ non‑empty `sid` (`scope.go:42`).
 > is the correct real‑wallet debit scope; the stale string
 > `internal:wallet:real:debit` survives only in
 > `docs/specs/2026-07-19-poker-game-holds-design.md`.
+
+> **Account deletion lock.** While ctech-account's deletion saga holds a user (grace, purging or erased), every
+> operation that opens new exposure for that `user_id` answers `409 /problems/account-erasure-pending`, on user
+> AND internal routes (`sandbox/credit|debit`, `real/debit`, `game/hold`, purchases, `charge`). Settlement is never
+> refused: `game/hold/:id/release`, `game/cashout`, and the `pix/confirm-*` routes. A deposit paid for an ERASED user
+> is refunded to the payer, never credited. User routes that change money or consent also re-check the JWT
+> revocation list fail-closed and answer `503 /problems/service-unavailable` when it is unreachable. Plan:
+> `docs/plans/2026-10-07-account-deletion-participant.md`.
 
 ---
 
