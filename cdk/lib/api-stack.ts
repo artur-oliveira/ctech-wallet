@@ -37,6 +37,8 @@ interface ApiStackProps extends cdk.StackProps {
    * see docs/specs/2026-07-13-pix-gateway-lambda-design.md.
    */
   pixGatewayFunctionName: string;
+  /** The wallet's account-deletion SQS queue (ErasureStack). */
+  erasureQueueUrl: string;
   // Session Manager. CI deploys over SSM RunCommand (/opt/app/deploy.sh), which
   // needs the agent running. On also means a shell back onto the box.
   enableSsmAgent?: boolean;
@@ -58,6 +60,7 @@ export class ApiStack extends cdk.Stack {
       deploymentsBucketName,
       logsBucketName,
       pixGatewayFunctionName,
+      erasureQueueUrl,
       enableSsmAgent = false,
       osFamily = 'alpine',
     } = props;
@@ -145,6 +148,7 @@ export class ApiStack extends cdk.Stack {
       `PORT=${APP_PORT}`,
       `GAMBLING_ENABLED=true`,
       `PIX_GATEWAY_FUNCTION_NAME=${pixGatewayFunctionName}`,
+      `ERASURE_QUEUE_URL=${erasureQueueUrl}`,
       `TRUSTED_PROXIES=127.0.0.1`,
       `ENV`,
     );
@@ -159,6 +163,8 @@ export class ApiStack extends cdk.Stack {
       `SERVICE_AUDIENCE=${wallet.appUrl}`,
       `WALLET_CLIENT_ID=${wallet.walletClientId}`,
       `WALLET_CLIENT_SECRET=${wallet.walletClientSecret}`,
+      `ERASURE_CLIENT_ID=${wallet.erasureClientId}`,
+      `ERASURE_CLIENT_SECRET=${wallet.erasureClientSecret}`,
     ];
     if (isAlpine) {
       const quoted = ssmEnvArgs.map((a) => `'${a.replace(/'/g, `'\\''`)}'`).join(' ');
@@ -173,8 +179,10 @@ export class ApiStack extends cdk.Stack {
     userData.addCommands(
       `cat > /opt/app/service-env.sh << 'SERVICEENV'`,
       `if [ -n "$VALKEY_BASE" ]; then VALKEY_URL="\${VALKEY_BASE%/}/${VALKEY_DB}"; else VALKEY_URL=""; fi`,
+      // ctech-account's JWT revocation list lives in DB 0 = the base URL itself.
+      `VALKEY_REVOCATION_URL="$VALKEY_BASE"`,
       `CORS_ALLOWED_ORIGINS="$SERVICE_AUDIENCE"`,
-      `export VALKEY_URL CORS_ALLOWED_ORIGINS`,
+      `export VALKEY_URL VALKEY_REVOCATION_URL CORS_ALLOWED_ORIGINS`,
       `SERVICEENV`,
       `chmod 0755 /opt/app/service-env.sh`,
     );

@@ -18,14 +18,23 @@ import (
 type handlers struct {
 	svc                *services.WalletService
 	userSvc            *services.UserService
+	erasureSvc         *services.ErasureService
 	requireDescription bool
 }
 
-// Register mounts all wallet routes under /v1.0.
-func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsclient.Clients, pixClient pix.PixClient, svc *services.WalletService, userSvc *services.UserService, wsRegistry ws.Registry) {
-	h := &handlers{svc: svc, userSvc: userSvc, requireDescription: cfg.RequireDescription}
+// Register mounts all wallet routes under /v1.0. revocation is the shared
+// Valkey DB 0 holding ctech-account's JWT revocation list (nil in route tests).
+func Register(app *fiber.App, c cache.Backend, revocation cache.Backend, cfg *config.Config, clients *awsclient.Clients, pixClient pix.PixClient, svc *services.WalletService, userSvc *services.UserService, erasureSvc *services.ErasureService, wsRegistry ws.Registry) {
+	h := &handlers{svc: svc, userSvc: userSvc, erasureSvc: erasureSvc, requireDescription: cfg.RequireDescription}
 	verifier := middleware.NewVerifier(cfg.CtechJWKSURL, cfg.ServiceAudience, cfg.CtechIssuerURL, c)
+	if revocation != nil {
+		// Fail-open on every route (D3); money routes re-check fail-closed via fresh.
+		verifier.WithRevocation(revocation)
+	}
 	auth := verifier.Middleware()
+	// fresh: user routes that change money or consent refuse a locked user's
+	// token even when Valkey is down (saga protocol §5).
+	fresh := middleware.RequireUnrevoked(revocation)
 	oauthresource.Register(app, cfg.ServiceAudience, cfg.CtechIssuerURL)
 
 	v1 := app.Group("/v1.0")
@@ -39,21 +48,21 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 	// Caller state + terms addendum acceptance.
 	a := v1.Group("/auth", auth, middleware.RequireUser)
 	a.Get("/me", middleware.RequireUserScope(middleware.ScopeWalletStateRead), h.getMe)
-	a.Post("/terms-addendum/accept", middleware.RequireUserScope(middleware.ScopeWalletTermsWrite), h.acceptTermsAddendum)
+	a.Post("/terms-addendum/accept", middleware.RequireUserScope(middleware.ScopeWalletTermsWrite), fresh, h.acceptTermsAddendum)
 
 	// User routes — Bearer user JWT.
 	w := v1.Group("/wallet", auth, middleware.RequireUser)
 	w.Get("/", middleware.RequireUserScope(middleware.ScopeWalletBalancesRead), h.getWallet)
-	w.Post("/deposits", middleware.RequireUserScope(middleware.ScopeWalletDepositsWrite), middleware.RequireKYC(middleware.KYCVerified), h.createDeposit)
-	w.Post("/withdrawals", middleware.RequireUserScope(middleware.ScopeWalletWithdrawalsWrite), middleware.RequireKYC(middleware.KYCVerified), middleware.RequireRecentMFA(middleware.StepUpMaxAge), h.createWithdrawal)
-	w.Post("/sandbox/purchase", middleware.RequireUserScope(middleware.ScopeWalletSandboxPurchasesWrite), h.purchaseSandbox)
+	w.Post("/deposits", middleware.RequireUserScope(middleware.ScopeWalletDepositsWrite), middleware.RequireKYC(middleware.KYCVerified), fresh, h.createDeposit)
+	w.Post("/withdrawals", middleware.RequireUserScope(middleware.ScopeWalletWithdrawalsWrite), middleware.RequireKYC(middleware.KYCVerified), middleware.RequireRecentMFA(middleware.StepUpMaxAge), fresh, h.createWithdrawal)
+	w.Post("/sandbox/purchase", middleware.RequireUserScope(middleware.ScopeWalletSandboxPurchasesWrite), fresh, h.purchaseSandbox)
 	// Direct PIX→sandbox-credits sale (plan §9.1/§9.3) — decoupled from the
 	// ring-fence entirely, no KYC gate, no feature flag: ships live. Plural
 	// path to avoid colliding with /sandbox/purchase above (see
 	// purchaseSandboxDirect's own comment).
-	w.Post("/sandbox/purchases", middleware.RequireUserScope(middleware.ScopeWalletSandboxPurchasesWrite), h.purchaseSandboxDirect)
+	w.Post("/sandbox/purchases", middleware.RequireUserScope(middleware.ScopeWalletSandboxPurchasesWrite), fresh, h.purchaseSandboxDirect)
 	w.Get("/sandbox/purchases", middleware.RequireUserScope(middleware.ScopeWalletSandboxPurchasesRead), h.listSandboxPurchases)
-	w.Post("/sandbox/purchases/:id/refund", middleware.RequireUserScope(middleware.ScopeWalletSandboxPurchasesWrite), h.refundSandboxPurchase)
+	w.Post("/sandbox/purchases/:id/refund", middleware.RequireUserScope(middleware.ScopeWalletSandboxPurchasesWrite), fresh, h.refundSandboxPurchase)
 	w.Get("/product-purchases", middleware.RequireUserScope(middleware.ScopeWalletProductPurchasesRead), h.listProductPurchases)
 	w.Get("/:type/ledger", middleware.RequireUserScope(middleware.ScopeWalletLedgerRead), h.getLedger)
 
@@ -63,17 +72,17 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 	// user's own money in a game wallet with no way to get it back. Reducing
 	// exposure is never something we block. A user who never activated simply gets
 	// 409 gambling-not-activated.
-	w.Post("/game/withdraw", middleware.RequireUserScope(middleware.ScopeWalletGameWrite), h.gameWithdraw)
+	w.Post("/game/withdraw", middleware.RequireUserScope(middleware.ScopeWalletGameWrite), fresh, h.gameWithdraw)
 
 	// Responsible gambling — ALWAYS registered, never behind the flag: self-
 	// excluding and lowering limits reduce exposure (same principle as
 	// game/withdraw above). The deposit door itself stays flag-gated.
-	w.Post("/gambling/self-exclude", middleware.RequireUserScope(middleware.ScopeWalletGamblingWrite), h.selfExclude)
-	w.Post("/gambling/self-exclude/revoke", middleware.RequireUserScope(middleware.ScopeWalletGamblingWrite), h.revokeSelfExclusion)
+	w.Post("/gambling/self-exclude", middleware.RequireUserScope(middleware.ScopeWalletGamblingWrite), fresh, h.selfExclude)
+	w.Post("/gambling/self-exclude/revoke", middleware.RequireUserScope(middleware.ScopeWalletGamblingWrite), fresh, h.revokeSelfExclusion)
 	w.Get("/gambling/limits", middleware.RequireUserScope(middleware.ScopeWalletGamblingRead), h.getGameLimits)
-	w.Put("/gambling/limits", middleware.RequireUserScope(middleware.ScopeWalletGamblingWrite), h.putGameLimits)
-	w.Delete("/gambling/limits/pending", middleware.RequireUserScope(middleware.ScopeWalletGamblingWrite), h.cancelPendingLimits)
-	w.Post("/gambling/activate", middleware.RequireUserScope(middleware.ScopeWalletGamblingWrite), middleware.RequireKYC(middleware.KYCBasic), h.activateGambling)
+	w.Put("/gambling/limits", middleware.RequireUserScope(middleware.ScopeWalletGamblingWrite), fresh, h.putGameLimits)
+	w.Delete("/gambling/limits/pending", middleware.RequireUserScope(middleware.ScopeWalletGamblingWrite), fresh, h.cancelPendingLimits)
+	w.Post("/gambling/activate", middleware.RequireUserScope(middleware.ScopeWalletGamblingWrite), middleware.RequireKYC(middleware.KYCBasic), fresh, h.activateGambling)
 
 	// Everything that moves money INTO the ring-fence is flag-gated: with
 	// GAMBLING_ENABLED off these routes do not exist (404). An absent route cannot
@@ -82,11 +91,14 @@ func Register(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsc
 	// wallet with no limits configured. /sandbox/purchase stays registered above
 	// because the service already refuses it for a non-activated user.
 	if cfg.GamblingEnabled {
-		w.Post("/game/deposit", middleware.RequireUserScope(middleware.ScopeWalletGameWrite), middleware.RequireKYC(middleware.KYCVerified), h.gameDeposit)
+		w.Post("/game/deposit", middleware.RequireUserScope(middleware.ScopeWalletGameWrite), middleware.RequireKYC(middleware.KYCVerified), fresh, h.gameDeposit)
 	}
 
 	// Internal routes — all M2M client_credentials + scope, gated after auth.
 	internal := v1.Group("/internal", auth)
+	// Account-deletion saga pre-check, called by ctech-account with a token it
+	// mints itself (docs/plans/2026-10-07-account-deletion-participant.md).
+	internal.Get("/erasure/eligibility/:sub", middleware.RequireScope(middleware.ScopeWalletErasureEligibility), h.erasureEligibility)
 	// pix-gateway's webhook Lambda, after it has already re-queried Inter.
 	internal.Post("/pix/confirm-deposit", middleware.RequireScope(middleware.ScopePixConfirmDeposit), h.confirmDeposit)
 	// Sibling route for the direct sandbox-purchase rail (plan §9.3) — same

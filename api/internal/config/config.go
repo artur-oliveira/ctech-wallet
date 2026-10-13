@@ -55,6 +55,22 @@ type Config struct {
 
 	// Cache / lock
 	RedisURL string `env:"VALKEY_URL"` // Redis/Valkey URL — optional; falls back to in-memory
+
+	// ValkeyRevocationURL is the SHARED Valkey base URL (DB 0), where
+	// ctech-account writes the JWT revocation list. VALKEY_URL is the wallet's
+	// own DB 2 and cannot see those keys (saga protocol §5).
+	ValkeyRevocationURL string `env:"VALKEY_REVOCATION_URL"`
+
+	// ErasureQueueURL is the wallet's account-deletion SQS queue. Set = the
+	// deletion lock, the purge consumer and the self-exclusion carry-over
+	// are ON; empty = OFF (local dev only).
+	ErasureQueueURL string `env:"ERASURE_QUEUE_URL"`
+
+	// ErasureClientID/Secret is the DEDICATED confidential client that acks
+	// purges to ctech-account (scope internal:account:erasure-ack only). It is
+	// deliberately not WALLET_CLIENT_ID, which holds internal:account:kyc.
+	ErasureClientID     string `env:"ERASURE_CLIENT_ID"`
+	ErasureClientSecret string `env:"ERASURE_CLIENT_SECRET"`
 }
 
 // load parses the shared process configuration and enforces requirements that
@@ -99,6 +115,18 @@ func Load() (*Config, error) {
 		// at a time") stops holding fleet-wide with no signal. Never boot into
 		// that state; mirror the SERVICE_AUDIENCE/CTECH_URL guards above.
 		return nil, fmt.Errorf("config: VALKEY_URL must be set in production so wallet locking is fleet-shared")
+	}
+	if cfg.ErasureQueueURL == "" && cfg.Env == "prod" {
+		// Fail closed: without it a user in deletion grace keeps moving money
+		// through M2M routes (decision D1), and no purge ever runs.
+		return nil, fmt.Errorf("config: ERASURE_QUEUE_URL must be set in production (account-deletion lock)")
+	}
+	if cfg.ValkeyRevocationURL == "" && cfg.Env == "prod" {
+		return nil, fmt.Errorf("config: VALKEY_REVOCATION_URL must be set in production (JWT revocation list, Valkey DB 0)")
+	}
+	if cfg.ErasureQueueURL != "" && (cfg.ErasureClientID == "" || cfg.ErasureClientSecret == "") {
+		// Without the ack client every purge would run and never be acked.
+		return nil, fmt.Errorf("config: ERASURE_CLIENT_ID and ERASURE_CLIENT_SECRET must be set when ERASURE_QUEUE_URL is")
 	}
 	return cfg, nil
 }

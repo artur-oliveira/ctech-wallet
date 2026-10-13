@@ -164,3 +164,14 @@ nome do pagador ou segredos. Falha ao publicar o alerta é logada e não derruba
 
 Qualquer novo provedor de custódia; limites editáveis via API; unificação server-side de compras; remoção das
 tabelas Asaas órfãs (PR separado, fase 2 do spec de remoção).
+
+## Exclusão de conta
+
+Plano: `docs/plans/2026-10-07-account-deletion-participant.md`.
+
+- O saque de encerramento não tem mínimo (`ValidateWithdrawalAmount(..., fullBalance=true, ...)`), mas os limites
+  diários valem; o saldo precisa chegar a zero **antes** do pedido, porque a carteira trava no início da carência.
+- `wallet.balance_nonzero` cobre `real` e `game`; `wallet.deposit_quarantined` cobre depósito pago sem confirmação.
+- Depósito pago para usuário apagado é estornado ao pagador (R18).
+- A custódia na conta Inter da CTech segue aceita pelo dono (2026-10-13); a exclusão não move dinheiro e nunca toca o
+  ledger.

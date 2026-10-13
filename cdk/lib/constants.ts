@@ -133,6 +133,10 @@ export const SSM_WALLET = (env: Environment) => ({
   internalBaseUrl: `/${SERVICE}/${env}/internal-base-url`,
   walletClientId: `/${SERVICE}/${env}/wallet-client-id`,
   walletClientSecret: `/${SERVICE}/${env}/wallet-client-secret`, // SecureString
+  // Dedicated confidential client that acks account-deletion purges
+  // (allowed_scopes ["internal:account:erasure-ack"] only). Seeded operationally.
+  erasureClientId: `/${SERVICE}/${env}/erasure-client-id`,
+  erasureClientSecret: `/${SERVICE}/${env}/erasure-client-secret`, // SecureString
   interClientId: `/${SERVICE}/${env}/inter/client-id`,
   interClientSecret: `/${SERVICE}/${env}/inter/client-secret`, // SecureString
   interWebhookSecret: `/${SERVICE}/${env}/inter/webhook-secret`, // SecureString
@@ -205,3 +209,22 @@ export const TABLE_AUDIT = 'wallet_audit';
  * a property of the system rather than a promise made by the code.
  */
 export const APPEND_ONLY_TABLES = [TABLE_LEDGER, TABLE_AUDIT] as const;
+
+// ── Account deletion (LGPD) participant ─────────────────────────────────────
+// docs/plans/2026-10-07-account-deletion-participant.md. Mirrors
+// api/internal/domain/wallet/erasure.go.
+
+/** This service's name in the saga: SNS filter value and ack `service`. */
+export const ERASURE_SERVICE_ID = 'wallet';
+/** Owned by ctech-account (its iam-stack publishes the topic ARN here). */
+export const SSM_ACCOUNT_ERASURE_TOPIC_ARN = (env: Environment) => `/ctech/${env}/account/erasure-topic-arn`;
+export const erasureQueueName = (env: Environment) => `${env}-${SERVICE}-erasure`;
+/** erasure.Store table: TABLE_PREFIX + "_wallet" + "_erasure_state". */
+export const TABLE_ERASURE_STATE = 'wallet_erasure_state';
+/** PII copied out at purge; the API role may only PutItem it. */
+export const TABLE_ERASURE_RETENTION = 'wallet_erasure_retention';
+/**
+ * The only attributes the purge may touch on wallet_audit (REMOVE ip,
+ * user_agent; keys for the condition). Mirrors api/internal/repositories/erasure.go.
+ */
+export const AUDIT_ANONYMIZABLE_ATTRIBUTES = ['pk', 'sk', 'ip', 'user_agent'];

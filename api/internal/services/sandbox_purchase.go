@@ -70,6 +70,9 @@ func sandboxPurchaseTxID(userID, idemKey, requestingClient string) string {
 // through to ConfirmSandboxPurchase's notify-back and to
 // RefundSandboxPurchase/GetSandboxPurchase's ownership check.
 func (s *WalletService) PurchaseSandboxDirect(ctx context.Context, userID, sku, idemKey, requestingClient, description string) (*wallet.SandboxPurchase, *pix.Charge, error) {
+	if err := checkErasure(ctx, s.erasureGate, userID); err != nil {
+		return nil, nil, err
+	}
 	skuDef, ok := wallet.SandboxSKUByID(sku)
 	if !ok {
 		return nil, nil, problem.BadRequest("sku inválido")
@@ -196,6 +199,9 @@ func (s *WalletService) ConfirmSandboxPurchase(ctx context.Context, txid string,
 // purchase opened by a DIFFERENT client (or opened directly by the user) is
 // reported as not-found rather than leaking whose it is.
 func (s *WalletService) RefundSandboxPurchase(ctx context.Context, userID, purchaseID, idemKey, requestingClient string) (*wallet.SandboxPurchase, error) {
+	if err := checkErasure(ctx, s.erasureGate, userID); err != nil {
+		return nil, err
+	}
 	p, err := s.sandboxPurchases.Get(ctx, purchaseID)
 	if err != nil {
 		return nil, err

@@ -20,7 +20,7 @@ require (
 	github.com/oklog/ulid/v2 v2.1.2
 	github.com/valyala/fasthttp v1.75.0
 	go.uber.org/fx v1.24.0
-	gopkg.aoctech.app/api-commons v1.16.0
+	gopkg.aoctech.app/api-commons v1.20.0
 	gopkg.aoctech.app/wallet/rpc-contract v0.0.0
 )
 
@@ -37,6 +37,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/internal/endpoint-discovery v1.13.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/signin v1.10.2 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sqs v1.52.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.38.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.43.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.51.2 // indirect

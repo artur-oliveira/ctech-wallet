@@ -106,16 +106,16 @@ func createTables(ctx context.Context) error {
 		},
 		{
 			TableName:              aws.String(table(wallet.TablePixDeposits)),
-			AttributeDefinitions:   []dtypes.AttributeDefinition{s("pk"), s("status")},
+			AttributeDefinitions:   []dtypes.AttributeDefinition{s("pk"), s("status"), s("user_id"), s("created_at")},
 			KeySchema:              []dtypes.KeySchemaElement{hashKey("pk")},
-			GlobalSecondaryIndexes: []dtypes.GlobalSecondaryIndex{gsi(wallet.GSIStatus, "status")},
+			GlobalSecondaryIndexes: []dtypes.GlobalSecondaryIndex{gsi(wallet.GSIStatus, "status"), gsiWithSort(wallet.GSIUser, "user_id", "created_at")},
 			BillingMode:            dtypes.BillingModePayPerRequest,
 		},
 		{
 			TableName:              aws.String(table(wallet.TableWithdrawals)),
-			AttributeDefinitions:   []dtypes.AttributeDefinition{s("pk"), s("status")},
+			AttributeDefinitions:   []dtypes.AttributeDefinition{s("pk"), s("status"), s("user_id"), s("created_at")},
 			KeySchema:              []dtypes.KeySchemaElement{hashKey("pk")},
-			GlobalSecondaryIndexes: []dtypes.GlobalSecondaryIndex{gsi(wallet.GSIStatus, "status")},
+			GlobalSecondaryIndexes: []dtypes.GlobalSecondaryIndex{gsi(wallet.GSIStatus, "status"), gsiWithSort(wallet.GSIUser, "user_id", "created_at")},
 			BillingMode:            dtypes.BillingModePayPerRequest,
 		},
 		{
@@ -132,10 +132,16 @@ func createTables(ctx context.Context) error {
 		},
 		{
 			TableName:              aws.String(table(wallet.TableHolds)),
-			AttributeDefinitions:   []dtypes.AttributeDefinition{s("pk"), s("status")},
+			AttributeDefinitions:   []dtypes.AttributeDefinition{s("pk"), s("status"), s("user_id"), s("created_at")},
 			KeySchema:              []dtypes.KeySchemaElement{hashKey("pk")},
-			GlobalSecondaryIndexes: []dtypes.GlobalSecondaryIndex{gsi(wallet.GSIHoldStatus, "status")},
+			GlobalSecondaryIndexes: []dtypes.GlobalSecondaryIndex{gsi(wallet.GSIHoldStatus, "status"), gsiWithSort(wallet.GSIUser, "user_id", "created_at")},
 			BillingMode:            dtypes.BillingModePayPerRequest,
+		},
+		{
+			TableName:            aws.String(table(wallet.TableErasureRetention)),
+			AttributeDefinitions: []dtypes.AttributeDefinition{s("pk"), s("sk")},
+			KeySchema:            []dtypes.KeySchemaElement{hashKey("pk"), rangeKey("sk")},
+			BillingMode:          dtypes.BillingModePayPerRequest,
 		},
 		{
 			TableName: aws.String(table(wallet.TableSandboxPurchases)),
@@ -179,6 +185,7 @@ func dropTables(ctx context.Context) error {
 		wallet.TableWallets, wallet.TableLedger, wallet.TableIdempotency,
 		wallet.TablePixDeposits, wallet.TableWithdrawals, wallet.TableUsers,
 		wallet.TableAudit, wallet.TableHolds, wallet.TableSandboxPurchases, wallet.TableProductPurchases,
+		wallet.TableErasureRetention,
 	} {
 		_, _ = db.DeleteTable(ctx, &dynamodb.DeleteTableInput{TableName: aws.String(table(t))})
 	}

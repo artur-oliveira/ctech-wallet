@@ -59,6 +59,9 @@ func (s *WalletService) ProductPurchaseHistory(ctx context.Context, userID strin
 // (docs/specs/2026-08-12-product-purchase-skus.md). Mirrors
 // PurchaseSandboxDirect's idempotent-reservation-before-charge shape exactly.
 func (s *WalletService) PurchaseProductDirect(ctx context.Context, userID, sku, idemKey, requestingClient, description string) (*wallet.ProductPurchase, *pix.Charge, error) {
+	if err := checkErasure(ctx, s.erasureGate, userID); err != nil {
+		return nil, nil, err
+	}
 	skuDef, ok := wallet.ProductSKUByID(sku)
 	if !ok {
 		return nil, nil, problem.BadRequest("sku inválido")
@@ -157,6 +160,9 @@ func (s *WalletService) ConfirmProductPurchase(ctx context.Context, txid string,
 // purchase opened by a different client (or the user-direct route) is
 // reported as not-found, never leaked.
 func (s *WalletService) RefundProductPurchase(ctx context.Context, userID, purchaseID, idemKey, requestingClient string) (*wallet.ProductPurchase, error) {
+	if err := checkErasure(ctx, s.erasureGate, userID); err != nil {
+		return nil, err
+	}
 	p, err := s.productPurchases.Get(ctx, purchaseID)
 	if err != nil {
 		return nil, err

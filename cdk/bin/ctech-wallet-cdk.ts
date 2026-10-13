@@ -2,6 +2,7 @@
 import * as cdk from 'aws-cdk-lib';
 
 import {DynamoDBStack} from '../lib/dynamodb-stack';
+import {ErasureStack} from '../lib/erasure-stack';
 import {IAMStack} from '../lib/iam-stack';
 import {ApiStack} from '../lib/api-stack';
 import {ReconcileStack} from '../lib/reconcile-stack';
@@ -97,6 +98,13 @@ const pixGatewayStack = new PixGatewayStack(app, id('PixGateway'), {
   description: `CTech Wallet pix-gateway (Inter integration Lambdas) - ${ENVIRONMENT}`,
 });
 
+// Account-deletion saga participant queue (subscribes to ctech-account's topic).
+const erasureStack = new ErasureStack(app, id('Erasure'), {
+  env,
+  environment: ENVIRONMENT,
+  description: `CTech Wallet account-deletion participant queue - ${ENVIRONMENT}`,
+});
+
 const iamStack = new IAMStack(app, id('IAM'), {
   env,
   environment: ENVIRONMENT,
@@ -104,10 +112,13 @@ const iamStack = new IAMStack(app, id('IAM'), {
   logsBucketArn: `arn:aws:s3:::${CTECH_LOGS_BUCKET}`,
   dynamoDBTables: dynamodbStack.tables,
   pixGatewayOutboundFunctionArn: pixGatewayStack.outboundFunctionArn,
+  erasureQueueArn: erasureStack.queueArn,
+  retentionTableArn: dynamodbStack.retentionTable.tableArn,
   description: `CTech Wallet IAM Roles - ${ENVIRONMENT}`,
 });
 iamStack.addStackDependency(dynamodbStack);
 iamStack.addStackDependency(pixGatewayStack);
+iamStack.addStackDependency(erasureStack);
 
 // =====================
 // API (EC2 + ASG, shared ALB from ctech-cdk)
@@ -120,6 +131,7 @@ const apiStack = new ApiStack(app, id('API'), {
   deploymentsBucketName: CTECH_DEPLOYMENTS_BUCKET,
   logsBucketName: CTECH_LOGS_BUCKET,
   pixGatewayFunctionName: pixGatewayStack.outboundFunctionName,
+  erasureQueueUrl: erasureStack.queueUrl,
   enableSsmAgent: ENABLE_SSM_AGENT,
   // Alpine/ARM is the default (same rollout as ctech-account); OS_FAMILY=al2023
   // is the one-line rollback if this ever needs to revert.
@@ -131,6 +143,7 @@ const apiStack = new ApiStack(app, id('API'), {
 // the launch template.
 apiStack.addStackDependency(iamStack);
 apiStack.addStackDependency(pixGatewayStack);
+apiStack.addStackDependency(erasureStack);
 
 // =====================
 // Withdrawal reconciliation (Lambda + EventBridge Scheduler)

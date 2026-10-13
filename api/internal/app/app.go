@@ -7,14 +7,19 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"strings"
 	"time"
 
 	"gopkg.aoctech.app/api-commons/cache"
+	"gopkg.aoctech.app/api-commons/erasure"
+	"gopkg.aoctech.app/api-commons/oauth2client"
 	fiberobs "gopkg.aoctech.app/api-commons/observability/fiber"
 	"gopkg.aoctech.app/api-commons/ws"
 	apiv1 "gopkg.aoctech.app/wallet/api/internal/api/v1"
 	"gopkg.aoctech.app/wallet/api/internal/awsclient"
 	"gopkg.aoctech.app/wallet/api/internal/config"
+	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
 	"gopkg.aoctech.app/wallet/api/internal/lock"
 	"gopkg.aoctech.app/wallet/api/internal/pix"
@@ -26,6 +31,7 @@ import (
 	awscfg "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/cors"
 	"github.com/gofiber/fiber/v3/middleware/logger"
@@ -40,6 +46,9 @@ var Module = fx.Options(
 		newAWSClients,
 		newDynamoDBClient,
 		newCacheBackend,
+		newRevocationCache,
+		newSQSClient,
+		newErasureStore,
 		newLocker,
 		newWsRegistry,
 		newLambdaClient,
@@ -51,12 +60,15 @@ var Module = fx.Options(
 		repositories.NewAuditRepository,
 		repositories.NewSandboxPurchaseRepository,
 		repositories.NewProductPurchaseRepository,
+		repositories.NewErasureRepository,
 		newM2MClients,
 		newWalletService,
 		newUserService,
+		newErasureService,
 		newFiberApp,
 	),
 	fx.Invoke(registerRoutes),
+	fx.Invoke(startErasureConsumer),
 	fx.Invoke(startServer),
 )
 
@@ -161,11 +173,15 @@ func newKYCClient(cfg *config.Config) services.KYCClient {
 	return kycclient.New(cfg)
 }
 
-func newWalletService(repo *repositories.WalletRepository, users *repositories.UserRepository, audit *repositories.AuditRepository, l *lock.Locker, p pix.PixClient, k services.KYCClient, sandboxPurchases *repositories.SandboxPurchaseRepository, productPurchases *repositories.ProductPurchaseRepository, m2mClients map[string]services.M2MClient) *services.WalletService {
+func newWalletService(repo *repositories.WalletRepository, users *repositories.UserRepository, audit *repositories.AuditRepository, l *lock.Locker, p pix.PixClient, k services.KYCClient, sandboxPurchases *repositories.SandboxPurchaseRepository, productPurchases *repositories.ProductPurchaseRepository, m2mClients map[string]services.M2MClient, store *erasure.Store, er *repositories.ErasureRepository) *services.WalletService {
 	svc := services.NewWalletService(repo, users, audit, l, p, k)
 	svc.SetSandboxPurchases(sandboxPurchases)
 	svc.SetProductPurchases(productPurchases)
 	svc.SetM2MClients(m2mClients)
+	if store != nil { // never pass a nil *Store through the interface
+		svc.SetErasure(store, er)
+		svc.SetErased(services.StoreErased(store))
+	}
 	return svc
 }
 
@@ -190,8 +206,12 @@ func newM2MClients(cfg *config.Config, clients *awsclient.Clients) (map[string]s
 	return m, nil
 }
 
-func newUserService(repo *repositories.UserRepository, audit *repositories.AuditRepository) *services.UserService {
-	return services.NewUserService(repo, audit)
+func newUserService(repo *repositories.UserRepository, audit *repositories.AuditRepository, store *erasure.Store) *services.UserService {
+	svc := services.NewUserService(repo, audit)
+	if store != nil {
+		svc.SetErasureGate(store)
+	}
+	return svc
 }
 
 func newFiberApp(cfg *config.Config) *fiber.App {
@@ -233,9 +253,9 @@ func newFiberApp(cfg *config.Config) *fiber.App {
 	return app
 }
 
-func registerRoutes(app *fiber.App, c cache.Backend, cfg *config.Config, clients *awsclient.Clients, pixClient pix.PixClient, svc *services.WalletService, userSvc *services.UserService, wsRegistry ws.Registry) {
+func registerRoutes(app *fiber.App, c cache.Backend, rev RevocationCache, cfg *config.Config, clients *awsclient.Clients, pixClient pix.PixClient, svc *services.WalletService, userSvc *services.UserService, erasureSvc *services.ErasureService, wsRegistry ws.Registry) {
 	svc.SetBroadcaster(wsRegistry)
-	apiv1.Register(app, c, cfg, clients, pixClient, svc, userSvc, wsRegistry)
+	apiv1.Register(app, c, rev, cfg, clients, pixClient, svc, userSvc, erasureSvc, wsRegistry)
 }
 
 func startServer(lc fx.Lifecycle, app *fiber.App, cfg *config.Config) {
@@ -270,4 +290,78 @@ func errorHandler(c fiber.Ctx, err error) error {
 	// caller — that is an internal-info leak. Genuine, client-safe failures
 	// are returned as *problem.Problem from the handlers and never land here.
 	return problem.InternalServer("erro interno; tente novamente").WithCause(err).Send(c)
+}
+
+// RevocationCache is the shared Valkey DB 0 where ctech-account writes the JWT
+// revocation list. A distinct type so fx never confuses it with the wallet's
+// own cache.Backend (DB 2).
+type RevocationCache interface{ cache.Backend }
+
+func newRevocationCache(lc fx.Lifecycle, cfg *config.Config) (RevocationCache, error) {
+	if cfg.ValkeyRevocationURL == "" {
+		slog.Warn("VALKEY_REVOCATION_URL not set — no token is ever seen as revoked (dev only)")
+		return cache.NewMemoryBackend(1), nil
+	}
+	rb, err := cache.NewRedisBackend(cfg.ValkeyRevocationURL)
+	if err != nil {
+		return nil, fmt.Errorf("revocation valkey: %w", err)
+	}
+	lc.Append(fx.Hook{OnStop: func(context.Context) error { rb.Client().Close(); return nil }})
+	return rb, nil
+}
+
+func newSQSClient(cfg *config.Config) (*sqs.Client, error) {
+	awsCfg, err := awscfg.LoadDefaultConfig(context.Background(), awscfg.WithRegion(cfg.AWSRegion))
+	if err != nil {
+		return nil, fmt.Errorf("aws config: %w", err)
+	}
+	return sqs.NewFromConfig(awsCfg), nil
+}
+
+// newErasureStore is nil when the deletion feature is off (ERASURE_QUEUE_URL
+// unset): local dev may lack the table, and a store error fails every money
+// operation closed.
+func newErasureStore(cfg *config.Config, db *dynamodb.Client) *erasure.Store {
+	if cfg.ErasureQueueURL == "" {
+		return nil
+	}
+	return erasure.NewStore(db, cfg.TablePrefix+"_"+wallet.ErasureStateTableSegment, wallet.ErasureTombstoneTTL)
+}
+
+func newErasureService(repo *repositories.WalletRepository, users *repositories.UserRepository, sp *repositories.SandboxPurchaseRepository, pp *repositories.ProductPurchaseRepository, er *repositories.ErasureRepository, k services.KYCClient, charges pix.PixClient, cfg *config.Config) *services.ErasureService {
+	return services.NewErasureService(repo, users, sp, pp, er, k, cfg.ServiceAudience).WithCharges(charges)
+}
+
+// startErasureConsumer runs the account-deletion SQS consumer for the process
+// lifetime. Every API instance runs one: the consumer takes one message per
+// receive and erasure.Store uses optimistic concurrency, so replicas are safe.
+func startErasureConsumer(lc fx.Lifecycle, cfg *config.Config, sqsClient *sqs.Client, store *erasure.Store, svc *services.ErasureService) {
+	if store == nil {
+		slog.Warn("ERASURE_QUEUE_URL not set — account-deletion lock and purge are OFF (dev only)")
+		return
+	}
+	httpClient := &http.Client{Timeout: 10 * time.Second}
+	base := strings.TrimRight(cfg.CtechURL, "/")
+	acks := erasure.NewAckClient(httpClient, base+wallet.PathAccountErasureAck,
+		oauth2client.New(httpClient, nil, base+kycclient.PathToken, cfg.ErasureClientID, cfg.ErasureClientSecret, wallet.ScopeAccountErasureAck))
+	consumer := erasure.NewConsumer(sqsClient, cfg.ErasureQueueURL, wallet.ErasureServiceID, store, svc.Purge, acks)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	lc.Append(fx.Hook{
+		OnStart: func(context.Context) error {
+			go func() {
+				defer close(done)
+				_ = consumer.Run(ctx)
+			}()
+			return nil
+		},
+		OnStop: func(stopCtx context.Context) error {
+			cancel()
+			select {
+			case <-done:
+			case <-stopCtx.Done():
+			}
+			return nil
+		},
+	})
 }

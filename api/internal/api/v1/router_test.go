@@ -29,7 +29,7 @@ func routerApp(t *testing.T, gamblingEnabled bool) *fiber.App {
 		TablePrefix:     "test",
 		GamblingEnabled: gamblingEnabled,
 	}
-	Register(app, cache.NewMemoryBackend(testCacheSize), cfg, nil, nil, nil, nil, nil)
+	Register(app, cache.NewMemoryBackend(testCacheSize), nil, cfg, nil, nil, nil, nil, nil, nil)
 	return app
 }
 
@@ -135,4 +135,16 @@ func TestRailRoutesRegistered(t *testing.T) {
 			}
 		}
 	}
+}
+
+// ctech-account calls {participant url}/internal/erasure/eligibility/{sub}
+// with url = https://wallet-api.aoctech.app/v1.0 (account-deletion phase 3).
+func TestErasureEligibilityRouteIsRegisteredAtTheContractPath(t *testing.T) {
+	const path = "/v1.0/internal/erasure/eligibility/:sub"
+	for _, r := range routerApp(t, false).GetRoutes() {
+		if r.Method == http.MethodGet && r.Path == path {
+			return
+		}
+	}
+	t.Fatalf("%s is missing", path)
 }

@@ -194,6 +194,18 @@ passwords, real customer data, or real CPFs.
   `last_mfa_at`. A plain re-login (no `max_age`) would silently reuse the SSO session and never re-prove MFA. The
   frontend calls `@aoctech/auth-client`'s `startOAuthFlow(returnTo, {maxAge: 0})` (`startStepUpFlow`).
 
+- **Account deletion (LGPD):** the wallet is a saga participant
+  (`docs/plans/2026-10-07-account-deletion-participant.md`).
+  - It serves `GET /v1.0/internal/erasure/eligibility/:sub` (scope `internal:wallet:erasure-eligibility`, token
+    minted by account).
+  - It consumes `{env}-ctech-wallet-erasure` (SNS filter `services=wallet`) and acks with `internal:account:erasure-ack`
+    through a **dedicated** confidential client (`ERASURE_CLIENT_ID`), never the KYC client.
+  - It reads the JWT revocation list from Valkey DB 0 (`VALKEY_REVOCATION_URL`).
+  - From the start of grace, every operation that opens new exposure for the user is refused (`checkErasure`);
+    settlement is never refused.
+  - Retained PII goes to the write-only `wallet_erasure_retention` table. The ledger is never touched.
+  - `cpf_hmac` comes from account's internal KYC response and keys carried self-exclusions.
+
 `ctech-account` DOES require code changes for this: `internal/handler/authorize.go` honors `max_age`, and
 `ui/src/hooks/use-redirect-if-authenticated.ts` must not bypass the login form when the `continue` target itself
 requests `max_age=0`. Beyond that, only operational seeding is needed.

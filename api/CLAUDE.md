@@ -114,6 +114,11 @@ them inside route handlers.
 - One op per wallet at a time via the Valkey lock; cross-wallet ops go through `lock.AcquireOrdered`, which sorts
   wallet IDs (`real` → `game` → `sandbox`) so the order is total and deadlock-free.
 
+- **Account-deletion lock:** every NEW service method that opens exposure for a user (debit, credit, hold, charge,
+  purchase, deposit, consent or limit write) starts with `checkErasure(ctx, s.erasureGate, userID)`, and its test joins
+  `TestErasureGateRefusesEveryNewExposure`. Settlement of what already exists (confirm, release, cash-out, sweeps)
+  never calls it: that money cannot be refused, so it surfaces as an erasure blocker instead.
+
 ### The gambling ring-fence (CRITICAL)
 
 - `game` holds **real money**, ring-fenced for games. `sandbox` is virtual and is a **sink** — nothing converts it

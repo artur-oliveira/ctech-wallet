@@ -21,6 +21,7 @@ function synth(): Template {
     deploymentsBucketName: 'prod-ctech-deployments',
     logsBucketName: 'prod-ctech-application-logs',
     pixGatewayFunctionName: 'prod-ctech-wallet-pix-gateway-outbound',
+    erasureQueueUrl: 'https://sqs.us-east-1.amazonaws.com/868899309401/prod-ctech-wallet-erasure',
   });
   cachedTemplate = Template.fromStack(stack);
   return cachedTemplate;
@@ -66,4 +67,14 @@ test('the API uses only nano On-Demand capacity', () => {
     LaunchTemplateData: {InstanceType: 't4g.nano'},
   });
   assert.doesNotMatch(JSON.stringify(synth().toJSON()), /MixedInstancesPolicy|t4g.micro/);
+});
+
+test('user data wires the erasure queue and the revocation Valkey (DB 0 base URL)', () => {
+  const text = userDataText();
+  assert.match(text, /ERASURE_QUEUE_URL=https:\/\/sqs\./);
+  assert.match(text, /VALKEY_REVOCATION_URL="\$VALKEY_BASE"/);
+  assert.match(text, /export VALKEY_URL VALKEY_REVOCATION_URL CORS_ALLOWED_ORIGINS/);
+  // The dedicated ack client comes from SSM at service start, never inlined.
+  assert.match(text, /'ERASURE_CLIENT_SECRET=\/ctech-wallet\/prod\/erasure-client-secret'/);
+  assert.match(text, /'ERASURE_CLIENT_ID=\/ctech-wallet\/prod\/erasure-client-id'/);
 });

@@ -10,6 +10,9 @@ const (
 	EventGameLimitsChanged        = "game_limits_changed"
 	EventGamblingAddendumAccepted = "gambling_addendum_accepted"
 	EventTermsAddendumAccepted    = "terms_addendum_accepted"
+	// EventSelfExclusionCarried: a self-exclusion kept from an erased account
+	// (same CPF) was re-applied when this account tried to activate gambling.
+	EventSelfExclusionCarried = "self_exclusion_carried"
 )
 
 // AuditEvent is an immutable record of a non-money action. Like LedgerEntry it is

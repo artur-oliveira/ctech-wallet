@@ -23,8 +23,9 @@ type UserRepo interface {
 
 // UserService owns the consent-acceptance state (terms + gambling addenda).
 type UserService struct {
-	repo  UserRepo
-	audit Auditor
+	repo        UserRepo
+	audit       Auditor
+	erasureGate ErasureGate // optional; see SetErasureGate
 }
 
 func NewUserService(repo UserRepo, audit Auditor) *UserService {
@@ -58,6 +59,9 @@ func (s *UserService) Me(ctx context.Context, userID string) (*Me, error) {
 
 // AcceptTermsAddendum records the caller's acceptance of the current version.
 func (s *UserService) AcceptTermsAddendum(ctx context.Context, userID string) error {
+	if err := checkErasure(ctx, s.erasureGate, userID); err != nil {
+		return err
+	}
 	return s.repo.AcceptTerms(ctx, userID)
 }
 
@@ -65,6 +69,9 @@ func (s *UserService) AcceptTermsAddendum(ctx context.Context, userID string) er
 // responsible-gambling addendum — the consent ActivateGambling gates on. The
 // acceptance is audited: consent must be provable after the fact.
 func (s *UserService) AcceptGamblingAddendum(ctx context.Context, userID, ip, userAgent string) error {
+	if err := checkErasure(ctx, s.erasureGate, userID); err != nil {
+		return err
+	}
 	if err := s.repo.AcceptGamblingAddendum(ctx, userID); err != nil {
 		return err
 	}

@@ -34,6 +34,9 @@ func (s *WalletService) requireNotExcluded(ctx context.Context, userID string) (
 // SelfExclude records a self-exclusion. Extension-only: a new exclusion may
 // never end earlier than the one it replaces, and nothing extends indefinite.
 func (s *WalletService) SelfExclude(ctx context.Context, userID, period, ip, userAgent string) (*wallet.SelfExclusion, error) {
+	if err := checkErasure(ctx, s.erasureGate, userID); err != nil {
+		return nil, err
+	}
 	now := time.Now()
 	until, err := wallet.ExclusionUntil(period, now)
 	if err != nil {
@@ -71,6 +74,9 @@ func (s *WalletService) SelfExclude(ctx context.Context, userID, period, ip, use
 // RevokeSelfExclusion lifts an indefinite exclusion after its 90-day floor.
 // Fixed periods are not revocable — they expire on their own.
 func (s *WalletService) RevokeSelfExclusion(ctx context.Context, userID, ip, userAgent string) error {
+	if err := checkErasure(ctx, s.erasureGate, userID); err != nil {
+		return err
+	}
 	now := time.Now()
 	u, err := s.users.Get(ctx, userID)
 	if err != nil {
@@ -100,6 +106,9 @@ func (s *WalletService) RevokeSelfExclusion(ctx context.Context, userID, ip, use
 // (7 days; 14 when the monthly limit grows). One pending set at a time — a new
 // call replaces it wholesale and re-derives the cooldown.
 func (s *WalletService) SetGameLimits(ctx context.Context, userID string, daily, weekly, monthly int64, ip, userAgent string) (*wallet.GameLimits, error) {
+	if err := checkErasure(ctx, s.erasureGate, userID); err != nil {
+		return nil, err
+	}
 	if err := wallet.ValidateLimits(daily, weekly, monthly); err != nil {
 		return nil, problem.BadRequest(err.Error())
 	}
@@ -147,6 +156,9 @@ func (s *WalletService) SetGameLimits(ctx context.Context, userID string, daily,
 // CancelPendingLimits drops a scheduled increase. Always allowed — cancelling
 // an increase keeps the stricter current limits.
 func (s *WalletService) CancelPendingLimits(ctx context.Context, userID string) (*wallet.GameLimits, error) {
+	if err := checkErasure(ctx, s.erasureGate, userID); err != nil {
+		return nil, err
+	}
 	u, err := s.users.Get(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -247,4 +259,35 @@ func (s *WalletService) GameEligibilityFor(ctx context.Context, userID string) (
 		SelfExcluded:     u.SelfExcluded(time.Now()),
 		LimitsConfigured: u.LimitsConfigured(),
 	}, nil
+}
+
+// applyCarriedExclusion re-applies a self-exclusion kept from an erased
+// account of the same CPF (D13) and refuses activation while it lasts. It is
+// a no-op when the deletion feature is off (no store) or account serves no
+// cpf_hmac. A KYC read error fails activation: activation happens once per
+// user, and letting it through unchecked is the one outcome D13 forbids.
+func (s *WalletService) applyCarriedExclusion(ctx context.Context, userID string) error {
+	if s.carried == nil {
+		return nil
+	}
+	k, err := s.kyc.Get(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if k == nil || k.CPFHMAC == "" {
+		return nil
+	}
+	ex, err := s.carried.GetCarriedSelfExclusion(ctx, k.CPFHMAC, time.Now())
+	if err != nil || ex == nil {
+		return err
+	}
+	if err := s.users.SetSelfExclusion(ctx, userID, ex); err != nil {
+		return err
+	}
+	if err := s.audit.Append(ctx, &wallet.AuditEvent{
+		UserID: userID, EventType: wallet.EventSelfExclusionCarried, Actor: wallet.ActorErasureCarryOver, After: ex.Period,
+	}); err != nil {
+		return err
+	}
+	return problem.SelfExcluded(ex.Until)
 }

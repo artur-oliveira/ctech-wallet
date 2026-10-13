@@ -20,7 +20,8 @@ import (
 )
 
 const (
-	pathToken  = "/v1.0/token"
+	// PathToken is ctech-account's OAuth token endpoint, appended to CTECH_URL.
+	PathToken  = "/v1.0/token"
 	pathKYCGet = "/v1.0/internal/kyc/%s"
 	scopeKYC   = "internal:account:kyc"
 )
@@ -40,8 +41,12 @@ type KYCAddress struct {
 
 // KYC is the unmasked identity record account returns to internal callers.
 type KYC struct {
-	Level     string     `json:"level"`
-	CPF       string     `json:"cpf"`
+	Level string `json:"level"`
+	CPF   string `json:"cpf"`
+	// CPFHMAC is ctech-account's CPF keyed hash (hex HMAC-SHA256, the same
+	// value as its deletion tombstone). Used only as the key of a carried
+	// self-exclusion (D13); never logged. Empty until ctech-account serves it.
+	CPFHMAC   string     `json:"cpf_hmac"`
 	LegalName string     `json:"legal_name"`
 	BirthDate string     `json:"birth_date"`
 	Email     string     `json:"email"`
@@ -63,7 +68,7 @@ func New(cfg *config.Config) *Client {
 	return &Client{
 		base:   base,
 		http:   httpClient,
-		tokens: oauth2client.New(httpClient, nil, base+pathToken, cfg.WalletClientID, cfg.WalletClientSecret, scopeKYC),
+		tokens: oauth2client.New(httpClient, nil, base+PathToken, cfg.WalletClientID, cfg.WalletClientSecret, scopeKYC),
 	}
 }
 

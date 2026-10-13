@@ -3,7 +3,7 @@ import {RemovalPolicy} from 'aws-cdk-lib';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import {Billing} from 'aws-cdk-lib/aws-dynamodb';
 import {Construct} from 'constructs';
-import {TABLE_HOLDS, TABLE_PIX_DEPOSITS} from './constants';
+import {TABLE_ERASURE_RETENTION, TABLE_ERASURE_STATE, TABLE_HOLDS, TABLE_PIX_DEPOSITS} from './constants';
 import {Environment} from './types';
 
 /**
@@ -26,8 +26,12 @@ export type TableName = (
   'wallet_users' |
   typeof TABLE_HOLDS |
   'wallet_sandbox_purchases' |
-  'wallet_product_purchases'
+  'wallet_product_purchases' |
+  typeof TABLE_ERASURE_STATE
   );
+
+/** Restricted tables: never in `tables`, so they get no generic IAM grants. */
+type RestrictedTableName = typeof TABLE_ERASURE_RETENTION;
 
 /** Retired tables: kept provisioned (RETAIN) for data preservation only. */
 type RetiredTableName =
@@ -72,10 +76,13 @@ interface TableOptions {
   ttl?: boolean;
   /** Retired: force RETAIN and keep it out of `tables` (so it gets no IAM access). */
   retired?: boolean;
+  /** Restricted: kept out of `tables` (no generic grants); IAMStack grants it explicitly. Always RETAIN. */
+  restricted?: boolean;
 }
 
 export class DynamoDBStack extends cdk.Stack {
   public readonly tables: Map<TableName, dynamodb.TableV2>;
+  public readonly retentionTable: dynamodb.TableV2;
 
   constructor(scope: Construct, id: string, props: DynamoDBStackProps) {
     super(scope, id, props);
@@ -92,7 +99,7 @@ export class DynamoDBStack extends cdk.Stack {
     const pointInTimeRecoverySpecification =
       environment === 'prod' ? {pointInTimeRecoveryEnabled: true} : undefined;
 
-    const table = (name: TableName | RetiredTableName, opts: TableOptions = {}): dynamodb.TableV2 => {
+    const table = (name: TableName | RetiredTableName | RestrictedTableName, opts: TableOptions = {}): dynamodb.TableV2 => {
       const tableName = `${tablePrefix}_${name}`;
       const t = new dynamodb.TableV2(this, tableName, {
         tableName,
@@ -103,11 +110,11 @@ export class DynamoDBStack extends cdk.Stack {
           maxReadRequestUnits: 1000,
           maxWriteRequestUnits: 1000,
         }),
-        removalPolicy: opts.retired ? RemovalPolicy.RETAIN : removalPolicy,
+        removalPolicy: opts.retired || opts.restricted ? RemovalPolicy.RETAIN : removalPolicy,
         pointInTimeRecoverySpecification,
         encryption: dynamodb.TableEncryptionV2.awsManagedKey(),
       });
-      if (!opts.retired) this.tables.set(name as TableName, t);
+      if (!opts.retired && !opts.restricted) this.tables.set(name as TableName, t);
       // The IAM/Reconcile stacks imported this ARN until now; keep the export
       // until they have deployed without it, or this stack's update fails with
       // "export in use".
@@ -143,19 +150,22 @@ export class DynamoDBStack extends cdk.Stack {
     // closes charges but never deletes their idempotency/audit record.
     const depositsTable = table(TABLE_PIX_DEPOSITS);
     gsi(depositsTable, GSI_STATUS, ATTR_STATUS);
+    gsi(depositsTable, GSI_USER, ATTR_USER_ID, ATTR_CREATED_AT); // a user's deposits (account-deletion purge, R21)
 
     // ── wallet_withdrawals: payouts; gsi_status drives the reconciliation job ──
     const withdrawalsTable = table('wallet_withdrawals');
     gsi(withdrawalsTable, GSI_STATUS, ATTR_STATUS);
+    gsi(withdrawalsTable, GSI_USER, ATTR_USER_ID, ATTR_CREATED_AT); // a user's withdrawals
 
     // ── wallet_users: per-user wallet metadata ────────────────────────────────
-    const usersTable = table('wallet_users');
+    const usersTable = table('wallet_users', {ttl: true}); // ttl: carried self-exclusions (SELFEXCL#)
 
     // ── wallet_holds: open game-wallet reservations (skill-game integration,
     // e.g. ctech-poker buy-ins). gsi_hold_status drives the stale-hold
     // reconciliation sweep (24h ceiling, alarm-only — see reconcile.go).
     const holdsTable = table(TABLE_HOLDS);
     gsi(holdsTable, GSI_HOLD_STATUS, ATTR_STATUS);
+    gsi(holdsTable, GSI_USER, ATTR_USER_ID, ATTR_CREATED_AT); // a user's holds
 
     // ── wallet_audit: append-only record of actions that move NO money ─────────
     // consent, gambling activation, and every personal-limit change. The ledger
@@ -163,6 +173,14 @@ export class DynamoDBStack extends cdk.Stack {
     // fact. Never updated, never deleted — same durability posture as the ledger,
     // because it is evidence. Already wallet_-prefixed, so unchanged.
     const auditTable = table('wallet_audit', {sortKey: true});
+
+    // ── Account deletion (LGPD) ───────────────────────────────────────────────
+    // erasure.Store's lock/tombstone state (pk only, TTL `ttl`; schema owned by
+    // ctech-go-common/erasure).
+    table(TABLE_ERASURE_STATE, {ttl: true});
+    // PII copied out of operational rows at purge, kept 5 years (Lei 9.613).
+    // Restricted: the API role may only PutItem it; support reads it.
+    this.retentionTable = table(TABLE_ERASURE_RETENTION, {sortKey: true, ttl: true, restricted: true});
 
     // ── Retired BaaS custody tables ───────────────────────────────────────────
     // The BaaS custody integration was abandoned and all its code removed. These
