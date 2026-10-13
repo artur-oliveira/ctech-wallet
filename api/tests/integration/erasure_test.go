@@ -115,3 +115,72 @@ func TestErasureRetainIsWriteOnceAndStripRemovesPII(t *testing.T) {
 		t.Fatalf("stripped deposit = %+v, %v; want PII gone, money fields intact", d, err)
 	}
 }
+
+func TestErasureProfileAndAuditAreAnonymizedIdempotently(t *testing.T) {
+	ctx := context.Background()
+	er := erasureRepo()
+	cfg := &config.Config{TablePrefix: tablePrefix}
+	users := repositories.NewUserRepository(db, cfg)
+	audit := repositories.NewAuditRepository(db, cfg)
+	user := "u-" + id.New()
+
+	if ok, err := er.EraseUserProfile(ctx, "ghost-"+id.New()); err != nil || ok {
+		t.Fatalf("EraseUserProfile(missing) = %v, %v; want false, nil", ok, err)
+	}
+
+	_ = users.AcceptTerms(ctx, user)
+	_ = users.SetSelfExclusion(ctx, user, &wallet.SelfExclusion{Period: "indefinite", RequestedAt: repositories.NowStr()})
+	_ = users.SetGameLimits(ctx, user, &wallet.GameLimits{Daily: 1, Weekly: 2, Monthly: 3})
+	_ = audit.Append(ctx, &wallet.AuditEvent{UserID: user, EventType: wallet.EventSelfExcluded, Actor: user, IP: "203.0.113.9", UserAgent: "UA/1"})
+	_ = audit.Append(ctx, &wallet.AuditEvent{UserID: user, EventType: wallet.EventTermsAddendumAccepted, Actor: user})
+
+	if ok, err := er.EraseUserProfile(ctx, user); err != nil || !ok {
+		t.Fatalf("EraseUserProfile = %v, %v", ok, err)
+	}
+	u, err := users.Get(ctx, user)
+	if err != nil || u.SelfExclusion != nil || u.GameLimits != nil || !u.TermsAccepted() {
+		t.Fatalf("profile = %+v, %v; want limits/exclusion gone, consent kept", u, err)
+	}
+
+	if n, err := er.AnonymizeAudit(ctx, user); err != nil || n != 1 {
+		t.Fatalf("AnonymizeAudit = %d, %v; want 1", n, err)
+	}
+	if n, err := er.AnonymizeAudit(ctx, user); err != nil || n != 0 {
+		t.Fatalf("second AnonymizeAudit = %d, %v; want 0", n, err)
+	}
+	evs, err := audit.List(ctx, user, 10)
+	if err != nil || len(evs) != 2 {
+		t.Fatalf("audit rows = %v, %v; want both events kept", evs, err)
+	}
+	for _, e := range evs {
+		if e.IP != "" || e.UserAgent != "" || e.EventType == "" {
+			t.Fatalf("audit row %+v still carries ip/ua or lost its event", e)
+		}
+	}
+}
+
+func TestErasureCarriedSelfExclusionKeepsTheLongerOne(t *testing.T) {
+	ctx := context.Background()
+	er := erasureRepo()
+	now := time.Now().Truncate(time.Second)
+	hmac := "hmac-" + id.New()
+	long := wallet.SelfExclusion{Period: "indefinite", RequestedAt: now.Format(time.RFC3339)}
+	short := wallet.SelfExclusion{Period: "30d", RequestedAt: now.Format(time.RFC3339), Until: now.Add(24 * time.Hour).Format(time.RFC3339)}
+
+	if err := er.PutCarriedSelfExclusion(ctx, hmac, long, now.Add(10*24*time.Hour)); err != nil {
+		t.Fatalf("put long: %v", err)
+	}
+	if err := er.PutCarriedSelfExclusion(ctx, hmac, short, now.Add(24*time.Hour)); err != nil {
+		t.Fatalf("a shorter exclusion must be a no-op, got %v", err)
+	}
+	got, err := er.GetCarriedSelfExclusion(ctx, hmac, now)
+	if err != nil || got == nil || *got != long {
+		t.Fatalf("carried = %+v, %v; want the longer one", got, err)
+	}
+	if got, err := er.GetCarriedSelfExclusion(ctx, hmac, now.Add(11*24*time.Hour)); err != nil || got != nil {
+		t.Fatalf("after ttl = %+v, %v; want nil (TTL deletes lazily)", got, err)
+	}
+	if got, err := er.GetCarriedSelfExclusion(ctx, "hmac-unknown-"+id.New(), now); err != nil || got != nil {
+		t.Fatalf("unknown = %+v, %v; want nil", got, err)
+	}
+}

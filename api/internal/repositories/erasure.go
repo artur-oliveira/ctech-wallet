@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -158,4 +159,91 @@ func (r *ErasureRepository) StripWithdrawalPII(ctx context.Context, withdrawalID
 		attrPixKey: nil, attrErasedAt: NowStr(),
 	})
 	return err
+}
+
+// EraseUserProfile removes the responsible-gambling state from the user row
+// and stamps erased_at. Consent versions and timestamps stay (proof of
+// consent). Returns false when the user never had a row.
+func (r *ErasureRepository) EraseUserProfile(ctx context.Context, userID string) (bool, error) {
+	return r.users.UpdateItem(ctx, userID, nil, map[string]any{
+		attrSelfExclusion: nil, attrGameLimits: nil, attrGameDepositCounters: nil, attrRealDailyCounters: nil, attrErasedAt: NowStr(),
+	})
+}
+
+// AnonymizeAudit removes ip and user_agent from every audit row of userID and
+// returns how many rows it changed. It touches nothing else: IAM allows
+// UpdateItem on wallet_audit for exactly {pk, sk, ip, user_agent}.
+func (r *ErasureRepository) AnonymizeAudit(ctx context.Context, userID string) (int, error) {
+	n := 0
+	var start map[string]types.AttributeValue
+	for {
+		res, err := r.audit.Query(ctx, QueryOpts{PK: userID, Limit: erasurePageSize, ExclusiveStartKey: start})
+		if err != nil {
+			return n, err
+		}
+		for _, it := range res.Items {
+			e, err := Decode[wallet.AuditEvent](it)
+			if err != nil {
+				return n, err
+			}
+			if e.IP == "" && e.UserAgent == "" {
+				continue
+			}
+			sk := e.SK
+			if _, err := r.audit.UpdateItem(ctx, userID, &sk, map[string]any{attrAuditIP: nil, attrAuditUserAgent: nil}); err != nil {
+				return n, err
+			}
+			n++
+		}
+		if len(res.LastEvaluatedKey) == 0 {
+			return n, nil
+		}
+		start = res.LastEvaluatedKey
+	}
+}
+
+type carriedExclusion struct {
+	PK            string               `dynamodbav:"pk"`
+	SelfExclusion wallet.SelfExclusion `dynamodbav:"self_exclusion"`
+	TTL           int64                `dynamodbav:"ttl"`
+}
+
+// PutCarriedSelfExclusion keeps ex past the account's erasure (D13), keyed by
+// ctech-account's CPF keyed hash, until expiresAt (DynamoDB TTL). If one is
+// already stored for the same CPF, the one that lasts longer wins: a person
+// can delete more than one account.
+func (r *ErasureRepository) PutCarriedSelfExclusion(ctx context.Context, cpfHMAC string, ex wallet.SelfExclusion, expiresAt time.Time) error {
+	av, err := attributevalue.MarshalMap(carriedExclusion{PK: wallet.SelfExclusionCarryPrefix + cpfHMAC, SelfExclusion: ex, TTL: expiresAt.Unix()})
+	if err != nil {
+		return err
+	}
+	_, err = r.users.PutItemRaw(ctx, &dynamodb.PutItemInput{
+		Item:                     av,
+		ConditionExpression:      aws.String("attribute_not_exists(pk) OR #ttl < :ttl"),
+		ExpressionAttributeNames: map[string]string{"#ttl": attrTTL},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":ttl": &types.AttributeValueMemberN{Value: strconv.FormatInt(expiresAt.Unix(), 10)},
+		},
+	})
+	if IsConditionFailed(err) {
+		return nil
+	}
+	return err
+}
+
+// GetCarriedSelfExclusion returns the exclusion carried for cpfHMAC, or nil
+// when there is none or it has expired (TTL deletion lags by up to days).
+func (r *ErasureRepository) GetCarriedSelfExclusion(ctx context.Context, cpfHMAC string, now time.Time) (*wallet.SelfExclusion, error) {
+	item, err := r.users.GetItem(ctx, wallet.SelfExclusionCarryPrefix+cpfHMAC)
+	if err != nil || item == nil {
+		return nil, err
+	}
+	c, err := Decode[carriedExclusion](item)
+	if err != nil {
+		return nil, err
+	}
+	if c.TTL <= now.Unix() {
+		return nil, nil
+	}
+	return &c.SelfExclusion, nil
 }
