@@ -31,9 +31,6 @@ const (
 
 const erasurePageSize = 100
 
-// maxDepositChecks bounds the Inter calls one Blockers makes (R19).
-const maxDepositChecks = 10
-
 // ErasureRepository is the persistence side of the account-deletion purge
 // (docs/plans/2026-10-07-account-deletion-participant.md). Every write is
 // idempotent: the purge may run any number of times or stop anywhere.

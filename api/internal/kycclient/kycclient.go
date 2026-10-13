@@ -40,8 +40,12 @@ type KYCAddress struct {
 
 // KYC is the unmasked identity record account returns to internal callers.
 type KYC struct {
-	Level     string     `json:"level"`
-	CPF       string     `json:"cpf"`
+	Level string `json:"level"`
+	CPF   string `json:"cpf"`
+	// CPFHMAC is ctech-account's CPF keyed hash (hex HMAC-SHA256, the same
+	// value as its deletion tombstone). Used only as the key of a carried
+	// self-exclusion (D13); never logged. Empty until ctech-account serves it.
+	CPFHMAC   string     `json:"cpf_hmac"`
 	LegalName string     `json:"legal_name"`
 	BirthDate string     `json:"birth_date"`
 	Email     string     `json:"email"`

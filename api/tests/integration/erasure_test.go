@@ -4,6 +4,10 @@ package integration_test
 
 import (
 	"context"
+	"gopkg.aoctech.app/api-commons/erasure"
+	"gopkg.aoctech.app/wallet/api/internal/kycclient"
+	"gopkg.aoctech.app/wallet/api/internal/pix"
+	"gopkg.aoctech.app/wallet/api/internal/services"
 	"testing"
 	"time"
 
@@ -183,4 +187,113 @@ func TestErasureCarriedSelfExclusionKeepsTheLongerOne(t *testing.T) {
 	if got, err := er.GetCarriedSelfExclusion(ctx, "hmac-unknown-"+id.New(), now); err != nil || got != nil {
 		t.Fatalf("unknown = %+v, %v; want nil", got, err)
 	}
+}
+
+func newErasureService(h *harness, kyc *kycclient.KYC) *services.ErasureService {
+	cfg := &config.Config{TablePrefix: tablePrefix}
+	return services.NewErasureService(h.repo, h.userRepo,
+		repositories.NewSandboxPurchaseRepository(db, cfg), repositories.NewProductPurchaseRepository(db, cfg),
+		erasureRepo(), &stubKYC{rec: kyc}, "https://wallet.test").WithCharges(&stubCharges{})
+}
+
+func TestErasureBlockersForUnknownUserCreateNothing(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(verified())
+	ghost := "ghost-" + id.New()
+	bs, err := newErasureService(h, verified()).Blockers(ctx, ghost)
+	if err != nil || len(bs) != 0 {
+		t.Fatalf("Blockers(unknown) = %v, %v; want eligible", bs, err)
+	}
+	if ws, err := h.repo.GetWalletsByUser(ctx, ghost); err != nil || len(ws) != 0 {
+		t.Fatalf("an eligibility check created wallets: %v, %v", ws, err)
+	}
+}
+
+func TestErasurePurgeEndToEndIsIdempotent(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(verified())
+	user := "u-" + id.New()
+	real := fund(t, h, user, 1000)
+	if _, _, err := h.repo.Debit(ctx, repositories.Mutation{WalletID: real.WalletID, Amount: 1000, EntryType: wallet.EntryWithdraw,
+		IdempotencyKey: "drain#" + id.New(), ReqHash: "drain"}); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	dep := wallet.PixDeposit{Txid: "tx-" + id.New(), UserID: user, WalletID: real.WalletID, Status: wallet.DepositConfirmed,
+		PayerCPF: cpf, PayerName: "Fulano de Tal", AmountExpected: 1000, CreatedAt: repositories.NowStr()}
+	putRaw(t, wallet.TablePixDeposits, dep)
+	wd := wallet.Withdrawal{WithdrawalID: "wd-" + id.New(), UserID: user, WalletID: real.WalletID, Status: wallet.WithdrawCompleted, PixKey: cpf, Amount: 1000, CreatedAt: repositories.NowStr()}
+	putRaw(t, wallet.TableWithdrawals, wd)
+	_ = h.userRepo.AcceptTerms(ctx, user)
+	_ = h.userRepo.SetSelfExclusion(ctx, user, &wallet.SelfExclusion{Period: "indefinite", RequestedAt: repositories.NowStr()})
+	_ = h.audit.Append(ctx, &wallet.AuditEvent{UserID: user, EventType: wallet.EventSelfExcluded, Actor: user, After: "indefinite", IP: "203.0.113.9", UserAgent: "UA/1"})
+	before, _ := h.repo.Statement(ctx, real.WalletID, 100, nil)
+
+	kyc := verified()
+	kyc.CPFHMAC = "hmac-" + id.New()
+	svc := newErasureService(h, kyc)
+	msg := erasure.Message{Version: erasure.Version, Type: erasure.TypeErase, RequestID: "req-" + id.New(), Sub: user,
+		Scope: erasure.ScopeAccount, Services: []string{wallet.ErasureServiceID}, IssuedAt: time.Now()}
+	for run := 1; run <= 2; run++ {
+		ack, err := svc.Purge(ctx, msg)
+		if err != nil || ack.Result != erasure.ResultDone {
+			t.Fatalf("run %d: Purge = %+v, %v", run, ack, err)
+		}
+		if run == 1 && (ack.Counts[wallet.CountDepositsRetained] != 1 || ack.Counts[wallet.CountWithdrawalsRetained] != 1 ||
+			ack.Counts[wallet.CountAuditAnonymized] != 1 || ack.Counts[wallet.CountSelfExclusionCarried] != 1) {
+			t.Fatalf("run 1 counts = %v", ack.Counts)
+		}
+	}
+
+	// Erased / anonymized.
+	if d, _ := h.repo.GetDeposit(ctx, dep.Txid); d.PayerCPF != "" || d.PayerName != "" || d.AmountExpected != 1000 {
+		t.Fatalf("deposit = %+v", d)
+	}
+	if w, _ := h.repo.GetWithdrawal(ctx, wd.WithdrawalID); w.PixKey != "" || w.Amount != 1000 {
+		t.Fatalf("withdrawal = %+v", w)
+	}
+	if u, _ := h.userRepo.Get(ctx, user); u.SelfExclusion != nil || !u.TermsAccepted() {
+		t.Fatalf("profile = %+v", u)
+	}
+	if evs, _ := h.audit.List(ctx, user, 10); len(evs) != 1 || evs[0].IP != "" || evs[0].UserAgent != "" {
+		t.Fatalf("audit = %+v", evs)
+	}
+	// Retained.
+	var rec retainedDeposit
+	_ = attributevalue.UnmarshalMap(getRaw(t, wallet.TableErasureRetention, wallet.RetentionSubPrefix+user,
+		repositories.RetentionSK(wallet.TablePixDeposits, dep.Txid)), &rec)
+	if rec.Item.PayerCPF != cpf {
+		t.Fatalf("retained deposit = %+v, want the payer CPF kept for PLD", rec.Item)
+	}
+	if ex, err := erasureRepo().GetCarriedSelfExclusion(ctx, kyc.CPFHMAC, time.Now()); err != nil || ex == nil || ex.Period != "indefinite" {
+		t.Fatalf("carried exclusion = %+v, %v", ex, err)
+	}
+	if after, _ := h.repo.Statement(ctx, real.WalletID, 100, nil); len(after.Items) != len(before.Items) {
+		t.Fatalf("ledger changed: %d → %d entries (Invariant #2)", len(before.Items), len(after.Items))
+	}
+}
+
+func TestErasurePurgeBlockedByBalanceErasesNothing(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(verified())
+	user := "u-" + id.New()
+	real := fund(t, h, user, 500)
+	dep := wallet.PixDeposit{Txid: "tx-" + id.New(), UserID: user, WalletID: real.WalletID, Status: wallet.DepositConfirmed,
+		PayerCPF: cpf, AmountExpected: 500, CreatedAt: repositories.NowStr()}
+	putRaw(t, wallet.TablePixDeposits, dep)
+	msg := erasure.Message{Version: erasure.Version, Type: erasure.TypeErase, RequestID: "req-" + id.New(), Sub: user,
+		Scope: erasure.ScopeAccount, Services: []string{wallet.ErasureServiceID}, IssuedAt: time.Now()}
+	ack, err := newErasureService(h, verified()).Purge(ctx, msg)
+	if err != nil || ack.Result != erasure.ResultBlocked || ack.Blockers[0].Code != wallet.BlockerBalanceNonzero {
+		t.Fatalf("Purge = %+v, %v; want blocked by balance", ack, err)
+	}
+	if d, _ := h.repo.GetDeposit(ctx, dep.Txid); d.PayerCPF != cpf {
+		t.Fatal("a blocked purge stripped data")
+	}
+}
+
+// stubCharges answers Inter's QueryCharge: every charge is still active (unpaid).
+type stubCharges struct{}
+
+func (stubCharges) QueryCharge(_ context.Context, txid string) (*pix.Charge, error) {
+	return &pix.Charge{Txid: txid, Status: pix.ChargeActive}, nil
 }
