@@ -53,6 +53,9 @@ const (
 	TypeExclusionChangeRejected = "/problems/exclusion-change-rejected"
 
 	TypeSandboxPurchaseUsed = "/problems/sandbox-purchase-used"
+
+	TypeAccountErasurePending = "/problems/account-erasure-pending"
+	TypeServiceUnavailable    = "/problems/service-unavailable"
 )
 
 // FieldError is a single field-level validation failure. It mirrors the shape
@@ -289,4 +292,17 @@ func ExclusionChangeRejected(detail string) *Problem {
 func SandboxPurchaseUsed() *Problem {
 	return New(http.StatusConflict, TypeSandboxPurchaseUsed, "Sandbox Purchase Used",
 		"os créditos desta compra já foram utilizados; não é mais possível reverter")
+}
+
+// AccountErasurePending refuses a state-changing operation for a user whose
+// account deletion is in grace or done (saga protocol §4.2, decision D1).
+func AccountErasurePending() *Problem {
+	return New(http.StatusConflict, TypeAccountErasurePending, "Account Erasure Pending",
+		"a conta está em processo de exclusão; nenhuma operação pode ser feita")
+}
+
+// ServiceUnavailable is a fail-closed refusal: a dependency needed to decide
+// safely (e.g. the JWT revocation list) is unreachable.
+func ServiceUnavailable(detail string) *Problem {
+	return New(http.StatusServiceUnavailable, TypeServiceUnavailable, "Service Unavailable", detail)
 }
