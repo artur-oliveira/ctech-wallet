@@ -96,6 +96,9 @@ func Register(app *fiber.App, c cache.Backend, revocation cache.Backend, cfg *co
 
 	// Internal routes — all M2M client_credentials + scope, gated after auth.
 	internal := v1.Group("/internal", auth)
+	// Account-deletion saga pre-check, called by ctech-account with a token it
+	// mints itself (docs/plans/2026-10-07-account-deletion-participant.md).
+	internal.Get("/erasure/eligibility/:sub", middleware.RequireScope(middleware.ScopeWalletErasureEligibility), h.erasureEligibility)
 	// pix-gateway's webhook Lambda, after it has already re-queried Inter.
 	internal.Post("/pix/confirm-deposit", middleware.RequireScope(middleware.ScopePixConfirmDeposit), h.confirmDeposit)
 	// Sibling route for the direct sandbox-purchase rail (plan §9.3) — same

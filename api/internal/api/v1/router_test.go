@@ -136,3 +136,15 @@ func TestRailRoutesRegistered(t *testing.T) {
 		}
 	}
 }
+
+// ctech-account calls {participant url}/internal/erasure/eligibility/{sub}
+// with url = https://wallet-api.aoctech.app/v1.0 (account-deletion phase 3).
+func TestErasureEligibilityRouteIsRegisteredAtTheContractPath(t *testing.T) {
+	const path = "/v1.0/internal/erasure/eligibility/:sub"
+	for _, r := range routerApp(t, false).GetRoutes() {
+		if r.Method == http.MethodGet && r.Path == path {
+			return
+		}
+	}
+	t.Fatalf("%s is missing", path)
+}

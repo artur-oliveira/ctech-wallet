@@ -76,6 +76,11 @@ const (
 	// (proration and metered usage), and bounded by M2MClient.MaxChargeCents
 	// rather than by a catalogue.
 	ScopeWalletChargeAmount = "internal:wallet:charge-amount"
+
+	// ScopeWalletErasureEligibility is carried by the short-lived token
+	// ctech-account mints to ask whether a user can be erased (account-
+	// deletion saga §4.1). Read-only; granted to no client.
+	ScopeWalletErasureEligibility = "internal:wallet:erasure-eligibility"
 )
 
 const walletPublicScopePrefix = "wallet:"
