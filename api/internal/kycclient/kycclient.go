@@ -20,7 +20,8 @@ import (
 )
 
 const (
-	pathToken  = "/v1.0/token"
+	// PathToken is ctech-account's OAuth token endpoint, appended to CTECH_URL.
+	PathToken  = "/v1.0/token"
 	pathKYCGet = "/v1.0/internal/kyc/%s"
 	scopeKYC   = "internal:account:kyc"
 )
@@ -67,7 +68,7 @@ func New(cfg *config.Config) *Client {
 	return &Client{
 		base:   base,
 		http:   httpClient,
-		tokens: oauth2client.New(httpClient, nil, base+pathToken, cfg.WalletClientID, cfg.WalletClientSecret, scopeKYC),
+		tokens: oauth2client.New(httpClient, nil, base+PathToken, cfg.WalletClientID, cfg.WalletClientSecret, scopeKYC),
 	}
 }
 

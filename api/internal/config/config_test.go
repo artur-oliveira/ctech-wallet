@@ -10,6 +10,10 @@ func TestLoadFailsClosedWithoutValkeyURLInProd(t *testing.T) {
 	t.Setenv("CORS_ALLOWED_ORIGINS", "https://wallet.aoctech.app")
 	t.Setenv("TABLE_PREFIX", "prod")
 	t.Setenv("PIX_GATEWAY_FUNCTION_NAME", "prod-pix-gateway-outbound")
+	t.Setenv("ERASURE_QUEUE_URL", "https://sqs.us-east-1.amazonaws.com/868899309401/prod-ctech-wallet-erasure")
+	t.Setenv("VALKEY_REVOCATION_URL", "redis://valkey.internal:6379")
+	t.Setenv("ERASURE_CLIENT_ID", "wallet-erasure")
+	t.Setenv("ERASURE_CLIENT_SECRET", "s")
 	t.Setenv("VALKEY_URL", "")
 
 	if _, err := Load(); err == nil {
@@ -25,6 +29,10 @@ func TestLoadSucceedsWithValkeyURLInProd(t *testing.T) {
 	t.Setenv("CORS_ALLOWED_ORIGINS", "https://wallet.aoctech.app")
 	t.Setenv("TABLE_PREFIX", "prod")
 	t.Setenv("PIX_GATEWAY_FUNCTION_NAME", "prod-pix-gateway-outbound")
+	t.Setenv("ERASURE_QUEUE_URL", "https://sqs.us-east-1.amazonaws.com/868899309401/prod-ctech-wallet-erasure")
+	t.Setenv("VALKEY_REVOCATION_URL", "redis://valkey.internal:6379")
+	t.Setenv("ERASURE_CLIENT_ID", "wallet-erasure")
+	t.Setenv("ERASURE_CLIENT_SECRET", "s")
 	t.Setenv("VALKEY_URL", "redis://valkey.internal:6379/0")
 
 	if _, err := Load(); err != nil {
@@ -58,5 +66,42 @@ func TestLoadReconcileSucceedsWithoutAPIRuntimeConfigInProd(t *testing.T) {
 
 	if _, err := LoadReconcile(); err != nil {
 		t.Fatalf("unexpected reconcile config error: %v", err)
+	}
+}
+
+func prodEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("ENVIRONMENT", "prod")
+	t.Setenv("SERVICE_AUDIENCE", "https://wallet.aoctech.app")
+	t.Setenv("CTECH_URL", "https://account.aoctech.app")
+	t.Setenv("CTECH_ISSUER_URL", "https://account.aoctech.app")
+	t.Setenv("CORS_ALLOWED_ORIGINS", "https://wallet.aoctech.app")
+	t.Setenv("TABLE_PREFIX", "prod")
+	t.Setenv("PIX_GATEWAY_FUNCTION_NAME", "prod-pix-gateway-outbound")
+	t.Setenv("VALKEY_URL", "redis://valkey.internal:6379/2")
+	t.Setenv("ERASURE_QUEUE_URL", "https://sqs.us-east-1.amazonaws.com/868899309401/prod-ctech-wallet-erasure")
+	t.Setenv("VALKEY_REVOCATION_URL", "redis://valkey.internal:6379")
+	t.Setenv("ERASURE_CLIENT_ID", "wallet-erasure")
+	t.Setenv("ERASURE_CLIENT_SECRET", "s")
+}
+
+// D1/D3: in prod the wallet must neither skip the deletion lock nor read the
+// revocation list from the wrong Valkey DB.
+func TestLoadFailsClosedWithoutErasureConfigInProd(t *testing.T) {
+	for _, unset := range []string{"ERASURE_QUEUE_URL", "VALKEY_REVOCATION_URL", "ERASURE_CLIENT_ID", "ERASURE_CLIENT_SECRET"} {
+		prodEnv(t)
+		t.Setenv(unset, "")
+		if _, err := Load(); err == nil {
+			t.Errorf("Load succeeded in prod with %s unset", unset)
+		}
+	}
+}
+
+func TestLoadReconcileNeedsNoErasureConfig(t *testing.T) {
+	prodEnv(t)
+	t.Setenv("ERASURE_QUEUE_URL", "")
+	t.Setenv("VALKEY_REVOCATION_URL", "")
+	if _, err := LoadReconcile(); err != nil {
+		t.Fatalf("LoadReconcile: %v", err)
 	}
 }
