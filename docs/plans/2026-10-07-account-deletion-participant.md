@@ -1,39 +1,28 @@
 # Account Deletion — Wallet Participant Implementation Plan
 
-> **Amendment 2026-10-13 (supersedes the text below where they conflict).** Source: ctech-account
-> `docs/2026-10-13-account-deletion-plan-review.md`. The Inter PIX rail was restored on 2026-10-08
-> (`docs/specs/2026-10-08-wallet-restoration-design.md`), after the premise "no deposit and no withdrawal rail" used by R6, R7 and R8.
+> **Rebaselined 2026-10-13.** This plan was written on 2026-10-07/08 on the premise "no deposit and no withdrawal rail" (Asaas removed).
+> The Inter PIX rail was restored the same day (`docs/specs/2026-10-08-wallet-restoration-design.md`; CLAUDE.md invariant 12): deposits
+> and withdrawals run on **CTech's own Inter account, with the owner's explicit acceptance of the custody risk (confirmed 2026-10-13)**.
+> The text below is corrected for that: `real` balances are real money, deposits can arrive at any time, daily limits apply to the
+> closing withdrawal. Source: ctech-account `docs/2026-10-13-account-deletion-plan-review.md`.
 >
-> 1. **R8 is reversed.** `wallet.balance_nonzero` covers `real` **and** `game` (`real + game` is the user's real money, invariant 9).
->    `action_url` is the wallet withdrawal flow. A non-zero `real` balance is the main case, not an incident.
-> 2. **R7 / D7.** The closing withdrawal still has no minimum, but the per-wallet daily limits (`daily_withdraw_cap`,
->    `daily_withdraw_count`) apply. Eligibility `detail` should include `daily_withdraw_cap` and today's remaining count so the
->    account UI can warn that a large balance needs several days, and that the balance must reach zero **before** requesting deletion
->    (the account is locked from confirmation).
-> 3. **Additional blockers:** deposit refund in progress (`refund_pending`, `refund_failed`), paid deposit in quarantine (no payer
->    identity), withdrawal `processing`. Stable codes: `wallet.deposit_refund_open`, `wallet.deposit_quarantined`; `wallet.withdrawal_pending` already exists.
-> 4. **R14.** A deposit confirmed for a locked or erased `sub` is **refunded to the payer automatically** (reuse the CPF-mismatch
->    refund saga), never credited and never left for support.
-> 5. **R3.** Also remove `real_daily_counters` from `wallet_users`.
-> 6. **R5 / R12.** Unchanged. Pin no api-commons version (current is `v1.16.0`); remove "do not bump" and the `v1.13.1` pins.
-> 7. Message handling: use `workspaces[]` only if wallet ever holds workspace-scoped data (today it does not).
-> 8. Remove the statements "there is no deposit and no withdrawal rail", "legacy PIX confirm" and the Asaas/BaaS context; replace with
->    the Inter rail and its invariants 12 and 14.
-
+> **Changes against the 2026-10-08 text:** R1 (no version pins), R3 (also `real_daily_counters`), R6, R7, R8, R14 rewritten; new R18
+> (a deposit for an erased user is refunded), R19 (a paid but unconfirmed deposit blocks), R20 (the real blocker explains the daily
+> limits); Task 4b (erased user's deposit), Task 5 blockers, Task 11 docs.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make ctech-wallet a participant in the LGPD account-deletion saga. It reports blockers, locks a user's money from the start of grace, purges or retains the user's data per the inventory, carries self-exclusion over by CPF keyed hash, and acks ctech-account.
 
 **Architecture:**
-- An `erasure.Consumer` (ctech-go-common v1.13.1) runs inside the API process. It long-polls a wallet-owned SQS queue subscribed to ctech-account's `{env}-account-user-erasure` topic, keeps lock and tombstone state in `{env}_wallet_erasure_state` (`erasure.Store`) and calls `ErasureService.Purge` on `user.erase`.
-- One service-level guard (`checkErasure`) refuses every operation that creates new exposure for a locked or erased `sub`. Inbound settlement that cannot be refused (a poker cash-out, a hold release, a legacy PIX confirm) is accepted and comes back as a blocker.
+- An `erasure.Consumer` (ctech-go-common, current `go.mod` version) runs inside the API process. It long-polls a wallet-owned SQS queue subscribed to ctech-account's `{env}-account-user-erasure` topic, keeps lock and tombstone state in `{env}_wallet_erasure_state` (`erasure.Store`) and calls `ErasureService.Purge` on `user.erase`.
+- One service-level guard (`checkErasure`) refuses every operation that creates new exposure for a locked or erased `sub`. Inbound settlement that cannot be refused (a poker cash-out, a hold release, a PIX deposit confirm) is accepted and comes back as a blocker.
 - User state-changing routes also re-check the JWT revocation list and fail closed. The list lives in Valkey DB 0, through a second cache backend.
 - PII fields (payer CPF and name on deposits, PIX keys on withdrawals) are copied into a write-only retention table, then stripped from the operational rows.
 - Money rows stay in place, keyed by the opaque `sub`: the ledger is append-only (Invariant #2).
 - Self-exclusion survives as `SELFEXCL#{cpf_hmac}` in `wallet_users`, with a TTL.
 
-**Tech Stack:** Go 1.27, Fiber v3, DynamoDB (aws-sdk-go-v2), SQS, Valkey, `gopkg.aoctech.app/api-commons` v1.13.1 (`erasure`, `jwtverify`, `oauth2client`, `dynamo`), AWS CDK v2 (TypeScript).
+**Tech Stack:** Go 1.27, Fiber v3, DynamoDB (aws-sdk-go-v2), SQS, Valkey, `gopkg.aoctech.app/api-commons` (current `go.mod`, `v1.16.0`; `erasure`, `jwtverify`, `oauth2client`, `dynamo`), AWS CDK v2 (TypeScript).
 
 **Spec (ctech-account repo, read all four):**
 - `ctech-account/docs/specs/2026-10-06-account-deletion-overview.md` — decisions D1–D14 in §11.
@@ -41,12 +30,12 @@
 - `ctech-account/docs/specs/2026-10-06-account-deletion-saga-protocol.md` — §4 participant obligations, §5 token cut-off, §7 retries.
 - `ctech-account/docs/plans/2026-10-07-account-deletion-phase3-participants.md` — wire contract: eligibility token, ack scope, SNS attribute filter.
 
-Wallet-local context: `docs/specs/2026-10-07-asaas-removal.md`. The BaaS provider is gone: there is **no deposit and no withdrawal rail**, no Asaas sub-account, no transfer intents, no MED receivables.
+Wallet-local context: `docs/specs/2026-10-08-wallet-restoration-design.md` and CLAUDE.md invariants 11, 12 and 14. The Asaas BaaS provider is gone (`2026-10-07-asaas-removal.md`): no sub-account, transfer intents or MED receivables. Deposits and withdrawals run on the Inter rail, so `real` can hold money, a deposit can arrive at any moment, and a withdrawal can be in `processing`.
 
 ## Global Constraints
 
 - Implementation branch `feat/account-deletion-participant` from `main`. Conventional Commits. **Never** a `Co-Authored-By` trailer or any Claude/Anthropic attribution.
-- `gopkg.aoctech.app/api-commons` stays at **v1.13.1** in `api/` and `pix-gateway/` (already pinned; do not bump).
+- `gopkg.aoctech.app/api-commons` stays at the version in each `go.mod` (`v1.16.0` in `api/` and `pix-gateway/`); never lower it. `erasure` needs v1.13.0 or later.
 - Service id: `wallet`. Inbound scope: `internal:wallet:erasure-eligibility`. Outbound ack scope: `internal:account:erasure-ack`.
 - Eligibility route: `GET /v1.0/internal/erasure/eligibility/:sub`. It returns `erasure.Eligibility`. An unknown `sub` returns `{"eligible":true,"blockers":[]}` and creates nothing. It must answer in under 2 s.
 - Ack URL: `{CTECH_URL}/v1.0/internal/erasure/ack`. Token URL: `{CTECH_URL}/v1.0/token`. Client: a **dedicated** confidential client (`ERASURE_CLIENT_ID`/`ERASURE_CLIENT_SECRET`, SSM `/ctech-wallet/{env}/erasure-client-id` and `/ctech-wallet/{env}/erasure-client-secret`). Its only grant is `internal:account:erasure-ack`. The existing KYC client (`WALLET_CLIENT_ID`) is not reused.
@@ -78,7 +67,7 @@ Wallet-local context: `docs/specs/2026-10-07-asaas-removal.md`. The BaaS provide
 ## Rulings (each with its cost if wrong)
 
 - **R1 No go-common upgrade task.**
-  - `api/go.mod` and `pix-gateway/go.mod` already pin v1.13.1.
+  - `api/go.mod` and `pix-gateway/go.mod` already pin v1.16.0, which has `erasure` and the revocation check.
   - pix-gateway verifies no user JWT (it only *calls* the API with `oauth2client`), so it needs no revocation.
   - The only module change is adding `aws-sdk-go-v2/service/sqs`, which the `erasure` package imports.
   - Cost if wrong: none; the full suite gates Task 5.
@@ -90,7 +79,7 @@ Wallet-local context: `docs/specs/2026-10-07-asaas-removal.md`. The BaaS provide
   - **Legal confirmed (2026-10-08):** pseudonymous in-place retention of the money rows counts as segregated.
   - Cost if wrong: if legal ever revisits it, the Invariant #2 amendment and the copy migration come later. No data is lost, because nothing here is deleted.
 - **R3 `wallet_users` is anonymized, not deleted.**
-  - REMOVE: `self_exclusion`, `game_limits`, `game_deposit_counters`. SET `erased_at`.
+  - REMOVE: `self_exclusion`, `game_limits`, `game_deposit_counters`, `real_daily_counters`. SET `erased_at`.
   - Kept: terms and gambling addendum versions and timestamps, as proof of consent. This mirrors account's tombstone keeping ToS acceptance.
   - Cost if wrong: one more REMOVE.
 - **R4 `wallet_audit` is anonymized through a narrowly conditioned IAM allow**, `UpdateItem` only when `dynamodb:Attributes ⊆ {pk, sk, ip, user_agent}`. The append-only DENY is not lifted.
@@ -102,16 +91,9 @@ Wallet-local context: `docs/specs/2026-10-07-asaas-removal.md`. The BaaS provide
   - It is checked in `ActivateGambling` only. Real-money play, poker included, requires activation.
   - An indefinite exclusion is re-applied as indefinite.
   - Cost if wrong: if the field is not deployed before the first purge of a self-excluded user, that purge errors and is redelivered (never dropped). The key must never change after the first prod purge, because rows cannot be re-keyed (the CPF is gone).
-- **R6 No Asaas closure, no transfer-intent or MED blockers.** The provider was removed (`asaas-removal.md`). The retired tables never held prod data and get no IAM access, so they are not purged.
-  - Cost if wrong: none until a new custody provider ships. That plan adds its closure call and blockers.
-- **R7 D7 (closing withdrawal has no minimum) is already satisfied by `wallet.ValidateWithdrawalAmount(amount, w, fullBalance=true, …)`.**
-  - It waives the minimum whenever the withdrawal empties the wallet, so a closing withdrawal needs no UI flag: the API derives it from `amount == balance`.
-  - No withdrawal rail exists today. Task 11 writes this into the "future provider" requirements.
-  - Cost if wrong: a future rail that forgets it traps dust balances; the doc line and the existing domain test guard it.
-- **R8 `wallet.balance_nonzero` is about the `game` balance.**
-  - Decided 2026-10-08: there is no valid real-money balance in the wallet today, because no rail can credit `real`. The blocker applies to `game`, with `action_url` = the wallet home (`SERVICE_AUDIENCE`), where `game → real` is always open (Invariant #9).
-  - A `real` balance ≠ 0 is **unreachable today**. The check stays as a defensive guard (no link, no support path), so a stray credit can never be erased with the user. If it ever fires, treat it as an incident.
-  - Cost if wrong: one blocker line with no link.
+- **R6 No Asaas closure, no transfer-intent or MED blockers.** The BaaS provider was removed (`asaas-removal.md`) and its tables are retired; they never held prod data and get no IAM access, so they are not purged. The Inter rail has no sub-account to close. *Cost if wrong:* none unless a BaaS provider returns; its plan adds its own closure call and blockers.
+- **R7 D7 (closing withdrawal has no minimum) is satisfied by `wallet.ValidateWithdrawalAmount(amount, w, fullBalance=true, …)`.** It waives the minimum whenever the withdrawal empties the wallet, so a closing withdrawal needs no UI flag. The **daily withdrawal limits still apply** (`daily_withdraw_cap` R$ 1.000 and `daily_withdraw_count` 1 per São Paulo day by default, per-wallet overrides), and the account is locked from confirmation, so the balance must reach zero **before** the request. A large balance takes several days. R20 puts the numbers in the blocker. *Cost if wrong:* a user with a big balance learns the number of days only from the blocker.
+- **R8 `wallet.balance_nonzero` covers `real` and `game`.** `real + game` is the user's real money (invariant 9), so both block, each with its own `detail.wallet` and `amount_cents`. `action_url` is the wallet home (`SERVICE_AUDIENCE`) for both: `game → real` is always open, and the withdrawal dialog is there. Sandbox never blocks (R12). The earlier "real is unreachable today" premise ended with the Inter rail. *Cost if wrong:* none; it is the safer direction.
 - **R9 The lock is one guard (`checkErasure`) at the top of 19 service methods** that open new exposure.
   - Accepted for a locked `sub`: `ConfirmDeposit`, `ConfirmSandboxPurchase`, `ConfirmProductPurchase`, `ReleaseHold`, `CashoutGame`, every reconcile sweep. Refusing them would strand money (saga §4.2: inbound money that cannot be refused becomes a blocker).
   - Cost if wrong in the strict direction: refusing a poker cash-out leaves real money in limbo (Invariant #14).
@@ -126,15 +108,18 @@ Wallet-local context: `docs/specs/2026-10-07-asaas-removal.md`. The BaaS provide
   - Cost if wrong: one more blocker line.
 - **R13 State table prefix `{env}_wallet`.** `erasure.NewStore` appends `_erasure_state`, and a bare `{env}_erasure_state` would collide with a sibling service in the same AWS account.
   - Cost: none.
-- **R14 A pending sandbox/product purchase blocks only while its charge is payable** (`created_at` within `sandboxPurchaseTTLMinutes` = 60 min). Product rows never leave `pending` when unpaid. A sandbox `refund_pending` always blocks.
-  - Cost if wrong: a late payment after purge is confirmed into a purged account and must be refunded by support.
+- **R14 A pending sandbox/product purchase blocks only while its charge is payable** (`created_at` within `sandboxPurchaseTTLMinutes` = 60 min). Product rows never leave `pending` when unpaid. A sandbox `refund_pending` always blocks. *Cost if wrong:* a late payment after purge is refunded by the purchase's own refund path.
+- **R18 A deposit for an ERASED user is refunded, never credited; for a LOCKED user it is credited and becomes a blocker.** Locked (grace or purging): the user's money, and inbound money cannot be refused (saga § 4.2), so it credits and the next eligibility check reports `wallet.balance_nonzero`. Erased (tombstone `StateErased`): the account no longer exists and `GET /internal/kyc/:user_id` has nothing to match, so `ConfirmDeposit` hands the paid charge to the existing refund saga (`rejectMismatch`, payer refund by e2eid, idempotent, with `ALARM` on failure per invariant 14). Task 4b. *Cost if wrong:* an extra tombstone read per paid deposit.
+- **R19 A paid but unconfirmed deposit blocks.** `DepositPending` is not in `pendingDepositStatuses` (an abandoned QR is `pending` forever; nothing sets `expired`). But a paid charge with no payer CPF is quarantined as `pending` (invariant 11, `ALARM paid deposit missing payer identity`) and holds the user's money at Inter. The blocker `wallet.deposit_quarantined` counts `pending` deposits that are either within the charge's validity or that the provider reports as paid (`QueryCharge`, at most 10 per check; more than 10 older pending rows is reported as one blocker with `detail.unchecked`). Support resolves it: refund or attribute. *Cost if wrong:* one Inter call per old pending deposit, bounded.
+- **R20 The `real` balance blocker explains the daily limits.** `detail` carries `daily_withdraw_cap_cents`, `daily_withdraw_count` and `days_needed` (`ceil(ceil(balance / cap) / count)`), computed from `wallet.EffectiveDailyLimits(w)`. The account UI shows "about N days". *Cost if wrong:* a wrong estimate if limits change mid-way; it is guidance only.
+- **R21 Deposits and withdrawals of a user are found by scanning the status GSIs and filtering in memory** (the same shape as `ScanStaleHolds`). That reads every row of each status, for each eligibility check and each purge. The rail serves a closed group of KYC-approved friends (invariant 12), so the volume is small. *Trigger to revisit:* the group opens up, or a status partition passes a few thousand rows; the fix is a `user_id` GSI on `wallet_pix_deposits` and `wallet_withdrawals`, which also removes the `Scan`-shaped cost in `ScanStaleHolds`.
 - **R15 Rows with no PII beyond the opaque `sub` are untouched:** idempotency guards, closed holds, purchase rows, ledger `description`/`ref`.
   - Cost if wrong: one more erase step later.
 - **R16 Service-scope unlink (`Store.Clear` on re-consent) is out of scope.** ctech-account phase 3 ships account scope only; the unlink plan adds `Clear` to the terms-addendum accept path.
 
 ## Review Focus
 
-1. **Inbound money for a locked `sub` (poker cash-out, hold release, legacy PIX confirm).** It must be accepted, never refused, and must surface as a blocker so the purge acks `blocked`. Tests: Task 4 `TestErasureGateLeavesSettlementOpen`, Task 5 `TestPurge_BlockerAcksBlockedAndTouchesNothing`.
+1. **Inbound money for a locked `sub` (poker cash-out, hold release, PIX deposit confirm).** It must be accepted, never refused, and must surface as a blocker so the purge acks `blocked`. Tests: Task 4 `TestErasureGateLeavesSettlementOpen`, Task 5 `TestPurge_BlockerAcksBlockedAndTouchesNothing`.
 2. **Valkey DB 0 unreachable on a money route.** The request gets a 503, never a pass. Test: Task 7 `TestRequireUnrevoked`.
 3. **Purge crashes between "retain" and "strip", then reruns.** The retention row keeps the full PII copy (write-once), and the rerun completes. Tests: Task 2 `TestErasureRetainIsWriteOnceAndStripRemovesPII`, Task 5 `TestPurge_RetainsThenStripsAndIsIdempotent`.
 4. **Self-excluded user while account does not yet serve `cpf_hmac`.** The purge returns an error (redelivery or DLQ) **before** erasing the profile; the exclusion is never silently dropped. Test: Task 5 `TestPurge_SelfExcludedWithoutHMACIsRetriedNotDropped`.
@@ -266,7 +251,16 @@ const (
 	BlockerDepositPending    = "wallet.deposit_pending"
 	BlockerWithdrawalPending = "wallet.withdrawal_pending"
 	BlockerPurchasePending   = "wallet.purchase_pending"
+	// BlockerDepositQuarantined: a deposit still `pending` that is payable or
+	// that Inter reports paid without a credit (R19).
+	BlockerDepositQuarantined = "wallet.deposit_quarantined"
 )
+
+// DepositChargeValidity is how long a deposit's PIX charge can be paid:
+// pix-gateway opens it with a 300 s expiry (inter.go chargeExpirySec) plus a
+// 5 min margin for clock skew and a late webhook. Keep it in step with that
+// constant. Past it, a `pending` deposit is paid only if Inter says so (R19).
+const DepositChargeValidity = 10 * time.Minute
 
 // Ack count keys (saga protocol §4.3: per-store counts in the ack).
 const (
@@ -531,6 +525,7 @@ const (
 	attrSelfExclusion       = "self_exclusion"
 	attrGameLimits          = "game_limits"
 	attrGameDepositCounters = "game_deposit_counters"
+	attrRealDailyCounters   = "real_daily_counters"
 	attrErasedAt            = "erased_at"
 	attrAuditIP             = "ip"
 	attrAuditUserAgent      = "user_agent"
@@ -539,6 +534,9 @@ const (
 )
 
 const erasurePageSize = 100
+
+// maxDepositChecks bounds the Inter calls one Blockers makes (R19).
+const maxDepositChecks = 10
 
 var (
 	allDepositStatuses = []string{
@@ -576,9 +574,8 @@ func NewErasureRepository(db *dynamodb.Client, cfg *config.Config) *ErasureRepos
 // allByStatus pages through a status GSI for every listed status and keeps
 // the rows keep accepts.
 // ponytail: filter-after-GSI over whole status partitions, the same shape as
-// ScanStaleHolds. Fine while deposits and withdrawals are frozen (no rail
-// since asaas-removal) and held holds are few; add a user_id GSI when a
-// deposit/withdrawal rail returns.
+// ScanStaleHolds. Fine for the closed group on the Inter rail (a few friends,
+// KYC approved by the owner, R21); add a user_id GSI before the group opens up.
 func allByStatus[T any](ctx context.Context, b Base, index string, statuses []string, keep func(*T) bool) ([]T, error) {
 	var out []T
 	for _, status := range statuses {
@@ -678,7 +675,7 @@ func (r *ErasureRepository) StripWithdrawalPII(ctx context.Context, withdrawalID
 }
 ```
 
-(`attrSelfExclusion`, `attrGameLimits`, `attrGameDepositCounters`, `attrAuditIP`, `attrAuditUserAgent` and `attrTTL` are used in Task 3. If `go vet`/the linter flags them as unused between tasks, add them in Task 3 instead.)
+(`attrSelfExclusion`, `attrGameLimits`, `attrGameDepositCounters`, `attrRealDailyCounters`, `attrAuditIP`, `attrAuditUserAgent` and `attrTTL` are used in Task 3. If `go vet`/the linter flags them as unused between tasks, add them in Task 3 instead.)
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
@@ -793,7 +790,7 @@ Expected: build FAIL — `er.EraseUserProfile undefined`.
 // consent). Returns false when the user never had a row.
 func (r *ErasureRepository) EraseUserProfile(ctx context.Context, userID string) (bool, error) {
 	return r.users.UpdateItem(ctx, userID, nil, map[string]any{
-		attrSelfExclusion: nil, attrGameLimits: nil, attrGameDepositCounters: nil, attrErasedAt: NowStr(),
+		attrSelfExclusion: nil, attrGameLimits: nil, attrGameDepositCounters: nil, attrRealDailyCounters: nil, attrErasedAt: NowStr(),
 	})
 }
 
@@ -1154,6 +1151,127 @@ git commit -m "feat(api): refuse new money exposure for users under account dele
 
 ---
 
+### Task 4b: A deposit for an erased user is refunded, not credited
+
+R18. A paid deposit for a LOCKED user keeps crediting (inbound money cannot be refused; it surfaces as `wallet.balance_nonzero`). For an ERASED user the account is gone: `ConfirmDeposit` would call `kyc.Get(dep.UserID)` against a user ctech-account no longer serves, fail, and be retried by the sweep forever while the payer's money sits at Inter. It must hand the charge to the existing refund saga instead.
+
+**Files:**
+- Modify: `api/internal/services/wallet.go` (`ConfirmDeposit`, field `erased`)
+- Modify: `api/internal/services/erasure_gate.go` (`ErasedChecker`)
+- Test: `api/internal/services/erasure_gate_test.go`, `api/tests/integration/erasure_test.go`
+
+**Interfaces:**
+- Consumes: `(*erasure.Store).Get(ctx, erasure.SubKey(sub))` (`Record.State == erasure.StateErased`), `rejectMismatch` (the payer-refund saga: `Pending → RefundPending`, provider refund by e2eid, `Refunded`, ALARM on failure).
+- Produces:
+  - `type services.ErasedChecker interface { Erased(ctx context.Context, sub string) (bool, error) }`
+  - `func services.StoreErased(s *erasure.Store) ErasedChecker`
+  - `func (s *WalletService) SetErased(c ErasedChecker)`
+
+- [ ] **Step 1: Write the failing tests**
+
+`erasure_gate_test.go`:
+
+```go
+// R18: the payer of a deposit for an erased user is refunded; nothing credits.
+func TestConfirmDepositForAnErasedUserRefundsThePayer(t *testing.T) {
+	svc, repo, pixc := newDepositSvc(t)              // fixtures of the existing deposit tests
+	dep := repo.seedPendingDeposit("t1", "u-gone", 5000, "52998224725")
+	pixc.charges["t1"] = paidCharge("t1", 5000, "E2E1")
+	svc.SetErased(stubErased{"u-gone": true})
+
+	if err := svc.ConfirmDeposit(context.Background(), "t1", "", "", false); err != nil {
+		t.Fatalf("ConfirmDeposit: %v", err)
+	}
+	if got := repo.deposit("t1").Status; got != wallet.DepositRefunded {
+		t.Fatalf("status = %s, want refunded", got)
+	}
+	if pixc.refunds["E2E1"] != 5000 || repo.credits != 0 {
+		t.Fatalf("refunded %d, credited %d times; want a full refund and no credit", pixc.refunds["E2E1"], repo.credits)
+	}
+}
+
+// A LOCKED (not erased) user's deposit still credits.
+func TestConfirmDepositForALockedUserStillCredits(t *testing.T) {
+	svc, repo, pixc := newDepositSvc(t)
+	repo.seedPendingDeposit("t2", "u-locked", 5000, "52998224725")
+	pixc.charges["t2"] = paidCharge("t2", 5000, "E2E2")
+	svc.SetErased(stubErased{}) // locked is not erased
+	if err := svc.ConfirmDeposit(context.Background(), "t2", "", "", false); err != nil {
+		t.Fatal(err)
+	}
+	if repo.credits != 1 {
+		t.Fatalf("credits = %d, want 1", repo.credits)
+	}
+}
+```
+
+`stubErased` is `map[string]bool` with `Erased`. `newDepositSvc`, `seedPendingDeposit` and `paidCharge` reuse the fixtures of `wallet_rail_test.go`.
+
+- [ ] **Step 2: Run them to verify they fail**
+
+Run: `cd api && go test ./internal/services/ -run 'TestConfirmDepositFor'`
+Expected: FAIL, `svc.SetErased undefined`.
+
+- [ ] **Step 3: Implement**
+
+`erasure_gate.go`:
+
+```go
+// ErasedChecker reports a user whose erasure completed (tombstone state
+// erased). A locked user is not erased: their inbound money still credits.
+type ErasedChecker interface {
+	Erased(ctx context.Context, sub string) (bool, error)
+}
+
+type storeErased struct{ s *erasure.Store }
+
+func (e storeErased) Erased(ctx context.Context, sub string) (bool, error) {
+	rec, err := e.s.Get(ctx, erasure.SubKey(sub))
+	return rec != nil && rec.State == erasure.StateErased, err
+}
+
+// StoreErased adapts the erasure store; nil store means the feature is off.
+func StoreErased(s *erasure.Store) ErasedChecker {
+	if s == nil {
+		return nil
+	}
+	return storeErased{s}
+}
+```
+
+`wallet.go`: add the field `erased ErasedChecker` and `func (s *WalletService) SetErased(c ErasedChecker) { s.erased = c }`. In `ConfirmDeposit`, directly after the `if refunded(charge) { … }` block and before `kyc, err := s.kyc.Get(ctx, dep.UserID)`:
+
+```go
+	// R18: the account is gone, so there is no KYC to match and nobody to credit.
+	// The payer gets the money back through the same saga a CPF mismatch uses.
+	if s.erased != nil {
+		erased, err := s.erased.Erased(ctx, dep.UserID)
+		if err != nil {
+			return err // unknown erasure state: never credit, retry
+		}
+		if erased {
+			slog.Warn("deposit for an erased user; refunding payer", "txid", txid)
+			return s.rejectMismatch(ctx, dep, charge)
+		}
+	}
+```
+
+Wire it with the other erasure setup in Task 9: `walletSvc.SetErased(services.StoreErased(store))` (the same `store` that `SetErasure` receives).
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `cd api && go vet ./... && go test ./... -race`
+Expected: `ok`, and both tests PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add api/internal/services
+git commit -m "feat(api): refund a deposit paid for an erased user instead of crediting it"
+```
+
+---
+
 ### Task 5: ErasureService — blockers and idempotent purge
 
 **Files:**
@@ -1167,10 +1285,12 @@ git commit -m "feat(api): refuse new money exposure for users under account dele
 - Consumes:
   - Task 2/3 repository methods, through the `ErasureRepo` interface;
   - `WalletStore.LoadWallets`, `SandboxPurchaseRepo.ListByUser`, `ProductPurchaseRepo.ListByUser`, `UserRepo.Get`, `KYCClient.Get`;
-  - `erasure.Blocker`, `erasure.Ack`, `erasure.Message` (go-common v1.13.1).
+  - `erasure.Blocker`, `erasure.Ack`, `erasure.Message` (go-common, current version).
 - Produces:
   - `type services.ErasureRepo interface{…}` (below);
   - `func services.NewErasureService(wallets WalletStore, users UserRepo, sandbox SandboxPurchaseRepo, products ProductPurchaseRepo, repo ErasureRepo, kyc KYCClient, walletURL string) *ErasureService`;
+  - `type services.ChargeQuerier interface { QueryCharge(ctx context.Context, txid string) (*pix.Charge, error) }` (satisfied by the Inter client);
+  - `(*ErasureService) WithCharges(c ChargeQuerier) *ErasureService` (R19; without it every old pending deposit is reported unchecked);
   - `(*ErasureService) Blockers(ctx, sub string) ([]erasure.Blocker, error)`;
   - `(*ErasureService) Purge(ctx context.Context, m erasure.Message) (erasure.Ack, error)` — the `erasure.PurgeFunc` signature;
   - `kycclient.KYC.CPFHMAC string` (json `cpf_hmac`).
@@ -1185,7 +1305,7 @@ git commit -m "feat(api): refuse new money exposure for users under account dele
 ```
 
 Run: `cd api && go get github.com/aws/aws-sdk-go-v2/service/sqs && go mod tidy`
-Expected: `go.mod` gains `github.com/aws/aws-sdk-go-v2/service/sqs` (the version go-common v1.13.1 already requires), and `api-commons` stays `v1.13.1`.
+Expected: `go.mod` gains `github.com/aws/aws-sdk-go-v2/service/sqs` (the version go-common already requires), and `api-commons` does not change.
 
 - [ ] **Step 2: Write the failing unit tests** — `api/internal/services/erasure_test.go`:
 
@@ -1202,6 +1322,7 @@ import (
 	"gopkg.aoctech.app/api-commons/erasure"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
+	"gopkg.aoctech.app/wallet/api/internal/pix"
 )
 
 type fakeErasureRepo struct {
@@ -1265,6 +1386,13 @@ func (f *fakeErasureRepo) PutCarriedSelfExclusion(_ context.Context, h string, e
 }
 
 var testNow = time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
+
+// stubCharges answers Inter's QueryCharge from a txid -> status map.
+type stubCharges struct{ status map[string]string }
+
+func (c *stubCharges) QueryCharge(_ context.Context, txid string) (*pix.Charge, error) {
+	return &pix.Charge{Txid: txid, Status: c.status[txid]}, nil
+}
 
 func newErasureSvc(repo *stubRepo, users *stubUserRepo, sp *stubSandboxPurchaseRepo, pp *stubProductPurchaseRepo, er *fakeErasureRepo, kyc *kycclient.KYC) *ErasureService {
 	e := NewErasureService(repo, users, sp, pp, er, &stubKYC{rec: kyc}, "https://wallet.test")
@@ -1330,8 +1458,9 @@ func TestBlockers_ReportsEveryMoneyCondition(t *testing.T) {
 				t.Fatalf("game blocker = %+v, want amount 300 and the wallet home link", b)
 			}
 		case wallet.TypeReal:
-			if b.ActionURL != "" || b.Detail["amount_cents"] != int64(1250) {
-				t.Fatalf("real blocker = %+v, want amount 1250 and no link (unreachable today, defensive guard)", b)
+			if b.ActionURL != "https://wallet.test" || b.Detail["amount_cents"] != int64(1250) ||
+				b.Detail["daily_withdraw_cap_cents"] != wallet.DefaultDailyWithdrawCap || b.Detail["days_needed"] != int64(1) {
+				t.Fatalf("real blocker = %+v, want amount 1250, the wallet link and a one-day estimate", b)
 			}
 		}
 	}
@@ -1342,6 +1471,42 @@ func TestBlockers_ReportsEveryMoneyCondition(t *testing.T) {
 	bs, _ = e.Blockers(context.Background(), "u1")
 	if !slices.Contains(codes(bs), wallet.BlockerPurchasePending) {
 		t.Fatal("a payable product charge must block")
+	}
+}
+
+func TestWithdrawDaysNeeded(t *testing.T) {
+	lim := wallet.DailyLimits{WithdrawCap: 100000, WithdrawCount: 1}
+	for balance, want := range map[int64]int64{0: 0, 1: 1, 100000: 1, 100001: 2, 350000: 4} {
+		if got := withdrawDaysNeeded(balance, lim); got != want {
+			t.Errorf("withdrawDaysNeeded(%d) = %d, want %d", balance, got, want)
+		}
+	}
+	if got := withdrawDaysNeeded(350000, wallet.DailyLimits{WithdrawCap: 100000, WithdrawCount: 2}); got != 2 {
+		t.Errorf("two withdrawals a day: %d days, want 2", got)
+	}
+}
+
+// R19: a paid charge with no payer identity stays `pending` (quarantined). It
+// holds the user's money at Inter, so it must block; an abandoned QR must not.
+func TestBlockers_PaidButUnconfirmedDepositBlocksAndAnAbandonedOneDoesNot(t *testing.T) {
+	er := newFakeErasureRepo()
+	old := testNow.Add(-48 * time.Hour).Format(time.RFC3339Nano)
+	er.deposits = []wallet.PixDeposit{{Txid: "abandoned", UserID: "u1", Status: wallet.DepositPending, CreatedAt: old}}
+	charges := &stubCharges{status: map[string]string{"abandoned": pix.ChargeActive}}
+	e := newErasureSvc(newStubRepo(), &stubUserRepo{}, newStubSandboxPurchaseRepo(), newStubProductPurchaseRepo(), er, &kycclient.KYC{}).WithCharges(charges)
+	if bs, err := e.Blockers(context.Background(), "u1"); err != nil || len(bs) != 0 {
+		t.Fatalf("abandoned QR: %v, %v; want none", bs, err)
+	}
+	er.deposits = append(er.deposits, wallet.PixDeposit{Txid: "paid", UserID: "u1", Status: wallet.DepositPending, CreatedAt: old})
+	charges.status["paid"] = pix.ChargeCompleted
+	bs, err := e.Blockers(context.Background(), "u1")
+	if err != nil || len(bs) != 1 || bs[0].Code != wallet.BlockerDepositQuarantined || bs[0].Detail["paid_unconfirmed"] != 1 {
+		t.Fatalf("blockers = %+v, %v; want one %s", bs, err, wallet.BlockerDepositQuarantined)
+	}
+	// Without a charge client nothing old can be proven unpaid: fail safe.
+	e = newErasureSvc(newStubRepo(), &stubUserRepo{}, newStubSandboxPurchaseRepo(), newStubProductPurchaseRepo(), er, &kycclient.KYC{})
+	if bs, _ := e.Blockers(context.Background(), "u1"); len(bs) != 1 || bs[0].Detail["unchecked"] != 2 {
+		t.Fatalf("no charge client: %+v; want unchecked 2", bs)
 	}
 }
 
@@ -1492,8 +1657,20 @@ type ErasureService struct {
 	products  ProductPurchaseRepo
 	repo      ErasureRepo
 	kyc       KYCClient
-	walletURL string // wallet UI home; action_url of a game-balance blocker
+	walletURL string // wallet UI home; action_url of a balance blocker
+	charges   ChargeQuerier // R19: asks Inter whether an old pending deposit was paid
 	now       func() time.Time
+}
+
+// ChargeQuerier is the one Inter call the blockers make.
+type ChargeQuerier interface {
+	QueryCharge(ctx context.Context, txid string) (*pix.Charge, error)
+}
+
+// WithCharges enables the paid-but-unconfirmed deposit check (R19).
+func (e *ErasureService) WithCharges(c ChargeQuerier) *ErasureService {
+	e.charges = c
+	return e
 }
 
 func NewErasureService(wallets WalletStore, users UserRepo, sandbox SandboxPurchaseRepo, products ProductPurchaseRepo, repo ErasureRepo, kyc KYCClient, walletURL string) *ErasureService {
@@ -1515,11 +1692,17 @@ func (e *ErasureService) Blockers(ctx context.Context, sub string) ([]erasure.Bl
 			continue
 		}
 		b := erasure.Blocker{Code: wallet.BlockerBalanceNonzero, Detail: map[string]any{"wallet": w.Type, "amount_cents": w.Balance}}
-		// game → real is always open (Invariant #9): link to the wallet home.
-		// real ≠ 0 is unreachable today (no rail credits real, R8); it stays
-		// a blocker so a stray credit is never erased with the user.
-		if w.Type == wallet.TypeGame && e.walletURL != "" {
+		// game → real is always open (Invariant #9) and the withdrawal dialog is
+		// on the wallet home: both balances link there (R8).
+		if e.walletURL != "" {
 			b.ActionURL = e.walletURL
+		}
+		if w.Type == wallet.TypeReal {
+			// R20: the closing withdrawal is subject to the daily limits.
+			lim := wallet.EffectiveDailyLimits(w)
+			b.Detail["daily_withdraw_cap_cents"] = lim.WithdrawCap
+			b.Detail["daily_withdraw_count"] = lim.WithdrawCount
+			b.Detail["days_needed"] = withdrawDaysNeeded(w.Balance, lim)
 		}
 		out = append(out, b)
 	}
@@ -1539,6 +1722,13 @@ func (e *ErasureService) Blockers(ctx context.Context, sub string) ([]erasure.Bl
 	if n := countIn(deps, func(d wallet.PixDeposit) string { return d.Status }, pendingDepositStatuses); n > 0 {
 		out = append(out, erasure.Blocker{Code: wallet.BlockerDepositPending, Detail: map[string]any{"count": n}})
 	}
+	q, err := e.paidDepositBlockers(ctx, deps)
+	if err != nil {
+		return nil, err
+	}
+	if q != nil {
+		out = append(out, *q)
+	}
 
 	wds, err := e.repo.WithdrawalsForUser(ctx, sub)
 	if err != nil {
@@ -1556,6 +1746,51 @@ func (e *ErasureService) Blockers(ctx context.Context, sub string) ([]erasure.Bl
 		out = append(out, erasure.Blocker{Code: wallet.BlockerPurchasePending, Detail: map[string]any{"count": n}})
 	}
 	return out, nil
+}
+
+// withdrawDaysNeeded is how many São Paulo days it takes to empty balance under
+// the daily withdrawal limits: ceil(ceil(balance / cap) / count). Guidance for
+// the account UI (R20), not a promise.
+func withdrawDaysNeeded(balance int64, lim wallet.DailyLimits) int64 {
+	if balance <= 0 || lim.WithdrawCap <= 0 || lim.WithdrawCount <= 0 {
+		return 0
+	}
+	withdrawals := (balance + lim.WithdrawCap - 1) / lim.WithdrawCap
+	return (withdrawals + lim.WithdrawCount - 1) / lim.WithdrawCount
+}
+
+// paidDepositBlockers implements R19: a deposit still `pending` blocks while
+// its charge can be paid, or when the provider says it was paid but the credit
+// never happened (quarantine). At most maxDepositChecks old rows are asked.
+func (e *ErasureService) paidDepositBlockers(ctx context.Context, deps []wallet.PixDeposit) (*erasure.Blocker, error) {
+	validUntil := e.now().Add(-wallet.DepositChargeValidity)
+	var payable, paid, unchecked int
+	for _, d := range deps {
+		if d.Status != wallet.DepositPending {
+			continue
+		}
+		created, err := time.Parse(time.RFC3339Nano, d.CreatedAt)
+		if err == nil && created.After(validUntil) {
+			payable++
+			continue
+		}
+		if e.charges == nil || paid+unchecked >= maxDepositChecks {
+			unchecked++
+			continue
+		}
+		ch, err := e.charges.QueryCharge(ctx, d.Txid)
+		if err != nil {
+			return nil, err
+		}
+		if ch.Status == pix.ChargeCompleted {
+			paid++
+		}
+	}
+	if payable+paid+unchecked == 0 {
+		return nil, nil
+	}
+	return &erasure.Blocker{Code: wallet.BlockerDepositQuarantined,
+		Detail: map[string]any{"payable": payable, "paid_unconfirmed": paid, "unchecked": unchecked}}, nil
 }
 
 func countIn[T any](rows []T, status func(T) string, statuses []string) int {
@@ -1733,7 +1968,7 @@ func newErasureService(h *harness, kyc *kycclient.KYC) *services.ErasureService 
 	cfg := &config.Config{TablePrefix: tablePrefix}
 	return services.NewErasureService(h.repo, h.userRepo,
 		repositories.NewSandboxPurchaseRepository(db, cfg), repositories.NewProductPurchaseRepository(db, cfg),
-		erasureRepo(), &stubKYC{rec: kyc}, "https://wallet.test")
+		erasureRepo(), &stubKYC{rec: kyc}, "https://wallet.test").WithCharges(&stubCharges{})
 }
 
 func TestErasureBlockersForUnknownUserCreateNothing(t *testing.T) {
@@ -2298,7 +2533,7 @@ git commit -m "feat(api): erasure eligibility endpoint for ctech-account"
 **Interfaces:**
 - Consumes:
   - `erasure.NewStore`, `erasure.NewConsumer`, `erasure.NewAckClient`, `oauth2client.New`;
-  - `services.NewErasureService`, `(*WalletService).SetErasure`, `(*UserService).SetErasureGate`, `repositories.NewErasureRepository`.
+  - `services.NewErasureService` (+ `.WithCharges(pixClient)`), `(*WalletService).SetErasure`, `(*WalletService).SetErased(services.StoreErased(store))` (Task 4b), `(*UserService).SetErasureGate`, `repositories.NewErasureRepository`.
 - Produces: env `ERASURE_QUEUE_URL`, `VALKEY_REVOCATION_URL`, `ERASURE_CLIENT_ID`, `ERASURE_CLIENT_SECRET` (config fields `ErasureQueueURL`, `ValkeyRevocationURL`, `ErasureClientID`, `ErasureClientSecret`); `kycclient.PathToken`.
 
 - [ ] **Step 1: Write the failing config tests.** In `api/internal/config/config_test.go`, add `t.Setenv("ERASURE_QUEUE_URL", "https://sqs.us-east-1.amazonaws.com/868899309401/prod-ctech-wallet-erasure")`, `t.Setenv("VALKEY_REVOCATION_URL", "redis://valkey.internal:6379")`, `t.Setenv("ERASURE_CLIENT_ID", "wallet-erasure")` and `t.Setenv("ERASURE_CLIENT_SECRET", "s")` to `TestLoadSucceedsWithValkeyURLInProd` and `TestLoadFailsClosedWithoutValkeyURLInProd`. Then append:
@@ -2431,8 +2666,8 @@ func newErasureStore(cfg *config.Config, db *dynamodb.Client) *erasure.Store {
 	return erasure.NewStore(db, cfg.TablePrefix+"_"+wallet.ErasureStateTableSegment, wallet.ErasureTombstoneTTL)
 }
 
-func newErasureService(repo *repositories.WalletRepository, users *repositories.UserRepository, sp *repositories.SandboxPurchaseRepository, pp *repositories.ProductPurchaseRepository, er *repositories.ErasureRepository, k services.KYCClient, cfg *config.Config) *services.ErasureService {
-	return services.NewErasureService(repo, users, sp, pp, er, k, cfg.ServiceAudience)
+func newErasureService(repo *repositories.WalletRepository, users *repositories.UserRepository, sp *repositories.SandboxPurchaseRepository, pp *repositories.ProductPurchaseRepository, er *repositories.ErasureRepository, k services.KYCClient, charges services.ChargeQuerier, cfg *config.Config) *services.ErasureService {
+	return services.NewErasureService(repo, users, sp, pp, er, k, cfg.ServiceAudience).WithCharges(charges)
 }
 
 // startErasureConsumer runs the account-deletion SQS consumer for the process
@@ -2935,13 +3170,13 @@ git commit -m "feat(cdk): erasure queue, state and retention tables, scoped IAM,
 - Modify: `CLAUDE.md` (root)
 - Modify: `api/CLAUDE.md`
 - Modify: `README.md`
-- Modify: `docs/specs/2026-10-07-asaas-removal.md`
+- Modify: `docs/specs/2026-10-08-wallet-restoration-design.md`
 
 - [ ] **Step 1: `api/ENDPOINTS.md`.**
   - In §4 (Internal M2M routes), add a table row:
 
 ```markdown
-| GET    | `/v1.0/internal/erasure/eligibility/:sub`          | `internal:wallet:erasure-eligibility`             | `erasure.go`      | —                                                                           | Account-deletion pre-check, called by **ctech-account** with a token it mints (aud = wallet, M2M). Returns `{eligible, blockers[]}` (`erasure.Eligibility`). Codes: `wallet.balance_nonzero` (`detail.wallet`, `detail.amount_cents`; `action_url` only for `game`), `wallet.hold_open`, `wallet.deposit_pending`, `wallet.withdrawal_pending`, `wallet.purchase_pending`. Unknown `sub` → eligible, nothing created. Never creates a wallet. |
+| GET    | `/v1.0/internal/erasure/eligibility/:sub`          | `internal:wallet:erasure-eligibility`             | `erasure.go`      | —                                                                           | Account-deletion pre-check, called by **ctech-account** with a token it mints (aud = wallet, M2M). Returns `{eligible, blockers[]}` (`erasure.Eligibility`). Codes: `wallet.balance_nonzero` (`detail.wallet`, `detail.amount_cents`; `action_url` = wallet home; for `real` also `daily_withdraw_cap_cents`, `daily_withdraw_count`, `days_needed`), `wallet.hold_open`, `wallet.deposit_pending`, `wallet.deposit_quarantined`, `wallet.withdrawal_pending`, `wallet.purchase_pending`. Unknown `sub` → eligible, nothing created. Never creates a wallet. |
 ```
 
   - After the §4 scope note, add:
@@ -3005,11 +3240,11 @@ Join with ctech-account's `KYCRET#{sub}` for the identity. Never copy results in
 - The purge is idempotent; redriving is always safe.
 
 **Blocked ack after the point of no return (request `stalled` in ctech-account).** A blocker appeared after
-LOCKED, typically a legacy PIX deposit confirmed or a poker cash-out credited after the lock. The user cannot act
+LOCKED, typically a PIX deposit confirmed or a poker cash-out credited after the lock. The user cannot act
 (no tokens).
 
-- Support settles the money: PIX refund to the payer, or a manual payout to an account of the same CPF, with the
-  usual reconciliation records.
+- Support settles the money: PIX refund to the payer, or a payout to an account of the same CPF (the withdrawal
+  flow cannot be used: the user has no tokens), with the usual reconciliation records.
 - Confirm `GET /v1.0/internal/erasure/eligibility/<sub>` returns eligible.
 - Redrive from ctech-account admin.
 
@@ -3017,9 +3252,16 @@ LOCKED, typically a legacy PIX deposit confirmed or a poker cash-out credited af
 purged after the restore point (ctech-account deletion-requests table, see its runbook) and re-publish `user.erase`
 for each. The purge reruns idempotently.
 
-**Balance blocker.** It concerns the `game` balance; the user returns it to `real` from the wallet UI (the blocker
-links there). No rail credits `real` today, so a `real` balance ≠ 0 should never happen. If the blocker ever reports
-`detail.wallet = "real"`, treat it as an incident, not a support routine.
+**Balance blocker.** It covers `real` and `game` (both are the user's money). `game` returns to `real` from the wallet
+UI; `real` leaves by PIX to an account of the same CPF. The daily withdrawal limits apply (default R$ 1.000 and one
+withdrawal a day), so `detail.days_needed` can be more than one: the user must reach zero **before** requesting the
+deletion, because the account is locked from confirmation. Ask support to raise the wallet's `daily_withdraw_cap` /
+`daily_withdraw_count` (admin fields in DynamoDB) only after verifying the person.
+
+**Deposits during and after the saga.** A deposit paid while the user is LOCKED credits and shows up as a balance
+blocker. A deposit paid after the user is ERASED is refunded to the payer automatically (R18); check the refund
+in the logs (`deposit for an erased user; refunding payer`) and the `ALARM` on failure. A paid charge with no payer
+identity stays `pending` (quarantined) and blocks (`wallet.deposit_quarantined`): support attributes or refunds it.
 ```
 
 - [ ] **Step 3: Root `CLAUDE.md`.** In "Cross-project contract (`ctech-account`)", append:
@@ -3049,18 +3291,11 @@ links there). No rail credits `real` today, so a `real` balance ≠ 0 should nev
 
 - [ ] **Step 5: `README.md`.** In "## Documentação", add the bullet: `- [Exclusão de conta (LGPD) — participante](docs/plans/2026-10-07-account-deletion-participant.md)`.
 
-- [ ] **Step 6: `docs/specs/2026-10-07-asaas-removal.md`.** In "O que um provedor futuro precisa reintroduzir", append:
-
-```markdown
-- **Saque de encerramento sem mínimo (exclusão de conta, decisão D7):** saque do saldo integral passa por
-  `wallet.ValidateWithdrawalAmount(..., fullBalance=true, ...)`, que dispensa o mínimo; o cliente não sinaliza nada.
-  O saque precisa ser possível **antes** do pedido de exclusão (a carteira trava no início da carência).
-- O blocker `wallet.balance_nonzero` hoje só ocorre para `game` (nenhum rail credita `real`); quando um rail voltar,
-  o caso `real` passa a ter `action_url` para a tela de saque.
-- Bloqueadores próprios do provedor (subconta não encerrável, MED aberto, transfer intent) entram em
-  `ErasureService.Blockers`, e o encerramento da subconta no `Purge`, com o id da solicitação de encerramento nos
-  counts do ack.
-```
+- [ ] **Step 6: `docs/specs/2026-10-08-wallet-restoration-design.md`.** Append a section "Exclusão de conta":
+  - o saque de encerramento não tem mínimo (`ValidateWithdrawalAmount(..., fullBalance=true, ...)`), mas os limites diários valem; o saldo precisa chegar a zero **antes** do pedido, porque a carteira trava no início da carência;
+  - `wallet.balance_nonzero` cobre `real` e `game`; `wallet.deposit_quarantined` cobre depósito pago sem confirmação;
+  - depósito pago para usuário apagado é estornado ao pagador (R18);
+  - a custódia na conta Inter da CTech segue aceita pelo dono (2026-10-13); a exclusão não move dinheiro e nunca toca o ledger.
 
 - [ ] **Step 7: Verify nothing else changed and the suites are green**
 
@@ -3070,7 +3305,7 @@ Expected: green; `git status` lists only the six doc files.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add api/ENDPOINTS.md OPERATIONS.md CLAUDE.md api/CLAUDE.md README.md docs/specs/2026-10-07-asaas-removal.md
+git add api/ENDPOINTS.md OPERATIONS.md CLAUDE.md api/CLAUDE.md README.md docs/specs/2026-10-08-wallet-restoration-design.md
 git commit -m "docs: wallet account-deletion participant contract and runbooks"
 ```
 
@@ -3097,12 +3332,12 @@ git commit -m "docs: wallet account-deletion participant contract and runbooks"
   authoritative.
 - **ctech-cdk:** none. Uses its alerts topic SSM (`CtechSSM.alerts`).
 - **wallet ui:** no change. Users in deletion have no session; problem details render generically.
-- **pix-gateway:** none. It verifies no user JWT and stays on go-common v1.13.1.
+- **pix-gateway:** none. It verifies no user JWT and stays on its current go-common version.
 
 ## Decisions applied (2026-10-08)
 
 - `cpf_hmac` on `GET /internal/kyc/:user_id`: **approved**; ctech-account's phase 3 plan carries the task (R5, prerequisite 2).
-- No valid real-money balance exists: the balance blocker is about `game`; `real` is a defensive, unreachable-today guard (R8).
+- (Superseded 2026-10-13) The balance blocker covers `real` and `game` (R8): the Inter rail is live and custody on CTech's account is accepted by the owner.
 - Legal: pseudonymous in-place retention of money rows counts as segregated (R2).
 - IAM `dynamodb:Attributes`: accepted; verified by Task 10 Step 10 in dev.
 - Acks use a dedicated confidential client (R17, Task 9, Task 10, OPERATIONS §2a).
