@@ -1,5 +1,26 @@
 # Account Deletion — Wallet Participant Implementation Plan
 
+> **Amendment 2026-10-13 (supersedes the text below where they conflict).** Source: ctech-account
+> `docs/2026-10-13-account-deletion-plan-review.md`. The Inter PIX rail was restored on 2026-10-08
+> (`docs/specs/2026-10-08-wallet-restoration-design.md`), after the premise "no deposit and no withdrawal rail" used by R6, R7 and R8.
+>
+> 1. **R8 is reversed.** `wallet.balance_nonzero` covers `real` **and** `game` (`real + game` is the user's real money, invariant 9).
+>    `action_url` is the wallet withdrawal flow. A non-zero `real` balance is the main case, not an incident.
+> 2. **R7 / D7.** The closing withdrawal still has no minimum, but the per-wallet daily limits (`daily_withdraw_cap`,
+>    `daily_withdraw_count`) apply. Eligibility `detail` should include `daily_withdraw_cap` and today's remaining count so the
+>    account UI can warn that a large balance needs several days, and that the balance must reach zero **before** requesting deletion
+>    (the account is locked from confirmation).
+> 3. **Additional blockers:** deposit refund in progress (`refund_pending`, `refund_failed`), paid deposit in quarantine (no payer
+>    identity), withdrawal `processing`. Stable codes: `wallet.deposit_refund_open`, `wallet.deposit_quarantined`; `wallet.withdrawal_pending` already exists.
+> 4. **R14.** A deposit confirmed for a locked or erased `sub` is **refunded to the payer automatically** (reuse the CPF-mismatch
+>    refund saga), never credited and never left for support.
+> 5. **R3.** Also remove `real_daily_counters` from `wallet_users`.
+> 6. **R5 / R12.** Unchanged. Pin no api-commons version (current is `v1.16.0`); remove "do not bump" and the `v1.13.1` pins.
+> 7. Message handling: use `workspaces[]` only if wallet ever holds workspace-scoped data (today it does not).
+> 8. Remove the statements "there is no deposit and no withdrawal rail", "legacy PIX confirm" and the Asaas/BaaS context; replace with
+>    the Inter rail and its invariants 12 and 14.
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make ctech-wallet a participant in the LGPD account-deletion saga. It reports blockers, locks a user's money from the start of grace, purges or retains the user's data per the inventory, carries self-exclusion over by CPF keyed hash, and acks ctech-account.
