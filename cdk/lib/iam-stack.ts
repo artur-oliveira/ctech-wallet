@@ -5,6 +5,7 @@ import {Construct} from 'constructs';
 import {Environment} from './types';
 import {
   APPEND_ONLY_TABLES,
+  AUDIT_ANONYMIZABLE_ATTRIBUTES,
   instanceProfileName,
   instanceRoleName,
   S3_PREFIX,
@@ -12,6 +13,8 @@ import {
   SSM_ACCOUNT,
   SSM_SHARED,
   SSM_WALLET,
+  TABLE_AUDIT,
+  TABLE_LEDGER,
 } from './constants';
 
 interface IAMStackProps extends cdk.StackProps {
@@ -20,6 +23,10 @@ interface IAMStackProps extends cdk.StackProps {
   logsBucketArn: string;
   dynamoDBTables: Map<string, aws_dynamodb.TableV2>;
   pixGatewayOutboundFunctionArn: string;
+  /** The wallet's account-deletion SQS queue (ErasureStack). */
+  erasureQueueArn: string;
+  /** wallet_erasure_retention: restricted, granted write-only below. */
+  retentionTableArn: string;
 }
 
 /**
@@ -34,7 +41,7 @@ export class IAMStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: IAMStackProps) {
     super(scope, id, props);
 
-    const {environment, deploymentsBucketArn, logsBucketArn, dynamoDBTables, pixGatewayOutboundFunctionArn} = props;
+    const {environment, deploymentsBucketArn, logsBucketArn, dynamoDBTables, pixGatewayOutboundFunctionArn, erasureQueueArn, retentionTableArn} = props;
 
     this.apiRole = new iam.Role(this, 'ApiExecutionRole', {
       roleName: instanceRoleName(environment),
@@ -75,6 +82,11 @@ export class IAMStack extends cdk.Stack {
       .filter(([name]) => !appendOnly.includes(name))
       .flatMap(([, it]) => [it.tableArn, `${it.tableArn}/index/*`]);
 
+    const arnsOf = (name: string) => {
+      const t = dynamoDBTables.get(name)!;
+      return [t.tableArn, `${t.tableArn}/index/*`];
+    };
+
     this.apiRole.addManagedPolicy(new iam.ManagedPolicy(this, 'DynamoPolicy', {
       managedPolicyName: `${environment}-${SERVICE}-dynamodb-policy`,
       statements: [
@@ -107,8 +119,67 @@ export class IAMStack extends cdk.Stack {
         }),
         new iam.PolicyStatement({
           effect: iam.Effect.DENY,
-          actions: ['dynamodb:UpdateItem', 'dynamodb:DeleteItem'],
+          actions: ['dynamodb:DeleteItem'],
           resources: appendOnlyArns,
+        }),
+        // The ledger is never updated (Invariant #2) — unconditional.
+        new iam.PolicyStatement({
+          sid: 'LedgerNeverUpdated',
+          effect: iam.Effect.DENY,
+          actions: ['dynamodb:UpdateItem'],
+          resources: arnsOf(TABLE_LEDGER),
+        }),
+        // wallet_audit: the account-deletion purge may REMOVE ip/user_agent
+        // (LGPD anonymization) and nothing else. Any other attribute, or a
+        // request without dynamodb:Attributes, stays denied.
+        new iam.PolicyStatement({
+          sid: 'AuditAnonymizeIpUaOnly',
+          actions: ['dynamodb:UpdateItem'],
+          resources: [dynamoDBTables.get(TABLE_AUDIT)!.tableArn],
+          conditions: {
+            'ForAllValues:StringEquals': {'dynamodb:Attributes': AUDIT_ANONYMIZABLE_ATTRIBUTES},
+            Null: {'dynamodb:Attributes': 'false'},
+          },
+        }),
+        new iam.PolicyStatement({
+          sid: 'AuditNoOtherUpdate',
+          effect: iam.Effect.DENY,
+          actions: ['dynamodb:UpdateItem'],
+          resources: arnsOf(TABLE_AUDIT),
+          conditions: {'ForAnyValue:StringNotEquals': {'dynamodb:Attributes': AUDIT_ANONYMIZABLE_ATTRIBUTES}},
+        }),
+        new iam.PolicyStatement({
+          sid: 'AuditNoUnscopedUpdate',
+          effect: iam.Effect.DENY,
+          actions: ['dynamodb:UpdateItem'],
+          resources: arnsOf(TABLE_AUDIT),
+          conditions: {Null: {'dynamodb:Attributes': 'true'}},
+        }),
+      ],
+    }));
+
+    // ── Account deletion (LGPD) ───────────────────────────────────────────────
+    this.apiRole.addManagedPolicy(new iam.ManagedPolicy(this, 'ErasurePolicy', {
+      managedPolicyName: `${environment}-${SERVICE}-erasure-policy`,
+      statements: [
+        new iam.PolicyStatement({
+          sid: 'ErasureQueueConsume',
+          actions: ['sqs:ReceiveMessage', 'sqs:DeleteMessage', 'sqs:ChangeMessageVisibility', 'sqs:GetQueueAttributes'],
+          resources: [erasureQueueArn],
+        }),
+        // Retained PII (Lei 9.613, 5 years) is written once at purge and never
+        // read back by the application: support reads it with its own role.
+        new iam.PolicyStatement({
+          sid: 'RetentionWriteOnly',
+          actions: ['dynamodb:PutItem'],
+          resources: [retentionTableArn],
+        }),
+        new iam.PolicyStatement({
+          sid: 'RetentionNoRead',
+          effect: iam.Effect.DENY,
+          actions: ['dynamodb:GetItem', 'dynamodb:BatchGetItem', 'dynamodb:Query', 'dynamodb:Scan',
+            'dynamodb:UpdateItem', 'dynamodb:DeleteItem', 'dynamodb:BatchWriteItem'],
+          resources: [retentionTableArn, `${retentionTableArn}/index/*`],
         }),
       ],
     }));
@@ -130,6 +201,9 @@ export class IAMStack extends cdk.Stack {
           resources: [
             `arn:aws:ssm:*:*:parameter${walletSsm.walletClientId}`,
             `arn:aws:ssm:*:*:parameter${walletSsm.walletClientSecret}`,
+            // Dedicated ack client of the account-deletion saga (not the KYC client).
+            `arn:aws:ssm:*:*:parameter${walletSsm.erasureClientId}`,
+            `arn:aws:ssm:*:*:parameter${walletSsm.erasureClientSecret}`,
             `arn:aws:ssm:*:*:parameter${accountSsm.internalBaseUrl}`,
             `arn:aws:ssm:*:*:parameter${accountSsm.appUrl}`,
             `arn:aws:ssm:*:*:parameter${accountSsm.internalJwksUrl}`,

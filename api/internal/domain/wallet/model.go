@@ -93,7 +93,7 @@ const (
 
 // DynamoDB GSI names.
 const (
-	GSIUser       = "gsi_user"        // wallets.user_id → both wallets of a user
+	GSIUser       = "gsi_user"        // user_id → a user's rows (wallets, deposits, withdrawals, holds)
 	GSIIdem       = "gsi_idem"        // ledger_entries.idempotency_key → replay lookup
 	GSIStatus     = "gsi_status"      // withdrawals.status → reconciliation scan; deposits.status → pending sweep
 	GSIHoldStatus = "gsi_hold_status" // holds.status → stale-hold reconciliation scan
