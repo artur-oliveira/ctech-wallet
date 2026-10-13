@@ -112,7 +112,7 @@ Wallet-local context: `docs/specs/2026-10-08-wallet-restoration-design.md` and C
 - **R18 A deposit for an ERASED user is refunded, never credited; for a LOCKED user it is credited and becomes a blocker.** Locked (grace or purging): the user's money, and inbound money cannot be refused (saga § 4.2), so it credits and the next eligibility check reports `wallet.balance_nonzero`. Erased (tombstone `StateErased`): the account no longer exists and `GET /internal/kyc/:user_id` has nothing to match, so `ConfirmDeposit` hands the paid charge to the existing refund saga (`rejectMismatch`, payer refund by e2eid, idempotent, with `ALARM` on failure per invariant 14). Task 4b. *Cost if wrong:* an extra tombstone read per paid deposit.
 - **R19 A paid but unconfirmed deposit blocks.** `DepositPending` is not in `pendingDepositStatuses` (an abandoned QR is `pending` forever; nothing sets `expired`). But a paid charge with no payer CPF is quarantined as `pending` (invariant 11, `ALARM paid deposit missing payer identity`) and holds the user's money at Inter. The blocker `wallet.deposit_quarantined` counts `pending` deposits that are either within the charge's validity or that the provider reports as paid (`QueryCharge`, at most 10 per check; more than 10 older pending rows is reported as one blocker with `detail.unchecked`). Support resolves it: refund or attribute. *Cost if wrong:* one Inter call per old pending deposit, bounded.
 - **R20 The `real` balance blocker explains the daily limits.** `detail` carries `daily_withdraw_cap_cents`, `daily_withdraw_count` and `days_needed` (`ceil(ceil(balance / cap) / count)`), computed from `wallet.EffectiveDailyLimits(w)`. The account UI shows "about N days". *Cost if wrong:* a wrong estimate if limits change mid-way; it is guidance only.
-- **R21 Deposits and withdrawals of a user are found by scanning the status GSIs and filtering in memory** (the same shape as `ScanStaleHolds`). That reads every row of each status, for each eligibility check and each purge. The rail serves a closed group of KYC-approved friends (invariant 12), so the volume is small. *Trigger to revisit:* the group opens up, or a status partition passes a few thousand rows; the fix is a `user_id` GSI on `wallet_pix_deposits` and `wallet_withdrawals`, which also removes the `Scan`-shaped cost in `ScanStaleHolds`.
+- **R21 A user's deposits, withdrawals and holds are read by a key-condition Query on a `gsi_user` index (hash `user_id`, sort `created_at`) added to `wallet_pix_deposits`, `wallet_withdrawals` and `wallet_holds`.** The first draft scanned the status indexes and filtered in memory (the shape of `ScanStaleHolds`), which reads every row of a status for each check: tolerable for a few friends, wrong for thousands. With `gsi_user` the cost of an eligibility check or a purge is the user's own rows, whatever the table holds. DynamoDB indexes existing items by itself when the index is created (they already carry `user_id` and `created_at`), so there is **no backfill code**; the deploy waits for `IndexStatus = ACTIVE` (Task 10). The wider scalability analysis, including the status indexes' hot partition and sparse work queues, is `docs/specs/2026-10-13-wallet-scalable-lookups.md`. *Cost if wrong:* three indexes' storage and write cost, small next to the rows they point at.
 - **R15 Rows with no PII beyond the opaque `sub` are untouched:** idempotency guards, closed holds, purchase rows, ledger `description`/`ref`.
   - Cost if wrong: one more erase step later.
 - **R16 Service-scope unlink (`Store.Clear` on re-consent) is out of scope.** ctech-account phase 3 ships account scope only; the unlink plan adds `Clear` to the terms-addendum accept path.
@@ -350,7 +350,7 @@ git commit -m "feat(api): erasure domain constants and carried self-exclusion ru
 - Consumes: Task 1 constants.
 - Produces:
   - `func repositories.NewErasureRepository(db *dynamodb.Client, cfg *config.Config) *ErasureRepository`;
-  - `(*ErasureRepository) DepositsForUser(ctx, userID string) ([]wallet.PixDeposit, error)`;
+  - `(*ErasureRepository) DepositsForUser(ctx, userID string) ([]wallet.PixDeposit, error)` (via `gsi_user`, R21);
   - `(*ErasureRepository) WithdrawalsForUser(ctx, userID string) ([]wallet.Withdrawal, error)`;
   - `(*ErasureRepository) OpenHoldsForUser(ctx, userID string) ([]wallet.Hold, error)`;
   - `(*ErasureRepository) Retain(ctx, sub, source, sourceKey string, item any, until time.Time) error`;
@@ -530,23 +530,13 @@ const (
 	attrAuditIP             = "ip"
 	attrAuditUserAgent      = "user_agent"
 	attrTTL                 = "ttl"
-	attrStatus              = "status"
+	attrUserID              = "user_id"
 )
 
 const erasurePageSize = 100
 
 // maxDepositChecks bounds the Inter calls one Blockers makes (R19).
 const maxDepositChecks = 10
-
-var (
-	allDepositStatuses = []string{
-		wallet.DepositPending, wallet.DepositConfirmed, wallet.DepositRejectedCPF, wallet.DepositRefundPending,
-		wallet.DepositExpired, wallet.DepositRefunded, wallet.DepositRefundFailed,
-	}
-	allWithdrawalStatuses = []string{
-		wallet.WithdrawProcessing, wallet.WithdrawCompleted, wallet.WithdrawReversed, wallet.WithdrawRefundFail,
-	}
-)
 
 // ErasureRepository is the persistence side of the account-deletion purge
 // (docs/plans/2026-10-07-account-deletion-participant.md). Every write is
@@ -571,55 +561,56 @@ func NewErasureRepository(db *dynamodb.Client, cfg *config.Config) *ErasureRepos
 	}
 }
 
-// allByStatus pages through a status GSI for every listed status and keeps
-// the rows keep accepts.
-// ponytail: filter-after-GSI over whole status partitions, the same shape as
-// ScanStaleHolds. Fine for the closed group on the Inter rail (a few friends,
-// KYC approved by the owner, R21); add a user_id GSI before the group opens up.
-func allByStatus[T any](ctx context.Context, b Base, index string, statuses []string, keep func(*T) bool) ([]T, error) {
+// allByUser pages through a table's gsi_user partition for one user (R21): a
+// key-condition Query, so the cost is the user's own rows, whatever the table
+// holds. gsi_user is sorted by created_at.
+func allByUser[T any](ctx context.Context, b Base, userID string) ([]T, error) {
 	var out []T
-	for _, status := range statuses {
-		var start map[string]types.AttributeValue
-		for {
-			res, err := b.QueryGSI(ctx, index, attrStatus, status, erasurePageSize, start)
+	var start map[string]types.AttributeValue
+	for {
+		res, err := b.QueryGSI(ctx, wallet.GSIUser, attrUserID, userID, erasurePageSize, start)
+		if err != nil {
+			return nil, err
+		}
+		for _, it := range res.Items {
+			v, err := Decode[T](it)
 			if err != nil {
 				return nil, err
 			}
-			for _, it := range res.Items {
-				v, err := Decode[T](it)
-				if err != nil {
-					return nil, err
-				}
-				if keep(v) {
-					out = append(out, *v)
-				}
-			}
-			if len(res.LastEvaluatedKey) == 0 {
-				break
-			}
-			start = res.LastEvaluatedKey
+			out = append(out, *v)
 		}
+		if len(res.LastEvaluatedKey) == 0 {
+			return out, nil
+		}
+		start = res.LastEvaluatedKey
 	}
-	return out, nil
 }
 
 // DepositsForUser returns every PIX deposit row of userID, any status.
 func (r *ErasureRepository) DepositsForUser(ctx context.Context, userID string) ([]wallet.PixDeposit, error) {
-	return allByStatus(ctx, r.deposits, wallet.GSIStatus, allDepositStatuses,
-		func(d *wallet.PixDeposit) bool { return d.UserID == userID })
+	return allByUser[wallet.PixDeposit](ctx, r.deposits, userID)
 }
 
 // WithdrawalsForUser returns every withdrawal row of userID, any status.
 func (r *ErasureRepository) WithdrawalsForUser(ctx context.Context, userID string) ([]wallet.Withdrawal, error) {
-	return allByStatus(ctx, r.withdrawals, wallet.GSIStatus, allWithdrawalStatuses,
-		func(w *wallet.Withdrawal) bool { return w.UserID == userID })
+	return allByUser[wallet.Withdrawal](ctx, r.withdrawals, userID)
 }
 
-// OpenHoldsForUser returns userID's holds still `held`, across every page
-// (ListOpenHoldsForWallet reads one page only, which is not enough here).
+// OpenHoldsForUser returns userID's holds still `held`. A user has few holds,
+// so the status is filtered over the user's own partition, not the shared
+// `held` partition of gsi_hold_status.
 func (r *ErasureRepository) OpenHoldsForUser(ctx context.Context, userID string) ([]wallet.Hold, error) {
-	return allByStatus(ctx, r.holds, wallet.GSIHoldStatus, []string{wallet.HoldHeld},
-		func(h *wallet.Hold) bool { return h.UserID == userID })
+	all, err := allByUser[wallet.Hold](ctx, r.holds, userID)
+	if err != nil {
+		return nil, err
+	}
+	open := all[:0]
+	for _, h := range all {
+		if h.Status == wallet.HoldHeld {
+			open = append(open, h)
+		}
+	}
+	return open, nil
 }
 
 // RetentionSK is the retention sort key of one source row.
@@ -2772,6 +2763,18 @@ git commit -m "feat(api): wire the erasure consumer, lock gate and revocation ba
   - IAMStack props `erasureQueueArn: string`, `retentionTableArn: string`;
   - ApiStack prop `erasureQueueUrl: string`;
   - instance env `ERASURE_QUEUE_URL` and `VALKEY_REVOCATION_URL`.
+
+- [ ] **Step 0: The user indexes (R21).** In `cdk/lib/dynamodb-stack.ts`, next to the existing `gsi(...)` calls, add (`ATTR_CREATED_AT = 'created_at'` if the constant does not exist):
+
+```ts
+    gsi(depositsTable, GSI_USER, ATTR_USER_ID, ATTR_CREATED_AT);    // a user's deposits
+    gsi(withdrawalsTable, GSI_USER, ATTR_USER_ID, ATTR_CREATED_AT); // a user's withdrawals
+    gsi(holdsTable, GSI_USER, ATTR_USER_ID, ATTR_CREATED_AT);       // a user's holds
+```
+
+  The `gsi` helper must accept the sort key it already declares as optional. Update `wallet.GSIUser`'s comment in `model.go` to "user_id → a user's rows (wallets, deposits, withdrawals, holds)". In `cdk/test/dynamodb-stack.test.ts` assert the three indexes exist with key `user_id`/`created_at`. The integration harness creates its tables from the same definitions, so add the index there too.
+
+  **Deploy order:** CloudFormation adds one index per table per update, and each build takes minutes. Deploy `DynamoDB` first and wait until `aws dynamodb describe-table --table-name {env}_wallet_pix_deposits --query 'Table.GlobalSecondaryIndexes[].IndexStatus'` (and the other two) reads `ACTIVE`, then deploy the API with the erasure code. Existing items are indexed by DynamoDB itself; nothing to backfill. Check one known user: a `Query` on the index returns the same deposits the console shows.
 
 - [ ] **Step 1: Write the failing CDK tests** — `cdk/test/erasure.test.ts`:
 
