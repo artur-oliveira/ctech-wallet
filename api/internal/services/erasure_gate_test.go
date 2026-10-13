@@ -111,3 +111,38 @@ func TestErasureGateOpenUserProceeds(t *testing.T) {
 		t.Fatalf("gate calls = %v, want [u1]", gate.calls)
 	}
 }
+
+type stubErased map[string]bool
+
+func (e stubErased) Erased(_ context.Context, sub string) (bool, error) { return e[sub], nil }
+
+// R18: the payer of a deposit for an erased user is refunded; nothing credits.
+func TestConfirmDepositForAnErasedUserRefundsThePayer(t *testing.T) {
+	repo, fake := paidDepositFixture(5000)
+	svc := newRailSvc(repo, &stubUserRepo{}, fake)
+	svc.SetErased(stubErased{"u1": true})
+
+	if err := svc.ConfirmDeposit(context.Background(), "tx1", "***456789**", "Pagador", false); err != nil {
+		t.Fatalf("ConfirmDeposit: %v", err)
+	}
+	if len(repo.creditCalls) != 0 {
+		t.Fatalf("credits = %+v; an erased user must never be credited", repo.creditCalls)
+	}
+	if len(fake.Refunds) != 1 {
+		t.Fatalf("refunds = %d, want the payer refunded once", len(fake.Refunds))
+	}
+}
+
+// A LOCKED (not erased) user's deposit still credits.
+func TestConfirmDepositForALockedUserStillCredits(t *testing.T) {
+	repo, fake := paidDepositFixture(5000)
+	svc := newRailSvc(repo, &stubUserRepo{}, fake)
+	svc.SetErased(stubErased{}) // locked is not erased
+
+	if err := svc.ConfirmDeposit(context.Background(), "tx1", "***456789**", "Pagador", false); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.creditCalls) != 1 {
+		t.Fatalf("credits = %d, want 1", len(repo.creditCalls))
+	}
+}

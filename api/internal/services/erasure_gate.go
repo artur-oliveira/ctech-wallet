@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"gopkg.aoctech.app/api-commons/erasure"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/problem"
 )
@@ -55,3 +56,27 @@ func (s *WalletService) SetErasure(gate ErasureGate, carried CarriedExclusionSto
 func (s *UserService) SetErasureGate(gate ErasureGate) {
 	s.erasureGate = gate
 }
+
+// ErasedChecker reports a user whose erasure completed (tombstone state
+// erased). A locked user is not erased: their inbound money still credits.
+type ErasedChecker interface {
+	Erased(ctx context.Context, sub string) (bool, error)
+}
+
+type storeErased struct{ s *erasure.Store }
+
+func (e storeErased) Erased(ctx context.Context, sub string) (bool, error) {
+	rec, err := e.s.Get(ctx, erasure.SubKey(sub))
+	return rec != nil && rec.State == erasure.StateErased, err
+}
+
+// StoreErased adapts the erasure store; nil store means the feature is off.
+func StoreErased(s *erasure.Store) ErasedChecker {
+	if s == nil {
+		return nil
+	}
+	return storeErased{s}
+}
+
+// SetErased wires the erased-user check used by ConfirmDeposit (R18).
+func (s *WalletService) SetErased(c ErasedChecker) { s.erased = c }

@@ -233,6 +233,7 @@ type WalletService struct {
 	m2mClients       map[string]M2MClient  // AZP → webhook config; nil/missing entry means "don't notify"; see SetM2MClients
 	erasureGate      ErasureGate           // optional; see SetErasure
 	carried          CarriedExclusionStore // optional; see SetErasure
+	erased           ErasedChecker         // optional; see SetErased
 }
 
 func NewWalletService(repo Repo, users UserRepo, audit Auditor, lock Locker, pixClient pix.PixClient, kyc KYCClient) *WalletService {
@@ -560,6 +561,19 @@ func (s *WalletService) ConfirmDeposit(ctx context.Context, txid, payerCPF, paye
 	if refunded(charge) {
 		// Already returned to the payer before we got to confirm it — never credit.
 		return s.repo.UpdateDepositStatus(ctx, txid, wallet.DepositRefunded, charge.E2EID)
+	}
+
+	// R18: the account is gone, so there is no KYC to match and nobody to credit.
+	// The payer gets the money back through the same saga a CPF mismatch uses.
+	if s.erased != nil {
+		erased, err := s.erased.Erased(ctx, dep.UserID)
+		if err != nil {
+			return err // unknown erasure state: never credit, retry
+		}
+		if erased {
+			slog.Warn("deposit for an erased user; refunding payer", "txid", txid)
+			return s.rejectMismatch(ctx, dep, charge)
+		}
 	}
 
 	kyc, err := s.kyc.Get(ctx, dep.UserID)
