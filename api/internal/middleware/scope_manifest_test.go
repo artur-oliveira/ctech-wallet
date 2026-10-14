@@ -7,6 +7,9 @@ import (
 	"gopkg.aoctech.app/wallet/api/internal/oauthresource"
 )
 
+// retiredCustodyScope was removed from the code with the Asaas BaaS integration.
+const retiredCustodyScope = "wallet:custody:write"
+
 func TestScopeManifestMatchesEnforcedScopes(t *testing.T) {
 	m, err := oauthresource.ManifestDocument()
 	if err != nil {
@@ -25,6 +28,15 @@ func TestScopeManifestMatchesEnforcedScopes(t *testing.T) {
 	gotInternal := make([]string, 0, len(wantInternal))
 	gotPublic := make([]string, 0, len(wantPublic))
 	for _, scope := range m.Scopes {
+		// The registry (ctech-account) refuses to drop an active scope before
+		// it was published as deprecated, so a retired scope stays here as
+		// deprecated until a later change removes it. It is no longer enforced.
+		if scope.Name == retiredCustodyScope {
+			if scope.Status != "deprecated" {
+				t.Fatalf("retired scope %q must stay deprecated", scope.Name)
+			}
+			continue
+		}
 		if scope.Status != "active" {
 			t.Fatalf("Wallet scope %q must be active", scope.Name)
 		}
