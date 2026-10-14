@@ -24,7 +24,7 @@ essas versões. A fonte pública de verdade é
 A Wallet é dona do manifesto versionado
 `api/internal/oauthresource/scope-manifest.json`, atualmente com 12 permissões
 públicas `wallet:*` e 11 permissões M2M `internal:wallet:*`. O teste de contrato
-compara o manifesto com as constantes realmente usadas pelo middleware. O deploy
+compara o manifesto com as constantes realmente usadas pelo middleware. O registro do CTech Account recusa remover uma permissão ativa sem que ela tenha sido publicada antes como `deprecated`; por isso `wallet:custody:write` permanece no manifesto como `deprecated` (não é mais aplicada) até uma mudança posterior removê-la. O deploy
 o publica no CTech Account depois do CDK e antes da API usando um client
 confidencial vinculado somente ao Resource Server `wallet`; o papel OIDC lê
 apenas os três parâmetros necessários.
