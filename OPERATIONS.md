@@ -323,7 +323,8 @@ the console/CLI with an admin role, `--profile ctech`:
 `aws dynamodb query --table-name prod_wallet_erasure_retention --key-condition-expression "pk = :p" --expression-attribute-values '{":p":{"S":"SUB#<sub>"}}'`.
 Join with ctech-account's `KYCRET#{sub}` for the identity. Never copy results into tickets or logs.
 
-**DLQ alarm (`{env}-ctech-wallet-erasure-dlq-not-empty`).**
+**Messages in the erasure DLQ (`{env}-ctech-wallet-erasure-dlq`).** There is no CloudWatch alarm on it (alarms cost
+money and were declined); check its depth when a user's deletion stays in `purging` in ctech-account.
 
 - Read the message: `aws sqs receive-message --queue-url <dlq-url> --profile ctech`.
 - Check the API logs for `erasure: message left for redelivery` with the same `message_id`.
