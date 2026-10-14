@@ -8,7 +8,7 @@ import {IAMStack} from '../lib/iam-stack';
 
 const env = {account: '868899309401', region: 'us-east-1'};
 
-test('erasure queue: subscribed to the account topic, filtered to wallet on the message attribute, raw delivery, DLQ alarm', () => {
+test('erasure queue: subscribed to the account topic, filtered to wallet on the message attribute, raw delivery, no alarm', () => {
   const t = Template.fromStack(new ErasureStack(new cdk.App(), 'E', {env, environment: 'prod'}));
   t.hasResourceProperties('AWS::SNS::Subscription', {
     Protocol: 'sqs',
@@ -25,7 +25,8 @@ test('erasure queue: subscribed to the account topic, filtered to wallet on the 
     RedrivePolicy: {maxReceiveCount: 5},
   });
   t.hasResourceProperties('AWS::SQS::Queue', {QueueName: 'prod-ctech-wallet-erasure-dlq'});
-  t.hasResourceProperties('AWS::CloudWatch::Alarm', {Threshold: 0, ComparisonOperator: 'GreaterThanThreshold'});
+  // CloudWatch alarms cost money and were declined: the DLQ is checked by hand (OPERATIONS.md §7).
+  t.resourceCountIs('AWS::CloudWatch::Alarm', 0);
 });
 
 test('erasure tables: state with TTL, retention kept out of the generic grants, wallet_users TTL', () => {

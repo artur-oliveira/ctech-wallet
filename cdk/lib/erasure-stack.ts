@@ -1,11 +1,8 @@
 import * as cdk from 'aws-cdk-lib';
-import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
-import * as cwActions from 'aws-cdk-lib/aws-cloudwatch-actions';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as subs from 'aws-cdk-lib/aws-sns-subscriptions';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
-import {SSM as CtechSSM} from '@aoctech/cdk';
 import {Construct} from 'constructs';
 import {ERASURE_SERVICE_ID, erasureQueueName, SSM_ACCOUNT_ERASURE_TOPIC_ARN} from './constants';
 import {Environment} from './types';
@@ -48,19 +45,6 @@ export class ErasureStack extends cdk.Stack {
       rawMessageDelivery: true,
       filterPolicy: {services: sns.SubscriptionFilter.stringFilter({allowlist: [ERASURE_SERVICE_ID]})},
     }));
-
-    const alerts = sns.Topic.fromTopicArn(this, 'AlertsTopic',
-      ssm.StringParameter.valueForStringParameter(this, CtechSSM.alerts(environment).topicArn));
-    const alarm = new cloudwatch.Alarm(this, 'ErasureDLQNotEmpty', {
-      alarmName: `${erasureQueueName(environment)}-dlq-not-empty`,
-      alarmDescription: 'A wallet erasure message failed 5 times. Runbook: OPERATIONS.md §7.',
-      metric: dlq.metricApproximateNumberOfMessagesVisible({period: cdk.Duration.minutes(5)}),
-      threshold: 0,
-      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
-      evaluationPeriods: 1,
-      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
-    });
-    alarm.addAlarmAction(new cwActions.SnsAction(alerts));
 
     this.queueArn = queue.queueArn;
     this.queueUrl = queue.queueUrl;
