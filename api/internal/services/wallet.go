@@ -640,6 +640,13 @@ func (s *WalletService) ConfirmDeposit(ctx context.Context, txid, payerCPF, paye
 	if !maskedCPFMatches(dep.PayerCPF, kyc.CPF) {
 		return s.rejectMismatch(ctx, dep, charge)
 	}
+	// A rail that reports the payer's name (Billing) is held to it as well: with the
+	// CPF only partly known, the digits that show are not enough on their own.
+	// Never reached on the Inter path, which names no one.
+	if charge.PayerName != "" && !payerNameMatches(charge.PayerName, kyc.LegalName) {
+		slog.Warn("deposit payer name differs from the KYC name; refunding payer", "txid", txid)
+		return s.rejectMismatch(ctx, dep, charge)
+	}
 
 	// Invariant 11 follow-through: the credited amount must match what we opened
 	// the charge for. Inter caps a charge at its created amount, so a divergence

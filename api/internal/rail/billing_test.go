@@ -266,3 +266,20 @@ func TestWithTheFlagOnTheRailIsBilling(t *testing.T) {
 		t.Fatalf("rail %T", r)
 	}
 }
+
+func TestAPartialPayerFromTheWebhookIsCompletedWithTheMaskedDocumentAndTheName(t *testing.T) {
+	f := &fakeBilling{invoice: paid("partial", &billingclient.Payer{Name: "Fulano de Tal", Document: "***456789**"}, 5000)}
+	c, _ := NewBilling(f).QueryDeposit(context.Background(), "dep-1")
+	if c.Status != pix.ChargeCompleted || c.PayerCPF != "***456789**" || c.PayerName != "Fulano de Tal" ||
+		c.Payments[0].PayerCPF != "***456789**" || c.Payments[0].PayerName != "Fulano de Tal" {
+		t.Fatalf("charge %+v", c)
+	}
+}
+
+func TestAMatchCarriesTheNameToo(t *testing.T) {
+	f := &fakeBilling{invoice: paid("match", &billingclient.Payer{Name: "Fulano", Document: "39053344705"}, 5000)}
+	c, _ := NewBilling(f).QueryDeposit(context.Background(), "dep-1")
+	if c.PayerName != "Fulano" || c.PayerCPF != "39053344705" {
+		t.Fatalf("charge %+v", c)
+	}
+}

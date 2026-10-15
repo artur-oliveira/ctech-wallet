@@ -297,3 +297,65 @@ func TestReconcileKeepsWaitingOnAPayoutStillProcessing(t *testing.T) {
 		t.Fatalf("%d %d %d status %s", resolved, reversed, alarmed, repo.withdrawals["wd1"].Status)
 	}
 }
+
+// ── partial payers from the webhook ─────────────────────────────────────────
+
+func namedKYC() *countingKYC {
+	return &countingKYC{rec: &kycclient.KYC{Level: "enhanced", CPF: "12345678901", LegalName: "Artur Oliveira Carvalho"}}
+}
+
+func partialCharge(cpf, name string) *pix.Charge {
+	c := paidCharge(cpf)
+	c.PayerName, c.Payments[0].PayerName = name, name
+	return c
+}
+
+func pendingDeposit() *stubRepo {
+	repo := newStubRepo()
+	repo.deposit = &wallet.PixDeposit{Txid: "tx1", WalletID: "w-real", UserID: "u1", AmountExpected: 10000, Status: wallet.DepositPending}
+	return repo
+}
+
+func TestAMaskedCPFThatAgreesWithTheKYCAndANameThatMatchesIsCreditedAtOnce(t *testing.T) {
+	repo := pendingDeposit()
+	r := &scriptedRail{charge: partialCharge("***456789**", "ARTUR OLIVEIRA CARVALHO")}
+	if err := billingSvc(repo, r, namedKYC()).ConfirmDeposit(context.Background(), "tx1", "", "", false); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.creditCalls) != 1 || len(r.refunds) != 0 {
+		t.Fatalf("credits %d refunds %d", len(repo.creditCalls), len(r.refunds))
+	}
+}
+
+func TestAMaskedCPFWithADigitThatDiffersIsRefundedWhateverTheName(t *testing.T) {
+	repo := pendingDeposit()
+	r := &scriptedRail{charge: partialCharge("***456780**", "Artur Oliveira Carvalho")}
+	if err := billingSvc(repo, r, namedKYC()).ConfirmDeposit(context.Background(), "tx1", "", "", false); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.creditCalls) != 0 || len(r.refunds) != 1 {
+		t.Fatalf("credits %d refunds %d", len(repo.creditCalls), len(r.refunds))
+	}
+}
+
+func TestADifferentPayerNameIsRefundedEvenWhenTheMaskedDigitsAgree(t *testing.T) {
+	repo := pendingDeposit()
+	r := &scriptedRail{charge: partialCharge("***456789**", "Beltrano de Souza")}
+	if err := billingSvc(repo, r, namedKYC()).ConfirmDeposit(context.Background(), "tx1", "", "", false); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.creditCalls) != 0 || len(r.refunds) != 1 || r.refunds[0] != "refund#tx1" {
+		t.Fatalf("credits %d refunds %v", len(repo.creditCalls), r.refunds)
+	}
+}
+
+func TestTheInterPathNamesNoOneAndIsNotHeldToAName(t *testing.T) {
+	repo := pendingDeposit()
+	r := &scriptedRail{charge: paidCharge("12345678901")} // no PayerName, as on the Inter path
+	if err := billingSvc(repo, r, namedKYC()).ConfirmDeposit(context.Background(), "tx1", "", "", false); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.creditCalls) != 1 {
+		t.Fatalf("credits %d", len(repo.creditCalls))
+	}
+}

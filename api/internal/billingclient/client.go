@@ -39,6 +39,9 @@ const (
 
 	// Payer matches Billing computes against the customer's registered CPF.
 	MatchYes = "match"
+	// MatchPartial: the payer comes from the bank's webhook, the document masked to
+	// its middle digits and every shown digit equal to the customer's.
+	MatchPartial = "partial"
 
 	// MetadataTxid is how an invoice names the wallet deposit it belongs to.
 	MetadataTxid = "txid"
