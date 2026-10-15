@@ -1,12 +1,16 @@
 package v1
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"gopkg.aoctech.app/api-commons/cache"
 	"gopkg.aoctech.app/wallet/api/internal/config"
+	"gopkg.aoctech.app/wallet/api/internal/repositories"
+
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -147,4 +151,56 @@ func TestErasureEligibilityRouteIsRegisteredAtTheContractPath(t *testing.T) {
 		}
 	}
 	t.Fatalf("%s is missing", path)
+}
+
+// The holds are also reachable under names without "game": Poker moves to them
+// while the old paths stay until the cleanup. Both families are one handler each.
+func TestGenericHoldRoutesAreRegisteredNextToTheGameNamedOnes(t *testing.T) {
+	app := routerApp(t, false)
+	post := registeredPaths(app)
+	for _, path := range []string{
+		"/v1.0/internal/wallet/holds/", "/v1.0/internal/wallet/holds/cashout", "/v1.0/internal/wallet/holds/:hold_id/release",
+		"/v1.0/internal/wallet/game/hold", "/v1.0/internal/wallet/game/cashout",
+	} {
+		if !post[path] {
+			t.Errorf("POST %s is missing", path)
+		}
+	}
+	found := false
+	for _, r := range app.GetRoutes() {
+		found = found || (r.Method == http.MethodGet && r.Path == "/v1.0/internal/wallet/holds/status/:user_id")
+	}
+	if !found {
+		t.Error("GET /v1.0/internal/wallet/holds/status/:user_id is missing")
+	}
+}
+
+type fakeExporter struct{}
+
+func (fakeExporter) ExportPage(context.Context, map[string]types.AttributeValue, int) ([]repositories.ExportedUser, []repositories.ExportedCarriedExclusion, map[string]types.AttributeValue, error) {
+	return nil, nil, nil, nil
+}
+
+func TestResponsibleExportExistsOnlyWhenMountedAndNeedsAToken(t *testing.T) {
+	const path = "/v1.0/internal/wallet/responsible/export"
+	has := func(app *fiber.App) bool {
+		for _, r := range app.GetRoutes() {
+			if r.Method == http.MethodGet && r.Path == path {
+				return true
+			}
+		}
+		return false
+	}
+	if has(routerApp(t, false)) {
+		t.Fatalf("%s is mounted without the option", path)
+	}
+	app := fiber.New()
+	Register(app, cache.NewMemoryBackend(testCacheSize), nil, &config.Config{TablePrefix: "test"}, nil, nil, nil, nil, nil, nil, WithResponsibleExport(fakeExporter{}))
+	if !has(app) {
+		t.Fatalf("%s is missing", path)
+	}
+	res, err := app.Test(httptest.NewRequest(http.MethodGet, path, nil))
+	if err != nil || res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated export = %v, %v (want 401)", res, err)
+	}
 }

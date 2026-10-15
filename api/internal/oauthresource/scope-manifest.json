@@ -22,6 +22,8 @@
     { "name": "internal:wallet:confirm-deposit", "descriptions": { "pt-BR": "Confirmar resolucao de cobranca PIX.", "en": "Confirm PIX charge resolution." }, "visibility": "internal", "status": "active" },
     { "name": "internal:wallet:game-hold", "descriptions": { "pt-BR": "Reservar e liberar saldo para jogos.", "en": "Hold and release game balance." }, "visibility": "internal", "status": "active" },
     { "name": "internal:wallet:game-cashout", "descriptions": { "pt-BR": "Liquidar ganhos de jogos.", "en": "Settle game winnings." }, "visibility": "internal", "status": "active" },
+    { "name": "internal:wallet:hold", "descriptions": { "pt-BR": "Reservar, liberar e liquidar saldo em jogos.", "en": "Hold, release and settle balance in games." }, "visibility": "internal", "status": "active" },
+    { "name": "internal:wallet:responsible-export", "descriptions": { "pt-BR": "Exportar o estado de jogo responsável.", "en": "Export responsible-gambling state." }, "visibility": "internal", "status": "active" },
     { "name": "internal:wallet:game-status", "descriptions": { "pt-BR": "Consultar elegibilidade de dinheiro real.", "en": "Read real-money eligibility." }, "visibility": "internal", "status": "active" },
     { "name": "internal:wallet:balance", "descriptions": { "pt-BR": "Consultar saldos sandbox e de jogos.", "en": "Read sandbox and game balances." }, "visibility": "internal", "status": "active" },
     { "name": "internal:wallet:sandbox-purchase", "descriptions": { "pt-BR": "Gerenciar compras PIX de creditos sandbox.", "en": "Manage PIX purchases of sandbox credits." }, "visibility": "internal", "status": "active" },
