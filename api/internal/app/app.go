@@ -188,6 +188,7 @@ func newBillingClient(cfg *config.Config) *billingclient.Client {
 func newWalletService(cfg *config.Config, bc *billingclient.Client, repo *repositories.WalletRepository, users *repositories.UserRepository, audit *repositories.AuditRepository, l *lock.Locker, p pix.PixClient, k services.KYCClient, sandboxPurchases *repositories.SandboxPurchaseRepository, productPurchases *repositories.ProductPurchaseRepository, m2mClients map[string]services.M2MClient, store *erasure.Store, er *repositories.ErasureRepository) *services.WalletService {
 	svc := services.NewWalletService(repo, users, audit, l, p, k)
 	svc.SetRail(rail.Select(cfg.BillingRailOn(), p, func() rail.BillingAPI { return bc }))
+	svc.SetGameMerged(cfg.GameWalletMerged)
 	svc.SetSandboxPurchases(sandboxPurchases)
 	svc.SetProductPurchases(productPurchases)
 	svc.SetM2MClients(m2mClients)

@@ -332,7 +332,11 @@
       "game_fund_debit": "Sent to game wallet",
       "game_fund_credit": "Received from real balance",
       "game_return_debit": "Returned to real balance",
-      "game_return_credit": "Received from game wallet"
+      "game_return_credit": "Received from game wallet",
+      "game_merge_debit": "Game balance merged",
+      "game_merge_credit": "Game balance merged into real balance",
+      "game_unmerge_debit": "Merge undone",
+      "game_unmerge_credit": "Merge undone"
     },
     "balance": {
       "before": "Previous balance",

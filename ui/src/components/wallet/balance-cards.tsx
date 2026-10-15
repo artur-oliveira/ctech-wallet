@@ -44,10 +44,13 @@ export function BalanceCards({
                              }: BalanceCardsProps) {
   const {t} = useTranslation()
   const {game, sandbox, activated} = balances
+  // After the merge a user has one money balance and no game wallet: the ring-fence
+  // actions (fund the game wallet, buy credits from it) no longer exist.
+  const hasGameWallet = activated && !!game
 
   return (
     <div className="space-y-4">
-      <div className={activated ? 'grid gap-4 md:grid-cols-[1.4fr_1fr]' : 'grid gap-4'}>
+      <div className={hasGameWallet ? 'grid gap-4 md:grid-cols-[1.4fr_1fr]' : 'grid gap-4'}>
         {/* Real — money */}
         <section className="relative overflow-hidden rounded-2xl bg-brand-600 p-6 text-white">
           <p className="font-mono text-xs uppercase tracking-widest text-brand-50">{t('balance.real.label')}</p>
@@ -69,7 +72,7 @@ export function BalanceCards({
               <ArrowUpFromLine size={16}/>
               {t('balance.withdraw')}
             </Button>
-            {activated && !selfExcluded && (
+            {hasGameWallet && !selfExcluded && (
               <Button
                 variant="outline"
                 className="border-brand-400/60 bg-transparent text-white hover:bg-brand-700"

@@ -46,6 +46,14 @@ const (
 	EntryGameHoldDebit     = "game_hold_debit"     // buy-in reservation
 	EntryGameHoldRelease   = "game_hold_release"   // full refund, table/hand aborted before play
 	EntryGameCashoutCredit = "game_cashout_credit" // final stack credited back on leaving the table
+
+	// P3: the one-off merge of a user's `game` balance into `real`.
+	EntryGameMergeDebit  = "game_merge_debit"  // debit game
+	EntryGameMergeCredit = "game_merge_credit" // credit real
+
+	// Rollback of the merge (the ledger is append-only, so it is a counter-entry).
+	EntryGameUnmergeDebit  = "game_unmerge_debit"  // debit real
+	EntryGameUnmergeCredit = "game_unmerge_credit" // credit game
 )
 
 // Hold statuses.
@@ -162,11 +170,14 @@ type Wallet struct {
 	MinWithdrawal int64 `dynamodbav:"min_withdrawal,omitempty" json:"min_withdrawal,omitempty"`
 	// Daily PIX limits (admin-only, same convention as MinDeposit/MaxDeposit).
 	// Zero means "use the default" (EffectiveDailyLimits).
-	DailyDepositCap    int64  `dynamodbav:"daily_deposit_cap,omitempty" json:"daily_deposit_cap,omitempty"`
-	DailyWithdrawCap   int64  `dynamodbav:"daily_withdraw_cap,omitempty" json:"daily_withdraw_cap,omitempty"`
-	DailyWithdrawCount int64  `dynamodbav:"daily_withdraw_count,omitempty" json:"daily_withdraw_count,omitempty"`
-	CreatedAt          string `dynamodbav:"created_at" json:"created_at"`
-	UpdatedAt          string `dynamodbav:"updated_at" json:"updated_at"`
+	DailyDepositCap    int64 `dynamodbav:"daily_deposit_cap,omitempty" json:"daily_deposit_cap,omitempty"`
+	DailyWithdrawCap   int64 `dynamodbav:"daily_withdraw_cap,omitempty" json:"daily_withdraw_cap,omitempty"`
+	DailyWithdrawCount int64 `dynamodbav:"daily_withdraw_count,omitempty" json:"daily_withdraw_count,omitempty"`
+	// RetiredAt is set once a `game` wallet has been merged into `real`: the row
+	// stays (the ledger is append-only) but nothing moves through it again.
+	RetiredAt string `dynamodbav:"retired_at,omitempty" json:"retired_at,omitempty"`
+	CreatedAt string `dynamodbav:"created_at" json:"created_at"`
+	UpdatedAt string `dynamodbav:"updated_at" json:"updated_at"`
 }
 
 // DescriptionMaxLen caps the optional free-form Description carried by ledger

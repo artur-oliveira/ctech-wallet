@@ -72,6 +72,11 @@ type Config struct {
 	ErasureClientID     string `env:"ERASURE_CLIENT_ID"`
 	ErasureClientSecret string `env:"ERASURE_CLIENT_SECRET"`
 
+	// GameWalletMerged switches the game-facing operations (holds, cash-outs,
+	// balance reads) from the `game` wallet to `real` and retires the ring-fence
+	// routes. Turn it on only after `merge-game` has emptied every game wallet.
+	GameWalletMerged bool `env:"GAME_WALLET_MERGED" envDefault:"false"`
+
 	// BillingRail chooses what moves the money for deposits and withdrawals:
 	// "off" (default) is the Inter Pix gateway as always, "on" is Billing. Off
 	// means no Billing call is ever made, and none of the BILLING_* below is read.

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import {nextLedgerTab} from './ledger-tabs.ts'
+import {availableLedgerTabs, nextLedgerTab} from './ledger-tabs.ts'
 
 const tabs = ['real', 'game', 'sandbox']
 
@@ -26,4 +26,11 @@ test('purchases participates in arrow, Home and End navigation', () => {
 
 test('ledger tabs leave unrelated keyboard input to the browser', () => {
     assert.equal(nextLedgerTab(tabs, 'real', 'Tab'), null)
+})
+
+test('the game statement is offered only while a game wallet exists', () => {
+    assert.deepEqual(availableLedgerTabs(true, true, true), ['real', 'game', 'sandbox', 'purchases'])
+    assert.deepEqual(availableLedgerTabs(true, true, false), ['real', 'sandbox', 'purchases'])
+    assert.deepEqual(availableLedgerTabs(false, true, false), ['real', 'sandbox', 'purchases'])
+    assert.deepEqual(availableLedgerTabs(false, false, false), ['real', 'purchases'])
 })

@@ -255,10 +255,33 @@ func (s *WalletService) GameEligibilityFor(ctx context.Context, userID string) (
 		return nil, err
 	}
 	return &GameEligibility{
-		Activated:        game != nil && sandbox != nil,
+		Activated:        s.activated(u, game, sandbox),
 		SelfExcluded:     u.SelfExcluded(time.Now()),
 		LimitsConfigured: u.LimitsConfigured(),
 	}, nil
+}
+
+// activated reports whether the user has opted in to gambling. Before the merge
+// that is the existence of a game and a sandbox wallet; after it there is no
+// game wallet to look for, so it is the sandbox wallet plus consent to the
+// current addendum.
+func (s *WalletService) activated(u *wallet.User, game, sandbox *wallet.Wallet) bool {
+	if s.gameMerged {
+		return sandbox != nil && u != nil && u.GamblingAccepted()
+	}
+	return game != nil && sandbox != nil
+}
+
+// IsActivated is activated for a caller that already holds the wallets.
+func (s *WalletService) IsActivated(ctx context.Context, userID string, game, sandbox *wallet.Wallet) (bool, error) {
+	if !s.gameMerged {
+		return game != nil && sandbox != nil, nil
+	}
+	u, err := s.users.Get(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	return s.activated(u, game, sandbox), nil
 }
 
 // applyCarriedExclusion re-applies a self-exclusion kept from an erased

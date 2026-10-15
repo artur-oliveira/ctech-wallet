@@ -21,6 +21,11 @@ func (h *handlers) getWallet(c fiber.Ctx) error {
 		return sendProblem(c, err)
 	}
 	out := walletBalancesResponse(realw, gamew, sandboxw)
+	activated, err := h.svc.IsActivated(c.Context(), userID, gamew, sandboxw)
+	if err != nil {
+		return sendProblem(c, err)
+	}
+	out["activated"] = activated
 	limits, err := h.svc.RailLimits(c.Context(), userID, realw)
 	if err != nil {
 		return sendProblem(c, err)
