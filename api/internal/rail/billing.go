@@ -2,10 +2,14 @@ package rail
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
+
+	qrcode "github.com/skip2/go-qrcode"
 
 	"gopkg.aoctech.app/wallet/api/internal/billingclient"
 	"gopkg.aoctech.app/wallet/api/internal/pix"
@@ -94,6 +98,7 @@ func (r *BillingRail) charge(ctx context.Context, inv *billingclient.Invoice) (*
 			return nil, fmt.Errorf("billing pix: %w", err)
 		}
 		c.QRCode = inv.PixCopiaECola
+		c.QRCodeB64 = qrImage(inv.PixCopiaECola)
 	case billingclient.StatusPaid:
 		payer := ""
 		switch {
@@ -157,4 +162,17 @@ func payoutResult(p *billingclient.Payout) (*pix.TransferResult, error) {
 	default:
 		return &pix.TransferResult{Status: pix.TransferProcessing}, nil
 	}
+}
+
+// qrImage renders the copia-e-cola as a PNG, base64, for the screens that show
+// the code as an image. Billing returns only the string. A failure leaves the
+// image empty (the string still works, the screen shows it to copy), never fails
+// the deposit.
+func qrImage(payload string) string {
+	png, err := qrcode.Encode(payload, qrcode.Medium, 320)
+	if err != nil {
+		slog.Warn("billing rail: could not render the Pix QR code", "err", err)
+		return ""
+	}
+	return base64.StdEncoding.EncodeToString(png)
 }
