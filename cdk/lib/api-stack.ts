@@ -12,6 +12,7 @@ import {
   APP_PORT_ALT,
   asgName,
   BILLING_RAIL,
+  GAME_WALLET_MERGED,
   HEALTH_CHECK_PATH,
   NGINX_PORT,
   S3_PREFIX,
@@ -152,6 +153,7 @@ export class ApiStack extends cdk.Stack {
       `ERASURE_QUEUE_URL=${erasureQueueUrl}`,
       // off = the Inter Pix gateway as always; on = ctech-billing (the BILLING_* below).
       `BILLING_RAIL=${BILLING_RAIL[environment]}`,
+      `GAME_WALLET_MERGED=${GAME_WALLET_MERGED[environment]}`,
       `TRUSTED_PROXIES=127.0.0.1`,
       `ENV`,
     );

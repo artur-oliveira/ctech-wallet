@@ -251,6 +251,7 @@ function DashboardInner() {
             <LedgerTabs
               activated={balances.data.activated}
               hasSandbox={!!balances.data.sandbox}
+              hasGame={!!balances.data.game}
             />
           </>
         )}

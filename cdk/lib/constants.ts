@@ -170,6 +170,17 @@ export const BILLING_RAIL: Record<Environment, BillingRail> = {
   prod: 'on',
 };
 
+/**
+ * GAME_WALLET_MERGED: holds, cash-outs and balance reads act on `real` and the
+ * ring-fence routes answer 410 (docs/runbooks/game-merge.md). Turn on only after
+ * `merge-game` has emptied every game wallet; off is the behaviour before P3.
+ */
+export const GAME_WALLET_MERGED: Record<Environment, boolean> = {
+  dev: false,
+  stage: false,
+  prod: false,
+};
+
 /** ctech-account namespace — read-only for the wallet. */
 export const SSM_ACCOUNT = (env: Environment) => ({
   namespace: `/ctech-account/${env}`,

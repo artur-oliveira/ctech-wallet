@@ -332,7 +332,11 @@
       "game_fund_debit": "Envio para o jogo",
       "game_fund_credit": "Recebido do saldo real",
       "game_return_debit": "Devolução ao saldo real",
-      "game_return_credit": "Recebido do jogo"
+      "game_return_credit": "Recebido do jogo",
+      "game_merge_debit": "Saldo de jogos unificado",
+      "game_merge_credit": "Saldo de jogos unificado ao saldo real",
+      "game_unmerge_debit": "Unificação desfeita",
+      "game_unmerge_credit": "Unificação desfeita"
     },
     "balance": {
       "before": "Saldo anterior",

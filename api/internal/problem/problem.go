@@ -42,6 +42,7 @@ const (
 	TypeAmountAboveLimit    = "/problems/amount-above-limit"
 
 	TypeGamblingNotActivated  = "/problems/gambling-not-activated"
+	TypeRouteRetired          = "/problems/route-retired"
 	TypeGamblingTermsRequired = "/problems/gambling-terms-required"
 
 	// responsible gambling (docs/specs/2026-07-19-responsible-gambling-design.md)
@@ -188,6 +189,14 @@ func PixKeyNotFound() *Problem {
 func GamblingNotActivated() *Problem {
 	return New(http.StatusConflict, TypeGamblingNotActivated, "Gambling Not Activated",
 		"ative a carteira de jogos antes de usar esta operação")
+}
+
+// RouteRetired: the operation no longer exists because the game wallet was
+// merged into the real one (GAME_WALLET_MERGED). 410, so a stale client sees a
+// clear end rather than a silent success or a 500.
+func RouteRetired() *Problem {
+	return New(http.StatusGone, TypeRouteRetired, "Route Retired",
+		"esta operação não existe mais: o saldo de jogos foi unificado ao saldo real")
 }
 
 // GamblingTermsRequired: the caller has not accepted the CURRENT gambling

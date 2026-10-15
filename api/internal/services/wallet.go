@@ -236,6 +236,7 @@ type WalletService struct {
 	erasureGate      ErasureGate           // optional; see SetErasure
 	carried          CarriedExclusionStore // optional; see SetErasure
 	erased           ErasedChecker         // optional; see SetErased
+	gameMerged       bool                  // game operations act on `real`; see SetGameMerged
 }
 
 func NewWalletService(repo Repo, users UserRepo, audit Auditor, lock Locker, pixClient pix.PixClient, kyc KYCClient) *WalletService {
@@ -246,6 +247,10 @@ func NewWalletService(repo Repo, users UserRepo, audit Auditor, lock Locker, pix
 
 // SetRail replaces the rail deposits and withdrawals go through. Without it they
 // use the Inter Pix client directly, as before.
+// SetGameMerged makes the game-facing operations act on the user's `real`
+// wallet (GAME_WALLET_MERGED). Off by default.
+func (s *WalletService) SetGameMerged(on bool) { s.gameMerged = on }
+
 func (s *WalletService) SetRail(r rail.Rail) {
 	if r != nil {
 		s.rail = r
@@ -322,6 +327,27 @@ func (s *WalletService) ActivateGambling(ctx context.Context, userID, kycLevel, 
 		return nil, nil, err
 	}
 
+	if s.gameMerged {
+		// No game wallet is created any more; activation is consent + limits + the
+		// sandbox wallet. A replay returns the existing sandbox and audits nothing.
+		if _, _, sb, err := s.repo.LoadWallets(ctx, userID); err != nil {
+			return nil, nil, err
+		} else if sb != nil {
+			return nil, sb, nil
+		}
+		sb, err := s.repo.EnsureSandboxWallet(ctx, userID)
+		if err != nil {
+			return nil, nil, err
+		}
+		if err := s.audit.Append(ctx, &wallet.AuditEvent{
+			UserID: userID, EventType: wallet.EventGamblingActivated, Actor: userID,
+			After: wallet.CurrentGamblingAddendumVersion, IP: ip, UserAgent: userAgent,
+		}); err != nil {
+			return nil, nil, err
+		}
+		return nil, sb, nil
+	}
+
 	// Already activated → return the existing wallets and append nothing. A replay
 	// must not forge a second activation record: the audit log is evidence of what
 	// actually happened, and one activation happened.
@@ -357,7 +383,11 @@ func (s *WalletService) GetBalances(ctx context.Context, userID string) (real, g
 	if _, err := s.repo.EnsureRealWallet(ctx, userID); err != nil {
 		return nil, nil, nil, err
 	}
-	return s.repo.LoadWallets(ctx, userID)
+	real, game, sandbox, err = s.repo.LoadWallets(ctx, userID)
+	if err == nil && s.gameMerged && game != nil && game.RetiredAt != "" {
+		game = nil // merged: the user has one balance, `real`
+	}
+	return real, game, sandbox, err
 }
 
 // Statement returns a paginated ledger for a wallet (newest first).
@@ -1096,12 +1126,14 @@ type WalletBalances struct {
 // creates a wallet; a wallet that doesn't exist yet reports as balance 0,
 // which is the correct value (the user holds nothing there), not an error.
 func (s *WalletService) BalancesFor(ctx context.Context, userID string) (*WalletBalances, error) {
-	_, game, sandbox, err := s.repo.LoadWallets(ctx, userID)
+	real, game, sandbox, err := s.repo.LoadWallets(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
 	b := &WalletBalances{}
-	if game != nil {
+	if s.gameMerged && real != nil {
+		b.GameBalance = real.Balance // what a game can stake is the real balance
+	} else if game != nil {
 		b.GameBalance = game.Balance
 	}
 	if sandbox != nil {
@@ -1116,6 +1148,21 @@ func (s *WalletService) requireActivated(ctx context.Context, userID string) (re
 	real, game, sandbox, err = s.repo.LoadWallets(ctx, userID)
 	if err != nil {
 		return nil, nil, nil, err
+	}
+	if s.gameMerged {
+		// There is no game wallet any more: games stake `real`. Activation is
+		// the user's consent to the current gambling addendum.
+		if real == nil {
+			return nil, nil, nil, problem.GamblingNotActivated()
+		}
+		u, err := s.users.Get(ctx, userID)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if u == nil || !u.GamblingAccepted() {
+			return nil, nil, nil, problem.GamblingNotActivated()
+		}
+		return real, real, sandbox, nil
 	}
 	if real == nil || game == nil || sandbox == nil {
 		return nil, nil, nil, problem.GamblingNotActivated()
@@ -1153,6 +1200,9 @@ func (s *WalletService) ringTransfer(ctx context.Context, from, to *wallet.Walle
 func (s *WalletService) FundGame(ctx context.Context, userID string, amount int64, idemKey string) (debit, credit *wallet.LedgerEntry, err error) {
 	if err := checkErasure(ctx, s.erasureGate, userID); err != nil {
 		return nil, nil, err
+	}
+	if s.gameMerged {
+		return nil, nil, problem.RouteRetired()
 	}
 	// Absolute inbound ceiling — real money enters the gambling ring-fence only
 	// here, so this is the single door the cap must guard.
@@ -1211,6 +1261,9 @@ func (s *WalletService) FundGame(ctx context.Context, userID string, amount int6
 // encourage. This is not a PIX payout — to reach a bank account the user then
 // withdraws from `real` as usual.
 func (s *WalletService) ReturnFromGame(ctx context.Context, userID string, amount int64, idemKey string) (debit, credit *wallet.LedgerEntry, err error) {
+	if s.gameMerged {
+		return nil, nil, problem.RouteRetired()
+	}
 	if err := checkErasure(ctx, s.erasureGate, userID); err != nil {
 		return nil, nil, err
 	}
@@ -1230,6 +1283,9 @@ func (s *WalletService) ReturnFromGame(ctx context.Context, userID string, amoun
 // mean nothing. Sandbox remains a sink (Invariant #6) — this conversion is
 // one-way and can never be undone.
 func (s *WalletService) PurchaseSandbox(ctx context.Context, userID string, amount int64, idemKey string) (debit, credit *wallet.LedgerEntry, err error) {
+	if s.gameMerged {
+		return nil, nil, problem.RouteRetired()
+	}
 	if err := checkErasure(ctx, s.erasureGate, userID); err != nil {
 		return nil, nil, err
 	}
@@ -1378,7 +1434,17 @@ func (s *WalletService) ReleaseHold(ctx context.Context, userID, holdID, idemKey
 		return h, nil // already resolved — idempotent no-op
 	}
 
-	release, err := acquireWallet(ctx, s.lock, h.WalletID)
+	// Merged: a hold opened before the merge still names the retired game wallet;
+	// the refund goes to `real`.
+	target := h.WalletID
+	if s.gameMerged {
+		real, err := s.repo.EnsureRealWallet(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		target = real.WalletID
+	}
+	release, err := acquireWallet(ctx, s.lock, target)
 	if err != nil {
 		return nil, err
 	}
@@ -1394,6 +1460,11 @@ func (s *WalletService) ReleaseHold(ctx context.Context, userID, holdID, idemKey
 		return h, nil
 	}
 
+	if h.WalletID != target {
+		retargeted := *h
+		retargeted.WalletID = target
+		h = &retargeted
+	}
 	resolved, _, err := s.repo.ReleaseHoldAtomic(ctx, h,
 		wallet.EntryGameHoldRelease+"#"+holdID, reqHash(holdID, h.Amount))
 	return resolved, err

@@ -5,18 +5,12 @@ import {useTranslation} from 'react-i18next'
 import {LedgerList} from '@/components/wallet/ledger-list'
 import {PurchasesPanel} from '@/components/wallet/purchases-panel'
 import type {WalletType} from '@/lib/types/api'
-import {nextLedgerTab} from '@/lib/utils/ledger-tabs'
+import {availableLedgerTabs, nextLedgerTab, PURCHASES_TAB} from '@/lib/utils/ledger-tabs'
 
 const TAB_ID_PREFIX = 'ledger-tab-'
 const PANEL_ID_PREFIX = 'ledger-panel-'
 
-export const PURCHASES_TAB = 'purchases'
 export type LedgerTab = WalletType | typeof PURCHASES_TAB
-
-export function availableLedgerTabs(activated: boolean, hasSandbox: boolean): LedgerTab[] {
-  const wallets: WalletType[] = activated ? ['real', 'game', 'sandbox'] : hasSandbox ? ['real', 'sandbox'] : ['real']
-  return [...wallets, PURCHASES_TAB]
-}
 
 function tabID(type: LedgerTab): string {
   return `${TAB_ID_PREFIX}${type}`
@@ -26,11 +20,11 @@ function panelID(type: LedgerTab): string {
   return `${PANEL_ID_PREFIX}${type}`
 }
 
-export function LedgerTabs({activated, hasSandbox}: { activated: boolean; hasSandbox: boolean }) {
+export function LedgerTabs({activated, hasSandbox, hasGame}: { activated: boolean; hasSandbox: boolean; hasGame: boolean }) {
   const {t} = useTranslation()
   const [tab, setTab] = useState<LedgerTab>('real')
   const tabRefs = useRef<Partial<Record<LedgerTab, HTMLButtonElement | null>>>({})
-  const tabs = availableLedgerTabs(activated, hasSandbox)
+  const tabs: LedgerTab[] = availableLedgerTabs(activated, hasSandbox, hasGame)
   const selectedTab = tabs.includes(tab) ? tab : tabs[0]
 
   function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>, current: LedgerTab) {
