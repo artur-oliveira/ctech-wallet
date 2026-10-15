@@ -21,10 +21,12 @@ import (
 	"gopkg.aoctech.app/api-commons/cache"
 	"gopkg.aoctech.app/api-commons/ws"
 	"gopkg.aoctech.app/wallet/api/internal/awsclient"
+	"gopkg.aoctech.app/wallet/api/internal/billingclient"
 	"gopkg.aoctech.app/wallet/api/internal/config"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
 	"gopkg.aoctech.app/wallet/api/internal/lock"
 	"gopkg.aoctech.app/wallet/api/internal/pix"
+	"gopkg.aoctech.app/wallet/api/internal/rail"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
 	"gopkg.aoctech.app/wallet/api/internal/secrets"
 	"gopkg.aoctech.app/wallet/api/internal/services"
@@ -98,6 +100,7 @@ func run(ctx context.Context) (*Result, error) {
 	users := repositories.NewUserRepository(clients.DynamoDB, cfg)
 	audit := repositories.NewAuditRepository(clients.DynamoDB, cfg)
 	svc := services.NewWalletService(repo, users, audit, lock.NewLocker(cache.NewMemoryBackend(16)), pixClient, kycclient.New(cfg))
+	svc.SetRail(rail.Select(cfg.BillingRailOn(), pixClient, func() rail.BillingAPI { return billingclient.New(cfg) }))
 	svc.SetBroadcaster(newBroadcaster(cfg))
 	svc.SetSandboxPurchases(repositories.NewSandboxPurchaseRepository(clients.DynamoDB, cfg))
 	svc.SetProductPurchases(repositories.NewProductPurchaseRepository(clients.DynamoDB, cfg))

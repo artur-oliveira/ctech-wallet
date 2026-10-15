@@ -60,3 +60,13 @@ func PayoutGrace(r Rail) time.Duration {
 	}
 	return 0
 }
+
+// Select chooses the rail. With the flag off it is the Inter path, and
+// newBilling is never called, so no Billing client, token manager or config is
+// touched: off is byte-for-byte what it was.
+func Select(billingOn bool, legacy pix.PixClient, newBilling func() BillingAPI) Rail {
+	if !billingOn {
+		return NewLegacy(legacy)
+	}
+	return NewBilling(newBilling())
+}

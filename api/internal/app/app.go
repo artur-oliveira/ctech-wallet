@@ -18,12 +18,14 @@ import (
 	"gopkg.aoctech.app/api-commons/ws"
 	apiv1 "gopkg.aoctech.app/wallet/api/internal/api/v1"
 	"gopkg.aoctech.app/wallet/api/internal/awsclient"
+	"gopkg.aoctech.app/wallet/api/internal/billingclient"
 	"gopkg.aoctech.app/wallet/api/internal/config"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
 	"gopkg.aoctech.app/wallet/api/internal/lock"
 	"gopkg.aoctech.app/wallet/api/internal/pix"
 	"gopkg.aoctech.app/wallet/api/internal/problem"
+	"gopkg.aoctech.app/wallet/api/internal/rail"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
 	"gopkg.aoctech.app/wallet/api/internal/secrets"
 	"gopkg.aoctech.app/wallet/api/internal/services"
@@ -55,6 +57,7 @@ var Module = fx.Options(
 		newInterTokenManager,
 		newLambdaPixClient,
 		newKYCClient,
+		newBillingClient,
 		repositories.NewWalletRepository,
 		repositories.NewUserRepository,
 		repositories.NewAuditRepository,
@@ -173,8 +176,18 @@ func newKYCClient(cfg *config.Config) services.KYCClient {
 	return kycclient.New(cfg)
 }
 
-func newWalletService(repo *repositories.WalletRepository, users *repositories.UserRepository, audit *repositories.AuditRepository, l *lock.Locker, p pix.PixClient, k services.KYCClient, sandboxPurchases *repositories.SandboxPurchaseRepository, productPurchases *repositories.ProductPurchaseRepository, m2mClients map[string]services.M2MClient, store *erasure.Store, er *repositories.ErasureRepository) *services.WalletService {
+// newBillingClient builds the Billing client only when the rail is on; with it
+// off there is no client, no token manager and no Billing configuration read.
+func newBillingClient(cfg *config.Config) *billingclient.Client {
+	if !cfg.BillingRailOn() {
+		return nil
+	}
+	return billingclient.New(cfg)
+}
+
+func newWalletService(cfg *config.Config, bc *billingclient.Client, repo *repositories.WalletRepository, users *repositories.UserRepository, audit *repositories.AuditRepository, l *lock.Locker, p pix.PixClient, k services.KYCClient, sandboxPurchases *repositories.SandboxPurchaseRepository, productPurchases *repositories.ProductPurchaseRepository, m2mClients map[string]services.M2MClient, store *erasure.Store, er *repositories.ErasureRepository) *services.WalletService {
 	svc := services.NewWalletService(repo, users, audit, l, p, k)
+	svc.SetRail(rail.Select(cfg.BillingRailOn(), p, func() rail.BillingAPI { return bc }))
 	svc.SetSandboxPurchases(sandboxPurchases)
 	svc.SetProductPurchases(productPurchases)
 	svc.SetM2MClients(m2mClients)
@@ -253,9 +266,13 @@ func newFiberApp(cfg *config.Config) *fiber.App {
 	return app
 }
 
-func registerRoutes(app *fiber.App, c cache.Backend, rev RevocationCache, cfg *config.Config, clients *awsclient.Clients, pixClient pix.PixClient, svc *services.WalletService, userSvc *services.UserService, erasureSvc *services.ErasureService, wsRegistry ws.Registry) {
+func registerRoutes(bc *billingclient.Client, app *fiber.App, c cache.Backend, rev RevocationCache, cfg *config.Config, clients *awsclient.Clients, pixClient pix.PixClient, svc *services.WalletService, userSvc *services.UserService, erasureSvc *services.ErasureService, wsRegistry ws.Registry) {
 	svc.SetBroadcaster(wsRegistry)
 	apiv1.Register(app, c, rev, cfg, clients, pixClient, svc, userSvc, erasureSvc, wsRegistry)
+	if cfg.BillingRailOn() {
+		// Billing's signed invoice.paid wake-up. Not mounted at all with the rail off.
+		apiv1.RegisterBillingEvents(app.Group("/v1.0"), &apiv1.BillingEvents{Secret: cfg.BillingEventSecret, Invoices: bc, Confirm: svc})
+	}
 }
 
 func startServer(lc fx.Lifecycle, app *fiber.App, cfg *config.Config) {

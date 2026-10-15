@@ -234,3 +234,21 @@ func TestBillingRailAsksForTheIdentityAndAGraceBeforeBelievingUnknown(t *testing
 		t.Fatal("the Inter path keeps its behaviour: no grace")
 	}
 }
+
+func TestWithTheFlagOffNoBillingClientIsEverBuilt(t *testing.T) {
+	built := false
+	r := Select(false, pix.NewFake(), func() BillingAPI { built = true; return &fakeBilling{} })
+	if built {
+		t.Fatal("the flag is off and the Billing client was constructed")
+	}
+	if _, ok := r.(*LegacyRail); !ok {
+		t.Fatalf("rail %T", r)
+	}
+}
+
+func TestWithTheFlagOnTheRailIsBilling(t *testing.T) {
+	r := Select(true, pix.NewFake(), func() BillingAPI { return &fakeBilling{} })
+	if _, ok := r.(*BillingRail); !ok {
+		t.Fatalf("rail %T", r)
+	}
+}
