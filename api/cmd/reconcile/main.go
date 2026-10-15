@@ -100,9 +100,14 @@ func run(ctx context.Context) (*Result, error) {
 	// needs are read from SSM once per run (the role already allows these paths).
 	store := secrets.NewStore(clients.SSM, cfg.Env)
 	if cfg.WalletClientSecret == "" {
-		if cfg.WalletClientSecret, err = store.Load(ctx, "wallet-client-secret"); err != nil {
-			return nil, err
+		// Not fatal: withdrawal reconciliation needs no KYC lookup, and failing the
+		// whole run for a secret only the deposit sweep uses would trade a small
+		// problem for a bigger one.
+		secret, loadErr := store.Load(ctx, "wallet-client-secret")
+		if loadErr != nil {
+			slog.Warn("reconcile: wallet client secret unreadable, KYC lookups will fail this run", "err", loadErr)
 		}
+		cfg.WalletClientSecret = secret
 	}
 	if cfg.BillingRailOn() && cfg.BillingClientSecret == "" {
 		if cfg.BillingClientSecret, err = store.Load(ctx, "billing-client-secret"); err != nil {
