@@ -92,6 +92,13 @@ Poker, dominó, and future billing each get a confidential M2M client whose
 `ctech-account`'s token endpoint clamps requested scope to `allowed_scopes`, so a
 client can never request more than it was granted.
 
+## 3a. Billing rail (`BILLING_RAIL`)
+
+Deposits and withdrawals go through ctech-billing instead of the Inter Pix gateway when the rail is `on` for the
+environment (`cdk/lib/constants.ts`, `BILLING_RAIL`). It is `off` everywhere. The cutover, its SSM parameters
+(`billing-url`, `billing-client-id`, `billing-client-secret`, `billing-event-secret`) and the rollback are in
+`docs/runbooks/billing-rail-cutover.md`.
+
 ## 4. Inter (PIX) partner-bank configuration — SSM SecureString
 
 Nothing here is an env var in the repo and nothing is committed. Seed these SSM

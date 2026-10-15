@@ -149,7 +149,26 @@ export const SSM_WALLET = (env: Environment) => ({
   // and the reconcile Lambda (the latter retries failed notify-back
   // deliveries). Optional: unset means no M2M client is registered yet.
   m2mClients: `/${SERVICE}/${env}/m2m-clients`, // SecureString
+  // Billing rail (BILLING_RAIL=on): the wallet's OAuth client for ctech-billing,
+  // the base URL of its API, and the secret that signs its invoice.paid events.
+  // Seeded operationally; read only when the rail is on for the environment.
+  billingUrl: `/${SERVICE}/${env}/billing-url`,
+  billingClientId: `/${SERVICE}/${env}/billing-client-id`,
+  billingClientSecret: `/${SERVICE}/${env}/billing-client-secret`, // SecureString
+  billingEventSecret: `/${SERVICE}/${env}/billing-event-secret`, // SecureString
 });
+
+/**
+ * Whether deposits and withdrawals go through ctech-billing (docs/runbooks/billing-rail-cutover.md).
+ * "off" is the Inter Pix gateway, byte for byte. Switched per environment, one
+ * deploy at a time, after the cutover checklist.
+ */
+export type BillingRail = 'off' | 'on';
+export const BILLING_RAIL: Record<Environment, BillingRail> = {
+  dev: 'off',
+  stage: 'off',
+  prod: 'off',
+};
 
 /** ctech-account namespace — read-only for the wallet. */
 export const SSM_ACCOUNT = (env: Environment) => ({

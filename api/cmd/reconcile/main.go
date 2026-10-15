@@ -96,6 +96,23 @@ func run(ctx context.Context) (*Result, error) {
 		return nil, fmt.Errorf("pix: %w", err)
 	}
 
+	// A Lambda's environment never holds a SecureString, so the client secrets it
+	// needs are read from SSM once per run (the role already allows these paths).
+	store := secrets.NewStore(clients.SSM, cfg.Env)
+	if cfg.WalletClientSecret == "" {
+		if cfg.WalletClientSecret, err = store.Load(ctx, "wallet-client-secret"); err != nil {
+			return nil, err
+		}
+	}
+	if cfg.BillingRailOn() && cfg.BillingClientSecret == "" {
+		if cfg.BillingClientSecret, err = store.Load(ctx, "billing-client-secret"); err != nil {
+			return nil, err
+		}
+		if cfg.BillingClientSecret == "" {
+			return nil, fmt.Errorf("BILLING_RAIL=on but billing-client-secret is not in SSM")
+		}
+	}
+
 	repo := repositories.NewWalletRepository(clients.DynamoDB, cfg)
 	users := repositories.NewUserRepository(clients.DynamoDB, cfg)
 	audit := repositories.NewAuditRepository(clients.DynamoDB, cfg)

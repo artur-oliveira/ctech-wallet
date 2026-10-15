@@ -123,16 +123,35 @@ func TestTheBillingRailIsOffByDefaultAndNeedsItsSettingsWhenOn(t *testing.T) {
 	}
 	t.Setenv("BILLING_URL", "https://billing-api.example")
 	t.Setenv("BILLING_CLIENT_ID", "wallet")
-	t.Setenv("BILLING_CLIENT_SECRET", "s")
-	t.Setenv("BILLING_EVENT_SECRET", "e")
 	t.Setenv("CTECH_URL", "https://account.example")
 	cfg, err = LoadReconcile()
 	if err != nil || !cfg.BillingRailOn() {
-		t.Fatalf("on with its settings: %v", err)
+		t.Fatalf("the reconcile process needs no secret in its environment: %v", err)
 	}
 
 	t.Setenv("BILLING_RAIL", "maybe")
 	if _, err := LoadReconcile(); err == nil {
 		t.Fatal("an unknown value must fail, not read as off")
+	}
+}
+
+func TestTheAPIRequiresBothBillingSecretsWhenTheRailIsOn(t *testing.T) {
+	t.Setenv("ENVIRONMENT", "dev")
+	t.Setenv("TABLE_PREFIX", "t")
+	t.Setenv("PIX_GATEWAY_FUNCTION_NAME", "f")
+	t.Setenv("BILLING_RAIL", "on")
+	t.Setenv("BILLING_URL", "https://billing-api.example")
+	t.Setenv("BILLING_CLIENT_ID", "wallet")
+	t.Setenv("CTECH_URL", "https://account.example")
+	if _, err := Load(); err == nil {
+		t.Fatal("the API must refuse to start without the client secret and the event secret")
+	}
+	t.Setenv("BILLING_CLIENT_SECRET", "s")
+	if _, err := Load(); err == nil {
+		t.Fatal("the event secret is also required")
+	}
+	t.Setenv("BILLING_EVENT_SECRET", "e")
+	if _, err := Load(); err != nil {
+		t.Fatalf("both set: %v", err)
 	}
 }

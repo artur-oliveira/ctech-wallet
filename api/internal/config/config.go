@@ -103,8 +103,10 @@ func load() (*Config, error) {
 	switch cfg.BillingRail {
 	case "off":
 	case "on":
-		if cfg.BillingURL == "" || cfg.BillingClientID == "" || cfg.BillingClientSecret == "" || cfg.BillingEventSecret == "" || cfg.CtechURL == "" {
-			return nil, fmt.Errorf("config: BILLING_RAIL=on needs BILLING_URL, BILLING_CLIENT_ID, BILLING_CLIENT_SECRET, BILLING_EVENT_SECRET and CTECH_URL")
+		// The client secret is not required here: the reconcile Lambda reads it from
+		// SSM itself (a SecureString never goes into a function's environment).
+		if cfg.BillingURL == "" || cfg.BillingClientID == "" || cfg.CtechURL == "" {
+			return nil, fmt.Errorf("config: BILLING_RAIL=on needs BILLING_URL, BILLING_CLIENT_ID and CTECH_URL")
 		}
 	default:
 		return nil, fmt.Errorf("config: BILLING_RAIL must be off or on, got %q", cfg.BillingRail)
@@ -119,6 +121,10 @@ func Load() (*Config, error) {
 	cfg, err := load()
 	if err != nil {
 		return nil, err
+	}
+	if cfg.BillingRailOn() && (cfg.BillingClientSecret == "" || cfg.BillingEventSecret == "") {
+		// The API verifies Billing's events and calls it: both secrets or nothing.
+		return nil, fmt.Errorf("config: BILLING_RAIL=on needs BILLING_CLIENT_SECRET and BILLING_EVENT_SECRET")
 	}
 	if cfg.ServiceAudience == "" && cfg.Env == "prod" {
 		// Fail closed: without an audience check, any RS256 token the identity
