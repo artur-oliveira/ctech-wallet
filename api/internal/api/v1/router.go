@@ -20,12 +20,16 @@ type handlers struct {
 	userSvc            *services.UserService
 	erasureSvc         *services.ErasureService
 	requireDescription bool
+	exporter           ResponsibleExporter
 }
 
 // Option adjusts what Register mounts.
 type Option func(*registerOptions)
 
-type registerOptions struct{ billingEvents *BillingEvents }
+type registerOptions struct {
+	billingEvents     *BillingEvents
+	responsibleExport ResponsibleExporter
+}
 
 // WithBillingEvents mounts Billing's signed invoice.paid route. It is an option
 // of Register, not a call after it, because of how Fiber orders middleware: the
@@ -43,7 +47,7 @@ func Register(app *fiber.App, c cache.Backend, revocation cache.Backend, cfg *co
 	for _, opt := range opts {
 		opt(&o)
 	}
-	h := &handlers{svc: svc, userSvc: userSvc, erasureSvc: erasureSvc, requireDescription: cfg.RequireDescription}
+	h := &handlers{svc: svc, userSvc: userSvc, erasureSvc: erasureSvc, requireDescription: cfg.RequireDescription, exporter: o.responsibleExport}
 	verifier := middleware.NewVerifier(cfg.CtechJWKSURL, cfg.ServiceAudience, cfg.CtechIssuerURL, c)
 	if revocation != nil {
 		// Fail-open on every route (D3); money routes re-check fail-closed via fresh.
@@ -144,6 +148,16 @@ func Register(app *fiber.App, c cache.Backend, revocation cache.Backend, cfg *co
 	// Real-money eligibility for skill games (ctech-poker Phase 5). Registered
 	// unconditionally: poker must see "not eligible" even while the flag is off.
 	gw.Get("/status/:user_id", middleware.RequireScope(middleware.ScopeWalletGameStatus), h.gameStatus)
+	// The same holds under names that do not say "game": the wallet only reserves
+	// and settles money on `real` now, the games are Poker's. Same handlers.
+	hw := internal.Group("/wallet/holds")
+	hw.Post("/", middleware.RequireScope(middleware.ScopeWalletHold), h.holdGame)
+	hw.Post("/cashout", middleware.RequireScope(middleware.ScopeWalletHold), h.cashoutGame)
+	hw.Get("/status/:user_id", middleware.RequireScope(middleware.ScopeWalletHold), h.gameStatus)
+	hw.Post("/:hold_id/release", middleware.RequireScope(middleware.ScopeWalletHold), h.releaseHold)
+	if o.responsibleExport != nil {
+		internal.Get("/wallet/responsible/export", middleware.RequireScope(middleware.ScopeWalletResponsibleExport), h.responsibleExport)
+	}
 	// Balance read for skill games (ctech-poker). Read-only, game+sandbox only.
 	bg := internal.Group("/wallet/balance")
 	bg.Get("/:user_id", middleware.RequireScope(middleware.ScopeWalletBalance), h.walletBalance)

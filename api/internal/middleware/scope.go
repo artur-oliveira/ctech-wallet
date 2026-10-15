@@ -42,6 +42,14 @@ const (
 	// self-exclusion, limits) — consumed by skill games before buy-in
 	ScopeWalletGameStatus = "internal:wallet:game-status"
 
+	// ScopeWalletHold holds, releases and cashes out on `real` and reads a user's
+	// eligibility, under the routes that do not carry "game" in their name. One scope
+	// for the lot: the three game scopes split what is now one caller's whole duty.
+	ScopeWalletHold = "internal:wallet:hold"
+	// ScopeWalletResponsibleExport reads every user's responsible-gambling state, once,
+	// for the move of those rules to Poker. Read-only and short-lived.
+	ScopeWalletResponsibleExport = "internal:wallet:responsible-export"
+
 	// ScopeWalletBalance reads a user's game+sandbox balance (real excluded) —
 	// consumed by skill games to show the user how much they hold. Read-only,
 	// deliberately separate from ScopeWalletGameStatus (eligibility, not balance).
