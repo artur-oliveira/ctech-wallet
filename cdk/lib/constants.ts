@@ -178,7 +178,7 @@ export const BILLING_RAIL: Record<Environment, BillingRail> = {
 export const GAME_WALLET_MERGED: Record<Environment, boolean> = {
   dev: false,
   stage: false,
-  prod: false,
+  prod: true,
 };
 
 /** ctech-account namespace — read-only for the wallet. */
