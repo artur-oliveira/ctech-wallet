@@ -268,11 +268,12 @@ func newFiberApp(cfg *config.Config) *fiber.App {
 
 func registerRoutes(bc *billingclient.Client, app *fiber.App, c cache.Backend, rev RevocationCache, cfg *config.Config, clients *awsclient.Clients, pixClient pix.PixClient, svc *services.WalletService, userSvc *services.UserService, erasureSvc *services.ErasureService, wsRegistry ws.Registry) {
 	svc.SetBroadcaster(wsRegistry)
-	apiv1.Register(app, c, rev, cfg, clients, pixClient, svc, userSvc, erasureSvc, wsRegistry)
+	var opts []apiv1.Option
 	if cfg.BillingRailOn() {
 		// Billing's signed invoice.paid wake-up. Not mounted at all with the rail off.
-		apiv1.RegisterBillingEvents(app.Group("/v1.0"), &apiv1.BillingEvents{Secret: cfg.BillingEventSecret, Invoices: bc, Confirm: svc})
+		opts = append(opts, apiv1.WithBillingEvents(&apiv1.BillingEvents{Secret: cfg.BillingEventSecret, Invoices: bc, Confirm: svc}))
 	}
+	apiv1.Register(app, c, rev, cfg, clients, pixClient, svc, userSvc, erasureSvc, wsRegistry, opts...)
 }
 
 func startServer(lc fx.Lifecycle, app *fiber.App, cfg *config.Config) {
