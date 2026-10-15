@@ -1,8 +1,11 @@
 package rail
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
+	"image/png"
 	"testing"
 	"time"
 
@@ -91,6 +94,17 @@ func TestOpenDepositMakesTheCustomerThenTheInvoiceByTheDepositIdAndReturnsTheQR(
 	}
 	if c.Txid != "dep-1" || c.Amount != 5000 || c.QRCode != "000201-pix" || c.Status != pix.ChargeActive {
 		t.Fatalf("charge %+v", c)
+	}
+	raw, err := base64.StdEncoding.DecodeString(c.QRCodeB64)
+	if err != nil {
+		t.Fatalf("the QR image is not base64: %v", err)
+	}
+	img, err := png.Decode(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatalf("the QR image is not a PNG: %v", err)
+	}
+	if b := img.Bounds(); b.Dx() < 100 || b.Dx() != b.Dy() {
+		t.Fatalf("image %v", b)
 	}
 }
 
