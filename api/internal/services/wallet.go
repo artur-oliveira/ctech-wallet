@@ -1060,6 +1060,10 @@ func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, a
 		slog.Warn("withdrawal transfer failed, left in processing", "withdrawal_id", withdrawalID, "err", err)
 		return w, nil
 	}
+	if res.Status == pix.TransferProcessing {
+		// Accepted by a rail that settles later: the reconcile job completes it.
+		return w, nil
+	}
 	w.Status, w.E2EID = wallet.WithdrawCompleted, res.E2EID
 	if err := s.repo.UpdateWithdrawal(ctx, withdrawalID, map[string]any{"status": wallet.WithdrawCompleted, "e2e_id": res.E2EID}); err != nil {
 		return nil, err
