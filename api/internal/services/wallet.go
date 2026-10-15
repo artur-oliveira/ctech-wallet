@@ -22,6 +22,7 @@ import (
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
 	"gopkg.aoctech.app/wallet/api/internal/pix"
 	"gopkg.aoctech.app/wallet/api/internal/problem"
+	"gopkg.aoctech.app/wallet/api/internal/rail"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
 )
 
@@ -225,7 +226,8 @@ type WalletService struct {
 	users            UserRepo
 	audit            Auditor
 	lock             Locker
-	pix              pix.PixClient
+	pix              pix.PixClient // sandbox and product purchases; deposits and withdrawals go through rail
+	rail             rail.Rail     // deposits, refunds and payouts; LegacyRail unless SetRail says otherwise
 	kyc              KYCClient
 	broadcaster      Broadcaster           // optional; see SetBroadcaster
 	sandboxPurchases SandboxPurchaseRepo   // required for PurchaseSandboxDirect/RefundSandboxPurchase/ConfirmSandboxPurchase; see SetSandboxPurchases
@@ -238,7 +240,15 @@ type WalletService struct {
 
 func NewWalletService(repo Repo, users UserRepo, audit Auditor, lock Locker, pixClient pix.PixClient, kyc KYCClient) *WalletService {
 	return &WalletService{
-		repo: repo, users: users, audit: audit, lock: lock, pix: pixClient, kyc: kyc,
+		repo: repo, users: users, audit: audit, lock: lock, pix: pixClient, rail: rail.NewLegacy(pixClient), kyc: kyc,
+	}
+}
+
+// SetRail replaces the rail deposits and withdrawals go through. Without it they
+// use the Inter Pix client directly, as before.
+func (s *WalletService) SetRail(r rail.Rail) {
+	if r != nil {
+		s.rail = r
 	}
 }
 
@@ -441,12 +451,16 @@ func (s *WalletService) InitiateDeposit(ctx context.Context, userID, kycLevel st
 		if existing.UserID != userID || existing.AmountExpected != amount {
 			return nil, nil, problem.IdempotencyConflict()
 		}
-		charge, qerr := s.pix.QueryCharge(ctx, txid)
+		charge, qerr := s.rail.QueryDeposit(ctx, txid)
 		if qerr != nil {
-			// Crash between the durable reservation and CreateCharge: Inter's
-			// txid is unique, so re-creating with the same txid cannot open a
+			// Crash between the durable reservation and the charge: the txid is
+			// unique at the rail, so re-opening with the same txid cannot open a
 			// second charge.
-			if charge, qerr = s.pix.CreateCharge(ctx, txid, existing.AmountExpected, ""); qerr != nil {
+			req, rerr := s.depositRequest(ctx, userID, txid, existing.AmountExpected)
+			if rerr != nil {
+				return nil, nil, rerr
+			}
+			if charge, qerr = s.rail.OpenDeposit(ctx, req); qerr != nil {
 				return nil, nil, qerr
 			}
 		}
@@ -481,11 +495,31 @@ func (s *WalletService) InitiateDeposit(ctx context.Context, userID, kycLevel st
 		}
 		return nil, nil, err
 	}
-	charge, err := s.pix.CreateCharge(ctx, txid, amount, "")
+	req, err := s.depositRequest(ctx, userID, txid, amount)
+	if err != nil {
+		return nil, nil, err
+	}
+	charge, err := s.rail.OpenDeposit(ctx, req)
 	if err != nil {
 		return nil, nil, problem.InternalServer("falha ao criar cobrança PIX: " + err.Error())
 	}
 	return dep, charge, nil
+}
+
+// depositRequest is what the rail needs to open a deposit. The KYC identity is
+// read only for a rail that asks for it, so the Inter path makes the same calls
+// it always did.
+func (s *WalletService) depositRequest(ctx context.Context, userID, txid string, amount int64) (rail.DepositRequest, error) {
+	req := rail.DepositRequest{UserID: userID, Txid: txid, AmountCents: amount}
+	if !rail.NeedsIdentity(s.rail) {
+		return req, nil
+	}
+	k, err := s.kyc.Get(ctx, userID)
+	if err != nil {
+		return req, err
+	}
+	req.TaxID, req.Name, req.Email = k.CPF, k.LegalName, k.Email
+	return req, nil
 }
 
 // ConfirmDeposit is invoked (indirectly) by the Inter webhook. It NEVER trusts
@@ -522,7 +556,7 @@ func (s *WalletService) ConfirmDeposit(ctx context.Context, txid, payerCPF, paye
 		dep.PayerCPF, dep.PayerName = payerCPF, payerName
 	}
 
-	charge, err := s.pix.QueryCharge(ctx, dep.Txid)
+	charge, err := s.rail.QueryDeposit(ctx, dep.Txid)
 	if err != nil {
 		return err
 	}
@@ -712,7 +746,7 @@ func (s *WalletService) refundExcessPayments(ctx context.Context, txid string, c
 		if refundedPayment(p) {
 			continue // already returned
 		}
-		if _, err := s.pix.Refund(ctx, p.E2EID, p.Amount, "excess#"+p.E2EID); err != nil {
+		if _, err := s.rail.RefundDeposit(ctx, txid, p.E2EID, p.Amount, "excess#"+p.E2EID); err != nil {
 			slog.Error("ALARM excess PIX payment refund failed", "txid", txid, "e2e_id", p.E2EID, "amount", p.Amount, "err", err)
 			return problem.InternalServer("estorno de pagamento excedente falhou; reconciliação manual necessária")
 		}
@@ -859,7 +893,7 @@ func (s *WalletService) refundMismatch(ctx context.Context, dep *wallet.PixDepos
 		return s.markDepositRefunded(ctx, dep)
 	}
 
-	_, refundErr := s.pix.Refund(ctx, charge.E2EID, charge.Amount, "refund#"+dep.Txid)
+	_, refundErr := s.rail.RefundDeposit(ctx, dep.Txid, charge.E2EID, charge.Amount, "refund#"+dep.Txid)
 	if refundErr != nil {
 		changed, stateErr := s.repo.TransitionDepositStatus(ctx, dep.Txid, wallet.DepositRefundPending, wallet.DepositRefundFailed, charge.E2EID)
 		if stateErr != nil {
@@ -1016,7 +1050,7 @@ func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, a
 		return existing, nil
 	}
 
-	res, err := s.pix.Transfer(ctx, pixKey, amount, interIdemKey(withdrawalID))
+	res, err := s.rail.Payout(ctx, pixKey, amount, interIdemKey(withdrawalID))
 	if err != nil {
 		if errors.Is(err, pix.ErrKeyNotFound) {
 			// Nothing to retry: refund now instead of leaving it processing.
