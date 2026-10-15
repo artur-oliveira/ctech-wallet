@@ -1,6 +1,6 @@
 'use client'
 
-import {createContext, ReactNode, useCallback, useEffect, useState} from 'react'
+import {createContext, ReactNode, useCallback, useEffect, useRef, useState} from 'react'
 import {apiClient, registerRefreshFn} from '@/lib/api/client'
 import type {Profile} from '@/lib/types/api'
 import {STORAGE_KEY_USER} from '@/lib/constants/storage'
@@ -37,7 +37,12 @@ export function AuthProvider({children}: { children: ReactNode }) {
   // SameSite ctech_rt cookie set by ctech-account (see token.go); JS never sees
   // it, so an XSS can't exfiltrate a persistent session. The access token stays
   // in memory only (see client.ts).
+  // Bumped by every code exchange. A refresh that started before the bump ran with the previous
+  // session's cookie, so its token is stale (an older last_mfa_at) and must not replace the new one.
+  const authEpoch = useRef(0)
+  const currentToken = useRef<string | null>(null)
   const persistToken = useCallback((accessToken: string) => {
+    currentToken.current = accessToken
     apiClient.setToken(accessToken)
     setAuthenticated(true)
   }, [])
@@ -49,7 +54,9 @@ export function AuthProvider({children}: { children: ReactNode }) {
       setAuthenticated(true)
       return 'mock'
     }
+    const epoch = authEpoch.current
     const result = await doRefresh()
+    if (epoch !== authEpoch.current) return currentToken.current
     if (!result) {
       setAuthenticated(false)
       return null
@@ -96,6 +103,7 @@ export function AuthProvider({children}: { children: ReactNode }) {
 
   const handleCallback = useCallback(
     async (accessToken: string, idToken: string | null) => {
+      authEpoch.current += 1
       persistToken(accessToken)
       const claims = idToken ? decodeIdToken(idToken) : null
       if (claims) {
@@ -118,7 +126,9 @@ export function AuthProvider({children}: { children: ReactNode }) {
         }
       }
       try {
-        await tryRefresh()
+        // The callback page is exchanging a fresh authorization code; a refresh here would only
+        // race it with the old session.
+        if (window.location.pathname !== '/callback') await tryRefresh()
       } catch {
         // Preserve cached profile/session hints on transient IdP failures.
         // A later API request or navigation can retry the refresh.
