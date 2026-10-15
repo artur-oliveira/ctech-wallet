@@ -105,3 +105,34 @@ func TestLoadReconcileNeedsNoErasureConfig(t *testing.T) {
 		t.Fatalf("LoadReconcile: %v", err)
 	}
 }
+
+func TestTheBillingRailIsOffByDefaultAndNeedsItsSettingsWhenOn(t *testing.T) {
+	t.Setenv("TABLE_PREFIX", "t")
+	t.Setenv("PIX_GATEWAY_FUNCTION_NAME", "f")
+	cfg, err := LoadReconcile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.BillingRailOn() || cfg.BillingRail != "off" {
+		t.Fatalf("the rail must default to off: %q", cfg.BillingRail)
+	}
+
+	t.Setenv("BILLING_RAIL", "on")
+	if _, err := LoadReconcile(); err == nil {
+		t.Fatal("on without BILLING_URL and the rest must fail")
+	}
+	t.Setenv("BILLING_URL", "https://billing-api.example")
+	t.Setenv("BILLING_CLIENT_ID", "wallet")
+	t.Setenv("BILLING_CLIENT_SECRET", "s")
+	t.Setenv("BILLING_EVENT_SECRET", "e")
+	t.Setenv("CTECH_URL", "https://account.example")
+	cfg, err = LoadReconcile()
+	if err != nil || !cfg.BillingRailOn() {
+		t.Fatalf("on with its settings: %v", err)
+	}
+
+	t.Setenv("BILLING_RAIL", "maybe")
+	if _, err := LoadReconcile(); err == nil {
+		t.Fatal("an unknown value must fail, not read as off")
+	}
+}
