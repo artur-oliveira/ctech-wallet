@@ -35,6 +35,7 @@ type Charge struct {
 	QRCode    string // copia-e-cola (EMV payload)
 	QRCodeB64 string // base64 PNG (optional)
 	Status    string // one of the Charge* constants
+	PayerName string // the payer's name when the rail knows it (Billing); empty on the Inter path
 	PayerCPF  string // set only once paid; Inter's charge query no longer returns this — always empty in practice, kept for interface compatibility
 	E2EID     string // end-to-end id of the received payment
 	Refunds   []Refund
@@ -49,10 +50,11 @@ type Charge struct {
 
 // Payment is one PIX actually received against a charge.
 type Payment struct {
-	E2EID    string
-	Amount   int64 // centavos
-	PayerCPF string
-	Refunds  []Refund
+	E2EID     string
+	Amount    int64 // centavos
+	PayerCPF  string
+	PayerName string
+	Refunds   []Refund
 }
 
 // Refund is a devolução against a received PIX payment, as reported inside a

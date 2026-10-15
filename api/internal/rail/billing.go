@@ -77,9 +77,10 @@ func (r *BillingRail) QueryDeposit(ctx context.Context, txid string) (*pix.Charg
 // charge renders an invoice as the charge the deposit flow reads.
 //
 //   - Open: an active charge with its copia-e-cola.
-//   - Paid, payer recorded and Billing says match: completed, the payer's
-//     document in the field the wallet's own CPF check reads. The wallet's check
-//     and Billing's both have to pass.
+//   - Paid, payer recorded and Billing says match (the statement's complete CPF)
+//     or partial (the webhook's masked CPF, every shown digit equal): completed,
+//     the payer's document and name in the fields the wallet's own CPF and name
+//     checks read. Billing's verdict and the wallet's checks both have to pass.
 //   - Paid, Billing says mismatch: completed with a payer no check accepts, so the
 //     deposit is refunded to the payer.
 //   - Paid, payer not recorded yet (or Billing cannot tell): completed with no
@@ -100,15 +101,15 @@ func (r *BillingRail) charge(ctx context.Context, inv *billingclient.Invoice) (*
 		c.QRCode = inv.PixCopiaECola
 		c.QRCodeB64 = qrImage(inv.PixCopiaECola)
 	case billingclient.StatusPaid:
-		payer := ""
+		payer, name := "", ""
 		switch {
-		case inv.PayerMatch == billingclient.MatchYes && inv.Payer != nil:
-			payer = inv.Payer.Document
+		case (inv.PayerMatch == billingclient.MatchYes || inv.PayerMatch == billingclient.MatchPartial) && inv.Payer != nil:
+			payer, name = inv.Payer.Document, inv.Payer.Name
 		case inv.PayerMatch == "mismatch":
 			payer = MismatchPayer
 		}
-		c.Status, c.Amount, c.E2EID, c.PayerCPF = pix.ChargeCompleted, inv.PaidCents, inv.ID, payer
-		c.Payments = []pix.Payment{{E2EID: inv.ID, Amount: inv.PaidCents, PayerCPF: payer}}
+		c.Status, c.Amount, c.E2EID, c.PayerCPF, c.PayerName = pix.ChargeCompleted, inv.PaidCents, inv.ID, payer, name
+		c.Payments = []pix.Payment{{E2EID: inv.ID, Amount: inv.PaidCents, PayerCPF: payer, PayerName: name}}
 	default:
 		c.Status = pix.ChargeRemoved
 	}
