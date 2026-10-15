@@ -3,6 +3,7 @@ import {test} from 'node:test';
 import * as cdk from 'aws-cdk-lib';
 import {Template} from 'aws-cdk-lib/assertions';
 import {ApiStack} from '../lib/api-stack';
+import {BILLING_RAIL} from '../lib/constants';
 
 /** EC2's hard cap on user data, which a deploy discovers and not a review. */
 const USER_DATA_LIMIT_BYTES = 16384;
@@ -79,9 +80,17 @@ test('user data wires the erasure queue and the revocation Valkey (DB 0 base URL
   assert.match(text, /'ERASURE_CLIENT_ID=\/ctech-wallet\/prod\/erasure-client-id'/);
 });
 
-test('the Billing rail is off in every environment and asks for none of its SSM parameters', () => {
+test('the Billing rail settings follow the environment flag, and no secret is inlined', () => {
   const text = userDataText();
-  assert.match(text, /BILLING_RAIL=off/);
-  assert.doesNotMatch(text, /BILLING_URL|BILLING_CLIENT_SECRET|BILLING_EVENT_SECRET|billing-client-secret/,
-    'an unseeded SSM path would stop the service from starting');
+  if (BILLING_RAIL.prod === 'on') {
+    assert.match(text, /BILLING_RAIL=on/);
+    assert.match(text, /'BILLING_URL=\/ctech-wallet\/prod\/billing-url'/);
+    assert.match(text, /'BILLING_CLIENT_SECRET=\/ctech-wallet\/prod\/billing-client-secret'/);
+    assert.match(text, /'BILLING_EVENT_SECRET=\/ctech-wallet\/prod\/billing-event-secret'/);
+  } else {
+    assert.match(text, /BILLING_RAIL=off/);
+    assert.doesNotMatch(text, /BILLING_URL|BILLING_CLIENT_SECRET|BILLING_EVENT_SECRET|billing-client-secret/,
+      'an unseeded SSM path would stop the service from starting');
+  }
+  assert.doesNotMatch(text, /BILLING_(CLIENT|EVENT)_SECRET=(?!\/)/, 'the SSM path, never the value');
 });
