@@ -149,16 +149,40 @@ func TestOpenPixRefusesAnInvoiceThatCannotBePaid(t *testing.T) {
 	}
 }
 
-func TestEnsureCustomerReusesAnExistingCustomerOfThatUser(t *testing.T) {
+func TestEnsureCustomerGivesAnExistingCustomerWithoutACPFTheUsersCPF(t *testing.T) {
 	s, c := newStub(t)
 	s.on("GET /v1.0/customers/by-user/u1", 200, `{"id":"cus_existing"}`)
+	s.on("PUT /v1.0/customers/cus_existing/tax-id", 200, `{"id":"cus_existing","tax_id_masked":"***.333.447-**"}`)
+	id, err := c.EnsureCustomer(context.Background(), "u1", "39053344705", "Fulano", "f@x.com")
+	if err != nil || id != "cus_existing" {
+		t.Fatalf("id %q err %v", id, err)
+	}
+	got := s.last()
+	if got.method != http.MethodPut || !strings.Contains(string(got.body), `"tax_id":"39053344705"`) {
+		t.Fatalf("last call %+v %s", got, got.body)
+	}
+}
+
+func TestEnsureCustomerFailsClearlyWhenTheCustomerHasAnotherCPF(t *testing.T) {
+	s, c := newStub(t)
+	s.on("GET /v1.0/customers/by-user/u1", 200, `{"id":"cus_existing"}`)
+	s.on("PUT /v1.0/customers/cus_existing/tax-id", 409, `{"code":"tax_id_already_set","detail":"already has a different tax id"}`)
+	_, err := c.EnsureCustomer(context.Background(), "u1", "39053344705", "F", "e")
+	if !errors.Is(err, ErrConflict) || !strings.Contains(err.Error(), "tax_id_already_set") {
+		t.Fatalf("want a readable conflict, got %v", err)
+	}
+}
+
+func TestEnsureCustomerReusesAnExistingCustomerOfThatUser(t *testing.T) {
+	s, c := newStub(t)
+	s.on("GET /v1.0/customers/by-user/u1", 200, `{"id":"cus_existing","tax_id_masked":"***.333.447-**"}`)
 	id, err := c.EnsureCustomer(context.Background(), "u1", "39053344705", "Fulano", "f@x.com")
 	if err != nil || id != "cus_existing" {
 		t.Fatalf("id %q err %v", id, err)
 	}
 	for _, call := range s.calls {
-		if call.method == http.MethodPost {
-			t.Fatal("no customer is created for a user who already is one")
+		if call.method != http.MethodGet {
+			t.Fatalf("a customer who already has a CPF is only read: %s %s", call.method, call.path)
 		}
 	}
 }

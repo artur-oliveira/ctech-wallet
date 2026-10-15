@@ -150,7 +150,9 @@ func (c *Client) do(ctx context.Context, method, path string, idemKey string, in
 	case resp.StatusCode == http.StatusNotFound:
 		return ErrNotFound
 	case resp.StatusCode == http.StatusConflict:
-		return ErrConflict
+		var p problemBody
+		_ = json.Unmarshal(raw, &p)
+		return fmt.Errorf("%w: %s %s", ErrConflict, p.Code, p.Detail)
 	case resp.StatusCode < 200 || resp.StatusCode > 299:
 		var p problemBody
 		_ = json.Unmarshal(raw, &p)
@@ -165,7 +167,8 @@ func (c *Client) do(ctx context.Context, method, path string, idemKey string, in
 // ── customers ────────────────────────────────────────────────────────────────
 
 type customerJSON struct {
-	ID string `json:"id"`
+	ID          string `json:"id"`
+	TaxIDMasked string `json:"tax_id_masked"`
 }
 
 // EnsureCustomer returns the Billing customer of a wallet user, creating it on
@@ -175,6 +178,15 @@ func (c *Client) EnsureCustomer(ctx context.Context, userID, taxID, name, email 
 	var found customerJSON
 	err := c.do(ctx, http.MethodGet, "/v1.0/customers/by-user/"+url.PathEscape(userID), "", nil, &found, true)
 	if err == nil {
+		// A customer that exists for another reason (a DF-e plan) may have been
+		// created without a CPF, and Billing cannot open a Pix charge for one. The
+		// wallet holds the CPF, so it gives the customer that one, once; Billing
+		// never replaces a CPF that is set.
+		if found.TaxIDMasked == "" {
+			if err := c.do(ctx, http.MethodPut, "/v1.0/customers/"+url.PathEscape(found.ID)+"/tax-id", "wallet-taxid-"+found.ID, map[string]string{"tax_id": taxID}, nil, true); err != nil {
+				return "", fmt.Errorf("billing customer %s: setting the CPF: %w", found.ID, err)
+			}
+		}
 		return found.ID, nil
 	}
 	if !errors.Is(err, ErrNotFound) {
