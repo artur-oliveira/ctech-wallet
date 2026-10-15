@@ -11,7 +11,9 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 
+	"gopkg.aoctech.app/api-commons/cache"
 	"gopkg.aoctech.app/wallet/api/internal/billingclient"
+	"gopkg.aoctech.app/wallet/api/internal/config"
 )
 
 const eventSecret = "evt-secret"
@@ -163,5 +165,33 @@ func TestBillingBeingUnreadableAndADepositNotYetSettledAreRetried(t *testing.T) 
 	app = eventApp(t, &fakeLookup{inv: &billingclient.Invoice{ID: "in_1", Txid: "dep-1"}}, &fakeConfirm{err: errors.New("payer not recorded yet")})
 	if code := deliver(t, app, paidEvent, goodSig, eventNow); code < 500 {
 		t.Fatalf("a deposit held for its payer must be retried: %d", code)
+	}
+}
+
+// The route is mounted through Register, beside the /internal group whose prefix
+// carries the JWT check. A delivery signed by Billing must reach the handler; the
+// handler's own signature check, not the JWT, is what refuses a forgery; and the
+// rest of /internal stays behind the JWT.
+func TestTheEventRouteSitsBesideTheInternalGroupWithoutItsJWTCheck(t *testing.T) {
+	lookup, confirm := &fakeLookup{inv: &billingclient.Invoice{ID: "in_1", Txid: "dep-1"}}, &fakeConfirm{}
+	app := fiber.New()
+	Register(app, cache.NewMemoryBackend(testCacheSize), nil, &config.Config{TablePrefix: "test"}, nil, nil, nil, nil, nil, nil,
+		WithBillingEvents(&BillingEvents{Secret: eventSecret, Invoices: lookup, Confirm: confirm, Now: func() time.Time { return eventNow }}))
+
+	if code := deliver(t, app, paidEvent, goodSig, eventNow); code != 200 {
+		t.Fatalf("a genuine delivery through the real router: %d (the JWT check is in front of it)", code)
+	}
+	if len(confirm.txids) != 1 || confirm.txids[0] != "dep-1" {
+		t.Fatalf("confirms %v", confirm.txids)
+	}
+	forged := func(ts string, body []byte) string { return "v1=" + billingclient.Sign("nope", ts, body) }
+	if code := deliver(t, app, paidEvent, forged, eventNow); code != 401 || len(confirm.txids) != 1 {
+		t.Fatalf("a forgery: %d confirms %v", code, confirm.txids)
+	}
+	// The other internal routes still need their token.
+	req := httptest.NewRequest("POST", "/v1.0/internal/wallet/charge", bytes.NewReader([]byte(`{}`)))
+	resp, err := app.Test(req)
+	if err != nil || resp.StatusCode != 401 {
+		t.Fatalf("an internal route without a token: %v %v", resp, err)
 	}
 }

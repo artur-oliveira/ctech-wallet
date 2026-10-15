@@ -22,9 +22,27 @@ type handlers struct {
 	requireDescription bool
 }
 
+// Option adjusts what Register mounts.
+type Option func(*registerOptions)
+
+type registerOptions struct{ billingEvents *BillingEvents }
+
+// WithBillingEvents mounts Billing's signed invoice.paid route. It is an option
+// of Register, not a call after it, because of how Fiber orders middleware: the
+// /internal group below has the JWT check on its prefix, and a route added after
+// the group sits behind that check, so Billing (which sends an HMAC, not a token)
+// would be answered 401 before the handler ran.
+func WithBillingEvents(e *BillingEvents) Option {
+	return func(o *registerOptions) { o.billingEvents = e }
+}
+
 // Register mounts all wallet routes under /v1.0. revocation is the shared
 // Valkey DB 0 holding ctech-account's JWT revocation list (nil in route tests).
-func Register(app *fiber.App, c cache.Backend, revocation cache.Backend, cfg *config.Config, clients *awsclient.Clients, pixClient pix.PixClient, svc *services.WalletService, userSvc *services.UserService, erasureSvc *services.ErasureService, wsRegistry ws.Registry) {
+func Register(app *fiber.App, c cache.Backend, revocation cache.Backend, cfg *config.Config, clients *awsclient.Clients, pixClient pix.PixClient, svc *services.WalletService, userSvc *services.UserService, erasureSvc *services.ErasureService, wsRegistry ws.Registry, opts ...Option) {
+	var o registerOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
 	h := &handlers{svc: svc, userSvc: userSvc, erasureSvc: erasureSvc, requireDescription: cfg.RequireDescription}
 	verifier := middleware.NewVerifier(cfg.CtechJWKSURL, cfg.ServiceAudience, cfg.CtechIssuerURL, c)
 	if revocation != nil {
@@ -95,6 +113,9 @@ func Register(app *fiber.App, c cache.Backend, revocation cache.Backend, cfg *co
 	}
 
 	// Internal routes — all M2M client_credentials + scope, gated after auth.
+	if o.billingEvents != nil {
+		RegisterBillingEvents(v1, o.billingEvents) // before the group that puts the JWT check on /internal
+	}
 	internal := v1.Group("/internal", auth)
 	// Account-deletion saga pre-check, called by ctech-account with a token it
 	// mints itself (docs/plans/2026-10-07-account-deletion-participant.md).
