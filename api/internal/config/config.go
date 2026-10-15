@@ -71,7 +71,24 @@ type Config struct {
 	// deliberately not WALLET_CLIENT_ID, which holds internal:account:kyc.
 	ErasureClientID     string `env:"ERASURE_CLIENT_ID"`
 	ErasureClientSecret string `env:"ERASURE_CLIENT_SECRET"`
+
+	// BillingRail chooses what moves the money for deposits and withdrawals:
+	// "off" (default) is the Inter Pix gateway as always, "on" is Billing. Off
+	// means no Billing call is ever made, and none of the BILLING_* below is read.
+	BillingRail string `env:"BILLING_RAIL" envDefault:"off"`
+	// BillingURL is Billing's API base (https://billing-api.aoctech.app).
+	BillingURL string `env:"BILLING_URL"`
+	// BillingClientID/Secret is the wallet's OAuth client for Billing (scopes
+	// billing:customers:read|write, billing:invoices:read|write and
+	// internal:billing:payouts-read|write).
+	BillingClientID     string `env:"BILLING_CLIENT_ID"`
+	BillingClientSecret string `env:"BILLING_CLIENT_SECRET"`
+	// BillingEventSecret signs the invoice.paid wake-ups Billing sends.
+	BillingEventSecret string `env:"BILLING_EVENT_SECRET"`
 }
+
+// BillingRailOn reports whether deposits and withdrawals go through Billing.
+func (c *Config) BillingRailOn() bool { return c.BillingRail == "on" }
 
 // load parses the shared process configuration and enforces requirements that
 // apply to both the HTTP server and the scheduled reconciler.
@@ -82,6 +99,15 @@ func load() (*Config, error) {
 	}
 	if cfg.CtechJWKSURL == "" && cfg.CtechURL != "" {
 		cfg.CtechJWKSURL = cfg.CtechURL + "/.well-known/jwks.json"
+	}
+	switch cfg.BillingRail {
+	case "off":
+	case "on":
+		if cfg.BillingURL == "" || cfg.BillingClientID == "" || cfg.BillingClientSecret == "" || cfg.BillingEventSecret == "" || cfg.CtechURL == "" {
+			return nil, fmt.Errorf("config: BILLING_RAIL=on needs BILLING_URL, BILLING_CLIENT_ID, BILLING_CLIENT_SECRET, BILLING_EVENT_SECRET and CTECH_URL")
+		}
+	default:
+		return nil, fmt.Errorf("config: BILLING_RAIL must be off or on, got %q", cfg.BillingRail)
 	}
 	return cfg, nil
 }
