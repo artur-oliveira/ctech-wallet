@@ -167,7 +167,7 @@ export type BillingRail = 'off' | 'on';
 export const BILLING_RAIL: Record<Environment, BillingRail> = {
   dev: 'off',
   stage: 'off',
-  prod: 'off',
+  prod: 'on',
 };
 
 /** ctech-account namespace — read-only for the wallet. */
