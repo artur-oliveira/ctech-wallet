@@ -23,6 +23,7 @@ import (
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
 	"gopkg.aoctech.app/wallet/api/internal/lock"
+	"gopkg.aoctech.app/wallet/api/internal/middleware"
 	"gopkg.aoctech.app/wallet/api/internal/pix"
 	"gopkg.aoctech.app/wallet/api/internal/problem"
 	"gopkg.aoctech.app/wallet/api/internal/rail"
@@ -258,8 +259,17 @@ func newFiberApp(cfg *config.Config) *fiber.App {
 	app.Use(cors.New(corsCfg))
 	app.Use(logger.New(logger.Config{
 		Format: `{"time":"${time}","status":${status},"latency":"${latency}","method":"${method}",` +
-			`"path":"${path}","request_id":"${respHeader:X-Request-Id}"}` + "\n",
+			`"path":"${path}","route":"${route}","azp":"${azp}","request_id":"${respHeader:X-Request-Id}"}` + "\n",
 		DisableColors: true,
+		// route + azp let the P5 idle check count the callers of each retired route.
+		CustomTags: map[string]logger.LogFunc{
+			"azp": func(out logger.Buffer, c fiber.Ctx, _ *logger.Data, _ string) (int, error) {
+				if cl := middleware.GetClaims(c); cl != nil {
+					return out.WriteString(cl.AZP)
+				}
+				return 0, nil
+			},
+		},
 		Skip: func(c fiber.Ctx) bool {
 			return c.Path() == "/v1.0/health" || c.Path() == "/v1.0/health-check"
 		},
