@@ -359,3 +359,26 @@ func TestTheInterPathNamesNoOneAndIsNotHeldToAName(t *testing.T) {
 		t.Fatalf("credits %d", len(repo.creditCalls))
 	}
 }
+
+func TestAPayoutTheRailRefusedAtOnceReturnsTheMoneyAndIsNeverCompleted(t *testing.T) {
+	repo, svc := withdrawWith(&scriptedRail{payout: &pix.TransferResult{Status: pix.TransferFailed}})
+	if _, err := svc.Withdraw(context.Background(), "u1", wallet.KYCVerified, 30000, "k1"); err == nil {
+		t.Fatal("a refused withdrawal is an error to the caller")
+	}
+	if len(repo.creditCalls) != 1 {
+		t.Fatalf("the debit goes back once: %d", len(repo.creditCalls))
+	}
+}
+
+func TestReconcileReversesAFailedPayoutAtOnceButWaitsOnAnUnknownOne(t *testing.T) {
+	failed := &scriptedRail{status: &pix.TransferResult{Status: pix.TransferFailed}, grace: 10 * time.Minute}
+	repo, _, reversed, _ := reconcileWith(t, failed, time.Second)
+	if reversed != 1 || repo.credited != 1 {
+		t.Fatalf("a rail's own 'failed' needs no grace: reversed %d credited %d", reversed, repo.credited)
+	}
+	unknown := &scriptedRail{status: &pix.TransferResult{Status: pix.TransferNotFound}, grace: 10 * time.Minute}
+	repo, _, reversed, _ = reconcileWith(t, unknown, time.Second)
+	if reversed != 0 || repo.credited != 0 {
+		t.Fatal("an unknown payout still waits for its grace")
+	}
+}

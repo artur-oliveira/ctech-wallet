@@ -22,6 +22,9 @@ const (
 	// TransferProcessing: accepted, not settled. Only a rail that pays
 	// asynchronously (Billing) answers it; the Inter gateway settles inside the call.
 	TransferProcessing = "EM_PROCESSAMENTO"
+	// TransferFailed: the rail says the payout did not happen and never will (the
+	// bank refused it, or has no Pix key for the CPF). Money can go back at once.
+	TransferFailed = "FALHOU"
 )
 
 // RefundCompleted is Inter's terminal status for a devolução (PIX refund) —

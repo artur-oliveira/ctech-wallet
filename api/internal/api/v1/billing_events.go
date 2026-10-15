@@ -34,6 +34,18 @@ type DepositConfirmer interface {
 	ConfirmDeposit(ctx context.Context, txid, payerCPF, payerName string, sweep bool) error
 }
 
+// WithdrawalReconciler is what a payout event wakes: the wallet asks the rail about
+// every withdrawal still processing and completes or reverses the ones it has an
+// answer for.
+type WithdrawalReconciler interface {
+	ReconcileWithdrawals(ctx context.Context) (resolved, reversed, alarmed int, err error)
+}
+
+const (
+	eventPayoutDone   = "payout.done"
+	eventPayoutFailed = "payout.failed"
+)
+
 // BillingEvents receives Billing's invoice.paid. The event is a wake-up and
 // nothing more: it names an invoice, the wallet reads that invoice from Billing,
 // finds the deposit it belongs to, and ConfirmDeposit re-reads and judges it as
@@ -42,7 +54,9 @@ type BillingEvents struct {
 	Secret   string
 	Invoices InvoiceLookup
 	Confirm  DepositConfirmer
-	Now      func() time.Time
+	// Withdrawals is woken by a settled payout; nil ignores payout events.
+	Withdrawals WithdrawalReconciler
+	Now         func() time.Time
 }
 
 type eventEnvelope struct {
@@ -70,6 +84,16 @@ func (e *BillingEvents) handle(c fiber.Ctx) error {
 	var ev eventEnvelope
 	if err := json.Unmarshal(body, &ev); err != nil {
 		return c.SendStatus(fiber.StatusBadRequest)
+	}
+	// A payout the bank answered: nothing in the body decides anything. The
+	// withdrawals still processing are asked about, and each is completed or
+	// reversed on the rail's own answer.
+	if (ev.Type == eventPayoutDone || ev.Type == eventPayoutFailed) && ev.Data.Object == "payout" && e.Withdrawals != nil {
+		if _, _, _, err := e.Withdrawals.ReconcileWithdrawals(c.Context()); err != nil {
+			slog.Warn("billing event: withdrawals not reconciled, Billing will retry", "err", err)
+			return c.SendStatus(fiber.StatusServiceUnavailable)
+		}
+		return c.SendStatus(fiber.StatusOK)
 	}
 	// Anything but a paid invoice, or an invoice that is not named, is not ours to
 	// act on; 200 so Billing does not retry it.

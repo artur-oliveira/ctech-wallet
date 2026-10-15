@@ -221,7 +221,8 @@ func TestQueryPayoutStates(t *testing.T) {
 	}{
 		{"done", &fakeBilling{payout: &billingclient.Payout{Status: billingclient.PayoutDone, PaymentID: "E2E1"}}, pix.TransferDone, false},
 		{"processing", &fakeBilling{payout: &billingclient.Payout{Status: billingclient.PayoutProcessing}}, pix.TransferProcessing, false},
-		{"refused", &fakeBilling{payout: &billingclient.Payout{Status: billingclient.PayoutFailed, FailureReason: "refused"}}, pix.TransferNotFound, false},
+		{"refused", &fakeBilling{payout: &billingclient.Payout{Status: billingclient.PayoutFailed, FailureReason: "refused"}}, pix.TransferFailed, false},
+		{"no key for the cpf, asked afterwards", &fakeBilling{payout: &billingclient.Payout{Status: billingclient.PayoutFailed, FailureReason: billingclient.ReasonKeyNotFound}}, pix.TransferFailed, false},
 		{"never accepted", &fakeBilling{lookupErr: billingclient.ErrNotFound}, pix.TransferNotFound, false},
 		{"transport", &fakeBilling{lookupErr: errors.New("connection reset")}, "", true},
 	}
@@ -281,5 +282,13 @@ func TestAMatchCarriesTheNameToo(t *testing.T) {
 	c, _ := NewBilling(f).QueryDeposit(context.Background(), "dep-1")
 	if c.PayerName != "Fulano" || c.PayerCPF != "39053344705" {
 		t.Fatalf("charge %+v", c)
+	}
+}
+
+func TestAPayoutTheBankRefusedAtOnceIsAFailureNotACompletion(t *testing.T) {
+	f := &fakeBilling{payout: &billingclient.Payout{Status: billingclient.PayoutFailed, FailureReason: "refused"}}
+	res, err := NewBilling(f).Payout(context.Background(), "1", 1, "w")
+	if err != nil || res.Status != pix.TransferFailed {
+		t.Fatalf("%+v %v", res, err)
 	}
 }
