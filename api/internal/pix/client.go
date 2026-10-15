@@ -19,6 +19,9 @@ const (
 const (
 	TransferDone     = "EFETIVADO"
 	TransferNotFound = "NAO_ENCONTRADO"
+	// TransferProcessing: accepted, not settled. Only a rail that pays
+	// asynchronously (Billing) answers it; the Inter gateway settles inside the call.
+	TransferProcessing = "EM_PROCESSAMENTO"
 )
 
 // RefundCompleted is Inter's terminal status for a devolução (PIX refund) —

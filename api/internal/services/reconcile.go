@@ -11,6 +11,7 @@ import (
 	"gopkg.aoctech.app/api-commons/observability"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/pix"
+	"gopkg.aoctech.app/wallet/api/internal/rail"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
 )
 
@@ -57,6 +58,9 @@ func (s *WalletService) ReconcileWithdrawals(ctx context.Context) (resolved, rev
 			s.broadcastWithdrawal(ctx, w.UserID, eventWithdrawalComplete, w.WithdrawalID, w.Amount)
 			resolved++
 		case pix.TransferNotFound:
+			if tooYoungToReverse(w, rail.PayoutGrace(s.rail)) {
+				break // the rail may not show it yet; ask again next run
+			}
 			// Acquire the per-wallet lock for the reversal so it is serialized
 			// with every other real-wallet mutation (SEC-09). The synchronous
 			// Withdraw path already holds this lock when it calls reverse; here
@@ -227,4 +231,18 @@ func (s *WalletService) releaseWithdrawalSlot(ctx context.Context, w wallet.With
 		return nil, err
 	}
 	return []types.TransactWriteItem{tx}, nil
+}
+
+// tooYoungToReverse: a rail with a grace does not get "unknown" believed about a
+// withdrawal younger than it. An unparseable timestamp never blocks a reversal.
+func tooYoungToReverse(w wallet.Withdrawal, grace time.Duration) bool {
+	if grace <= 0 {
+		return false
+	}
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339} {
+		if at, err := time.Parse(layout, w.CreatedAt); err == nil {
+			return time.Since(at) < grace
+		}
+	}
+	return false
 }

@@ -7,6 +7,7 @@ package rail
 
 import (
 	"context"
+	"time"
 
 	"gopkg.aoctech.app/wallet/api/internal/pix"
 )
@@ -42,4 +43,20 @@ type IdentityRail interface {
 func NeedsIdentity(r Rail) bool {
 	i, ok := r.(IdentityRail)
 	return ok && i.NeedsIdentity()
+}
+
+// GraceRail is implemented by a rail that cannot tell "never accepted" from "not
+// yet visible" the instant a payout is asked for. Reconcile does not reverse a
+// withdrawal the rail reports as unknown until it is that old.
+type GraceRail interface {
+	PayoutGrace() time.Duration
+}
+
+// PayoutGrace is how old a processing withdrawal must be before "unknown to the
+// rail" is believed. Zero for the Inter path, as it always was.
+func PayoutGrace(r Rail) time.Duration {
+	if g, ok := r.(GraceRail); ok {
+		return g.PayoutGrace()
+	}
+	return 0
 }
