@@ -21,10 +21,12 @@ import (
 	"gopkg.aoctech.app/api-commons/cache"
 	"gopkg.aoctech.app/api-commons/ws"
 	"gopkg.aoctech.app/wallet/api/internal/awsclient"
+	"gopkg.aoctech.app/wallet/api/internal/billingclient"
 	"gopkg.aoctech.app/wallet/api/internal/config"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
 	"gopkg.aoctech.app/wallet/api/internal/lock"
 	"gopkg.aoctech.app/wallet/api/internal/pix"
+	"gopkg.aoctech.app/wallet/api/internal/rail"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
 	"gopkg.aoctech.app/wallet/api/internal/secrets"
 	"gopkg.aoctech.app/wallet/api/internal/services"
@@ -94,10 +96,33 @@ func run(ctx context.Context) (*Result, error) {
 		return nil, fmt.Errorf("pix: %w", err)
 	}
 
+	// A Lambda's environment never holds a SecureString, so the client secrets it
+	// needs are read from SSM once per run (the role already allows these paths).
+	store := secrets.NewStore(clients.SSM, cfg.Env)
+	if cfg.WalletClientSecret == "" {
+		// Not fatal: withdrawal reconciliation needs no KYC lookup, and failing the
+		// whole run for a secret only the deposit sweep uses would trade a small
+		// problem for a bigger one.
+		secret, loadErr := store.Load(ctx, "wallet-client-secret")
+		if loadErr != nil {
+			slog.Warn("reconcile: wallet client secret unreadable, KYC lookups will fail this run", "err", loadErr)
+		}
+		cfg.WalletClientSecret = secret
+	}
+	if cfg.BillingRailOn() && cfg.BillingClientSecret == "" {
+		if cfg.BillingClientSecret, err = store.Load(ctx, "billing-client-secret"); err != nil {
+			return nil, err
+		}
+		if cfg.BillingClientSecret == "" {
+			return nil, fmt.Errorf("BILLING_RAIL=on but billing-client-secret is not in SSM")
+		}
+	}
+
 	repo := repositories.NewWalletRepository(clients.DynamoDB, cfg)
 	users := repositories.NewUserRepository(clients.DynamoDB, cfg)
 	audit := repositories.NewAuditRepository(clients.DynamoDB, cfg)
 	svc := services.NewWalletService(repo, users, audit, lock.NewLocker(cache.NewMemoryBackend(16)), pixClient, kycclient.New(cfg))
+	svc.SetRail(rail.Select(cfg.BillingRailOn(), pixClient, func() rail.BillingAPI { return billingclient.New(cfg) }))
 	svc.SetBroadcaster(newBroadcaster(cfg))
 	svc.SetSandboxPurchases(repositories.NewSandboxPurchaseRepository(clients.DynamoDB, cfg))
 	svc.SetProductPurchases(repositories.NewProductPurchaseRepository(clients.DynamoDB, cfg))

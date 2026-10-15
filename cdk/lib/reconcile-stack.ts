@@ -10,6 +10,7 @@ import path from 'node:path';
 import {Environment} from './types';
 import {goLambdaCode} from './go-lambda';
 import {
+  BILLING_RAIL,
   reconcileFunctionName,
   reconcileRoleName,
   SERVICE,
@@ -177,6 +178,10 @@ export class ReconcileStack extends cdk.Stack {
         // M2M sandbox-purchase client registry — reconcile reads this to
         // retry failed webhook notify-back deliveries (RetryFailedM2MWebhooks).
         `arn:aws:ssm:*:*:parameter${SSM_WALLET(environment).m2mClients}`,
+        // Billing rail: the secret is read by the function itself, never put in its environment.
+        `arn:aws:ssm:*:*:parameter${SSM_WALLET(environment).billingUrl}`,
+        `arn:aws:ssm:*:*:parameter${SSM_WALLET(environment).billingClientId}`,
+        `arn:aws:ssm:*:*:parameter${SSM_WALLET(environment).billingClientSecret}`,
       ],
     }));
 
@@ -205,12 +210,18 @@ export class ReconcileStack extends cdk.Stack {
         // CFN template as plaintext — never do this with a SecureString).
         CTECH_URL: ssm.StringParameter.valueForStringParameter(this, SSM_ACCOUNT(environment).baseUrl),
         WALLET_CLIENT_ID: ssm.StringParameter.valueForStringParameter(this, SSM_WALLET(environment).walletClientId),
+        BILLING_RAIL: BILLING_RAIL[environment],
+        // Resolved only when the rail is on: an unseeded SSM parameter would fail the whole deploy.
+        ...(BILLING_RAIL[environment] === 'on' ? {
+          BILLING_URL: ssm.StringParameter.valueForStringParameter(this, SSM_WALLET(environment).billingUrl),
+          BILLING_CLIENT_ID: ssm.StringParameter.valueForStringParameter(this, SSM_WALLET(environment).billingClientId),
+        } : {}),
         // AWS_REGION is a reserved Lambda variable — set by the runtime, never here.
       },
-      // NOTE: a Lambda has no /opt/app/start.sh, so WALLET_CLIENT_SECRET cannot be
-      // exported into the environment the way the EC2 API does — and a
-      // SecureString must never be resolved into a CFN template. cmd/reconcile's
-      // kycclient reads it itself. Reconcile no longer needs any Inter secret at
+      // NOTE: a Lambda has no /opt/app/start.sh, so WALLET_CLIENT_SECRET (and
+      // BILLING_CLIENT_SECRET) cannot be exported into the environment the way the EC2 API
+      // does — and a SecureString must never be resolved into a CFN template.
+      // cmd/reconcile reads them from SSM itself at the start of each run. Reconcile no longer needs any Inter secret at
       // all — it invokes pix-gateway's outbound Lambda instead of talking to
       // Inter directly.
     });

@@ -60,3 +60,24 @@ func (s *Store) LoadM2MClients(ctx context.Context) (string, error) {
 	}
 	return *out.Parameter.Value, nil
 }
+
+// Load reads one of the wallet's own SecureString parameters by its leaf name
+// (for example "billing-client-secret"). A missing parameter is an empty string,
+// not an error: the caller decides whether the empty value is fatal.
+func (s *Store) Load(ctx context.Context, leaf string) (string, error) {
+	name := fmt.Sprintf("/ctech-wallet/%s/%s", s.env, leaf)
+	out, err := s.client.GetParameter(ctx, &ssm.GetParameterInput{
+		Name:           aws.String(name),
+		WithDecryption: aws.Bool(true),
+	})
+	if err != nil {
+		if _, ok := errors.AsType[*ssmtypes.ParameterNotFound](err); ok {
+			return "", nil
+		}
+		return "", fmt.Errorf("ssm: get %s: %w", name, err)
+	}
+	if out.Parameter == nil || out.Parameter.Value == nil {
+		return "", nil
+	}
+	return *out.Parameter.Value, nil
+}

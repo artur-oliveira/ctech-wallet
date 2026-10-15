@@ -78,3 +78,10 @@ test('user data wires the erasure queue and the revocation Valkey (DB 0 base URL
   assert.match(text, /'ERASURE_CLIENT_SECRET=\/ctech-wallet\/prod\/erasure-client-secret'/);
   assert.match(text, /'ERASURE_CLIENT_ID=\/ctech-wallet\/prod\/erasure-client-id'/);
 });
+
+test('the Billing rail is off in every environment and asks for none of its SSM parameters', () => {
+  const text = userDataText();
+  assert.match(text, /BILLING_RAIL=off/);
+  assert.doesNotMatch(text, /BILLING_URL|BILLING_CLIENT_SECRET|BILLING_EVENT_SECRET|billing-client-secret/,
+    'an unseeded SSM path would stop the service from starting');
+});
