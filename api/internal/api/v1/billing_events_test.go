@@ -195,3 +195,56 @@ func TestTheEventRouteSitsBesideTheInternalGroupWithoutItsJWTCheck(t *testing.T)
 		t.Fatalf("an internal route without a token: %v %v", resp, err)
 	}
 }
+
+type fakeWithdrawals struct {
+	calls int
+	err   error
+}
+
+func (f *fakeWithdrawals) ReconcileWithdrawals(context.Context) (int, int, int, error) {
+	f.calls++
+	return 1, 0, 0, f.err
+}
+
+func payoutApp(t *testing.T, w *fakeWithdrawals) *fiber.App {
+	t.Helper()
+	app := fiber.New()
+	e := &BillingEvents{Secret: eventSecret, Invoices: &fakeLookup{}, Confirm: &fakeConfirm{}, Now: func() time.Time { return eventNow }}
+	if w != nil {
+		e.Withdrawals = w
+	}
+	RegisterBillingEvents(app.Group("/v1.0"), e)
+	return app
+}
+
+const payoutEvent = `{"id":"evt_9","type":"payout.done","data":{"object":"payout","id":"po_1"}}`
+
+func TestASettledPayoutWakesTheWithdrawalsAndNothingInTheBodyDecidesAnything(t *testing.T) {
+	w := &fakeWithdrawals{}
+	app := payoutApp(t, w)
+	if code := deliver(t, app, payoutEvent, goodSig, eventNow); code != 200 || w.calls != 1 {
+		t.Fatalf("status %d calls %d", code, w.calls)
+	}
+	failed := `{"type":"payout.failed","data":{"object":"payout","id":"po_2"}}`
+	if code := deliver(t, app, failed, goodSig, eventNow); code != 200 || w.calls != 2 {
+		t.Fatalf("a failed payout wakes them too: %d %d", code, w.calls)
+	}
+}
+
+func TestAPayoutEventIsRetriedWhenTheWithdrawalsCannotBeReconciled(t *testing.T) {
+	app := payoutApp(t, &fakeWithdrawals{err: errors.New("table down")})
+	if code := deliver(t, app, payoutEvent, goodSig, eventNow); code < 500 {
+		t.Fatalf("status %d", code)
+	}
+}
+
+func TestAForgedPayoutEventWakesNothingAndWithoutAReconcilerItIsIgnored(t *testing.T) {
+	w := &fakeWithdrawals{}
+	forged := func(ts string, body []byte) string { return "v1=" + billingclient.Sign("nope", ts, body) }
+	if code := deliver(t, payoutApp(t, w), payoutEvent, forged, eventNow); code != 401 || w.calls != 0 {
+		t.Fatalf("%d %d", code, w.calls)
+	}
+	if code := deliver(t, payoutApp(t, nil), payoutEvent, goodSig, eventNow); code != 200 {
+		t.Fatalf("no reconciler: %d", code)
+	}
+}

@@ -271,7 +271,7 @@ func registerRoutes(bc *billingclient.Client, app *fiber.App, c cache.Backend, r
 	var opts []apiv1.Option
 	if cfg.BillingRailOn() {
 		// Billing's signed invoice.paid wake-up. Not mounted at all with the rail off.
-		opts = append(opts, apiv1.WithBillingEvents(&apiv1.BillingEvents{Secret: cfg.BillingEventSecret, Invoices: bc, Confirm: svc}))
+		opts = append(opts, apiv1.WithBillingEvents(&apiv1.BillingEvents{Secret: cfg.BillingEventSecret, Invoices: bc, Confirm: svc, Withdrawals: svc}))
 	}
 	apiv1.Register(app, c, rev, cfg, clients, pixClient, svc, userSvc, erasureSvc, wsRegistry, opts...)
 }

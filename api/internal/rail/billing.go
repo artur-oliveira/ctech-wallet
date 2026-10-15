@@ -147,9 +147,18 @@ func (r *BillingRail) QueryPayout(ctx context.Context, idemKey string) (*pix.Tra
 	if err != nil {
 		return nil, err
 	}
-	return payoutResult(p)
+	res, err := payoutResult(p)
+	if errors.Is(err, pix.ErrKeyNotFound) {
+		// Asking afterwards, "no key for that CPF" is a definitive failure, not an
+		// error to retry: the money goes back.
+		return &pix.TransferResult{Status: pix.TransferFailed}, nil
+	}
+	return res, err
 }
 
+// payoutResult reads Billing's payout. A payout that failed because the bank has no
+// key for the CPF is pix.ErrKeyNotFound (the withdrawal flow turns it into the
+// "key not found" answer); any other failure is TransferFailed.
 func payoutResult(p *billingclient.Payout) (*pix.TransferResult, error) {
 	switch p.Status {
 	case billingclient.PayoutDone:
@@ -158,8 +167,7 @@ func payoutResult(p *billingclient.Payout) (*pix.TransferResult, error) {
 		if strings.EqualFold(p.FailureReason, billingclient.ReasonKeyNotFound) {
 			return nil, pix.ErrKeyNotFound
 		}
-		// Refused by the bank: no money moved, and the reconcile job reverses it.
-		return &pix.TransferResult{Status: pix.TransferNotFound}, nil
+		return &pix.TransferResult{Status: pix.TransferFailed}, nil
 	default:
 		return &pix.TransferResult{Status: pix.TransferProcessing}, nil
 	}

@@ -57,8 +57,10 @@ func (s *WalletService) ReconcileWithdrawals(ctx context.Context) (resolved, rev
 			}
 			s.broadcastWithdrawal(ctx, w.UserID, eventWithdrawalComplete, w.WithdrawalID, w.Amount)
 			resolved++
-		case pix.TransferNotFound:
-			if tooYoungToReverse(w, rail.PayoutGrace(s.rail)) {
+		case pix.TransferNotFound, pix.TransferFailed:
+			// "Unknown to the rail" is believed only after its grace; "failed" is the
+			// rail's own answer and needs none.
+			if res.Status == pix.TransferNotFound && tooYoungToReverse(w, rail.PayoutGrace(s.rail)) {
 				break // the rail may not show it yet; ask again next run
 			}
 			// Acquire the per-wallet lock for the reversal so it is serialized
