@@ -37,7 +37,7 @@ func (f *fakeBilling) EnsureCustomer(_ context.Context, _, _, _, _ string) (stri
 	return f.customerID, f.customerErr
 }
 
-func (f *fakeBilling) CreateInvoice(_ context.Context, _, reference, _ string, amount int64) (*billingclient.Invoice, error) {
+func (f *fakeBilling) CreateInvoice(_ context.Context, _, reference, _ string, amount int64, _ time.Duration) (*billingclient.Invoice, error) {
 	f.created = append(f.created, reference)
 	if f.invoiceErr != nil {
 		return nil, f.invoiceErr

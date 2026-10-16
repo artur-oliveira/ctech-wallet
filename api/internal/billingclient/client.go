@@ -237,11 +237,14 @@ func (j *invoiceJSON) invoice() *Invoice {
 }
 
 // CreateInvoice issues the deposit's invoice. The reference is the wallet's
-// deposit id and the idempotency key, so a retry returns the same invoice.
-func (c *Client) CreateInvoice(ctx context.Context, customerID, reference, description string, amountCents int64) (*Invoice, error) {
+// deposit id and the idempotency key, so a retry returns the same invoice. The
+// description is also what the payer reads on the Pix, and pixLifetime how long the
+// Pix stays payable: the wallet knows its deposit is a quick one, Billing does not.
+func (c *Client) CreateInvoice(ctx context.Context, customerID, reference, description string, amountCents int64, pixLifetime time.Duration) (*Invoice, error) {
 	var out invoiceJSON
 	err := c.do(ctx, http.MethodPost, "/v1.0/invoices", reference, map[string]any{
 		"customer_id": customerID, "description": description, "amount_cents": amountCents,
+		"payer_message": description, "pix_expires_in_seconds": int(pixLifetime.Seconds()),
 		"reference": reference, "owner_key": OwnerKey, "metadata": map[string]string{MetadataTxid: reference},
 	}, &out, true)
 	if err != nil {

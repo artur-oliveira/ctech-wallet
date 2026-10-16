@@ -72,7 +72,7 @@ func (s *stub) last() call {
 func TestCreateInvoiceSendsTheReferenceAsTheIdempotencyKeyAndNamesTheDeposit(t *testing.T) {
 	s, c := newStub(t)
 	s.on("POST /v1.0/invoices", 201, `{"id":"in_1","status":"OPEN","total":5000,"amount_paid":0,"checkout_url":"https://x/checkout?token=T","metadata":{"txid":"dep-1"}}`)
-	inv, err := c.CreateInvoice(context.Background(), "cus_1", "dep-1", "Depósito", 5000)
+	inv, err := c.CreateInvoice(context.Background(), "cus_1", "dep-1", "Depósito", 5000, 10*time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,8 @@ func TestCreateInvoiceSendsTheReferenceAsTheIdempotencyKeyAndNamesTheDeposit(t *
 	_ = json.Unmarshal(got.body, &sent)
 	meta, _ := sent["metadata"].(map[string]any)
 	if sent["customer_id"] != "cus_1" || sent["reference"] != "dep-1" || sent["amount_cents"].(float64) != 5000 ||
-		sent["owner_key"] != OwnerKey || meta[MetadataTxid] != "dep-1" {
+		sent["owner_key"] != OwnerKey || meta[MetadataTxid] != "dep-1" ||
+		sent["payer_message"] != "Depósito" || sent["pix_expires_in_seconds"].(float64) != 600 {
 		t.Fatalf("body: %s", got.body)
 	}
 	if inv.ID != "in_1" || inv.Txid != "dep-1" || inv.AmountCents != 5000 || inv.Status != StatusOpen {
@@ -95,7 +96,7 @@ func TestCreateInvoiceSendsTheReferenceAsTheIdempotencyKeyAndNamesTheDeposit(t *
 func TestAReusedReferenceIsAConflictNotACreditableInvoice(t *testing.T) {
 	s, c := newStub(t)
 	s.on("POST /v1.0/invoices", 409, `{"title":"Conflict"}`)
-	if _, err := c.CreateInvoice(context.Background(), "cus_1", "dep-1", "x", 1); !errors.Is(err, ErrConflict) {
+	if _, err := c.CreateInvoice(context.Background(), "cus_1", "dep-1", "x", 1, time.Minute); !errors.Is(err, ErrConflict) {
 		t.Fatalf("want ErrConflict, got %v", err)
 	}
 }
