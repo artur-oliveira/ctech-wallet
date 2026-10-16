@@ -1,28 +1,27 @@
 # CLAUDE.md — api (ctech-wallet-api)
 
-Go REST API — Fiber v3, DynamoDB, Valkey, PIX (Banco Inter **via `pix-gateway`**), AWS SDK v2.
+Go REST API — Fiber v3, DynamoDB, Valkey, AWS SDK v2. Pix moves through **ctech-billing** (it owns the Inter connection).
 
-**Before any task:** Read `../docs/specs/2026-07-10-wallet-design.md` and the root `../CLAUDE.md` Financial Safety
-Invariants. This service custodies real money — those invariants override convenience.
+**Before any task:** Read `docs/specs/2026-10-14-wallet-ledger-billing-rail.md` in `ctech-billing` (what the wallet is
+now) and the root `../CLAUDE.md` Financial Safety Invariants. This service custodies real money — those invariants override convenience.
 
-> The API never talks to Inter directly: every PIX op invokes `pix-gateway`'s
-> outbound Lambda (`PIX_GATEWAY_FUNCTION_NAME`) with a bearer from
-> `InterTokenManager`. The Inter mTLS cert/secret live in `pix-gateway`/SSM.
+> The API never talks to Inter: deposits are Billing invoices and withdrawals are Billing payouts, through the `rail`
+> package (`rail.BillingRail`, `billingclient`). The old Pix gateway, its Lambdas and the Inter secrets are gone.
 > Endpoint contract: **[ENDPOINTS.md](ENDPOINTS.md)**.
 
 ---
 
 ## Role
 
-Custodies three balances per user (real + game + sandbox), an append-only ledger, PIX purchases (sandbox, products) via
-`pix-gateway` (which fronts Inter) — user PIX deposit/withdraw is currently off, see
-`../docs/specs/2026-10-07-asaas-removal.md` — and sandbox M2M credit/debit for integrated apps. Bridges the frontend and the
-Inter partner bank; consumes auth + KYC from ctech-account.
+Custodies two balances per user (`real` + `sandbox`) and an append-only ledger. User deposits and withdrawals go through
+Billing with daily limits (`../docs/specs/2026-10-08-wallet-restoration-design.md`); Sandbox credit/debit and real
+debit/holds are M2M operations for integrated apps (Poker). It sells nothing and knows no gambling rule: Poker owns
+consent, limits, self-exclusion and the SKUs. Consumes auth + KYC from ctech-account.
 
 **Request flow:** `HTTP → Middleware (auth → scope/KYC/step-up) → Route → Service → Repository → DynamoDB`
 
 Not multi-tenant: no organization header, no RBAC. Access control is user JWT + M2M scopes (step-up MFA
-middleware exists but no route uses it since withdrawals were removed).
+middleware guards `POST /wallet/withdrawals`).
 
 ---
 
@@ -40,7 +39,7 @@ api/
 │   ├── awsclient/              # aws-sdk-go-v2 (DynamoDB only)
 │   ├── lock/                   # Valkey SETNX per-wallet lock
 │   ├── middleware/             # auth (JWKS), scope, KYC, step-up
-│   ├── pix/                    # PixClient iface + fake + Lambda client (talks to pix-gateway, not Inter)
+│   ├── rail/                   # Rail iface, BillingRail (the only rail), types and a Fake for tests
 │   ├── kycclient/              # ctech-account internal KYC client
 │   ├── domain/wallet/          # models, constants, fee calc
 │   ├── domain/id/              # ULID generation
@@ -100,29 +99,33 @@ them inside route handlers.
 - PIX deposit range is per-wallet the same way: optional `min_deposit`/`max_deposit` override the defaults
   (R$1/R$10.000); the minimum never drops below the absolute 100-centavo floor. Checked *before* any charge is
   opened at the provider.
-- Deposit-range fields are admin-only (edited directly in DynamoDB) — never a client/API write path.
-- `real ↔ game` transfers carry no fee in either direction.
+- Daily PIX limits per wallet (`daily_deposit_cap` R$1.000, `daily_withdraw_cap` R$1.000, `daily_withdraw_count` 1):
+  `domain/wallet/daily_limits.go`; counters live on the user row (`real_daily_counters`), written under the real
+  wallet lock in the same transaction as the money movement. Deposit cap enforced at credit (excess refunded).
+- Deposit-range and daily-limit fields are admin-only (edited directly in DynamoDB) — never a client/API write path.
 - Every balance mutation is a conditional `TransactWriteItems`; debits carry `balance >= :amount`.
 - The ledger (`ledger_entries`) is append-only — never updated or deleted; the authoritative balance is
   `wallets.balance`, never derived from the ledger. `wallet_audit` is append-only for the same reason and holds
-  the non-money events (consent, activation, limit changes). IAM DENIES `UpdateItem`/`DeleteItem` on both.
+  the non-money events. IAM DENIES `UpdateItem`/`DeleteItem` on both.
 - Every mutation is idempotent via a guard item `IDEM#{key}` (`attribute_not_exists`) co-written in the same
   transaction.
 - One op per wallet at a time via the Valkey lock; cross-wallet ops go through `lock.AcquireOrdered`, which sorts
-  wallet IDs (`real` → `game` → `sandbox`) so the order is total and deadlock-free.
+  wallet IDs (`real` → `sandbox`) so the order is total and deadlock-free.
 
-### The gambling ring-fence (CRITICAL)
+- **Account-deletion lock:** every NEW service method that opens exposure for a user (debit, credit, hold, charge,
+  purchase, deposit, consent or limit write) starts with `checkErasure(ctx, s.erasureGate, userID)`, and its test joins
+  `TestErasureGateRefusesEveryNewExposure`. Settlement of what already exists (confirm, release, cash-out, sweeps)
+  never calls it: that money cannot be refused, so it surfaces as an erasure blocker instead.
 
-- `game` holds **real money**, ring-fenced for games. `sandbox` is virtual and is a **sink** — nothing converts it
-  back.
-- Real money reaches a game or sandbox **only** across `real → game` (`FundGame`). Sandbox is bought from `game`,
-  never from `real`. That one edge is where personal limits are enforced; a second door makes them meaningless.
-- `game → real` (`ReturnFromGame`) is never limited and never charged.
-- `game` does not exist until `ActivateGambling` (KYC **at least** `basic` + gambling addendum). Every `game`-touching
-  operation goes through `requireActivated`. `sandbox` does **not** share this gate — it is play currency and
-  is created lazily on first M2M sandbox credit/debit (`EnsureSandboxWallet`), independent of KYC/consent.
-- The whole surface is gated by `GAMBLING_ENABLED` (default **false**) — the routes are not registered when it is
-  off. Do not turn it on before the personal limit engine ships.
+### Real and Sandbox never mix (CRITICAL)
+
+- `sandbox` is virtual and is a **sink**: nothing converts it back, and nothing converts `real` into it. It is bought from
+  Poker with a Pix paid through Billing; the wallet only credits and debits it on an M2M call.
+- The list of routes that write is **closed** (`TestNoRouteConvertsSandboxToAnything`); a new one fails the test on
+  purpose. Retired routes answer `410 route-retired` (after the normal 401), never a 404.
+- Holds, cash-outs and `BalancesFor` act on `real` (the game wallet was merged into it; old `game` rows are retired,
+  read-only data). A hold is refused while a self-exclusion recorded here is active (fail closed); consent, limits and
+  exclusion are otherwise Poker's, checked before it calls the wallet.
 
 ### Go Rules
 
@@ -171,18 +174,16 @@ for the `file:line` map.
 2. Ledger append‑only — authoritative balance is `wallets.balance`.
 3. Every mutation idempotent — `IDEM#{key}` guard co‑written in the same txn.
 4. One op/wallet at a time — Valkey `SETNX` + TTL.
-5. Cross‑wallet ops lock in order `real → game → sandbox` (`lock.AcquireOrdered`).
-6. Sandbox never becomes real (sink).
-7. Real money enters the ring‑fence ONLY via `real → game`.
-8. `real → game` limit counts GROSS INFLOW (returns never refund headroom).
-9. `game` is real money (withdrawable via `real`; total = `real + game`).
-10. Consent opt‑in + auditable (`wallet_audit` append‑only).
-11. PIX webhook never source of truth — re‑query the provider (Inter) by `txid` before crediting.
-12. User money never lands in CTech's Inter account — there is currently no deposit/withdrawal rail (BaaS
-    provider removed, `../docs/specs/2026-10-07-asaas-removal.md`). A future rail custodies under the user's own
-    CPF; Inter serves product purchases only.
+5. Cross‑wallet ops lock in order `real → sandbox` (`lock.AcquireOrdered`).
+6. Sandbox never becomes real, real never becomes Sandbox.
+7–10. *(Retired 2026-10-15: the ring-fence rules, the `game` wallet and consent/limits left with the game wallet; see the root `CLAUDE.md`.)*
+11. A Billing event never source of truth — re‑read the invoice from Billing before crediting.
+12. Custody on CTech's Inter account is an explicit accepted risk for a closed KYC-approved group; a deposit credits only
+    when the payer matches the KYC CPF **and** Billing says `payer_match = match` (else quarantined and refunded),
+    payouts go only to the KYC CPF
+    (`../docs/specs/2026-10-08-wallet-restoration-design.md`).
 13. *(Retired 2026-10-07 — was the BaaS verification-fee rule.)*
-14. No money in limbo — `processing` withdrawals resolved by the reconcile job.
+14. No money in limbo — `processing` withdrawals resolved by the reconcile job from Billing; a failed lookup never reverses.
 
 ## Internal M2M scopes (constant table: `middleware/scope.go:11`)
 
@@ -191,25 +192,21 @@ for the `file:line` map.
 | `internal:wallet:credit`           | `POST /internal/wallet/sandbox/credit`                                    | sandbox only                                                                                                                  |
 | `internal:wallet:debit`            | `POST /internal/wallet/sandbox/debit`                                     | sandbox only                                                                                                                  |
 | `internal:wallet:debit-real`       | `POST /internal/wallet/real/debit`                                        | **real** wallet — distinct from `:debit`                                                                                      |
-| `internal:wallet:confirm-deposit`  | `POST /internal/pix/confirm-deposit`, `/confirm-sandbox-purchase`, `/confirm-product-purchase` | requested by **pix‑gateway**; prefix-routed wake-ups, API always re-queries Inter                                              |
-| `internal:wallet:game-hold`        | `POST .../game/hold`, `.../hold/:id/release`                              |                                                                                                                               |
-| `internal:wallet:game-cashout`     | `POST .../game/cashout`                                                   |                                                                                                                               |
-| `internal:wallet:game-status`      | `GET .../game/status/:user_id`                                            |                                                                                                                               |
-| `internal:wallet:balance`          | `GET .../wallet/balance/:user_id`                                         | read-only, game+sandbox only                                                                                                  |
-| `internal:wallet:sandbox-purchase` | `POST .../wallet/sandbox-purchase/`, `GET .../:id`, `POST .../:id/refund` | M2M-opened direct PIX→sandbox sale (e.g. ctech-poker); see `docs/specs/2026-07-30-m2m-sandbox-purchase-integration-design.md` |
+| `internal:wallet:hold`             | `POST .../wallet/holds/`, `.../holds/cashout`, `.../holds/:id/release`    | Poker stakes `real` through these three; the old game-named routes answer 410                                                 |
+| `internal:wallet:balance`          | `GET .../wallet/balance/:user_id`                                         | read-only: `real` (as what a game can stake) and sandbox                                                                      |
 
 The wallet's **own** M2M client requests `internal:account:kyc` from
 `ctech-account` to read the verified CPF (`kycclient/kycclient.go:24`) — a
 different scope on a different service. Do not conflate it with
-`internal:wallet:confirm-deposit`.
+`internal:wallet:hold`.
 
 ## Known divergences (documented, NOT fixed here)
 
-| ID  | Summary                                                                                                                                                                                                | Anchor                                                           |
-|-----|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------|
-| B1  | IAM may be missing `dynamodb:TransactWriteItems` — every money op uses `Base.TransactWrite` (→ `ctech-go-common/dynamo`). If absent, all money ops denied at runtime.                                  | `repositories/wallet.go:275`; verify `cdk/README.md`             |
-| B2  | `internal:account:kyc` (wallet→account) vs `internal:wallet:confirm-deposit` (pix‑gateway→api) conflated in some comments (`kycclient.go:2`, `config.go:41`).                                          | `kycclient.go:24`, `scope.go:15`                                 |
-| B3  | `internal:wallet:debit-real` (code) vs stale `internal:wallet:real:debit` in `docs/specs/2026-07-19-poker-game-holds-design.md`.                                                                       | `scope.go:14`                                                    |
+| ID  | Summary                                                                                                                                                                                                    | Anchor                                                           |
+|-----|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------|
+| B1  | IAM may be missing `dynamodb:TransactWriteItems` — every money op uses `Base.TransactWrite` (→ `ctech-go-common/dynamo`). If absent, all money ops denied at runtime.                                      | `repositories/wallet.go:275`; verify `cdk/README.md`             |
+| B2  | `internal:account:kyc` (wallet→account) vs `internal:wallet:confirm-deposit` (pix‑gateway→api) conflated in some comments (`kycclient.go:2`, `config.go:41`).                                              | `kycclient.go:24`, `scope.go:15`                                 |
+| B3  | `internal:wallet:debit-real` (code) vs stale `internal:wallet:real:debit` in `docs/specs/2026-07-19-poker-game-holds-design.md`.                                                                           | `scope.go:14`                                                    |
 | B7  | **Fixed:** prod fails closed on empty `VALKEY_URL` (`config.go:74`) AND on Valkey init failure (`app.go` `newCacheBackend` returns error in prod). Non‑prod still falls back to in‑memory with a warn log. | `app.go:65`                                                      |
 | B18 | Money constants mirrored api↔ui by hand (no float): `SANDBOX_CREDITS_PER_CENTAVO=10`. No fee constants on either side — see `docs/specs/2026-08-16-withdrawal-fee-removal.md`. `rpc-contract` holds NO money constants. | `model.go:115`, `ui/src/lib/utils/money.ts` |
 
