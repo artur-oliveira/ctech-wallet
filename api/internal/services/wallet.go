@@ -1009,6 +1009,26 @@ func (s *WalletService) BalancesFor(ctx context.Context, userID string) (*Wallet
 	return b, nil
 }
 
+// refuseIfExcluded is the wallet's last, fail-closed guard on a hold: a player whose self-exclusion is
+// still recorded here (the state from before the rules moved to Poker) never stakes real money. Poker
+// is the live source of truth and checks first; this only catches what an incomplete import would miss,
+// and a read error refuses the hold. Consent is not checked here: it is Poker's, and the wallet can no
+// longer record it.
+func (s *WalletService) refuseIfExcluded(ctx context.Context, userID string) error {
+	u, err := s.users.Get(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if u.SelfExcluded(time.Now()) {
+		until := ""
+		if u.SelfExclusion != nil {
+			until = u.SelfExclusion.Until
+		}
+		return problem.SelfExcluded(until)
+	}
+	return nil
+}
+
 // realWallet loads the caller's real wallet. Holds and cash-outs stake `real`: the game wallet
 // was merged into it, and consent, limits and self-exclusion are Poker's rules now, so the wallet
 // checks none of them.
@@ -1110,6 +1130,9 @@ func (s *WalletService) HoldGame(ctx context.Context, userID string, amount int6
 	}
 	game, err := s.realWallet(ctx, userID)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.refuseIfExcluded(ctx, userID); err != nil {
 		return nil, err
 	}
 	release, err := acquireWallet(ctx, s.lock, game.WalletID)
