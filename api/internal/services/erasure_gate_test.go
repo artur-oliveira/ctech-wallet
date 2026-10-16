@@ -87,3 +87,37 @@ func TestConfirmDepositForALockedUserStillCredits(t *testing.T) {
 		t.Fatalf("credits = %d, want 1", len(repo.creditCalls))
 	}
 }
+
+// Every operation that opens new exposure for a user refuses a user whose account is being deleted.
+// A new service method of that kind joins this list.
+func TestErasureGateRefusesEveryNewExposure(t *testing.T) {
+	ctx := context.Background()
+	svc, userSvc := gatedServices(&stubGate{blocked: true})
+	ops := map[string]func() error{
+		"InitiateDeposit":     func() error { _, _, err := svc.InitiateDeposit(ctx, "u1", "enhanced", 100, "k"); return err },
+		"CreditSandbox":       func() error { _, err := svc.CreditSandbox(ctx, "u1", 100, "k", "r", ""); return err },
+		"DebitSandbox":        func() error { _, err := svc.DebitSandbox(ctx, "u1", 100, "k", "r", ""); return err },
+		"DebitReal":           func() error { _, err := svc.DebitReal(ctx, "u1", 100, "k", "r", ""); return err },
+		"HoldGame":            func() error { _, err := svc.HoldGame(ctx, "u1", 100, "t1", "k"); return err },
+		"AcceptTermsAddendum": func() error { return userSvc.AcceptTermsAddendum(ctx, "u1") },
+	}
+	for name, op := range ops {
+		var p *problem.Problem
+		if err := op(); !errors.As(err, &p) || p.Type != problem.TypeAccountErasurePending {
+			t.Errorf("%s: err = %v, want %s", name, err, problem.TypeAccountErasurePending)
+		}
+	}
+}
+
+// Settlement of what already exists is never refused: that money cannot be turned away.
+func TestErasureGateLeavesSettlementOpen(t *testing.T) {
+	ctx := context.Background()
+	gate := &stubGate{blocked: true}
+	svc, _ := gatedServices(gate)
+	_, _ = svc.ReleaseHold(ctx, "u1", "h-missing", "k")
+	_, _ = svc.CashoutGame(ctx, "u1", 100, "t1", []string{"h-missing"}, "k", "")
+	_ = svc.ConfirmDeposit(ctx, "tx-missing", "", "", false)
+	if len(gate.calls) != 0 {
+		t.Fatalf("settlement paths consulted the erasure gate %v; they must never be refused", gate.calls)
+	}
+}

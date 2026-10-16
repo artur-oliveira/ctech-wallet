@@ -1,21 +1,21 @@
 # CLAUDE.md — ctech-wallet (monorepo root)
 
-Digital wallet for the `aoctech.app` platform. Three balances per user:
+Digital wallet for the `aoctech.app` platform. **A ledger, not a payment gateway.** Two balances per user:
 
-| Wallet    | Money    | Purpose                                            | Limits  |
-|-----------|----------|----------------------------------------------------|---------|
-| `real`    | Real     | Subscriptions, services; PIX in/out (Inter)         | No      |
-| `game`    | **Real** | Real money ring-fenced for games only              | **Yes** |
-| `sandbox` | Virtual  | Game credits; no monetary value, never convertible | Yes     |
+| Wallet    | Money   | Purpose                                                              |
+|-----------|---------|----------------------------------------------------------------------|
+| `real`    | Real    | Subscriptions, services, games stake it; Pix in and out (via Billing) |
+| `sandbox` | Virtual | Game credits; no monetary value, never convertible. Poker sells and spends them. |
 
-`game` holds **real money** — withdrawable via `real`, and it counts toward the user's real holdings. It exists so
-personal gambling limits have exactly one edge to meter (`real → game`). Base for subscription billing and
-skill-game (poker/dominó) integration.
+The wallet holds balances and keeps the books. It does **not** talk to Inter, open charges, sell products, or
+own any gambling rule: **ctech-billing** owns the Inter connection (deposits are Billing invoices, withdrawals
+are Billing payouts), **ctech-poker** owns consent, personal limits, self-exclusion and the SKUs. The game wallet
+that used to sit between them was merged into `real` (2026-10); old `game` rows stay as retired, read-only data.
 
-**Before any task:** Read `docs/specs/2026-07-10-wallet-design.md` and
-`docs/specs/2026-07-12-three-wallet-topology-design.md` (the latter supersedes the former's wallet types and
-sandbox-purchase sections). This service custodies real third-party money — the Financial Safety Invariants below
-are non-negotiable and override convenience.
+**Before any task:** Read `docs/specs/2026-10-14-wallet-ledger-billing-rail.md` (the authority for what the wallet
+is now, in `ctech-billing`). The older specs (`2026-07-10-wallet-design.md`, `2026-07-12-three-wallet-topology-design.md`)
+describe the system before that and are history. This service custodies real third-party money, so the Financial
+Safety Invariants below are non-negotiable and override convenience.
 
 ---
 
@@ -23,7 +23,7 @@ are non-negotiable and override convenience.
 
 | Project | Role                                                  | Full guidelines |
 |---------|-------------------------------------------------------|-----------------|
-| `api/`  | Go REST API — Fiber v3, DynamoDB, Valkey, PIX (Inter) | `api/CLAUDE.md` |
+| `api/`  | Go REST API — Fiber v3, DynamoDB, Valkey; rail = Billing | `api/CLAUDE.md` |
 | `ui/`   | Next.js 16 frontend — TypeScript, ShadCN              | `ui/CLAUDE.md`  |
 | `cdk/`  | AWS CDK infrastructure — TypeScript                   | `cdk/CLAUDE.md` |
 
@@ -50,43 +50,34 @@ it is.
    and never duplicates a ledger entry. Enforced by a unique GSI on `idempotency_key`.
 4. **One operation per wallet at a time.** Serialize via Valkey `SETNX wallet:{id}` with a short TTL (10s) +
    retry/backoff. Fail safe if the process dies (TTL releases the lock). Contention → `409 wallet-busy`.
-5. **Cross-wallet ops take locks in a fixed order** (`real` → `game` → `sandbox`) to avoid deadlock.
+5. **Cross-wallet ops take locks in a fixed order** (`real` → `sandbox`) to avoid deadlock.
    `lock.AcquireOrdered` sorts wallet IDs, so the order is total and deadlock-free for any number of wallets —
    always go through it rather than taking locks by hand.
-6. **Sandbox never becomes real.** No withdrawal or conversion route accepts `type=sandbox`. Sandbox is a sink:
-   nothing converts it back to `game` or `real`. Enforced at the handler, not just documented.
-7. **Real money enters the gambling ring-fence ONLY via `real → game`.** There is no `real → sandbox` path;
-   sandbox is bought from `game`. That single edge is where personal limits are enforced — add a second door and
-   the limits enforce nothing. The regression test `TestSandboxPurchaseNeverDebitsRealWallet` is the executable
-   form of this rule; if it ever fails, the limits are broken, whatever else passes.
-8. **The `real → game` limit counts GROSS INFLOW.** A `game → real` return never refunds limit headroom.
-   Otherwise a cap is churned around indefinitely (fund → return → fund). Returns are never limited and never
-   charged: moving money *out* of the ring-fence reduces exposure, which is the behaviour limits exist to
-   encourage.
-9. **`game` balance is real money.** Withdrawable (via `real`), counts toward the user's real holdings, never
-   expired or written off. The user's total real money is `real.balance + game.balance`.
-10. **Consent is opt-in and auditable.** `game` does not exist until the user accepts the gambling
-    addendum (a document distinct from the terms addendum) with KYC at least `basic` — `sandbox` is play currency
-    and is created independently (lazily, on first use), with no KYC/consent requirement of its own.
-    Activation, consent, and every
-    personal-limit change append to `wallet_audit` — append-only, never updated, never deleted, enforced in IAM
-    with an explicit DENY on `UpdateItem`/`DeleteItem`. Never fabricate consent: a legacy user holding a sandbox
-    wallet from the old two-wallet model is **not** activated.
-11. **The PIX webhook is never the source of truth for money movement.** A deposit credits only after
-    re-querying the charge by `txid` at the Inter API (confirming amount and status). The webhook is a "wake
-    up and re-check" signal for those, authenticated by a static `hmac` query parameter Inter echoes back on
-    every callback. Payer CPF is the one field Inter's re-query does not return — it is sourced from the
-    webhook body itself (persisted on first sight) and used only for the CPF-match anti-fraud check, never to
-    authorize crediting.
-12. **Custody of user money on CTech's Inter account is an explicit, accepted risk.** Deposits and withdrawals run
-    on the Inter PIX rail for a closed group of KYC-approved users (KYC approved manually by the owner; see
-    `docs/specs/2026-10-08-wallet-restoration-design.md`). Every deposit must be attributable to its user by
-    payer-CPF match (masked CPF compared on the digits Inter reveals) or it is refunded to the payer; a paid
-    deposit with no payer identity is quarantined, never credited. Every payout goes only to the CPF on the
-    user's KYC record (the client never supplies a destination key). Daily limits apply per wallet (below).
+6. **Sandbox never becomes real, and real never becomes Sandbox.** No withdrawal or conversion route accepts
+   `type=sandbox`, and no operation debits `real` to credit Sandbox: Sandbox is bought from Poker with a Pix paid
+   through Billing, and nothing converts it back. Enforced by `TestNoRouteConvertsSandboxToAnything` (the list of
+   writing routes is closed on purpose), `TestSandboxHasNoRealDebitPath` and `TestCreditingSandboxNeverDebitsReal`.
+7. *(Retired 2026-10-15 — "real money enters the ring-fence only via `real → game`"; the `game` wallet is gone.
+   Spec `2026-10-14-wallet-ledger-billing-rail.md` §9.)*
+8. *(Retired 2026-10-15 — the `real → game` gross-inflow limit; personal limits are Poker's now.)*
+9. *(Retired 2026-10-15 — "`game` balance is real money"; there is one money balance, `real`.)*
+10. *(Retired 2026-10-15 — consent and the audit of limit changes moved to Poker, which keeps them append-only. The
+    wallet's own audit of money movements is unchanged. Self-exclusion state recorded before the move stays on the
+    user row; a hold is still refused while one is recorded, fail closed.)*
+11. **A Billing event is never the source of truth for money movement.** A deposit credits only after the wallet
+    re-reads the invoice from Billing and checks its own rules; the signed `invoice.paid` event is a "wake up and
+    re-check" signal (the pending-deposit sweep covers a lost one). Payer data is Billing's and write-once.
+12. **Deposits are credited only for a payer the wallet can attribute.** A paid deposit is credited only when the
+    amount equals the expected amount **and** the payer matches the KYC CPF by the wallet's own check **and** Billing
+    says `payer_match = match`. Any disagreement quarantines the deposit (never credits) and refunds the payer; a
+    paid deposit with no payer identity yet stays pending, and the operator is told after 30 minutes. Every payout
+    goes only to the CPF on the user's KYC record (the client never supplies a destination). Daily limits apply per
+    wallet. Custody on CTech's Inter account is an explicit, accepted risk for a closed group of KYC-approved users
+    (`docs/specs/2026-10-08-wallet-restoration-design.md`).
 13. *(Retired 2026-10-07 — was the BaaS verification-fee rule; see `docs/specs/2026-10-07-asaas-removal.md`.)*
-14. **No money left in limbo.** A withdrawal whose PIX transfer call fails after the internal debit enters a
-    `processing` state that a reconciliation job MUST resolve (complete or reverse). Failed refunds raise an
+14. **No money left in limbo.** A withdrawal whose Billing payout call fails or times out after the internal debit stays
+    `processing`, and a reconciliation job MUST resolve it from Billing (complete or reverse). A lookup that fails is never
+    read as "not found", so a transport error never reverses a withdrawal. Failed refunds raise an
     operational alarm for manual reconciliation — never a silent path.
 
 If a requested change appears to require breaking one of these, stop and ask.
