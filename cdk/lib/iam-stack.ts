@@ -22,7 +22,6 @@ interface IAMStackProps extends cdk.StackProps {
   deploymentsBucketArn: string;
   logsBucketArn: string;
   dynamoDBTables: Map<string, aws_dynamodb.TableV2>;
-  pixGatewayOutboundFunctionArn: string;
   /** The wallet's account-deletion SQS queue (ErasureStack). */
   erasureQueueArn: string;
   /** wallet_erasure_retention: restricted, granted write-only below. */
@@ -41,7 +40,7 @@ export class IAMStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: IAMStackProps) {
     super(scope, id, props);
 
-    const {environment, deploymentsBucketArn, logsBucketArn, dynamoDBTables, pixGatewayOutboundFunctionArn, erasureQueueArn, retentionTableArn} = props;
+    const {environment, deploymentsBucketArn, logsBucketArn, dynamoDBTables, erasureQueueArn, retentionTableArn} = props;
 
     this.apiRole = new iam.Role(this, 'ApiExecutionRole', {
       roleName: instanceRoleName(environment),
@@ -188,9 +187,7 @@ export class IAMStack extends cdk.Stack {
     // api's role is scoped to the exact parameters it reads. Never grant
     // whole account/shared namespaces: an API compromise must not become a
     // cross-service secret compromise.
-    // The Inter mTLS keypair, OAuth client secret, and webhook secret moved to
-    // pix-gateway's own IAM role (see pix-gateway-stack.ts) — api no longer
-    // talks to Inter at all (docs/specs/2026-07-13-pix-gateway-lambda-design.md).
+    // Billing owns the Inter connection: this role reads no Inter secret.
     const walletSsm = SSM_WALLET(environment);
     const accountSsm = SSM_ACCOUNT(environment);
     this.apiRole.addManagedPolicy(new iam.ManagedPolicy(this, 'SsmPolicy', {
@@ -220,16 +217,6 @@ export class IAMStack extends cdk.Stack {
           ],
         }),
       ],
-    }));
-
-    // ── Lambda ────────────────────────────────────────────────────────────────
-    // api invokes pix-gateway's outbound function synchronously for every
-    // PixClient call (LambdaPixClient) — this is the only Lambda permission the
-    // api role needs; it never invokes the webhook function (that one is only
-    // ever triggered by API Gateway).
-    this.apiRole.addToPolicy(new iam.PolicyStatement({
-      actions: ['lambda:InvokeFunction'],
-      resources: [pixGatewayOutboundFunctionArn],
     }));
 
     // ── S3 ────────────────────────────────────────────────────────────────────
