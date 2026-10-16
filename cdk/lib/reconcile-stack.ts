@@ -69,15 +69,6 @@ const RECONCILE_RATE_MINUTES = 5;
 interface ReconcileStackProps extends cdk.StackProps {
   environment: Environment;
   dynamoDBTables: Map<string, aws_dynamodb.TableV2>;
-  /**
-   * pix-gateway's outbound Lambda — cmd/reconcile invokes it (via
-   * LambdaPixClient) for QueryTransfer, same as api's server does. Reconcile
-   * no longer talks to Inter directly (see
-   * docs/specs/2026-07-13-pix-gateway-lambda-design.md and the note on
-   * cmd/reconcile in the pix-gateway migration plan).
-   */
-  pixGatewayOutboundFunctionArn: string;
-  pixGatewayOutboundFunctionName: string;
 }
 
 /**
@@ -97,7 +88,7 @@ export class ReconcileStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ReconcileStackProps) {
     super(scope, id, props);
 
-    const {environment, dynamoDBTables, pixGatewayOutboundFunctionArn, pixGatewayOutboundFunctionName} = props;
+    const {environment, dynamoDBTables} = props;
 
     this.functionName = reconcileFunctionName(environment);
 
@@ -165,9 +156,7 @@ export class ReconcileStack extends cdk.Stack {
     }));
 
     // ── SSM: wallet-client-id/secret (for the internal:kyc M2M call) and the
-    // account base URL — reconcile no longer talks to Inter directly, so it
-    // needs none of the inter/* secrets (see pixGatewayOutboundFunctionArn
-    // above).
+    // account base URL; Billing owns the Inter connection, so no Inter secret.
     role.addToPolicy(new iam.PolicyStatement({
       actions: ['ssm:GetParameter'],
       resources: [
@@ -184,13 +173,6 @@ export class ReconcileStack extends cdk.Stack {
       ],
     }));
 
-    // ── Lambda: invoke pix-gateway's outbound function for QueryTransfer, same
-    // permission api's role gets (see iam-stack.ts).
-    role.addToPolicy(new iam.PolicyStatement({
-      actions: ['lambda:InvokeFunction'],
-      resources: [pixGatewayOutboundFunctionArn],
-    }));
-
     const fn = new lambda.Function(this, 'ReconcileFunction', {
       functionName: this.functionName,
       runtime: lambda.Runtime.PROVIDED_AL2023,
@@ -204,7 +186,6 @@ export class ReconcileStack extends cdk.Stack {
         ENVIRONMENT: environment,
         TABLE_PREFIX: tablePrefix(environment),
         AWS_USE_DUALSTACK_ENDPOINT: 'true',
-        PIX_GATEWAY_FUNCTION_NAME: pixGatewayOutboundFunctionName,
         // Non-secret values, resolved from SSM at deploy time (they land in the
         // CFN template as plaintext — never do this with a SecureString).
         CTECH_URL: ssm.StringParameter.valueForStringParameter(this, SSM_ACCOUNT(environment).baseUrl),
@@ -216,9 +197,7 @@ export class ReconcileStack extends cdk.Stack {
       // NOTE: a Lambda has no /opt/app/start.sh, so WALLET_CLIENT_SECRET (and
       // BILLING_CLIENT_SECRET) cannot be exported into the environment the way the EC2 API
       // does — and a SecureString must never be resolved into a CFN template.
-      // cmd/reconcile reads them from SSM itself at the start of each run. Reconcile no longer needs any Inter secret at
-      // all — it invokes pix-gateway's outbound Lambda instead of talking to
-      // Inter directly.
+      // cmd/reconcile reads them from SSM itself at the start of each run.
     });
 
     new scheduler.Schedule(this, 'ReconcileSchedule', {

@@ -8,7 +8,6 @@ on:
     branches: [ main, staging, dev ]
     paths:
       - 'cdk/**'
-      - 'pix-gateway/**'
       - '.github/workflows/infra.yml'
 
 permissions:
@@ -17,22 +16,6 @@ permissions:
   pull-requests: write
 
 jobs:
-  test:
-    name: Test pix-gateway
-    runs-on: ubuntu-26.04-arm
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-go@v7
-        with:
-          go-version: '1.27.1'
-          cache-dependency-path: pix-gateway/go.sum
-
-      - name: Run tests
-        working-directory: pix-gateway
-        run: go test ./... -race -count=1
-
   diff:
     name: CDK Diff
     runs-on: ubuntu-26.04-arm
@@ -50,17 +33,14 @@ jobs:
             *)       echo "name=dev"   >> "$GITHUB_OUTPUT" ;;
           esac
 
-      # CDK synth bundles both api/cmd/reconcile and pix-gateway Lambdas.
+      # CDK synth bundles the api/cmd/reconcile Lambda.
       - uses: actions/setup-go@v7
         with:
           # setup-go currently normalizes a go-version-file patch directive to
-          # the minor line. Pin the patched toolchain because CDK synth bundles
-          # pix-gateway locally; Docker fallback cannot resolve the sibling
-          # rpc-contract replacement from its isolated module mount.
+          # the minor line, so the patched toolchain is pinned.
           go-version: '1.27.1'
           cache-dependency-path: |
             api/go.sum
-            pix-gateway/go.sum
 
       - uses: actions/setup-node@v7
         with:
@@ -129,12 +109,7 @@ jobs:
   deploy:
     name: CDK Deploy
     runs-on: ubuntu-26.04-arm
-    needs: test
-    # Explicit success check, not the double-negative !contains(...,'failure')
-    # pattern used elsewhere for skippable stages: that pattern treats a
-    # cancelled test job as non-failure, so deploy would fire without tests
-    # ever having actually passed. Only an explicit 'success' unblocks deploy.
-    if: ${{ github.event_name != 'pull_request' && needs.test.result == 'success' }}
+    if: ${{ github.event_name != 'pull_request' }}
 
     steps:
       - uses: actions/checkout@v7
@@ -148,13 +123,12 @@ jobs:
             *)       echo "name=dev"   >> "$GITHUB_OUTPUT" ;;
           esac
 
-      # CDK synth bundles both api/cmd/reconcile and pix-gateway Lambdas.
+      # CDK synth bundles the api/cmd/reconcile Lambda.
       - uses: actions/setup-go@v7
         with:
           go-version: '1.27.1'
           cache-dependency-path: |
             api/go.sum
-            pix-gateway/go.sum
 
       - uses: actions/setup-node@v7
         with:

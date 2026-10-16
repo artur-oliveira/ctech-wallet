@@ -14,10 +14,6 @@ export const AWS_REGION = 'us-east-1';
 export const CERT_ARN =
   'arn:aws:acm:us-east-1:868899309401:certificate/29678869-bfc3-4688-b81b-55aa5b1d7443';
 
-// pix.wallet.aoctech.app cert
-export const PIX_CERT_ARN =
-  'arn:aws:acm:us-east-1:868899309401:certificate/82453778-2313-4fe8-aa78-7089366c10c4'
-
 // GitHub OIDC provider — owned by ctech-cdk (Ctech-Global stack). Imported by ARN.
 export const OIDC_PROVIDER_ARN =
   `arn:aws:iam::${AWS_ACCOUNT}:oidc-provider/token.actions.githubusercontent.com`;
@@ -78,10 +74,6 @@ export const frontendBucketName = (env: Environment) => `${env}-${SERVICE}-front
 export const routeStoreName = (env: Environment) => `${env}-${SERVICE}-routes`;
 export const reconcileFunctionName = (env: Environment) => `${env}-${SERVICE}-reconcile`;
 export const reconcileRoleName = (env: Environment) => `${env}-${SERVICE}-reconcile-role`;
-export const pixGatewayOutboundFunctionName = (env: Environment) => `${env}-${SERVICE}-pix-gateway-outbound`;
-export const pixGatewayWebhookFunctionName = (env: Environment) => `${env}-${SERVICE}-pix-gateway-webhook`;
-export const pixGatewayOutboundRoleName = (env: Environment) => `${env}-${SERVICE}-pix-gateway-outbound-role`;
-export const pixGatewayWebhookRoleName = (env: Environment) => `${env}-${SERVICE}-pix-gateway-webhook-role`;
 
 /**
  * DynamoDB table prefix. repositories.NewBase joins prefix and table with "_",
@@ -95,7 +87,6 @@ export const GHA_FRONTEND_ROLE = `${SERVICE}-gha-frontend`;
 export const GHA_INFRA_ROLE = `${SERVICE}-gha-infra`;
 export const GHA_RECONCILE_ROLE = `${SERVICE}-gha-reconcile`;
 export const GHA_SCOPES_ROLE = `${SERVICE}-gha-scopes`;
-export const GHA_PIX_GATEWAY_ROLE = `${SERVICE}-gha-pix-gateway`;
 
 // ── SSM parameter paths ─────────────────────────────────────────────────────
 /** Shared infra owned by ctech-cdk. */
@@ -122,10 +113,7 @@ export const VALKEY_DB = 2;
 
 /**
  * Wallet-owned SSM namespace (seeded operationally; never written by CDK).
- * The `inter/*` leaves are read only by pix-gateway's own IAM role now — api
- * no longer talks to Inter directly (see
- * docs/specs/2026-07-13-pix-gateway-lambda-design.md), but the paths stay
- * here since they're still under the wallet's shared namespace.
+ * Billing owns the Inter connection, so nothing here is an Inter secret any more.
  */
 export const SSM_WALLET = (env: Environment) => ({
   namespace: `/${SERVICE}/${env}`,
@@ -137,12 +125,6 @@ export const SSM_WALLET = (env: Environment) => ({
   // (allowed_scopes ["internal:account:erasure-ack"] only). Seeded operationally.
   erasureClientId: `/${SERVICE}/${env}/erasure-client-id`,
   erasureClientSecret: `/${SERVICE}/${env}/erasure-client-secret`, // SecureString
-  interClientId: `/${SERVICE}/${env}/inter/client-id`,
-  interClientSecret: `/${SERVICE}/${env}/inter/client-secret`, // SecureString
-  interWebhookSecret: `/${SERVICE}/${env}/inter/webhook-secret`, // SecureString
-  // Read by pix-gateway's outbound Lambda at cold start, never exported to env.
-  interMtlsCert: `/${SERVICE}/${env}/inter/mtls-cert`, // SecureString
-  interMtlsKey: `/${SERVICE}/${env}/inter/mtls-key`, // SecureString
   // M2M sandbox-purchase client registry (client_id → {webhook_url,
   // hmac_secret} JSON) — admin-provisioned, no API write path, same posture
   // as the wallets table's fee/deposit-range overrides. Read by both api
@@ -180,12 +162,6 @@ export const SSM_ACCOUNT = (env: Environment) => ({
   internalJwksUrl: `/ctech-account/${env}/internal-jwks-url`,
 });
 
-/** pix-gateway-owned SSM namespace (seeded operationally; never written by CDK). */
-export const SSM_PIX_GATEWAY = (env: Environment) => ({
-  namespace: `/${SERVICE}/${env}/pix-gateway`,
-  clientId: `/${SERVICE}/${env}/pix-gateway/client-id`,
-  clientSecret: `/${SERVICE}/${env}/pix-gateway/client-secret`, // SecureString
-});
 
 // ── Domain helper (identical to ctech-dfe's) ────────────────────────────────
 export const domainForEnv = (environment: Environment, prefix: string) => {

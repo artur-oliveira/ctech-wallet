@@ -32,12 +32,6 @@ interface ApiStackProps extends cdk.StackProps {
   instanceProfileName: string;
   deploymentsBucketName: string;
   logsBucketName: string;
-  /**
-   * pix-gateway's outbound Lambda function name — api invokes it for every
-   * PixClient call (LambdaPixClient). api no longer talks to Inter directly;
-   * see docs/specs/2026-07-13-pix-gateway-lambda-design.md.
-   */
-  pixGatewayFunctionName: string;
   /** The wallet's account-deletion SQS queue (ErasureStack). */
   erasureQueueUrl: string;
   // Session Manager. CI deploys over SSM RunCommand (/opt/app/deploy.sh), which
@@ -60,7 +54,6 @@ export class ApiStack extends cdk.Stack {
       instanceProfileName,
       deploymentsBucketName,
       logsBucketName,
-      pixGatewayFunctionName,
       erasureQueueUrl,
       enableSsmAgent = false,
       osFamily = 'alpine',
@@ -148,15 +141,13 @@ export class ApiStack extends cdk.Stack {
       `AWS_USE_DUALSTACK_ENDPOINT=true`,
       `PORT=${APP_PORT}`,
       `GAMBLING_ENABLED=true`,
-      `PIX_GATEWAY_FUNCTION_NAME=${pixGatewayFunctionName}`,
       `ERASURE_QUEUE_URL=${erasureQueueUrl}`,
       `GAME_WALLET_MERGED=${GAME_WALLET_MERGED[environment]}`,
       `TRUSTED_PROXIES=127.0.0.1`,
       `ENV`,
     );
 
-    // api no longer reads any Inter secret or the mTLS keypair — all Inter
-    // contact moved to pix-gateway (docs/specs/2026-07-13-pix-gateway-lambda-design.md).
+    // No Inter secret or mTLS keypair: Billing owns the Inter connection.
     const ssmEnvArgs = [
       `VALKEY_BASE=${shared.valkeyUrl}`,
       `CTECH_URL=${account.internalBaseUrl}`,

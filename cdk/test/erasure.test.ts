@@ -54,7 +54,6 @@ test('api role: retention write-only, audit updatable only on ip/user_agent, led
     env, environment: 'prod',
     deploymentsBucketArn: 'arn:aws:s3:::d', logsBucketArn: 'arn:aws:s3:::l',
     dynamoDBTables: db.tables,
-    pixGatewayOutboundFunctionArn: 'arn:aws:lambda:us-east-1:868899309401:function:x',
     erasureQueueArn: 'arn:aws:sqs:us-east-1:868899309401:prod-ctech-wallet-erasure',
     retentionTableArn: db.retentionTable.tableArn,
   });

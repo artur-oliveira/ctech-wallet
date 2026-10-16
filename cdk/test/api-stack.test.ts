@@ -21,7 +21,6 @@ function synth(): Template {
     instanceProfileName: 'prod-ctech-wallet-instance-profile',
     deploymentsBucketName: 'prod-ctech-deployments',
     logsBucketName: 'prod-ctech-application-logs',
-    pixGatewayFunctionName: 'prod-ctech-wallet-pix-gateway-outbound',
     erasureQueueUrl: 'https://sqs.us-east-1.amazonaws.com/868899309401/prod-ctech-wallet-erasure',
   });
   cachedTemplate = Template.fromStack(stack);
