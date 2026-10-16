@@ -3,34 +3,24 @@ import test from 'node:test'
 
 import {availableLedgerTabs, nextLedgerTab} from './ledger-tabs.ts'
 
-const tabs = ['real', 'game', 'sandbox']
+const tabs = ['real', 'sandbox', 'purchases']
 
 test('ledger tab arrow navigation wraps in both directions', () => {
-    assert.equal(nextLedgerTab(tabs, 'real', 'ArrowRight'), 'game')
-    assert.equal(nextLedgerTab(tabs, 'sandbox', 'ArrowRight'), 'real')
-    assert.equal(nextLedgerTab(tabs, 'real', 'ArrowLeft'), 'sandbox')
+    assert.equal(nextLedgerTab(tabs, 'real', 'ArrowRight'), 'sandbox')
+    assert.equal(nextLedgerTab(tabs, 'purchases', 'ArrowRight'), 'real')
+    assert.equal(nextLedgerTab(tabs, 'real', 'ArrowLeft'), 'purchases')
 })
 
 test('ledger tab Home and End keys move to the boundaries', () => {
-    assert.equal(nextLedgerTab(tabs, 'game', 'Home'), 'real')
-    assert.equal(nextLedgerTab(tabs, 'game', 'End'), 'sandbox')
-})
-
-const withPurchases = ['real', 'game', 'sandbox', 'purchases']
-
-test('purchases participates in arrow, Home and End navigation', () => {
-    assert.equal(nextLedgerTab(withPurchases, 'sandbox', 'ArrowRight'), 'purchases')
-    assert.equal(nextLedgerTab(withPurchases, 'purchases', 'ArrowRight'), 'real')
-    assert.equal(nextLedgerTab(withPurchases, 'game', 'End'), 'purchases')
+    assert.equal(nextLedgerTab(tabs, 'sandbox', 'Home'), 'real')
+    assert.equal(nextLedgerTab(tabs, 'sandbox', 'End'), 'purchases')
 })
 
 test('ledger tabs leave unrelated keyboard input to the browser', () => {
     assert.equal(nextLedgerTab(tabs, 'real', 'Tab'), null)
 })
 
-test('the game statement is offered only while a game wallet exists', () => {
-    assert.deepEqual(availableLedgerTabs(true, true, true), ['real', 'game', 'sandbox', 'purchases'])
-    assert.deepEqual(availableLedgerTabs(true, true, false), ['real', 'sandbox', 'purchases'])
-    assert.deepEqual(availableLedgerTabs(false, true, false), ['real', 'sandbox', 'purchases'])
-    assert.deepEqual(availableLedgerTabs(false, false, false), ['real', 'purchases'])
+test('the Sandbox statement is offered only while a Sandbox wallet exists, and there is no game statement', () => {
+    assert.deepEqual(availableLedgerTabs(true), ['real', 'sandbox', 'purchases'])
+    assert.deepEqual(availableLedgerTabs(false), ['real', 'purchases'])
 })

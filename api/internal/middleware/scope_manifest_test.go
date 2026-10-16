@@ -12,14 +12,21 @@ import (
 // deprecated. custody went with the Asaas BaaS integration; the others with the Pix gateway,
 // the charge route and the sale of Sandbox packs and goods (wallet ledger P5).
 var retiredScopes = map[string]bool{
-	"wallet:custody:write":             true,
-	"wallet:sandbox-purchases:read":    true,
-	"wallet:sandbox-purchases:write":   true,
-	"wallet:product-purchases:read":    true,
-	"internal:wallet:confirm-deposit":  true,
-	"internal:wallet:sandbox-purchase": true,
-	"internal:wallet:product-purchase": true,
-	"internal:wallet:charge-amount":    true,
+	"wallet:custody:write":               true,
+	"wallet:sandbox-purchases:read":      true,
+	"wallet:sandbox-purchases:write":     true,
+	"wallet:product-purchases:read":      true,
+	"internal:wallet:confirm-deposit":    true,
+	"internal:wallet:sandbox-purchase":   true,
+	"internal:wallet:product-purchase":   true,
+	"internal:wallet:charge-amount":      true,
+	"wallet:game:write":                  true,
+	"wallet:gambling:read":               true,
+	"wallet:gambling:write":              true,
+	"internal:wallet:game-hold":          true,
+	"internal:wallet:game-cashout":       true,
+	"internal:wallet:game-status":        true,
+	"internal:wallet:responsible-export": true,
 }
 
 func TestScopeManifestMatchesEnforcedScopes(t *testing.T) {
@@ -32,9 +39,8 @@ func TestScopeManifestMatchesEnforcedScopes(t *testing.T) {
 	}
 	wantInternal := []string{
 		ScopeWalletCredit, ScopeWalletDebit, ScopeWalletRealDebit,
-		ScopeWalletGameHold, ScopeWalletGameCashout,
-		ScopeWalletGameStatus, ScopeWalletBalance, ScopeWalletErasureEligibility,
-		ScopeWalletHold, ScopeWalletResponsibleExport,
+		ScopeWalletBalance, ScopeWalletErasureEligibility,
+		ScopeWalletHold,
 	}
 	wantPublic := WalletPublicScopes()
 	gotInternal := make([]string, 0, len(wantInternal))

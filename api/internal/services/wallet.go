@@ -218,7 +218,6 @@ type WalletService struct {
 	erasureGate      ErasureGate           // optional; see SetErasure
 	carried          CarriedExclusionStore // optional; see SetErasure
 	erased           ErasedChecker         // optional; see SetErased
-	gameMerged       bool                  // game operations act on `real`; see SetGameMerged
 }
 
 func NewWalletService(repo Repo, users UserRepo, audit Auditor, lock Locker, r rail.Rail, kyc KYCClient) *WalletService {
@@ -226,10 +225,6 @@ func NewWalletService(repo Repo, users UserRepo, audit Auditor, lock Locker, r r
 		repo: repo, users: users, audit: audit, lock: lock, rail: r, kyc: kyc,
 	}
 }
-
-// SetGameMerged makes the game-facing operations act on the user's `real`
-// wallet (GAME_WALLET_MERGED). Off by default.
-func (s *WalletService) SetGameMerged(on bool) { s.gameMerged = on }
 
 // SetBroadcaster wires the WebSocket registry after construction — kept as a
 // setter rather than a constructor parameter so cmd/reconcile and every
@@ -248,96 +243,6 @@ func (s *WalletService) SetM2MClients(m map[string]M2MClient) {
 	s.m2mClients = m
 }
 
-// ActivateGambling opens the caller's game + sandbox wallets. Gates: KYC at
-// least `basic` — any verification started — and acceptance of the CURRENT
-// gambling addendum, a separate document from the wallet terms.
-//
-// The bar is a MINIMUM, matching the route's own RequireKYC(KYCBasic): an
-// `enhanced` user has cleared strictly more than a `basic` one, so comparing
-// for equality against `basic` refused exactly the users most entitled to
-// activate. Depositing into the ring-fence is a separate, stricter gate
-// (`real → game` still runs the limit engine), and money can only reach `game`
-// from `real`, which is itself `enhanced`-only.
-//
-// Idempotent: activating twice returns the same wallets. Writes an audit event,
-// because consent must be provable after the fact.
-func (s *WalletService) ActivateGambling(ctx context.Context, userID, kycLevel, ip, userAgent string, daily, weekly, monthly int64) (game, sandbox *wallet.Wallet, err error) {
-	if err := checkErasure(ctx, s.erasureGate, userID); err != nil {
-		return nil, nil, err
-	}
-	if kycLevel == "" {
-		return nil, nil, problem.KYCNotVerified()
-	}
-	u, err := s.requireNotExcluded(ctx, userID)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := s.applyCarriedExclusion(ctx, userID); err != nil {
-		return nil, nil, err
-	}
-	if !u.GamblingAccepted() {
-		return nil, nil, problem.GamblingTermsRequired()
-	}
-	// Personal limits are mandatory from day one: a user must never reach a
-	// gambling wallet with no limits configured (router.go's own invariant).
-	// An already-configured replay may omit them (zeros); anyone else sets
-	// them here, which is the immediate first-set path of SetGameLimits.
-	if !u.LimitsConfigured() {
-		if _, err := s.SetGameLimits(ctx, userID, daily, weekly, monthly, ip, userAgent); err != nil {
-			return nil, nil, err
-		}
-	}
-	if _, err := s.repo.EnsureRealWallet(ctx, userID); err != nil {
-		return nil, nil, err
-	}
-
-	if s.gameMerged {
-		// No game wallet is created any more; activation is consent + limits + the
-		// sandbox wallet. A replay returns the existing sandbox and audits nothing.
-		if _, _, sb, err := s.repo.LoadWallets(ctx, userID); err != nil {
-			return nil, nil, err
-		} else if sb != nil {
-			return nil, sb, nil
-		}
-		sb, err := s.repo.EnsureSandboxWallet(ctx, userID)
-		if err != nil {
-			return nil, nil, err
-		}
-		if err := s.audit.Append(ctx, &wallet.AuditEvent{
-			UserID: userID, EventType: wallet.EventGamblingActivated, Actor: userID,
-			After: wallet.CurrentGamblingAddendumVersion, IP: ip, UserAgent: userAgent,
-		}); err != nil {
-			return nil, nil, err
-		}
-		return nil, sb, nil
-	}
-
-	// Already activated → return the existing wallets and append nothing. A replay
-	// must not forge a second activation record: the audit log is evidence of what
-	// actually happened, and one activation happened.
-	if _, game, sandbox, err := s.repo.LoadWallets(ctx, userID); err != nil {
-		return nil, nil, err
-	} else if game != nil && sandbox != nil {
-		return game, sandbox, nil
-	}
-
-	game, sandbox, err = s.repo.EnsureGamblingWallets(ctx, userID)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := s.audit.Append(ctx, &wallet.AuditEvent{
-		UserID:    userID,
-		EventType: wallet.EventGamblingActivated,
-		Actor:     userID,
-		After:     wallet.CurrentGamblingAddendumVersion,
-		IP:        ip,
-		UserAgent: userAgent,
-	}); err != nil {
-		return nil, nil, err
-	}
-	return game, sandbox, nil
-}
-
 // GetBalances returns the caller's wallets. The real wallet is created on first
 // access; game is nil until activation. sandbox may already exist independently
 // and is returned so its read-only history remains accessible. Its presence is
@@ -348,7 +253,7 @@ func (s *WalletService) GetBalances(ctx context.Context, userID string) (real, g
 		return nil, nil, nil, err
 	}
 	real, game, sandbox, err = s.repo.LoadWallets(ctx, userID)
-	if err == nil && s.gameMerged && game != nil && game.RetiredAt != "" {
+	if err == nil && game != nil && game.RetiredAt != "" {
 		game = nil // merged: the user has one balance, `real`
 	}
 	return real, game, sandbox, err
@@ -1090,15 +995,13 @@ type WalletBalances struct {
 // creates a wallet; a wallet that doesn't exist yet reports as balance 0,
 // which is the correct value (the user holds nothing there), not an error.
 func (s *WalletService) BalancesFor(ctx context.Context, userID string) (*WalletBalances, error) {
-	real, game, sandbox, err := s.repo.LoadWallets(ctx, userID)
+	real, _, sandbox, err := s.repo.LoadWallets(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
 	b := &WalletBalances{}
-	if s.gameMerged && real != nil {
+	if real != nil {
 		b.GameBalance = real.Balance // what a game can stake is the real balance
-	} else if game != nil {
-		b.GameBalance = game.Balance
 	}
 	if sandbox != nil {
 		b.SandboxBalance = sandbox.Balance
@@ -1106,168 +1009,18 @@ func (s *WalletService) BalancesFor(ctx context.Context, userID string) (*Wallet
 	return b, nil
 }
 
-// requireActivated loads the caller's wallets and fails if gambling was never
-// activated. Every operation inside the ring-fence goes through this.
-func (s *WalletService) requireActivated(ctx context.Context, userID string) (real, game, sandbox *wallet.Wallet, err error) {
-	real, game, sandbox, err = s.repo.LoadWallets(ctx, userID)
+// realWallet loads the caller's real wallet. Holds and cash-outs stake `real`: the game wallet
+// was merged into it, and consent, limits and self-exclusion are Poker's rules now, so the wallet
+// checks none of them.
+func (s *WalletService) realWallet(ctx context.Context, userID string) (*wallet.Wallet, error) {
+	real, _, _, err := s.repo.LoadWallets(ctx, userID)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
-	if s.gameMerged {
-		// There is no game wallet any more: games stake `real`. Activation is
-		// the user's consent to the current gambling addendum.
-		if real == nil {
-			return nil, nil, nil, problem.GamblingNotActivated()
-		}
-		u, err := s.users.Get(ctx, userID)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		if u == nil || !u.GamblingAccepted() {
-			return nil, nil, nil, problem.GamblingNotActivated()
-		}
-		return real, real, sandbox, nil
+	if real == nil {
+		return nil, problem.GamblingNotActivated()
 	}
-	if real == nil || game == nil || sandbox == nil {
-		return nil, nil, nil, problem.GamblingNotActivated()
-	}
-	return real, game, sandbox, nil
-}
-
-// ringTransfer moves money between two of the caller's wallets atomically,
-// locking both. AcquireOrdered sorts the wallet IDs, so the lock order is total
-// and deadlock-free for any number of wallets. The ledger pair and the
-// idempotency guard are co-written in one transaction by repo.Transfer.
-func (s *WalletService) ringTransfer(ctx context.Context, from, to *wallet.Wallet, amount, creditAmount int64, debitType, creditType, ns, idemKey string, extra ...types.TransactWriteItem) (debit, credit *wallet.LedgerEntry, err error) {
-	release, err := acquireWallets(ctx, s.lock, from.WalletID, to.WalletID)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer release()
-
-	key := ns + "#" + from.UserID + "#" + idemKey
-	d, c, _, err := s.repo.Transfer(ctx, from.WalletID, to.WalletID, amount, creditAmount,
-		debitType, creditType, key, key, reqHash(ns, amount), extra...)
-	if err != nil {
-		return nil, nil, err
-	}
-	return d, c, nil
-}
-
-// FundGame moves real money into the gambling ring-fence (real → game).
-//
-// This is the ONE edge by which real money reaches a game or sandbox, and the
-// edge the personal limit engine meters. The limit is GROSS INFLOW: a later
-// ReturnFromGame does NOT refund limit headroom, or a cap could be churned around
-// indefinitely (fund → return → fund). The limit check itself belongs here, right
-// before the transfer, and is added by the limit-engine plan.
-func (s *WalletService) FundGame(ctx context.Context, userID string, amount int64, idemKey string) (debit, credit *wallet.LedgerEntry, err error) {
-	if err := checkErasure(ctx, s.erasureGate, userID); err != nil {
-		return nil, nil, err
-	}
-	if s.gameMerged {
-		return nil, nil, problem.RouteRetired()
-	}
-	// Absolute inbound ceiling — real money enters the gambling ring-fence only
-	// here, so this is the single door the cap must guard.
-	if amount > wallet.MaxInboundAmount {
-		return nil, nil, problem.AmountAboveLimit(wallet.MaxInboundAmount)
-	}
-	rl, game, _, err := s.requireActivated(ctx, userID)
-	if err != nil {
-		return nil, nil, err
-	}
-	u, err := s.requireNotExcluded(ctx, userID)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Personal limit engine: meter this deposit against the user's calendar
-	// windows and co-write the bumped counters in the transfer's transaction.
-	now := time.Now()
-	lim, matured := u.EffectiveGameLimits(now)
-	if matured { // lazy-apply a matured pending increase before metering
-		if err := s.users.SetGameLimits(ctx, userID, new(lim)); err != nil {
-			return nil, nil, err
-		}
-	}
-	if !(u.LimitsConfigured() || matured) {
-		return nil, nil, problem.LimitsNotConfigured()
-	}
-	var prev *wallet.GameDepositCounters
-	var cur wallet.GameDepositCounters
-	if u != nil && u.GameDepositCounters != nil {
-		prev = u.GameDepositCounters
-		cur = *prev
-	}
-	if breach := wallet.CheckDeposit(lim, cur, amount, now); breach != nil {
-		return nil, nil, problem.DepositLimitExceeded(breach.Window, breach.Limit, breach.Used, breach.ResetsAt)
-	}
-	day, week, month := wallet.WindowKeys(now)
-	d, w, m := cur.SumsFor(day, week, month)
-	next := wallet.GameDepositCounters{
-		DayKey: day, DaySum: d + amount,
-		WeekKey: week, WeekSum: w + amount,
-		MonthKey: month, MonthSum: m + amount,
-	}
-	counterTx, err := s.users.BumpDepositCounters(userID, prev, next)
-	if err != nil {
-		return nil, nil, err
-	}
-	return s.ringTransfer(ctx, rl, game, amount, amount,
-		wallet.EntryGameFundDebit, wallet.EntryGameFundCredit, "game_fund", idemKey, counterTx)
-}
-
-// ReturnFromGame moves money back out of the ring-fence (game → real).
-//
-// Never limited and never charged a fee: moving money out of the ring-fence
-// reduces the user's exposure, which is the behaviour the limits exist to
-// encourage. This is not a PIX payout — to reach a bank account the user then
-// withdraws from `real` as usual.
-func (s *WalletService) ReturnFromGame(ctx context.Context, userID string, amount int64, idemKey string) (debit, credit *wallet.LedgerEntry, err error) {
-	if s.gameMerged {
-		return nil, nil, problem.RouteRetired()
-	}
-	if err := checkErasure(ctx, s.erasureGate, userID); err != nil {
-		return nil, nil, err
-	}
-	rl, game, _, err := s.requireActivated(ctx, userID)
-	if err != nil {
-		return nil, nil, err
-	}
-	return s.ringTransfer(ctx, game, rl, amount, amount,
-		wallet.EntryGameReturnDebit, wallet.EntryGameReturnCredit, "game_return", idemKey)
-}
-
-// PurchaseSandbox converts game money into sandbox credits (game → sandbox).
-//
-// The source is the GAME wallet, never `real`: real money reaches sandbox only by
-// first crossing the metered real → game edge. Were `real` spendable here, a user
-// at their personal limit could simply buy sandbox directly and the limit would
-// mean nothing. Sandbox remains a sink (Invariant #6) — this conversion is
-// one-way and can never be undone.
-func (s *WalletService) PurchaseSandbox(ctx context.Context, userID string, amount int64, idemKey string) (debit, credit *wallet.LedgerEntry, err error) {
-	if s.gameMerged {
-		return nil, nil, problem.RouteRetired()
-	}
-	if err := checkErasure(ctx, s.erasureGate, userID); err != nil {
-		return nil, nil, err
-	}
-	_, game, sandbox, err := s.requireActivated(ctx, userID)
-	if err != nil {
-		return nil, nil, err
-	}
-	// The debit is real money (centavos) from `game`; the credit is the same
-	// amount converted into sandbox credits at the fixed rate. The two units are
-	// different, so they are passed as separate amounts to ringTransfer.
-	credits := wallet.ToSandboxCredits(amount)
-	debit, credit, err = s.ringTransfer(ctx, game, sandbox, amount, credits,
-		wallet.EntrySandboxPurchase, wallet.EntrySandboxCredit, "sandbox_purchase", idemKey,
-	)
-	if err != nil {
-		return nil, nil, err
-	}
-	return debit, credit, nil
+	return real, nil
 }
 
 // CreditSandbox grants sandbox currency to a user (M2M, e.g. poker/dominó bonus).
@@ -1355,11 +1108,8 @@ func (s *WalletService) HoldGame(ctx context.Context, userID string, amount int6
 	if err := checkErasure(ctx, s.erasureGate, userID); err != nil {
 		return nil, err
 	}
-	_, game, _, err := s.requireActivated(ctx, userID)
+	game, err := s.realWallet(ctx, userID)
 	if err != nil {
-		return nil, err
-	}
-	if _, err := s.requireNotExcluded(ctx, userID); err != nil { // defense in depth: an excluded user must not re-enter play
 		return nil, err
 	}
 	release, err := acquireWallet(ctx, s.lock, game.WalletID)
@@ -1400,14 +1150,11 @@ func (s *WalletService) ReleaseHold(ctx context.Context, userID, holdID, idemKey
 
 	// Merged: a hold opened before the merge still names the retired game wallet;
 	// the refund goes to `real`.
-	target := h.WalletID
-	if s.gameMerged {
-		real, err := s.repo.EnsureRealWallet(ctx, userID)
-		if err != nil {
-			return nil, err
-		}
-		target = real.WalletID
+	realw, err := s.repo.EnsureRealWallet(ctx, userID)
+	if err != nil {
+		return nil, err
 	}
+	target := realw.WalletID
 	release, err := acquireWallet(ctx, s.lock, target)
 	if err != nil {
 		return nil, err
@@ -1439,7 +1186,7 @@ func (s *WalletService) ReleaseHold(ctx context.Context, userID, holdID, idemKey
 // amount is fail-closed at the total value of the caller's held reservations;
 // this prevents a compromised game client from minting wallet funds.
 func (s *WalletService) CashoutGame(ctx context.Context, userID string, amount int64, tableRef string, holdIDs []string, idemKey, description string) (*wallet.LedgerEntry, error) {
-	_, game, _, err := s.requireActivated(ctx, userID)
+	game, err := s.realWallet(ctx, userID)
 	if err != nil {
 		return nil, err
 	}

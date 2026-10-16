@@ -20,17 +20,12 @@ export function nextLedgerTab<T extends string>(
 export const PURCHASES_TAB = 'purchases'
 
 /**
- * The statements a user can open. `game` appears only while the user still has a
- * game wallet: after the merge there is one money balance (`real`) and no game
- * statement to show.
+ * The statements a user can open: the money balance (`real`), the Sandbox history when a Sandbox
+ * wallet exists, and the old purchases. The game wallet was merged into `real` and the gambling
+ * rules moved to Poker, so there is no `game` statement and no activation any more.
  */
-export function availableLedgerTabs(
-  activated: boolean,
-  hasSandbox: boolean,
-  hasGame: boolean,
-): Array<'real' | 'game' | 'sandbox' | typeof PURCHASES_TAB> {
-  const wallets: Array<'real' | 'game' | 'sandbox'> = ['real']
-  if (activated && hasGame) wallets.push('game')
-  if (activated || hasSandbox) wallets.push('sandbox')
+export function availableLedgerTabs(hasSandbox: boolean): Array<'real' | 'sandbox' | typeof PURCHASES_TAB> {
+  const wallets: Array<'real' | 'sandbox'> = ['real']
+  if (hasSandbox) wallets.push('sandbox')
   return [...wallets, PURCHASES_TAB]
 }

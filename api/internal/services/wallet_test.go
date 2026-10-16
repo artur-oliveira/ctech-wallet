@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -524,36 +523,6 @@ func TestConfirmDepositRefundReversalFailureFlagsRefundFailed(t *testing.T) {
 // Sandbox is bought from the GAME wallet, never from `real`. If this ever debits
 // w-real again, personal gambling limits are unenforceable: a user at their cap
 // could buy sandbox straight from their real balance.
-func TestPurchaseSandboxDebitsGameNotReal(t *testing.T) {
-	repo := newStubRepo()
-	svc := newSvc(repo, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
-	d, c, err := svc.PurchaseSandbox(context.Background(), "u1", 3000, "idem-1")
-	if err != nil {
-		t.Fatalf("PurchaseSandbox: %v", err)
-	}
-	if !repo.transferCalled || d.WalletID != "w-game" || c.WalletID != "w-sand" {
-		t.Errorf("expected game→sandbox transfer, got d=%+v c=%+v", d, c)
-	}
-	if d.WalletID == "w-real" {
-		t.Fatal("BYPASS: sandbox purchase debited the real wallet")
-	}
-}
-
-func TestPurchaseSandboxRequiresActivation(t *testing.T) {
-	repo := newStubRepo()
-	repo.notActivated = true
-	svc := newSvc(repo, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
-
-	_, _, err := svc.PurchaseSandbox(context.Background(), "u1", 3000, "idem-1")
-	var p *problem.Problem
-	if !errors.As(err, &p) || p.Type != problem.TypeGamblingNotActivated {
-		t.Fatalf("PurchaseSandbox without activation = %v, want gambling-not-activated", err)
-	}
-	if repo.transferCalled {
-		t.Fatal("a non-activated purchase must not touch any wallet")
-	}
-}
-
 func TestCreditSandboxWorksWithoutActivation(t *testing.T) {
 	repo := newStubRepo()
 	repo.notActivated = true
@@ -587,25 +556,6 @@ func TestDebitSandboxWorksWithoutActivation(t *testing.T) {
 
 // FundGame/ReturnFromGame/PurchaseSandbox/HoldGame remain gated — this change
 // must not weaken the game wallet's KYC/consent gate.
-func TestFundGameStillRequiresActivation(t *testing.T) {
-	repo := newStubRepo()
-	repo.notActivated = true
-	users := &stubUserRepo{user: &wallet.User{GameLimits: &wallet.GameLimits{Daily: 10000, Weekly: 10000, Monthly: 10000}}}
-	svc := NewWalletService(repo, users, &stubAudit{}, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
-
-	_, _, err := svc.FundGame(context.Background(), "u1", 3000, "idem-3")
-	isProblem(t, err, problem.TypeGamblingNotActivated)
-}
-
-func TestReturnFromGameStillRequiresActivation(t *testing.T) {
-	repo := newStubRepo()
-	repo.notActivated = true
-	svc := newSvc(repo, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
-
-	_, _, err := svc.ReturnFromGame(context.Background(), "u1", 3000, "idem-4")
-	isProblem(t, err, problem.TypeGamblingNotActivated)
-}
-
 func TestBalancesForReturnsZeroForBrandNewUser(t *testing.T) {
 	repo := newStubRepo()
 	repo.notActivated = true
@@ -622,7 +572,7 @@ func TestBalancesForReturnsZeroForBrandNewUser(t *testing.T) {
 
 func TestBalancesForReturnsActualBalances(t *testing.T) {
 	repo := newStubRepo()
-	repo.game.Balance = 1500
+	repo.real.Balance = 1500 // what a game can stake is the real balance
 	repo.sandbox.Balance = 30000
 	svc := newSvc(repo, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 
@@ -648,40 +598,6 @@ func TestBalancesForSandboxOnlyUser(t *testing.T) {
 	}
 	if got.GameBalance != 0 || got.SandboxBalance != 700 {
 		t.Fatalf("balances = %+v, want game=0 (never activated) sandbox=700", got)
-	}
-}
-
-func TestFundGameMovesRealIntoGame(t *testing.T) {
-	repo := newStubRepo()
-	// FundGame now requires configured personal limits (responsible gambling).
-	users := &stubUserRepo{user: &wallet.User{GameLimits: &wallet.GameLimits{Daily: 10000, Weekly: 10000, Monthly: 10000}}}
-	svc := NewWalletService(repo, users, &stubAudit{}, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
-	d, c, err := svc.FundGame(context.Background(), "u1", 3000, "idem-1")
-	if err != nil {
-		t.Fatalf("FundGame: %v", err)
-	}
-	if d.WalletID != "w-real" || c.WalletID != "w-game" {
-		t.Errorf("expected real→game transfer, got d=%+v c=%+v", d, c)
-	}
-	if d.Type != wallet.EntryGameFundDebit || c.Type != wallet.EntryGameFundCredit {
-		t.Errorf("entry types = %q/%q, want %q/%q", d.Type, c.Type,
-			wallet.EntryGameFundDebit, wallet.EntryGameFundCredit)
-	}
-}
-
-func TestReturnFromGameMovesGameIntoReal(t *testing.T) {
-	repo := newStubRepo()
-	svc := newSvc(repo, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
-	d, c, err := svc.ReturnFromGame(context.Background(), "u1", 3000, "idem-1")
-	if err != nil {
-		t.Fatalf("ReturnFromGame: %v", err)
-	}
-	if d.WalletID != "w-game" || c.WalletID != "w-real" {
-		t.Errorf("expected game→real transfer, got d=%+v c=%+v", d, c)
-	}
-	if d.Type != wallet.EntryGameReturnDebit || c.Type != wallet.EntryGameReturnCredit {
-		t.Errorf("entry types = %q/%q, want %q/%q", d.Type, c.Type,
-			wallet.EntryGameReturnDebit, wallet.EntryGameReturnCredit)
 	}
 }
 
@@ -717,7 +633,7 @@ func TestDebitRealWalletBusy(t *testing.T) {
 	isProblem(t, err, problem.TypeWalletBusy)
 }
 
-// --- game wallet holds (skill-game integration, e.g. ctech-poker) ---
+// --- holds on `real` (skill-game integration, e.g. ctech-poker) ---
 
 func TestHoldGameHappyPath(t *testing.T) {
 	repo := newStubRepo()
@@ -726,7 +642,7 @@ func TestHoldGameHappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HoldGame: %v", err)
 	}
-	if h.WalletID != "w-game" || h.Amount != 5000 || h.Status != wallet.HoldHeld {
+	if h.WalletID != "w-real" || h.Amount != 5000 || h.Status != wallet.HoldHeld {
 		t.Fatalf("unexpected hold: %+v", h)
 	}
 
@@ -746,14 +662,6 @@ func TestHoldGameInsufficientBalance(t *testing.T) {
 	svc := newSvc(repo, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 	_, err := svc.HoldGame(context.Background(), "u1", 5000, "table-1", "idem-1")
 	isProblem(t, err, problem.TypeInsufficientBalance)
-}
-
-func TestHoldGameRequiresActivation(t *testing.T) {
-	repo := newStubRepo()
-	repo.notActivated = true
-	svc := newSvc(repo, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
-	_, err := svc.HoldGame(context.Background(), "u1", 5000, "table-1", "idem-1")
-	isProblem(t, err, problem.TypeGamblingNotActivated)
 }
 
 func TestHoldGameWalletBusy(t *testing.T) {

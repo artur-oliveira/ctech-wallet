@@ -2,16 +2,11 @@ import axios, {AxiosError, type AxiosInstance, type AxiosRequestConfig, type Axi
 import type {
   Balances,
   DepositResult,
-  GameLimits,
-  GameLimitsInput,
-  GameLimitsStatus,
   LedgerPage,
   MeResponse,
   ProductPurchase,
   PurchasePage,
   SandboxPurchase,
-  Transfer,
-  Wallet,
   WalletType,
   Withdrawal,
 } from '@/lib/types/api'
@@ -234,55 +229,6 @@ class ApiClient {
   async createWithdrawal(amount: number, idempotencyKey: string): Promise<Withdrawal> {
     return (
       await this.http.post<Withdrawal>('/v1.0/wallet/withdrawals', {amount}, idemConfig(idempotencyKey))
-    ).data
-  }
-
-  /** Buys sandbox credits with the GAME balance — never with the real balance. */
-  async purchaseSandbox(amount: number, idempotencyKey: string): Promise<Transfer> {
-    return (
-      await this.http.post('/v1.0/wallet/sandbox/purchase', {amount}, idemConfig(idempotencyKey))
-    ).data
-  }
-
-  /** Opts into the game + sandbox wallets. Requires verified KYC. */
-  async activateGambling(limits: GameLimitsInput): Promise<{ game: Wallet; sandbox: Wallet }> {
-    return (await this.http.post('/v1.0/wallet/gambling/activate', {
-      accept_addendum: true,
-      ...limits,
-    })).data
-  }
-
-  async getGameLimits(): Promise<GameLimitsStatus> {
-    return (await this.http.get<GameLimitsStatus>('/v1.0/wallet/gambling/limits')).data
-  }
-
-  async setGameLimits(limits: GameLimitsInput): Promise<GameLimits> {
-    return (await this.http.put<GameLimits>('/v1.0/wallet/gambling/limits', limits)).data
-  }
-
-  async cancelPendingGameLimits(): Promise<GameLimits> {
-    return (await this.http.delete<GameLimits>('/v1.0/wallet/gambling/limits/pending')).data
-  }
-
-  async selfExclude(period: '30d' | '90d' | 'indefinite'): Promise<void> {
-    await this.http.post('/v1.0/wallet/gambling/self-exclude', {period})
-  }
-
-  async revokeSelfExclusion(): Promise<void> {
-    await this.http.post('/v1.0/wallet/gambling/self-exclude/revoke')
-  }
-
-  /** real → game. The edge the user's personal limits are enforced on. */
-  async fundGame(amount: number, idempotencyKey: string): Promise<Transfer> {
-    return (
-      await this.http.post('/v1.0/wallet/game/deposit', {amount}, idemConfig(idempotencyKey))
-    ).data
-  }
-
-  /** game → real. Never limited, never charged — this is not a PIX payout. */
-  async returnFromGame(amount: number, idempotencyKey: string): Promise<Transfer> {
-    return (
-      await this.http.post('/v1.0/wallet/game/withdraw', {amount}, idemConfig(idempotencyKey))
     ).data
   }
 

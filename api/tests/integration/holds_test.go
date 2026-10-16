@@ -33,15 +33,30 @@ func backdateHold(t *testing.T, holdID, createdAt string) {
 	}
 }
 
-// --- game wallet holds (skill-game integration, e.g. ctech-poker) ---
+// funded creates a user whose `real` wallet holds amount. Holds stake `real`: the game wallet was merged
+// into it, and consent, limits and self-exclusion are Poker's rules, not the wallet's.
+func funded(t *testing.T, h *harness, amount int64) string {
+	t.Helper()
+	user := "u-" + id.New()
+	fund(t, h, user, amount)
+	return user
+}
 
-func TestHoldGameReservesAndIsIdempotent(t *testing.T) {
+func realBalance(t *testing.T, h *harness, user string) int64 {
+	t.Helper()
+	real, _, _, err := h.repo.LoadWallets(context.Background(), user)
+	if err != nil || real == nil {
+		t.Fatalf("LoadWallets: %v", err)
+	}
+	return real.Balance
+}
+
+// --- holds (skill-game integration, e.g. ctech-poker) ---
+
+func TestHoldReservesAndIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	h := newHarness(verified())
-	user := fundedAndActivated(t, h, 10000)
-	if _, _, err := h.svc.FundGame(ctx, user, 8000, "idem-fund"); err != nil {
-		t.Fatalf("FundGame: %v", err)
-	}
+	user := funded(t, h, 8000)
 
 	hold, err := h.svc.HoldGame(ctx, user, 5000, "table-1:seat-2", "idem-hold")
 	if err != nil {
@@ -50,13 +65,8 @@ func TestHoldGameReservesAndIsIdempotent(t *testing.T) {
 	if hold.Status != wallet.HoldHeld || hold.Amount != 5000 {
 		t.Fatalf("unexpected hold: %+v", hold)
 	}
-
-	_, game, _, err := h.repo.LoadWallets(ctx, user)
-	if err != nil {
-		t.Fatalf("LoadWallets: %v", err)
-	}
-	if game.Balance != 3000 {
-		t.Fatalf("game balance = %d, want 3000 (8000 funded - 5000 held)", game.Balance)
+	if bal := realBalance(t, h, user); bal != 3000 {
+		t.Fatalf("real balance = %d, want 3000 (8000 - 5000 held)", bal)
 	}
 
 	// Idempotent replay: same key must not debit twice.
@@ -67,45 +77,37 @@ func TestHoldGameReservesAndIsIdempotent(t *testing.T) {
 	if hold2.HoldID != hold.HoldID {
 		t.Fatalf("replay created a new hold: %s vs %s", hold2.HoldID, hold.HoldID)
 	}
-	if bal := balance(t, h, game.WalletID); bal != 3000 {
-		t.Fatalf("replay moved money again: game = %d, want 3000", bal)
+	if bal := realBalance(t, h, user); bal != 3000 {
+		t.Fatalf("replay moved money again: real = %d, want 3000", bal)
 	}
 }
 
-func TestHoldGameCannotOverdrawGame(t *testing.T) {
+func TestHoldCannotOverdraw(t *testing.T) {
 	ctx := context.Background()
 	h := newHarness(verified())
-	user := fundedAndActivated(t, h, 10000)
-	if _, _, err := h.svc.FundGame(ctx, user, 3000, "idem-fund"); err != nil {
-		t.Fatalf("FundGame: %v", err)
-	}
+	user := funded(t, h, 3000)
 
 	_, err := h.svc.HoldGame(ctx, user, 3001, "table-1", "idem-hold-over")
 	wantProblem(t, err, problem.TypeInsufficientBalance)
 
-	_, game, _, _ := h.repo.LoadWallets(ctx, user)
-	if game.Balance != 3000 {
-		t.Fatalf("failed hold must not move money: game = %d, want 3000", game.Balance)
+	if bal := realBalance(t, h, user); bal != 3000 {
+		t.Fatalf("failed hold must not move money: real = %d, want 3000", bal)
 	}
 }
 
-func TestHoldGameRequiresActivation(t *testing.T) {
+// A user the wallet has never seen has nothing to stake.
+func TestHoldNeedsAWallet(t *testing.T) {
 	ctx := context.Background()
 	h := newHarness(verified())
-	user := "u-" + id.New()
-	fund(t, h, user, 10000)
 
-	_, err := h.svc.HoldGame(ctx, user, 1000, "table-1", "idem-hold")
+	_, err := h.svc.HoldGame(ctx, "u-"+id.New(), 1000, "table-1", "idem-hold")
 	wantProblem(t, err, problem.TypeGamblingNotActivated)
 }
 
 func TestReleaseHoldRefundsInFullAndIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	h := newHarness(verified())
-	user := fundedAndActivated(t, h, 10000)
-	if _, _, err := h.svc.FundGame(ctx, user, 5000, "idem-fund"); err != nil {
-		t.Fatalf("FundGame: %v", err)
-	}
+	user := funded(t, h, 5000)
 	hold, err := h.svc.HoldGame(ctx, user, 4000, "table-1", "idem-hold")
 	if err != nil {
 		t.Fatalf("HoldGame: %v", err)
@@ -118,8 +120,8 @@ func TestReleaseHoldRefundsInFullAndIsIdempotent(t *testing.T) {
 	if released.Status != wallet.HoldReleased {
 		t.Fatalf("status = %q, want released", released.Status)
 	}
-	if bal := balance(t, h, hold.WalletID); bal != 5000 {
-		t.Fatalf("game balance = %d, want 5000 (full refund)", bal)
+	if bal := realBalance(t, h, user); bal != 5000 {
+		t.Fatalf("real balance = %d, want 5000 (full refund)", bal)
 	}
 
 	// A second release is a benign no-op — must not credit again.
@@ -130,8 +132,8 @@ func TestReleaseHoldRefundsInFullAndIsIdempotent(t *testing.T) {
 	if released2.Status != wallet.HoldReleased {
 		t.Fatalf("retry status = %q, want released", released2.Status)
 	}
-	if bal := balance(t, h, hold.WalletID); bal != 5000 {
-		t.Fatalf("retry must not credit again: game balance = %d, want 5000", bal)
+	if bal := realBalance(t, h, user); bal != 5000 {
+		t.Fatalf("retry must not credit again: real balance = %d, want 5000", bal)
 	}
 }
 
@@ -141,10 +143,7 @@ func TestReleaseHoldRefundsInFullAndIsIdempotent(t *testing.T) {
 func TestConcurrentReleaseHoldOnlyCreditsOnce(t *testing.T) {
 	ctx := context.Background()
 	h := newHarness(verified())
-	user := fundedAndActivated(t, h, 10000)
-	if _, _, err := h.svc.FundGame(ctx, user, 5000, "idem-fund"); err != nil {
-		t.Fatalf("FundGame: %v", err)
-	}
+	user := funded(t, h, 5000)
 	hold, err := h.svc.HoldGame(ctx, user, 4000, "table-1", "idem-hold")
 	if err != nil {
 		t.Fatalf("HoldGame: %v", err)
@@ -160,19 +159,36 @@ func TestConcurrentReleaseHoldOnlyCreditsOnce(t *testing.T) {
 	}
 	wg.Wait()
 
-	if bal := balance(t, h, hold.WalletID); bal != 5000 {
-		t.Fatalf("concurrent releases credited more than once: game balance = %d, want 5000", bal)
+	if bal := realBalance(t, h, user); bal != 5000 {
+		t.Fatalf("concurrent releases credited more than once: real balance = %d, want 5000", bal)
+	}
+}
+
+// A hold opened while the game wallet still existed names that retired wallet; its refund goes to `real`.
+func TestReleaseOfAHoldOnTheRetiredGameWalletRefundsReal(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(verified())
+	user := funded(t, h, 5000)
+	hold, err := h.svc.HoldGame(ctx, user, 4000, "table-1", "idem-hold")
+	if err != nil {
+		t.Fatalf("HoldGame: %v", err)
+	}
+	if hold.WalletID == "" {
+		t.Fatal("a hold names the wallet it debited")
+	}
+	if _, err := h.svc.ReleaseHold(ctx, user, hold.HoldID, "idem-release"); err != nil {
+		t.Fatalf("ReleaseHold: %v", err)
+	}
+	if bal := realBalance(t, h, user); bal != 5000 {
+		t.Fatalf("real balance = %d, want 5000", bal)
 	}
 }
 
 // A cashout may span several holds but remains bounded by their aggregate.
-func TestCashoutGameMayConsumeMultipleHolds(t *testing.T) {
+func TestCashoutMayConsumeMultipleHolds(t *testing.T) {
 	ctx := context.Background()
 	h := newHarness(verified())
-	userA := fundedAndActivated(t, h, 20000)
-	if _, _, err := h.svc.FundGame(ctx, userA, 20000, "idem-fund-a"); err != nil {
-		t.Fatalf("FundGame A: %v", err)
-	}
+	userA := funded(t, h, 20000)
 
 	// Two of A's own holds permit an atomic aggregate cashout of 20000.
 	holdA1, err := h.svc.HoldGame(ctx, userA, 10000, "table-1", "idem-hold-a1")
@@ -191,13 +207,8 @@ func TestCashoutGameMayConsumeMultipleHolds(t *testing.T) {
 	if entryA.Amount != 20000 {
 		t.Fatalf("cashout amount = %d, want 20000 (more than a single hold)", entryA.Amount)
 	}
-
-	_, gameA, _, err := h.repo.LoadWallets(ctx, userA)
-	if err != nil {
-		t.Fatalf("LoadWallets A: %v", err)
-	}
-	if gameA.Balance != 20000 {
-		t.Fatalf("A's game balance = %d, want 20000", gameA.Balance)
+	if bal := realBalance(t, h, userA); bal != 20000 {
+		t.Fatalf("A's real balance = %d, want 20000", bal)
 	}
 
 	holdA1Row, err := h.repo.GetHold(ctx, holdA1.HoldID)
@@ -213,20 +224,14 @@ func TestCashoutGameMayConsumeMultipleHolds(t *testing.T) {
 	}
 }
 
-// TestCashoutGameRejectsAnotherUsersHold proves SEC-07: a cash-out listing a
+// TestCashoutRejectsAnotherUsersHold proves SEC-07: a cash-out listing a
 // hold that belongs to a different user is rejected (Forbidden) and mutates
 // nothing — neither the credit nor any hold transition happens.
-func TestCashoutGameRejectsAnotherUsersHold(t *testing.T) {
+func TestCashoutRejectsAnotherUsersHold(t *testing.T) {
 	ctx := context.Background()
 	h := newHarness(verified())
-	userA := fundedAndActivated(t, h, 20000)
-	userB := fundedAndActivated(t, h, 10000)
-	if _, _, err := h.svc.FundGame(ctx, userA, 20000, "idem-fund-a"); err != nil {
-		t.Fatalf("FundGame A: %v", err)
-	}
-	if _, _, err := h.svc.FundGame(ctx, userB, 10000, "idem-fund-b"); err != nil {
-		t.Fatalf("FundGame B: %v", err)
-	}
+	userA := funded(t, h, 20000)
+	userB := funded(t, h, 10000)
 	holdA, err := h.svc.HoldGame(ctx, userA, 10000, "table-1", "idem-hold-a")
 	if err != nil {
 		t.Fatalf("HoldGame A: %v", err)
@@ -241,25 +246,21 @@ func TestCashoutGameRejectsAnotherUsersHold(t *testing.T) {
 	} else {
 		wantProblem(t, err, problem.TypeForbidden)
 	}
-	// Neither hold may have been settled, and A's game balance must be unchanged.
+	// Neither hold may have been settled, and A's balance must be unchanged.
 	holdARow, _ := h.repo.GetHold(ctx, holdA.HoldID)
 	holdBRow, _ := h.repo.GetHold(ctx, holdB.HoldID)
 	if holdARow.Status != wallet.HoldHeld || holdBRow.Status != wallet.HoldHeld {
 		t.Fatalf("holds must stay held, got A=%q B=%q", holdARow.Status, holdBRow.Status)
 	}
-	_, gameA, _, _ := h.repo.LoadWallets(ctx, userA)
-	if gameA.Balance != 10000 {
-		t.Fatalf("A's game balance = %d, want 10000 (no credit on rejected cash-out)", gameA.Balance)
+	if bal := realBalance(t, h, userA); bal != 10000 {
+		t.Fatalf("A's real balance = %d, want 10000 (no credit on rejected cash-out)", bal)
 	}
 }
 
-func TestCashoutGameCannotMintBeyondReservedValue(t *testing.T) {
+func TestCashoutCannotMintBeyondReservedValue(t *testing.T) {
 	ctx := context.Background()
 	h := newHarness(verified())
-	user := fundedAndActivated(t, h, 10000)
-	if _, _, err := h.svc.FundGame(ctx, user, 5000, "idem-fund"); err != nil {
-		t.Fatal(err)
-	}
+	user := funded(t, h, 5000)
 	hold, err := h.svc.HoldGame(ctx, user, 5000, "table-1", "idem-hold")
 	if err != nil {
 		t.Fatal(err)
@@ -277,13 +278,10 @@ func TestCashoutGameCannotMintBeyondReservedValue(t *testing.T) {
 
 // A consumed hold may never back another cashout. Atomic settlement makes the
 // old partial-credit state impossible; fail closed if such state is observed.
-func TestCashoutGameRejectsAlreadyConsumedHold(t *testing.T) {
+func TestCashoutRejectsAlreadyConsumedHold(t *testing.T) {
 	ctx := context.Background()
 	h := newHarness(verified())
-	user := fundedAndActivated(t, h, 10000)
-	if _, _, err := h.svc.FundGame(ctx, user, 5000, "idem-fund"); err != nil {
-		t.Fatalf("FundGame: %v", err)
-	}
+	user := funded(t, h, 5000)
 	hold, err := h.svc.HoldGame(ctx, user, 5000, "table-1", "idem-hold")
 	if err != nil {
 		t.Fatalf("HoldGame: %v", err)
@@ -304,10 +302,7 @@ func TestCashoutGameRejectsAlreadyConsumedHold(t *testing.T) {
 func TestSweepStaleHoldsAlarmsWithoutResolving(t *testing.T) {
 	ctx := context.Background()
 	h := newHarness(verified())
-	user := fundedAndActivated(t, h, 10000)
-	if _, _, err := h.svc.FundGame(ctx, user, 5000, "idem-fund"); err != nil {
-		t.Fatalf("FundGame: %v", err)
-	}
+	user := funded(t, h, 5000)
 	hold, err := h.svc.HoldGame(ctx, user, 4000, "table-1", "idem-hold")
 	if err != nil {
 		t.Fatalf("HoldGame: %v", err)
@@ -337,10 +332,7 @@ func TestSweepStaleHoldsAlarmsWithoutResolving(t *testing.T) {
 func TestSweepStaleHoldsIgnoresFreshHolds(t *testing.T) {
 	ctx := context.Background()
 	h := newHarness(verified())
-	user := fundedAndActivated(t, h, 10000)
-	if _, _, err := h.svc.FundGame(ctx, user, 5000, "idem-fund"); err != nil {
-		t.Fatalf("FundGame: %v", err)
-	}
+	user := funded(t, h, 5000)
 	if _, err := h.svc.HoldGame(ctx, user, 4000, "table-1", "idem-hold-fresh"); err != nil {
 		t.Fatalf("HoldGame: %v", err)
 	}
@@ -356,10 +348,7 @@ func TestSweepStaleHoldsIgnoresFreshHolds(t *testing.T) {
 func TestCashoutPersistsDescription(t *testing.T) {
 	ctx := context.Background()
 	h := newHarness(verified())
-	user := fundedAndActivated(t, h, 10000)
-	if _, _, err := h.svc.FundGame(ctx, user, 5000, "idem-fund"); err != nil {
-		t.Fatal(err)
-	}
+	user := funded(t, h, 5000)
 	hold, err := h.svc.HoldGame(ctx, user, 5000, "table-1", "idem-hold")
 	if err != nil {
 		t.Fatal(err)

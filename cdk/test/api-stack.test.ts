@@ -3,7 +3,6 @@ import {test} from 'node:test';
 import * as cdk from 'aws-cdk-lib';
 import {Template} from 'aws-cdk-lib/assertions';
 import {ApiStack} from '../lib/api-stack';
-import {GAME_WALLET_MERGED} from '../lib/constants';
 
 /** EC2's hard cap on user data, which a deploy discovers and not a review. */
 const USER_DATA_LIMIT_BYTES = 16384;
@@ -77,10 +76,6 @@ test('user data wires the erasure queue and the revocation Valkey (DB 0 base URL
   // The dedicated ack client comes from SSM at service start, never inlined.
   assert.match(text, /'ERASURE_CLIENT_SECRET=\/ctech-wallet\/prod\/erasure-client-secret'/);
   assert.match(text, /'ERASURE_CLIENT_ID=\/ctech-wallet\/prod\/erasure-client-id'/);
-});
-
-test('the game-wallet merge flag follows the environment constant', () => {
-  assert.match(userDataText(), new RegExp(`GAME_WALLET_MERGED=${GAME_WALLET_MERGED.prod}`));
 });
 
 test('the Billing settings are always passed, and no secret is inlined', () => {

@@ -6,18 +6,16 @@ import {Button} from '@/components/ui/button'
 import {formatBRL} from '@/lib/utils/money'
 import {Dialog, DialogContent, DialogDescription, DialogTitle} from '@/components/ui/dialog'
 
-type Flow = 'withdraw' | 'fund-game' | 'return-game'
+type Flow = 'withdraw'
 
-const FLOW_KEY: Record<Flow, 'withdraw' | 'fundGame' | 'returnGame'> = {
+const FLOW_KEY: Record<Flow, 'withdraw'> = {
   withdraw: 'withdraw',
-  'fund-game': 'fundGame',
-  'return-game': 'returnGame',
 }
 
 interface ConfirmMoneyDialogProps {
   flow: Flow
   amountCents: number
-  /** Available balance of the wallet being debited (real for withdraw/fund-game, game for return-game). */
+  /** Available balance of the wallet being debited (real). */
   availableCents: number
   pending?: boolean
   /** When true, the API rejected the commit with step-up-required: show an in-flow re-verify step. */

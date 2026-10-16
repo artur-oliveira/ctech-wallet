@@ -11,7 +11,6 @@ import {
   APP_PORT,
   APP_PORT_ALT,
   asgName,
-  GAME_WALLET_MERGED,
   HEALTH_CHECK_PATH,
   NGINX_PORT,
   S3_PREFIX,
@@ -140,9 +139,7 @@ export class ApiStack extends cdk.Stack {
       `AWS_REGION=${this.region}`,
       `AWS_USE_DUALSTACK_ENDPOINT=true`,
       `PORT=${APP_PORT}`,
-      `GAMBLING_ENABLED=true`,
       `ERASURE_QUEUE_URL=${erasureQueueUrl}`,
-      `GAME_WALLET_MERGED=${GAME_WALLET_MERGED[environment]}`,
       `TRUSTED_PROXIES=127.0.0.1`,
       `ENV`,
     );

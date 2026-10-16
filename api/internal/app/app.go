@@ -137,7 +137,6 @@ func newRail(bc *billingclient.Client) rail.Rail {
 
 func newWalletService(cfg *config.Config, repo *repositories.WalletRepository, users *repositories.UserRepository, audit *repositories.AuditRepository, l *lock.Locker, r rail.Rail, k services.KYCClient, sandboxPurchases *repositories.SandboxPurchaseRepository, productPurchases *repositories.ProductPurchaseRepository, store *erasure.Store, er *repositories.ErasureRepository) *services.WalletService {
 	svc := services.NewWalletService(repo, users, audit, l, r, k)
-	svc.SetGameMerged(cfg.GameWalletMerged)
 	svc.SetSandboxPurchases(sandboxPurchases)
 	svc.SetProductPurchases(productPurchases)
 	if store != nil { // never pass a nil *Store through the interface
@@ -194,9 +193,9 @@ func newFiberApp(cfg *config.Config) *fiber.App {
 	return app
 }
 
-func registerRoutes(bc *billingclient.Client, app *fiber.App, c cache.Backend, rev RevocationCache, cfg *config.Config, clients *awsclient.Clients, svc *services.WalletService, userSvc *services.UserService, erasureSvc *services.ErasureService, wsRegistry ws.Registry, users *repositories.UserRepository) {
+func registerRoutes(bc *billingclient.Client, app *fiber.App, c cache.Backend, rev RevocationCache, cfg *config.Config, clients *awsclient.Clients, svc *services.WalletService, userSvc *services.UserService, erasureSvc *services.ErasureService, wsRegistry ws.Registry) {
 	svc.SetBroadcaster(wsRegistry)
-	opts := []apiv1.Option{apiv1.WithResponsibleExport(users)}
+	var opts []apiv1.Option
 	opts = append(opts, apiv1.WithBillingEvents(&apiv1.BillingEvents{Secret: cfg.BillingEventSecret, Invoices: bc, Confirm: svc, Withdrawals: svc}))
 	apiv1.Register(app, c, rev, cfg, clients, svc, userSvc, erasureSvc, wsRegistry, opts...)
 }

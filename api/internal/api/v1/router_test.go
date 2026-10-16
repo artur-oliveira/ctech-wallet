@@ -1,38 +1,24 @@
 package v1
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
+	"sort"
+	"strings"
 	"testing"
 
 	"gopkg.aoctech.app/api-commons/cache"
 	"gopkg.aoctech.app/wallet/api/internal/config"
-	"gopkg.aoctech.app/wallet/api/internal/repositories"
-
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
 	"github.com/gofiber/fiber/v3"
 )
 
-// gatedRoutes move money INTO the ring-fence. These are what GAMBLING_ENABLED gates.
-var gatedRoutes = []string{
-	"/v1.0/wallet/game/deposit",
-}
-
-// returnRoute moves money OUT of the ring-fence. It is never gated.
-const returnRoute = "/v1.0/wallet/game/withdraw"
-
-// routerApp mounts the routes with the given flag. The service dependencies are
-// nil: these tests assert only which routes EXIST, and an unauthenticated request
-// is rejected by the auth middleware long before any handler runs.
-func routerApp(t *testing.T, gamblingEnabled bool) *fiber.App {
+// routerApp mounts the routes. The service dependencies are nil: these tests assert only which routes
+// EXIST, and an unauthenticated request is rejected by the auth middleware long before any handler runs.
+func routerApp(t *testing.T) *fiber.App {
 	t.Helper()
 	app := fiber.New()
-	cfg := &config.Config{
-		TablePrefix:     "test",
-		GamblingEnabled: gamblingEnabled,
-	}
+	cfg := &config.Config{TablePrefix: "test"}
 	Register(app, cache.NewMemoryBackend(testCacheSize), nil, cfg, nil, nil, nil, nil, nil)
 	return app
 }
@@ -53,90 +39,12 @@ func registeredPaths(app *fiber.App) map[string]bool {
 	return out
 }
 
-// With the flag off, nothing that puts money INTO the ring-fence exists. That
-// absence is what makes it structurally impossible to reach a gambling wallet
-// before the personal limit engine ships — not a check somebody could forget.
-func TestGatedRoutesAreNotRegisteredWhenFlagDisabled(t *testing.T) {
-	paths := registeredPaths(routerApp(t, false))
-
-	for _, path := range gatedRoutes {
-		if paths[path] {
-			t.Errorf("%s is registered with GAMBLING_ENABLED=false — it must not exist", path)
-		}
-	}
-	// The rest of the wallet is unaffected by the flag.
-	if !paths["/v1.0/wallet/sandbox/purchases"] {
-		t.Error("the flag must not remove the ordinary sandbox purchase route")
-	}
-}
-
-func TestGatedRoutesAreRegisteredWhenFlagEnabled(t *testing.T) {
-	paths := registeredPaths(routerApp(t, true))
-
-	for _, path := range gatedRoutes {
-		if !paths[path] {
-			t.Errorf("%s is missing with GAMBLING_ENABLED=true", path)
-		}
-	}
-}
-
-// The way OUT of the ring-fence is available whatever the flag says.
-//
-// game holds REAL money (Invariant #9). If this route could be switched off, then
-// flipping GAMBLING_ENABLED to false would strand a user's own money in a game
-// wallet with no way to get it back — money in limbo, by configuration. Reducing
-// exposure is never something we block.
-func TestReturnRouteIsNeverGated(t *testing.T) {
-	for _, enabled := range []bool{true, false} {
-		if !registeredPaths(routerApp(t, enabled))[returnRoute] {
-			t.Errorf("%s is missing with GAMBLING_ENABLED=%v — money must never be trapped in the ring-fence",
-				returnRoute, enabled)
-		}
-	}
-}
-
-// Every ring-fence route is authenticated, gated or not.
-func TestRingFenceRoutesRequireAuth(t *testing.T) {
-	app := routerApp(t, true)
-
-	for _, path := range append(append([]string{}, gatedRoutes...), returnRoute) {
-		res, err := app.Test(httptest.NewRequest(http.MethodPost, path, nil))
-		if err != nil {
-			t.Fatalf("app.Test(%s): %v", path, err)
-		}
-		if res.StatusCode != http.StatusUnauthorized {
-			t.Errorf("%s unauthenticated = %d, want 401", path, res.StatusCode)
-		}
-	}
-}
-
-func TestProductPurchaseConfirmationRouteIsRegistered(t *testing.T) {
-	const path = "/v1.0/internal/pix/confirm-product-purchase"
-	if !registeredPaths(routerApp(t, false))[path] {
-		t.Fatalf("%s is missing", path)
-	}
-}
-
-// The caller-supplied-amount charge lives at exactly this path, because
-// ctech-billing's client is already written against it
-// (ctech-billing/api/internal/wallet/client.go). A rename here is a broken
-// consumer, not a refactor.
-func TestChargeRouteIsRegisteredAtTheContractPath(t *testing.T) {
-	const path = "/v1.0/internal/wallet/charge"
-	if !registeredPaths(routerApp(t, false))[path] {
-		t.Fatalf("%s is missing", path)
-	}
-}
-
-// The PIX rail routes are not behind the gambling flag: deposits and
-// withdrawals on the real wallet are always mounted.
+// The PIX rail routes: deposits and withdrawals on the real wallet are always mounted.
 func TestRailRoutesRegistered(t *testing.T) {
-	for _, gambling := range []bool{false, true} {
-		paths := registeredPaths(routerApp(t, gambling))
-		for _, path := range []string{"/v1.0/wallet/deposits", "/v1.0/wallet/withdrawals"} {
-			if !paths[path] {
-				t.Errorf("%s not registered (gambling=%v)", path, gambling)
-			}
+	paths := registeredPaths(routerApp(t))
+	for _, path := range []string{"/v1.0/wallet/deposits", "/v1.0/wallet/withdrawals"} {
+		if !paths[path] {
+			t.Errorf("%s not registered", path)
 		}
 	}
 }
@@ -145,7 +53,7 @@ func TestRailRoutesRegistered(t *testing.T) {
 // with url = https://wallet-api.aoctech.app/v1.0 (account-deletion phase 3).
 func TestErasureEligibilityRouteIsRegisteredAtTheContractPath(t *testing.T) {
 	const path = "/v1.0/internal/erasure/eligibility/:sub"
-	for _, r := range routerApp(t, false).GetRoutes() {
+	for _, r := range routerApp(t).GetRoutes() {
 		if r.Method == http.MethodGet && r.Path == path {
 			return
 		}
@@ -153,55 +61,92 @@ func TestErasureEligibilityRouteIsRegisteredAtTheContractPath(t *testing.T) {
 	t.Fatalf("%s is missing", path)
 }
 
-// The holds are also reachable under names without "game": Poker moves to them
-// while the old paths stay until the cleanup. Both families are one handler each.
-func TestGenericHoldRoutesAreRegisteredNextToTheGameNamedOnes(t *testing.T) {
-	app := routerApp(t, false)
-	post := registeredPaths(app)
+// Poker stakes real money through exactly these three routes.
+func TestTheHoldRoutesAreRegistered(t *testing.T) {
+	post := registeredPaths(routerApp(t))
 	for _, path := range []string{
 		"/v1.0/internal/wallet/holds/", "/v1.0/internal/wallet/holds/cashout", "/v1.0/internal/wallet/holds/:hold_id/release",
-		"/v1.0/internal/wallet/game/hold", "/v1.0/internal/wallet/game/cashout",
 	} {
 		if !post[path] {
 			t.Errorf("POST %s is missing", path)
 		}
 	}
-	found := false
-	for _, r := range app.GetRoutes() {
-		found = found || (r.Method == http.MethodGet && r.Path == "/v1.0/internal/wallet/holds/status/:user_id")
-	}
-	if !found {
-		t.Error("GET /v1.0/internal/wallet/holds/status/:user_id is missing")
-	}
 }
 
-type fakeExporter struct{}
-
-func (fakeExporter) ExportPage(context.Context, map[string]types.AttributeValue, int) ([]repositories.ExportedUser, []repositories.ExportedCarriedExclusion, map[string]types.AttributeValue, error) {
-	return nil, nil, nil, nil
+// The list of routes that move money is closed. A new one fails this test on purpose: add it here only
+// after reading why Sandbox must never be funded from `real`. Everything else a client might still call
+// is a retired route that answers 410 (listed below, and checked).
+var liveMoneyRoutes = []string{
+	"/v1.0/wallet/deposits",
+	"/v1.0/wallet/withdrawals",
+	"/v1.0/internal/wallet/sandbox/credit",
+	"/v1.0/internal/wallet/sandbox/debit",
+	"/v1.0/internal/wallet/real/debit",
+	"/v1.0/internal/wallet/holds/",
+	"/v1.0/internal/wallet/holds/cashout",
+	"/v1.0/internal/wallet/holds/:hold_id/release",
+	"/v1.0/auth/terms-addendum/accept",
 }
 
-func TestResponsibleExportExistsOnlyWhenMountedAndNeedsAToken(t *testing.T) {
-	const path = "/v1.0/internal/wallet/responsible/export"
-	has := func(app *fiber.App) bool {
-		for _, r := range app.GetRoutes() {
-			if r.Method == http.MethodGet && r.Path == path {
-				return true
-			}
+var retiredRoutes = map[string][]string{
+	http.MethodPost: {
+		"/v1.0/wallet/sandbox/purchase", "/v1.0/wallet/sandbox/purchases", "/v1.0/wallet/sandbox/purchases/:id/refund",
+		"/v1.0/wallet/game/withdraw", "/v1.0/wallet/game/deposit",
+		"/v1.0/wallet/gambling/self-exclude", "/v1.0/wallet/gambling/self-exclude/revoke", "/v1.0/wallet/gambling/activate",
+		"/v1.0/internal/pix/confirm-deposit", "/v1.0/internal/pix/confirm-sandbox-purchase", "/v1.0/internal/pix/confirm-product-purchase",
+		"/v1.0/internal/wallet/charge",
+		"/v1.0/internal/wallet/sandbox-purchase", "/v1.0/internal/wallet/sandbox-purchase/:id/refund",
+		"/v1.0/internal/wallet/product-purchase", "/v1.0/internal/wallet/product-purchase/:id/refund",
+		"/v1.0/internal/wallet/game/hold", "/v1.0/internal/wallet/game/hold/:hold_id/release", "/v1.0/internal/wallet/game/cashout",
+	},
+	http.MethodPut:    {"/v1.0/wallet/gambling/limits"},
+	http.MethodDelete: {"/v1.0/wallet/gambling/limits/pending"},
+	http.MethodGet: {
+		"/v1.0/wallet/gambling/limits",
+		"/v1.0/internal/wallet/charge/:id",
+		"/v1.0/internal/wallet/sandbox-purchase/skus", "/v1.0/internal/wallet/sandbox-purchase/:id",
+		"/v1.0/internal/wallet/product-purchase/skus", "/v1.0/internal/wallet/product-purchase/:id",
+		"/v1.0/internal/wallet/game/status/:user_id", "/v1.0/internal/wallet/holds/status/:user_id",
+		"/v1.0/internal/wallet/responsible/export",
+	},
+}
+
+// TestNoRouteConvertsSandboxToAnything: the only routes that write are the closed list above (plus the
+// retired ones). None of them moves money from `real` into Sandbox, and Sandbox has only the credit and
+// debit an M2M client asks for. This is the successor of the ring-fence regression test.
+func TestNoRouteConvertsSandboxToAnything(t *testing.T) {
+	retired := map[string]bool{}
+	for method, paths := range retiredRoutes {
+		for _, p := range paths {
+			retired[method+" "+p] = true
 		}
-		return false
 	}
-	if has(routerApp(t, false)) {
-		t.Fatalf("%s is mounted without the option", path)
+	live := map[string]bool{}
+	for _, p := range liveMoneyRoutes {
+		live[http.MethodPost+" "+p] = true
 	}
-	app := fiber.New()
-	Register(app, cache.NewMemoryBackend(testCacheSize), nil, &config.Config{TablePrefix: "test"}, nil, nil, nil, nil, nil, WithResponsibleExport(fakeExporter{}))
-	if !has(app) {
-		t.Fatalf("%s is missing", path)
+	var unexpected []string
+	for _, r := range routerApp(t).GetRoutes() {
+		if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions {
+			continue
+		}
+		key := r.Method + " " + r.Path
+		// The groups' own middleware entries (auth, scope checks) have no handler of their own.
+		groupPrefix := r.Path == "/v1.0/auth" || r.Path == "/v1.0/internal" || r.Path == "/v1.0/wallet"
+		if live[key] || retired[key] || groupPrefix || strings.HasSuffix(r.Path, "/*") {
+			continue
+		}
+		unexpected = append(unexpected, key)
 	}
-	res, err := app.Test(httptest.NewRequest(http.MethodGet, path, nil))
-	if err != nil || res.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("unauthenticated export = %v, %v (want 401)", res, err)
+	sort.Strings(unexpected)
+	if len(unexpected) > 0 {
+		t.Fatalf("routes that write and are neither on the live list nor retired: %v", unexpected)
+	}
+	for key := range live {
+		path := strings.TrimPrefix(key, http.MethodPost+" ")
+		if strings.Contains(path, "sandbox") && path != "/v1.0/internal/wallet/sandbox/credit" && path != "/v1.0/internal/wallet/sandbox/debit" {
+			t.Errorf("a live route touches Sandbox besides credit and debit: %s", path)
+		}
 	}
 }
 
@@ -218,25 +163,17 @@ func TestRetiredRoutesAnswer410ToACallerAndTheNormal401ToAnonymous(t *testing.T)
 		t.Fatalf("retired = %d, want 410", resp.StatusCode)
 	}
 
-	app := routerApp(t, false)
-	for _, path := range []string{
-		"/v1.0/wallet/sandbox/purchase",
-		"/v1.0/wallet/sandbox/purchases",
-		"/v1.0/internal/wallet/charge",
-		"/v1.0/internal/wallet/sandbox-purchase",
-		"/v1.0/internal/wallet/product-purchase/skus",
-		"/v1.0/internal/pix/confirm-deposit",
-	} {
-		method := http.MethodPost
-		if path == "/v1.0/internal/wallet/product-purchase/skus" {
-			method = http.MethodGet
-		}
-		r, err := app.Test(httptest.NewRequest(method, path, nil))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if r.StatusCode != http.StatusUnauthorized {
-			t.Errorf("%s %s anonymous = %d, want 401", method, path, r.StatusCode)
+	app := routerApp(t)
+	for method, paths := range retiredRoutes {
+		for _, path := range paths {
+			concrete := strings.NewReplacer(":id", "x", ":hold_id", "x", ":user_id", "x").Replace(path)
+			r, err := app.Test(httptest.NewRequest(method, concrete, nil))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if r.StatusCode != http.StatusUnauthorized {
+				t.Errorf("%s %s anonymous = %d, want 401", method, path, r.StatusCode)
+			}
 		}
 	}
 }

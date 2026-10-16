@@ -58,7 +58,6 @@
       "label": "Statements",
       "tab": {
         "real": "Real",
-        "game": "Game",
         "sandbox": "Sandbox",
         "purchases": "Purchases"
       },
@@ -66,12 +65,8 @@
       "error": "Couldn't load the statement",
       "loadingMore": "Loading older transactions…",
       "loadMoreError": "Couldn't load more",
-      "readOnly": {
-        "title": "View only"
-      },
       "empty": {
         "real": "No transactions",
-        "game": "No transactions",
         "sandbox": "No transactions"
       }
     }
@@ -81,44 +76,18 @@
       "label": "Real balance",
       "subtitle": "PIX deposits and withdrawals are temporarily unavailable."
     },
-    "fundGame": "Send to games",
-    "game": {
-      "label": "Game balance",
-      "badge": "Not directly withdrawable",
-      "subtitle": "Real money set aside for games. Return it to your real balance to withdraw."
-    },
-    "return": "Return",
-    "credits": "Credits",
     "sandbox": {
       "label": "Sandbox credits",
       "subtitle": "Virtual currency for matches, bought with your game balance. It has no monetary value and can't be withdrawn or converted back."
     },
-    "activateLink": "Going to use the wallet for games? Activate the game wallet.",
-    "responsibleLink": "Responsible gaming and limits",
     "deposit": "Deposit",
     "withdraw": "Withdraw"
   },
   "dialog": {
-    "credits": {
-      "title": "Buy sandbox credits",
-      "description": "Debited from your game balance. Sandbox credits never become money again.",
-      "submit": "Buy"
-    },
-    "fundGame": {
-      "title": "Send to the game wallet",
-      "description": "It stays your money: you can return it to your real balance whenever you want. Your game limits apply here.",
-      "submit": "Send"
-    },
-    "returnGame": {
-      "title": "Return to real balance",
-      "description": "No fee, no limit.",
-      "submit": "Return"
-    },
     "amount": {
       "label": "Amount",
       "placeholder": "0.00",
-      "maxButton": "Max {{max}}",
-      "creditsPreview": "Corresponds to {{credits}}."
+      "maxButton": "Max {{max}}"
     },
     "max": "Maximum {{max}}",
     "available": "Available {{amount}}",
@@ -144,14 +113,6 @@
     "limitReached": "Daily limit reached"
   },
   "confirm": {
-    "fundGame": {
-      "title": "Confirm transfer to games",
-      "description": "This move counts toward your game limit. Returning money later does not free it up again."
-    },
-    "returnGame": {
-      "title": "Confirm return to real balance",
-      "description": "No fee, no limit."
-    },
     "amount": "Amount",
     "total": "Total debited",
     "resulting": "Resulting balance",
@@ -209,10 +170,6 @@
     "withdrawSent": "Withdrawal sent.",
     "withdrawReversed": "Withdrawal failed. The amount is back in your balance.",
     "withdrawRefundFailed": "Withdrawal failed and the refund is pending. Our team has been notified.",
-    "creditsAdded": "Credits added.",
-    "fundGameSent": "Balance sent to the game wallet.",
-    "returned": "Balance returned to real balance.",
-    "gamblingActivated": "Game wallet activated.",
     "pixCopied": "PIX code copied",
     "withdrawProcessing": "Withdrawal submitted and awaiting bank confirmation."
   },
@@ -230,83 +187,12 @@
     "lookupSignOut": "Sign out",
     "lookupRetrying": "Checking again…"
   },
-  "gambling": {
-    "title": "Activate the game wallet",
-    "description": "A separate wallet for games. The money stays yours and returns to your real balance anytime, with no fee and no limit.",
-    "bullet1": "It is the only door to games: you can't play directly from your real balance.",
-    "bullet2": "Your limits apply when sending to the game wallet. Returning money does not free up limit again.",
-    "bullet3": "Sandbox credits have no monetary value and never become money again.",
-    "checkboxPrefix": "I have read and agree with the",
-    "termsLink": "Responsible Gaming Terms",
-    "later": "Not now",
-    "activate": "Activate",
-    "activating": "Activating…",
-    "limitsTitle": "Set your limits",
-    "limitsDescription": "Choose how much you can send to games per day, week, and month.",
-    "error": {
-      "kycNotVerified": "Verify your identity in your CTech account before activating the game wallet.",
-      "termsRequired": "Accept the responsible gaming terms to continue.",
-      "generic": "We couldn't activate. Please try again."
-    }
-  },
-  "responsible": {
-    "back": "Back to wallet",
-    "title": "Responsible gaming",
-    "description": "Review and adjust your limits or take a break from real-money gaming.",
-    "limits": {
-      "title": "Game deposit limits",
-      "description": "They count every transfer from real balance to game balance. Returns do not restore headroom.",
-      "daily": "Daily",
-      "weekly": "Weekly",
-      "monthly": "Monthly",
-      "coherence": "Use values above zero, with daily no greater than weekly and weekly no greater than monthly.",
-      "cooldown": "Increases take effect in 7 days; monthly increases take effect in 14 days. Reductions are immediate.",
-      "pending": "An increase is scheduled for {{date}}.",
-      "cancelPending": "Cancel increase",
-      "pendingCancelled": "Increase cancelled.",
-      "save": "Save limits",
-      "saved": "Limits updated."
-    },
-    "exclusion": {
-      "title": "Self-exclusion",
-      "description": "Blocks new real-money deposits and play. You can still return your game balance and use sandbox credits.",
-      "periodLabel": "Choose how long to block real-money gaming",
-      "period": {
-        "30d": "30 days",
-        "90d": "90 days",
-        "indefinite": "Indefinitely"
-      },
-      "action": "Start self-exclusion",
-      "confirm": "Selected duration: {{period}}. Self-exclusion starts immediately and cannot end early. Type {{phrase}} to confirm.",
-      "confirmationPhrase": "EXCLUDE",
-      "confirmationLabel": "Confirmation phrase",
-      "confirmationHint": "Type {{phrase}}. Letter case does not matter.",
-      "confirmationMismatch": "The phrase does not match {{phrase}}.",
-      "confirming": "Activating self-exclusion…",
-      "error": "We couldn't activate self-exclusion. Your settings have not changed. Try again.",
-      "confirmAction": "Confirm self-exclusion",
-      "success": "Self-exclusion activated.",
-      "activeTitle": "Self-exclusion active",
-      "until": "Real-money deposits and play are blocked until {{date}}.",
-      "indefinite": "Real-money deposits and play are blocked indefinitely.",
-      "helpTitle": "Need support now?",
-      "helpDescription": "These independent support services are available before or after you start self-exclusion.",
-      "cvvPhone": "Call CVV at 188 (24/7 in Brazil)",
-      "cvvWebsite": "Visit the CVV website",
-      "gamblersAnonymous": "Visit Jogadores Anônimos"
-    }
-  },
   "errors": {
     "insufficientBalance": "Insufficient balance for this operation.",
     "walletBusy": "An operation is already in progress. Wait a few seconds.",
     "kycNotVerified": "Verify your identity in your account before continuing.",
     "idempotencyConflict": "This operation was already sent with different data. Reload the page.",
-    "gamblingNotActivated": "Activate the game wallet to use this operation.",
-    "gamblingTermsRequired": "Accept the responsible gaming terms to continue.",
     "amountAboveLimit": "The maximum amount per operation is {{max}}.",
-    "selfExcluded": "Your self-exclusion blocks deposits to the game wallet.",
-    "limitsNotConfigured": "Set your game limits before continuing.",
-    "depositLimitExceeded": "This transfer exceeds one of your game limits.",
     "generic": "Something went wrong. Please try again.",
     "accountBlocked": "This account is blocked for transactions. Contact support.",
     "withdrawCpfMismatch": "The PIX key belongs to a different CPF. Use a key under your name.",

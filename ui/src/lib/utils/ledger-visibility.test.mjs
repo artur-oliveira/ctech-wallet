@@ -7,11 +7,11 @@ const tabsSource = await readFile(new URL('../../components/wallet/ledger-tabs.t
 const listSource = await readFile(new URL('../../components/wallet/ledger-list.tsx', import.meta.url), 'utf8')
 const dashboardSource = await readFile(new URL('../../app/dashboard/page.tsx', import.meta.url), 'utf8')
 
-test('an existing sandbox statement stays visible without gambling activation', () => {
-  assert.deepEqual(availableLedgerTabs(false, true, false), ['real', 'sandbox', 'purchases'])
-  assert.match(tabsSource, /!activated && hasSandbox && selectedTab === 'sandbox'/)
+test('an existing sandbox statement stays visible as history', () => {
+  assert.deepEqual(availableLedgerTabs(true), ['real', 'sandbox', 'purchases'])
+  assert.match(tabsSource, /availableLedgerTabs\(hasSandbox\)/)
   assert.match(dashboardSource, /hasSandbox=\{!!balances\.data\.sandbox\}/)
-  assert.match(dashboardSource, /hasGame=\{!!balances\.data\.game\}/)
+  assert.doesNotMatch(dashboardSource, /hasGame|activated=/)
 })
 
 test('sandbox PIX credits are presented as purchases from their stable reference prefix', () => {

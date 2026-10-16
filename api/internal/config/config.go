@@ -15,13 +15,6 @@ type Config struct {
 	Port       int    `env:"PORT" envDefault:"8002"`
 	Env        string `env:"ENVIRONMENT" envDefault:"dev"`
 
-	// GamblingEnabled gates the entire game-wallet surface: activation and both
-	// real↔game transfer routes. It stays FALSE in production until the personal
-	// limit engine ships — a user must never be able to activate a gambling wallet
-	// with no limits configured, which is the one thing this design forbids.
-	// With it off, those routes are not registered at all and 404.
-	GamblingEnabled bool `env:"GAMBLING_ENABLED" envDefault:"false"`
-
 	// RequireDescription makes the `description` field mandatory (3-255 chars
 	// after trimming) on every M2M money route. Keep it OFF until ctech-poker and
 	// ctech-billing send real descriptions, then turn it on per environment.
@@ -66,11 +59,6 @@ type Config struct {
 	// deliberately not WALLET_CLIENT_ID, which holds internal:account:kyc.
 	ErasureClientID     string `env:"ERASURE_CLIENT_ID"`
 	ErasureClientSecret string `env:"ERASURE_CLIENT_SECRET"`
-
-	// GameWalletMerged switches the game-facing operations (holds, cash-outs,
-	// balance reads) from the `game` wallet to `real` and retires the ring-fence
-	// routes. Turn it on only after `merge-game` has emptied every game wallet.
-	GameWalletMerged bool `env:"GAME_WALLET_MERGED" envDefault:"false"`
 
 	// BillingURL is Billing's API base (https://billing-api.aoctech.app).
 	BillingURL string `env:"BILLING_URL"`
