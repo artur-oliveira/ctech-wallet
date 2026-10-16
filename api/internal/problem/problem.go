@@ -199,6 +199,13 @@ func RouteRetired() *Problem {
 		"esta operação não existe mais: o saldo de jogos foi unificado ao saldo real")
 }
 
+// RouteMovedToBilling: the charge, the Pix confirmation and the sale of Sandbox packs and goods
+// left the wallet (Billing owns the Inter connection, Poker sells). Same 410 and type as RouteRetired.
+func RouteMovedToBilling() *Problem {
+	return New(http.StatusGone, TypeRouteRetired, "Route Retired",
+		"esta operação foi aposentada: a cobrança e a venda agora passam pelo Billing")
+}
+
 // GamblingTermsRequired: the caller has not accepted the CURRENT gambling
 // addendum. A re-gated user may still return money from game to real — only
 // funding and play are blocked, so a terms bump never traps money.

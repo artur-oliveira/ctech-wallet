@@ -1,6 +1,18 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"testing"
+)
+
+func TestMain(m *testing.M) {
+	// Billing is the only rail: every Load needs its settings.
+	for k, v := range map[string]string{"BILLING_URL": "https://billing-api.example", "BILLING_CLIENT_ID": "wallet",
+		"BILLING_CLIENT_SECRET": "s", "BILLING_EVENT_SECRET": "e", "CTECH_URL": "https://account.example"} {
+		_ = os.Setenv(k, v)
+	}
+	os.Exit(m.Run())
+}
 
 func TestLoadFailsClosedWithoutValkeyURLInProd(t *testing.T) {
 	t.Setenv("ENVIRONMENT", "prod")
@@ -9,7 +21,6 @@ func TestLoadFailsClosedWithoutValkeyURLInProd(t *testing.T) {
 	t.Setenv("CTECH_ISSUER_URL", "https://account.aoctech.app")
 	t.Setenv("CORS_ALLOWED_ORIGINS", "https://wallet.aoctech.app")
 	t.Setenv("TABLE_PREFIX", "prod")
-	t.Setenv("PIX_GATEWAY_FUNCTION_NAME", "prod-pix-gateway-outbound")
 	t.Setenv("ERASURE_QUEUE_URL", "https://sqs.us-east-1.amazonaws.com/868899309401/prod-ctech-wallet-erasure")
 	t.Setenv("VALKEY_REVOCATION_URL", "redis://valkey.internal:6379")
 	t.Setenv("ERASURE_CLIENT_ID", "wallet-erasure")
@@ -28,7 +39,6 @@ func TestLoadSucceedsWithValkeyURLInProd(t *testing.T) {
 	t.Setenv("CTECH_ISSUER_URL", "https://account.aoctech.app")
 	t.Setenv("CORS_ALLOWED_ORIGINS", "https://wallet.aoctech.app")
 	t.Setenv("TABLE_PREFIX", "prod")
-	t.Setenv("PIX_GATEWAY_FUNCTION_NAME", "prod-pix-gateway-outbound")
 	t.Setenv("ERASURE_QUEUE_URL", "https://sqs.us-east-1.amazonaws.com/868899309401/prod-ctech-wallet-erasure")
 	t.Setenv("VALKEY_REVOCATION_URL", "redis://valkey.internal:6379")
 	t.Setenv("ERASURE_CLIENT_ID", "wallet-erasure")
@@ -43,7 +53,6 @@ func TestLoadSucceedsWithValkeyURLInProd(t *testing.T) {
 func TestLoadSucceedsWithoutValkeyURLOutsideProd(t *testing.T) {
 	t.Setenv("ENVIRONMENT", "dev")
 	t.Setenv("TABLE_PREFIX", "dev")
-	t.Setenv("PIX_GATEWAY_FUNCTION_NAME", "dev-pix-gateway-outbound")
 	t.Setenv("VALKEY_URL", "")
 
 	if _, err := Load(); err != nil {
@@ -57,7 +66,6 @@ func TestLoadSucceedsWithoutValkeyURLOutsideProd(t *testing.T) {
 func TestLoadReconcileSucceedsWithoutAPIRuntimeConfigInProd(t *testing.T) {
 	t.Setenv("ENVIRONMENT", "prod")
 	t.Setenv("TABLE_PREFIX", "prod")
-	t.Setenv("PIX_GATEWAY_FUNCTION_NAME", "prod-pix-gateway-outbound")
 	t.Setenv("CTECH_ISSUER_URL", "")
 	t.Setenv("CORS_ALLOWED_ORIGINS", "")
 	t.Setenv("VALKEY_URL", "")
@@ -77,7 +85,6 @@ func prodEnv(t *testing.T) {
 	t.Setenv("CTECH_ISSUER_URL", "https://account.aoctech.app")
 	t.Setenv("CORS_ALLOWED_ORIGINS", "https://wallet.aoctech.app")
 	t.Setenv("TABLE_PREFIX", "prod")
-	t.Setenv("PIX_GATEWAY_FUNCTION_NAME", "prod-pix-gateway-outbound")
 	t.Setenv("VALKEY_URL", "redis://valkey.internal:6379/2")
 	t.Setenv("ERASURE_QUEUE_URL", "https://sqs.us-east-1.amazonaws.com/868899309401/prod-ctech-wallet-erasure")
 	t.Setenv("VALKEY_REVOCATION_URL", "redis://valkey.internal:6379")
@@ -106,52 +113,29 @@ func TestLoadReconcileNeedsNoErasureConfig(t *testing.T) {
 	}
 }
 
-func TestTheBillingRailIsOffByDefaultAndNeedsItsSettingsWhenOn(t *testing.T) {
+func TestBillingSettingsAreRequired(t *testing.T) {
+	t.Setenv("ENVIRONMENT", "dev")
 	t.Setenv("TABLE_PREFIX", "t")
-	t.Setenv("PIX_GATEWAY_FUNCTION_NAME", "f")
-	cfg, err := LoadReconcile()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.BillingRailOn() || cfg.BillingRail != "off" {
-		t.Fatalf("the rail must default to off: %q", cfg.BillingRail)
-	}
-
-	t.Setenv("BILLING_RAIL", "on")
+	t.Setenv("BILLING_URL", "")
 	if _, err := LoadReconcile(); err == nil {
-		t.Fatal("on without BILLING_URL and the rest must fail")
+		t.Fatal("without BILLING_URL the reconcile process must not start")
 	}
 	t.Setenv("BILLING_URL", "https://billing-api.example")
-	t.Setenv("BILLING_CLIENT_ID", "wallet")
-	t.Setenv("CTECH_URL", "https://account.example")
-	cfg, err = LoadReconcile()
-	if err != nil || !cfg.BillingRailOn() {
+	if _, err := LoadReconcile(); err != nil {
 		t.Fatalf("the reconcile process needs no secret in its environment: %v", err)
 	}
 
-	t.Setenv("BILLING_RAIL", "maybe")
-	if _, err := LoadReconcile(); err == nil {
-		t.Fatal("an unknown value must fail, not read as off")
-	}
-}
-
-func TestTheAPIRequiresBothBillingSecretsWhenTheRailIsOn(t *testing.T) {
-	t.Setenv("ENVIRONMENT", "dev")
-	t.Setenv("TABLE_PREFIX", "t")
-	t.Setenv("PIX_GATEWAY_FUNCTION_NAME", "f")
-	t.Setenv("BILLING_RAIL", "on")
-	t.Setenv("BILLING_URL", "https://billing-api.example")
-	t.Setenv("BILLING_CLIENT_ID", "wallet")
-	t.Setenv("CTECH_URL", "https://account.example")
+	t.Setenv("BILLING_CLIENT_SECRET", "")
+	t.Setenv("BILLING_EVENT_SECRET", "")
 	if _, err := Load(); err == nil {
 		t.Fatal("the API must refuse to start without the client secret and the event secret")
 	}
 	t.Setenv("BILLING_CLIENT_SECRET", "s")
 	if _, err := Load(); err == nil {
-		t.Fatal("the event secret is also required")
+		t.Fatal("the event secret alone missing must fail too")
 	}
 	t.Setenv("BILLING_EVENT_SECRET", "e")
 	if _, err := Load(); err != nil {
-		t.Fatalf("both set: %v", err)
+		t.Fatalf("complete settings: %v", err)
 	}
 }

@@ -2,8 +2,9 @@ package v1
 
 import (
 	"encoding/json"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"testing"
+
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 )

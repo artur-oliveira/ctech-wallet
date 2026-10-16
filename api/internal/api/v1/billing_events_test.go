@@ -175,7 +175,7 @@ func TestBillingBeingUnreadableAndADepositNotYetSettledAreRetried(t *testing.T) 
 func TestTheEventRouteSitsBesideTheInternalGroupWithoutItsJWTCheck(t *testing.T) {
 	lookup, confirm := &fakeLookup{inv: &billingclient.Invoice{ID: "in_1", Txid: "dep-1"}}, &fakeConfirm{}
 	app := fiber.New()
-	Register(app, cache.NewMemoryBackend(testCacheSize), nil, &config.Config{TablePrefix: "test"}, nil, nil, nil, nil, nil, nil,
+	Register(app, cache.NewMemoryBackend(testCacheSize), nil, &config.Config{TablePrefix: "test"}, nil, nil, nil, nil, nil,
 		WithBillingEvents(&BillingEvents{Secret: eventSecret, Invoices: lookup, Confirm: confirm, Now: func() time.Time { return eventNow }}))
 
 	if code := deliver(t, app, paidEvent, goodSig, eventNow); code != 200 {

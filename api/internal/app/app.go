@@ -3,7 +3,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -23,16 +22,13 @@ import (
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
 	"gopkg.aoctech.app/wallet/api/internal/lock"
-	"gopkg.aoctech.app/wallet/api/internal/pix"
 	"gopkg.aoctech.app/wallet/api/internal/problem"
 	"gopkg.aoctech.app/wallet/api/internal/rail"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
-	"gopkg.aoctech.app/wallet/api/internal/secrets"
 	"gopkg.aoctech.app/wallet/api/internal/services"
 
 	awscfg "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/cors"
@@ -53,18 +49,15 @@ var Module = fx.Options(
 		newErasureStore,
 		newLocker,
 		newWsRegistry,
-		newLambdaClient,
-		newInterTokenManager,
-		newLambdaPixClient,
 		newKYCClient,
 		newBillingClient,
+		newRail,
 		repositories.NewWalletRepository,
 		repositories.NewUserRepository,
 		repositories.NewAuditRepository,
 		repositories.NewSandboxPurchaseRepository,
 		repositories.NewProductPurchaseRepository,
 		repositories.NewErasureRepository,
-		newM2MClients,
 		newWalletService,
 		newUserService,
 		newErasureService,
@@ -129,95 +122,29 @@ func newWsRegistry(lc fx.Lifecycle, c cache.Backend) ws.Registry {
 	return reg
 }
 
-// newLambdaClient builds the AWS Lambda SDK client used to invoke pix-gateway's
-// outbound function.
-func newLambdaClient(cfg *config.Config) (*lambda.Client, error) {
-	awsCfg, err := awscfg.LoadDefaultConfig(context.Background(), awscfg.WithRegion(cfg.AWSRegion))
-	if err != nil {
-		return nil, fmt.Errorf("aws config: %w", err)
-	}
-	return lambda.NewFromConfig(awsCfg), nil
-}
-
-// newInterTokenManager builds the token owner and registers its lifecycle:
-// prime on startup (so first traffic never blocks on a fetch) and a background
-// refresh loop for the process lifetime.
-func newInterTokenManager(lc fx.Lifecycle, client *lambda.Client, cfg *config.Config, locker *lock.Locker, c cache.Backend) *pix.InterTokenManager {
-	m := pix.NewInterTokenManager(client, cfg, locker, c)
-	var cancel context.CancelFunc
-	lc.Append(fx.Hook{
-		OnStart: func(ctx context.Context) error {
-			if _, err := m.Get(ctx, false); err != nil {
-				slog.Warn("inter token prime failed (will retry on first use)", "err", err)
-			}
-			loopCtx, c := context.WithCancel(context.Background())
-			cancel = c
-			go m.RefreshLoop(loopCtx)
-			return nil
-		},
-		OnStop: func(context.Context) error {
-			if cancel != nil {
-				cancel()
-			}
-			return nil
-		},
-	})
-	return m
-}
-
-// newLambdaPixClient wraps the Lambda client as api's PixClient implementation.
-// api never talks to Inter directly — pix-gateway does. The token manager
-// supplies the bearer for every call.
-func newLambdaPixClient(client *lambda.Client, cfg *config.Config, tokenMgr *pix.InterTokenManager) pix.PixClient {
-	return pix.NewLambdaPixClient(client, cfg.PixGatewayFunctionName, tokenMgr)
-}
-
 func newKYCClient(cfg *config.Config) services.KYCClient {
 	return kycclient.New(cfg)
 }
 
-// newBillingClient builds the Billing client only when the rail is on; with it
-// off there is no client, no token manager and no Billing configuration read.
 func newBillingClient(cfg *config.Config) *billingclient.Client {
-	if !cfg.BillingRailOn() {
-		return nil
-	}
 	return billingclient.New(cfg)
 }
 
-func newWalletService(cfg *config.Config, bc *billingclient.Client, repo *repositories.WalletRepository, users *repositories.UserRepository, audit *repositories.AuditRepository, l *lock.Locker, p pix.PixClient, k services.KYCClient, sandboxPurchases *repositories.SandboxPurchaseRepository, productPurchases *repositories.ProductPurchaseRepository, m2mClients map[string]services.M2MClient, store *erasure.Store, er *repositories.ErasureRepository) *services.WalletService {
-	svc := services.NewWalletService(repo, users, audit, l, p, k)
-	svc.SetRail(rail.Select(cfg.BillingRailOn(), p, func() rail.BillingAPI { return bc }))
+// newRail is Billing, which owns the Inter connection.
+func newRail(bc *billingclient.Client) rail.Rail {
+	return rail.NewBilling(bc)
+}
+
+func newWalletService(cfg *config.Config, repo *repositories.WalletRepository, users *repositories.UserRepository, audit *repositories.AuditRepository, l *lock.Locker, r rail.Rail, k services.KYCClient, sandboxPurchases *repositories.SandboxPurchaseRepository, productPurchases *repositories.ProductPurchaseRepository, store *erasure.Store, er *repositories.ErasureRepository) *services.WalletService {
+	svc := services.NewWalletService(repo, users, audit, l, r, k)
 	svc.SetGameMerged(cfg.GameWalletMerged)
 	svc.SetSandboxPurchases(sandboxPurchases)
 	svc.SetProductPurchases(productPurchases)
-	svc.SetM2MClients(m2mClients)
 	if store != nil { // never pass a nil *Store through the interface
 		svc.SetErasure(store, er)
 		svc.SetErased(services.StoreErased(store))
 	}
 	return svc
-}
-
-// newM2MClients loads the M2M sandbox-purchase client registry (client_id →
-// webhook config) from a single SSM SecureString JSON blob (plan: M2M
-// sandbox-purchase integration) — admin-provisioned, no API write path, same
-// posture as every other SSM-loaded value. An unset parameter is a valid "no M2M
-// client registered yet" state, not a startup failure.
-func newM2MClients(cfg *config.Config, clients *awsclient.Clients) (map[string]services.M2MClient, error) {
-	store := secrets.NewStore(clients.SSM, cfg.Env)
-	raw, err := store.LoadM2MClients(context.Background())
-	if err != nil {
-		return nil, fmt.Errorf("m2m clients: %w", err)
-	}
-	m := map[string]services.M2MClient{}
-	if raw == "" {
-		return m, nil
-	}
-	if err := json.Unmarshal([]byte(raw), &m); err != nil {
-		return nil, fmt.Errorf("m2m clients: invalid json: %w", err)
-	}
-	return m, nil
 }
 
 func newUserService(repo *repositories.UserRepository, audit *repositories.AuditRepository, store *erasure.Store) *services.UserService {
@@ -267,14 +194,11 @@ func newFiberApp(cfg *config.Config) *fiber.App {
 	return app
 }
 
-func registerRoutes(bc *billingclient.Client, app *fiber.App, c cache.Backend, rev RevocationCache, cfg *config.Config, clients *awsclient.Clients, pixClient pix.PixClient, svc *services.WalletService, userSvc *services.UserService, erasureSvc *services.ErasureService, wsRegistry ws.Registry, users *repositories.UserRepository) {
+func registerRoutes(bc *billingclient.Client, app *fiber.App, c cache.Backend, rev RevocationCache, cfg *config.Config, clients *awsclient.Clients, svc *services.WalletService, userSvc *services.UserService, erasureSvc *services.ErasureService, wsRegistry ws.Registry, users *repositories.UserRepository) {
 	svc.SetBroadcaster(wsRegistry)
 	opts := []apiv1.Option{apiv1.WithResponsibleExport(users)}
-	if cfg.BillingRailOn() {
-		// Billing's signed invoice.paid wake-up. Not mounted at all with the rail off.
-		opts = append(opts, apiv1.WithBillingEvents(&apiv1.BillingEvents{Secret: cfg.BillingEventSecret, Invoices: bc, Confirm: svc, Withdrawals: svc}))
-	}
-	apiv1.Register(app, c, rev, cfg, clients, pixClient, svc, userSvc, erasureSvc, wsRegistry, opts...)
+	opts = append(opts, apiv1.WithBillingEvents(&apiv1.BillingEvents{Secret: cfg.BillingEventSecret, Invoices: bc, Confirm: svc, Withdrawals: svc}))
+	apiv1.Register(app, c, rev, cfg, clients, svc, userSvc, erasureSvc, wsRegistry, opts...)
 }
 
 func startServer(lc fx.Lifecycle, app *fiber.App, cfg *config.Config) {
@@ -347,7 +271,7 @@ func newErasureStore(cfg *config.Config, db *dynamodb.Client) *erasure.Store {
 	return erasure.NewStore(db, cfg.TablePrefix+"_"+wallet.ErasureStateTableSegment, wallet.ErasureTombstoneTTL)
 }
 
-func newErasureService(repo *repositories.WalletRepository, users *repositories.UserRepository, sp *repositories.SandboxPurchaseRepository, pp *repositories.ProductPurchaseRepository, er *repositories.ErasureRepository, k services.KYCClient, charges pix.PixClient, cfg *config.Config) *services.ErasureService {
+func newErasureService(repo *repositories.WalletRepository, users *repositories.UserRepository, sp *repositories.SandboxPurchaseRepository, pp *repositories.ProductPurchaseRepository, er *repositories.ErasureRepository, k services.KYCClient, charges rail.Rail, cfg *config.Config) *services.ErasureService {
 	return services.NewErasureService(repo, users, sp, pp, er, k, cfg.ServiceAudience).WithCharges(charges)
 }
 

@@ -1,10 +1,6 @@
-// Package pix abstracts the PIX partner bank (Inter). The wallet talks to the
-// bank only through the PixClient interface, so the deposit/withdraw flows are
-// tested against a fake and never depend on a live bank connection.
-package pix
+package rail
 
 import (
-	"context"
 	"errors"
 )
 
@@ -75,29 +71,8 @@ type TransferResult struct {
 	Status string
 }
 
-// ErrKeyNotFound means Transfer's destination PIX key is not registered at the
+// ErrKeyNotFound means a payout's destination PIX key is not registered at the
 // bank — the caller must distinguish this from a generic bank/transport
 // failure so the withdrawal is refunded immediately instead of left
 // processing for reconciliation. Check with errors.Is.
 var ErrKeyNotFound = errors.New("pix: destination key not registered")
-
-// PixClient is the partner-bank contract. The real implementation talks to
-// Inter over mTLS; the fake is used in tests.
-type PixClient interface {
-	// CreateCharge opens an immediate charge for the given txid and amount.
-	CreateCharge(ctx context.Context, txid string, amount int64, payerHintCPF string) (*Charge, error)
-	// QueryCharge re-reads a charge by txid — the source of truth for a deposit,
-	// never the webhook payload.
-	QueryCharge(ctx context.Context, txid string) (*Charge, error)
-	// Transfer sends a PIX payout to a key. idemKey deduplicates at the bank.
-	Transfer(ctx context.Context, pixKey string, amount int64, idemKey string) (*TransferResult, error)
-	// QueryTransfer reports the status of a payout by its idempotency key, so the
-	// reconciliation job can tell whether a payout whose call failed actually went
-	// through. A not-found result means the payout was never accepted.
-	QueryTransfer(ctx context.Context, idemKey string) (*TransferResult, error)
-	// Refund issues a devolução for a received payment identified by e2eID.
-	Refund(ctx context.Context, e2eID string, amount int64, idemKey string) (*TransferResult, error)
-	// Ping reports whether the partner bank is reachable and the credentials are
-	// accepted. It performs no money movement and is used by the health check.
-	Ping(ctx context.Context) error
-}

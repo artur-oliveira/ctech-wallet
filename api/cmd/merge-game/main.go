@@ -42,10 +42,6 @@ func main() {
 }
 
 func run(ctx context.Context, dry, pokerOff, reverse bool, limit int) error {
-	// The shared config insists on a Pix gateway name; the merge never calls it.
-	if os.Getenv("PIX_GATEWAY_FUNCTION_NAME") == "" {
-		_ = os.Setenv("PIX_GATEWAY_FUNCTION_NAME", "unused")
-	}
 	cfg, err := config.LoadReconcile()
 	if err != nil {
 		return err

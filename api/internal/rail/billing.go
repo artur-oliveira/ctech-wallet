@@ -12,7 +12,6 @@ import (
 	qrcode "github.com/skip2/go-qrcode"
 
 	"gopkg.aoctech.app/wallet/api/internal/billingclient"
-	"gopkg.aoctech.app/wallet/api/internal/pix"
 )
 
 // BillingAPI is what BillingRail needs of Billing. *billingclient.Client is it.
@@ -51,7 +50,7 @@ func (r *BillingRail) PayoutGrace() time.Duration { return 10 * time.Minute }
 // NeedsIdentity: Billing needs the user's customer (CPF, name, e-mail).
 func (r *BillingRail) NeedsIdentity() bool { return true }
 
-func (r *BillingRail) OpenDeposit(ctx context.Context, in DepositRequest) (*pix.Charge, error) {
+func (r *BillingRail) OpenDeposit(ctx context.Context, in DepositRequest) (*Charge, error) {
 	if in.TaxID == "" {
 		return nil, errors.New("billing rail: the user has no CPF on record")
 	}
@@ -66,7 +65,7 @@ func (r *BillingRail) OpenDeposit(ctx context.Context, in DepositRequest) (*pix.
 	return r.charge(ctx, inv)
 }
 
-func (r *BillingRail) QueryDeposit(ctx context.Context, txid string) (*pix.Charge, error) {
+func (r *BillingRail) QueryDeposit(ctx context.Context, txid string) (*Charge, error) {
 	inv, err := r.b.InvoiceByReference(ctx, txid)
 	if err != nil {
 		return nil, err
@@ -91,8 +90,8 @@ func (r *BillingRail) QueryDeposit(ctx context.Context, txid string) (*pix.Charg
 // The amount of a paid charge is what was actually paid, so an underpayment
 // meets the existing amount-mismatch refund. Billing does not expose the bank's
 // end-to-end id, so the invoice id stands for the payment.
-func (r *BillingRail) charge(ctx context.Context, inv *billingclient.Invoice) (*pix.Charge, error) {
-	c := &pix.Charge{Txid: inv.Txid, Amount: inv.AmountCents, Status: pix.ChargeActive}
+func (r *BillingRail) charge(ctx context.Context, inv *billingclient.Invoice) (*Charge, error) {
+	c := &Charge{Txid: inv.Txid, Amount: inv.AmountCents, Status: ChargeActive}
 	switch inv.Status {
 	case billingclient.StatusOpen:
 		if err := r.b.OpenPix(ctx, inv); err != nil {
@@ -108,15 +107,15 @@ func (r *BillingRail) charge(ctx context.Context, inv *billingclient.Invoice) (*
 		case inv.PayerMatch == "mismatch":
 			payer = MismatchPayer
 		}
-		c.Status, c.Amount, c.E2EID, c.PayerCPF, c.PayerName = pix.ChargeCompleted, inv.PaidCents, inv.ID, payer, name
-		c.Payments = []pix.Payment{{E2EID: inv.ID, Amount: inv.PaidCents, PayerCPF: payer, PayerName: name}}
+		c.Status, c.Amount, c.E2EID, c.PayerCPF, c.PayerName = ChargeCompleted, inv.PaidCents, inv.ID, payer, name
+		c.Payments = []Payment{{E2EID: inv.ID, Amount: inv.PaidCents, PayerCPF: payer, PayerName: name}}
 	default:
-		c.Status = pix.ChargeRemoved
+		c.Status = ChargeRemoved
 	}
 	return c, nil
 }
 
-func (r *BillingRail) RefundDeposit(ctx context.Context, txid, _ string, amountCents int64, idemKey string) (*pix.TransferResult, error) {
+func (r *BillingRail) RefundDeposit(ctx context.Context, txid, _ string, amountCents int64, idemKey string) (*TransferResult, error) {
 	inv, err := r.b.InvoiceByReference(ctx, txid)
 	if err != nil {
 		return nil, err
@@ -124,14 +123,14 @@ func (r *BillingRail) RefundDeposit(ctx context.Context, txid, _ string, amountC
 	if err := r.b.RefundInvoice(ctx, inv.ID, amountCents, refundReason, idemKey); err != nil {
 		return nil, err
 	}
-	return &pix.TransferResult{E2EID: inv.ID, Status: pix.TransferDone}, nil
+	return &TransferResult{E2EID: inv.ID, Status: TransferDone}, nil
 }
 
 // Payout pays the CPF through Billing. The wallet's idempotency key is the
 // reference. A transport error comes back as an error (the withdrawal stays
 // processing and reconcile asks); only Billing's own word that the bank has no
-// key for the CPF is pix.ErrKeyNotFound.
-func (r *BillingRail) Payout(ctx context.Context, cpf string, amountCents int64, idemKey string) (*pix.TransferResult, error) {
+// key for the CPF is ErrKeyNotFound.
+func (r *BillingRail) Payout(ctx context.Context, cpf string, amountCents int64, idemKey string) (*TransferResult, error) {
 	p, err := r.b.CreatePayout(ctx, cpf, amountCents, idemKey, payoutMessage)
 	if err != nil {
 		return nil, err
@@ -139,37 +138,37 @@ func (r *BillingRail) Payout(ctx context.Context, cpf string, amountCents int64,
 	return payoutResult(p)
 }
 
-func (r *BillingRail) QueryPayout(ctx context.Context, idemKey string) (*pix.TransferResult, error) {
+func (r *BillingRail) QueryPayout(ctx context.Context, idemKey string) (*TransferResult, error) {
 	p, err := r.b.PayoutByReference(ctx, idemKey)
 	if errors.Is(err, billingclient.ErrNotFound) {
-		return &pix.TransferResult{Status: pix.TransferNotFound}, nil
+		return &TransferResult{Status: TransferNotFound}, nil
 	}
 	if err != nil {
 		return nil, err
 	}
 	res, err := payoutResult(p)
-	if errors.Is(err, pix.ErrKeyNotFound) {
+	if errors.Is(err, ErrKeyNotFound) {
 		// Asking afterwards, "no key for that CPF" is a definitive failure, not an
 		// error to retry: the money goes back.
-		return &pix.TransferResult{Status: pix.TransferFailed}, nil
+		return &TransferResult{Status: TransferFailed}, nil
 	}
 	return res, err
 }
 
 // payoutResult reads Billing's payout. A payout that failed because the bank has no
-// key for the CPF is pix.ErrKeyNotFound (the withdrawal flow turns it into the
+// key for the CPF is ErrKeyNotFound (the withdrawal flow turns it into the
 // "key not found" answer); any other failure is TransferFailed.
-func payoutResult(p *billingclient.Payout) (*pix.TransferResult, error) {
+func payoutResult(p *billingclient.Payout) (*TransferResult, error) {
 	switch p.Status {
 	case billingclient.PayoutDone:
-		return &pix.TransferResult{E2EID: p.PaymentID, Status: pix.TransferDone}, nil
+		return &TransferResult{E2EID: p.PaymentID, Status: TransferDone}, nil
 	case billingclient.PayoutFailed:
 		if strings.EqualFold(p.FailureReason, billingclient.ReasonKeyNotFound) {
-			return nil, pix.ErrKeyNotFound
+			return nil, ErrKeyNotFound
 		}
-		return &pix.TransferResult{Status: pix.TransferFailed}, nil
+		return &TransferResult{Status: TransferFailed}, nil
 	default:
-		return &pix.TransferResult{Status: pix.TransferProcessing}, nil
+		return &TransferResult{Status: TransferProcessing}, nil
 	}
 }
 

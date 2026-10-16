@@ -10,7 +10,7 @@ import (
 
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
-	"gopkg.aoctech.app/wallet/api/internal/pix"
+	"gopkg.aoctech.app/wallet/api/internal/rail"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
 )
 
@@ -142,7 +142,7 @@ func (r *mergeRepo) entriesOf(typ string) int {
 
 func newMergeSvc(r *mergeRepo) (*WalletService, *recordingLocker) {
 	lock := &recordingLocker{acquired: true, release: func() {}}
-	return NewWalletService(r, &stubUserRepo{}, &stubAudit{}, lock, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}}), lock
+	return NewWalletService(r, &stubUserRepo{}, &stubAudit{}, lock, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}}), lock
 }
 
 func TestMergeMovesTheWholeGameBalanceToReal(t *testing.T) {

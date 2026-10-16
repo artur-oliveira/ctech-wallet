@@ -10,7 +10,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/recover"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
-	"gopkg.aoctech.app/wallet/api/internal/pix"
+	"gopkg.aoctech.app/wallet/api/internal/rail"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
 )
 
@@ -38,24 +38,6 @@ func TestConfirmDepositRequiresScope(t *testing.T) {
 	// svc.ConfirmDeposit calls, which this endpoint's business logic is
 	// identical to. A nil svc panicking on call proves the wiring reached the
 	// service layer, which is what this test checks for.
-	if resp.StatusCode == http.StatusNotFound {
-		t.Fatal("route not registered")
-	}
-}
-
-func TestConfirmProductPurchaseRouteRegistered(t *testing.T) {
-	app := fiber.New()
-	app.Use(recover.New())
-	h := &handlers{}
-	app.Post("/internal/pix/confirm-product-purchase", h.confirmProductPurchase)
-
-	body, _ := json.Marshal(ConfirmPurchaseRequest{Txid: "prdp123"})
-	req := httptest.NewRequest(http.MethodPost, "/internal/pix/confirm-product-purchase", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := app.Test(req)
-	if err != nil {
-		t.Fatalf("app.Test: %v", err)
-	}
 	if resp.StatusCode == http.StatusNotFound {
 		t.Fatal("route not registered")
 	}
@@ -168,5 +150,5 @@ func TestWalletBalanceRouteRegistered(t *testing.T) {
 }
 
 var _ = wallet.EntryDeposit
-var _ = pix.ChargeCompleted
+var _ = rail.ChargeCompleted
 var _ = repositories.Mutation{}

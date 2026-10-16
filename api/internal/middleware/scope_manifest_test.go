@@ -7,8 +7,20 @@ import (
 	"gopkg.aoctech.app/wallet/api/internal/oauthresource"
 )
 
-// retiredCustodyScope was removed from the code with the Asaas BaaS integration.
-const retiredCustodyScope = "wallet:custody:write"
+// retiredScopes were removed from the code and stay in the manifest as deprecated: the
+// registry (ctech-account) refuses to drop an active scope before it was published as
+// deprecated. custody went with the Asaas BaaS integration; the others with the Pix gateway,
+// the charge route and the sale of Sandbox packs and goods (wallet ledger P5).
+var retiredScopes = map[string]bool{
+	"wallet:custody:write":             true,
+	"wallet:sandbox-purchases:read":    true,
+	"wallet:sandbox-purchases:write":   true,
+	"wallet:product-purchases:read":    true,
+	"internal:wallet:confirm-deposit":  true,
+	"internal:wallet:sandbox-purchase": true,
+	"internal:wallet:product-purchase": true,
+	"internal:wallet:charge-amount":    true,
+}
 
 func TestScopeManifestMatchesEnforcedScopes(t *testing.T) {
 	m, err := oauthresource.ManifestDocument()
@@ -20,9 +32,8 @@ func TestScopeManifestMatchesEnforcedScopes(t *testing.T) {
 	}
 	wantInternal := []string{
 		ScopeWalletCredit, ScopeWalletDebit, ScopeWalletRealDebit,
-		ScopePixConfirmDeposit, ScopeWalletGameHold, ScopeWalletGameCashout,
-		ScopeWalletGameStatus, ScopeWalletBalance, ScopeWalletSandboxPurchase,
-		ScopeWalletProductPurchase, ScopeWalletChargeAmount, ScopeWalletErasureEligibility,
+		ScopeWalletGameHold, ScopeWalletGameCashout,
+		ScopeWalletGameStatus, ScopeWalletBalance, ScopeWalletErasureEligibility,
 		ScopeWalletHold, ScopeWalletResponsibleExport,
 	}
 	wantPublic := WalletPublicScopes()
@@ -32,7 +43,7 @@ func TestScopeManifestMatchesEnforcedScopes(t *testing.T) {
 		// The registry (ctech-account) refuses to drop an active scope before
 		// it was published as deprecated, so a retired scope stays here as
 		// deprecated until a later change removes it. It is no longer enforced.
-		if scope.Name == retiredCustodyScope {
+		if retiredScopes[scope.Name] {
 			if scope.Status != "deprecated" {
 				t.Fatalf("retired scope %q must stay deprecated", scope.Name)
 			}

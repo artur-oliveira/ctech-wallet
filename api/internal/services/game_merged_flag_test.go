@@ -6,15 +6,15 @@ import (
 
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
-	"gopkg.aoctech.app/wallet/api/internal/pix"
 	"gopkg.aoctech.app/wallet/api/internal/problem"
+	"gopkg.aoctech.app/wallet/api/internal/rail"
 )
 
 // mergedSvc is a service with GAME_WALLET_MERGED on and a user who accepted the
 // gambling addendum, over the single-user stub.
 func mergedSvc(repo *stubRepo) *WalletService {
 	users := &stubUserRepo{user: &wallet.User{GamblingAddendumVersion: wallet.CurrentGamblingAddendumVersion}}
-	svc := NewWalletService(repo, users, &stubAudit{}, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	svc := NewWalletService(repo, users, &stubAudit{}, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 	svc.SetGameMerged(true)
 	return svc
 }

@@ -7,7 +7,7 @@ import (
 
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
-	"gopkg.aoctech.app/wallet/api/internal/pix"
+	"gopkg.aoctech.app/wallet/api/internal/rail"
 )
 
 type fakeBroadcaster struct {
@@ -29,8 +29,8 @@ func (f *fakeBroadcaster) Broadcast(_ context.Context, userID string, payload []
 func TestConfirmDepositBroadcastsOnCredit(t *testing.T) {
 	repo := newStubRepo()
 	repo.deposit = &wallet.PixDeposit{Txid: "tx-broadcast", WalletID: "w-real", UserID: "u1", AmountExpected: 500, Status: wallet.DepositPending}
-	fake := pix.NewFake()
-	fake.StageCharge("tx-broadcast", 500, pix.ChargeCompleted, "12345678901", "E2E-1")
+	fake := rail.NewFake()
+	fake.StageCharge("tx-broadcast", 500, rail.ChargeCompleted, "12345678901", "E2E-1")
 	kyc := &stubKYC{rec: &kycclient.KYC{Level: "enhanced", CPF: "12345678901"}}
 
 	svc := newSvc(repo, &stubLocker{}, fake, kyc)
@@ -62,8 +62,8 @@ func TestConfirmDepositBroadcastsOnCredit(t *testing.T) {
 func TestConfirmDepositNilBroadcasterIsNoOp(t *testing.T) {
 	repo := newStubRepo()
 	repo.deposit = &wallet.PixDeposit{Txid: "tx-nobroadcast", WalletID: "w-real", UserID: "u1", AmountExpected: 500, Status: wallet.DepositPending}
-	fake := pix.NewFake()
-	fake.StageCharge("tx-nobroadcast", 500, pix.ChargeCompleted, "12345678901", "E2E-1")
+	fake := rail.NewFake()
+	fake.StageCharge("tx-nobroadcast", 500, rail.ChargeCompleted, "12345678901", "E2E-1")
 	kyc := &stubKYC{rec: &kycclient.KYC{Level: "enhanced", CPF: "12345678901"}}
 
 	svc := newSvc(repo, &stubLocker{}, fake, kyc)

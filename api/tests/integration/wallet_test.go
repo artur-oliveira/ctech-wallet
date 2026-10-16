@@ -5,38 +5,17 @@ package integration_test
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	dtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
-
 	"gopkg.aoctech.app/wallet/api/internal/domain/id"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
-	"gopkg.aoctech.app/wallet/api/internal/pix"
 	"gopkg.aoctech.app/wallet/api/internal/problem"
+	"gopkg.aoctech.app/wallet/api/internal/rail"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
 )
-
-// setWalletDepositRange simulates an admin editing the wallet's deposit-range
-// fields directly in DynamoDB (there is no API write path for them).
-func setWalletDepositRange(t *testing.T, walletID string, minDep, maxDep int64) {
-	t.Helper()
-	n := func(v int64) dtypes.AttributeValue { return &dtypes.AttributeValueMemberN{Value: fmt.Sprintf("%d", v)} }
-	_, err := db.UpdateItem(context.Background(), &dynamodb.UpdateItemInput{
-		TableName:                 aws.String(table(wallet.TableWallets)),
-		Key:                       map[string]dtypes.AttributeValue{"pk": &dtypes.AttributeValueMemberS{Value: walletID}},
-		UpdateExpression:          aws.String("SET min_deposit = :mn, max_deposit = :mx"),
-		ExpressionAttributeValues: map[string]dtypes.AttributeValue{":mn": n(minDep), ":mx": n(maxDep)},
-	})
-	if err != nil {
-		t.Fatalf("setWalletDepositRange: %v", err)
-	}
-}
 
 const cpf = "12345678901"
 
@@ -150,7 +129,7 @@ func TestDepositConfirmCreditsOnCPFMatch(t *testing.T) {
 	ctx := context.Background()
 	h := newHarness(&kycclient.KYC{Level: "enhanced", CPF: cpf})
 	dep := seedPendingDeposit(t, h, "u-"+id.New(), 5000)
-	h.pix.StageCharge(dep.Txid, 5000, pix.ChargeCompleted, cpf, "E2E-"+dep.Txid)
+	h.rail.StageCharge(dep.Txid, 5000, rail.ChargeCompleted, cpf, "E2E-"+dep.Txid)
 
 	if err := h.svc.ConfirmDeposit(ctx, dep.Txid, cpf, "Payer", false); err != nil {
 		t.Fatalf("ConfirmDeposit: %v", err)
@@ -268,14 +247,14 @@ func TestDepositRejectsAndRefundsOnCPFMismatch(t *testing.T) {
 	ctx := context.Background()
 	h := newHarness(&kycclient.KYC{Level: "enhanced", CPF: cpf})
 	dep := seedPendingDeposit(t, h, "u-"+id.New(), 5000)
-	h.pix.StageCharge(dep.Txid, 5000, pix.ChargeCompleted, "99999999999", "E2E-"+dep.Txid)
+	h.rail.StageCharge(dep.Txid, 5000, rail.ChargeCompleted, "99999999999", "E2E-"+dep.Txid)
 
 	_ = h.svc.ConfirmDeposit(ctx, dep.Txid, "99999999999", "Other", false)
 	if got := balance(t, h, dep.WalletID); got != 0 {
 		t.Fatalf("balance = %d, want 0 (rejected)", got)
 	}
-	if len(h.pix.Refunds) != 1 {
-		t.Fatalf("expected one refund to the payer, got %d", len(h.pix.Refunds))
+	if len(h.rail.Refunds) != 1 {
+		t.Fatalf("expected one refund to the payer, got %d", len(h.rail.Refunds))
 	}
 }
 
@@ -513,7 +492,7 @@ func TestSweepPendingDepositsCreditsOnceInterConfirms(t *testing.T) {
 	if err := h.repo.PutDeposit(ctx, dep); err != nil {
 		t.Fatal(err)
 	}
-	h.pix.StageCharge(txid, 5000, pix.ChargeCompleted, cpf, "E2E-sweep")
+	h.rail.StageCharge(txid, 5000, rail.ChargeCompleted, cpf, "E2E-sweep")
 
 	var swept int
 	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline) && swept == 0; {
@@ -553,7 +532,7 @@ func TestSweepPendingDepositsQuarantinesWhenPayerCPFAbsent(t *testing.T) {
 	if err := h.repo.PutDeposit(ctx, dep); err != nil {
 		t.Fatal(err)
 	}
-	h.pix.StageCharge(txid, 5000, pix.ChargeCompleted, "", "E2E-sweep-nocpf")
+	h.rail.StageCharge(txid, 5000, rail.ChargeCompleted, "", "E2E-sweep-nocpf")
 
 	swept, err := h.svc.SweepPendingDeposits(ctx)
 	if err != nil {

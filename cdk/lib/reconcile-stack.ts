@@ -10,7 +10,6 @@ import path from 'node:path';
 import {Environment} from './types';
 import {goLambdaCode} from './go-lambda';
 import {
-  BILLING_RAIL,
   reconcileFunctionName,
   reconcileRoleName,
   SERVICE,
@@ -210,12 +209,8 @@ export class ReconcileStack extends cdk.Stack {
         // CFN template as plaintext — never do this with a SecureString).
         CTECH_URL: ssm.StringParameter.valueForStringParameter(this, SSM_ACCOUNT(environment).baseUrl),
         WALLET_CLIENT_ID: ssm.StringParameter.valueForStringParameter(this, SSM_WALLET(environment).walletClientId),
-        BILLING_RAIL: BILLING_RAIL[environment],
-        // Resolved only when the rail is on: an unseeded SSM parameter would fail the whole deploy.
-        ...(BILLING_RAIL[environment] === 'on' ? {
-          BILLING_URL: ssm.StringParameter.valueForStringParameter(this, SSM_WALLET(environment).billingUrl),
-          BILLING_CLIENT_ID: ssm.StringParameter.valueForStringParameter(this, SSM_WALLET(environment).billingClientId),
-        } : {}),
+        BILLING_URL: ssm.StringParameter.valueForStringParameter(this, SSM_WALLET(environment).billingUrl),
+        BILLING_CLIENT_ID: ssm.StringParameter.valueForStringParameter(this, SSM_WALLET(environment).billingClientId),
         // AWS_REGION is a reserved Lambda variable — set by the runtime, never here.
       },
       // NOTE: a Lambda has no /opt/app/start.sh, so WALLET_CLIENT_SECRET (and

@@ -33,7 +33,7 @@ func routerApp(t *testing.T, gamblingEnabled bool) *fiber.App {
 		TablePrefix:     "test",
 		GamblingEnabled: gamblingEnabled,
 	}
-	Register(app, cache.NewMemoryBackend(testCacheSize), nil, cfg, nil, nil, nil, nil, nil, nil)
+	Register(app, cache.NewMemoryBackend(testCacheSize), nil, cfg, nil, nil, nil, nil, nil)
 	return app
 }
 
@@ -195,12 +195,48 @@ func TestResponsibleExportExistsOnlyWhenMountedAndNeedsAToken(t *testing.T) {
 		t.Fatalf("%s is mounted without the option", path)
 	}
 	app := fiber.New()
-	Register(app, cache.NewMemoryBackend(testCacheSize), nil, &config.Config{TablePrefix: "test"}, nil, nil, nil, nil, nil, nil, WithResponsibleExport(fakeExporter{}))
+	Register(app, cache.NewMemoryBackend(testCacheSize), nil, &config.Config{TablePrefix: "test"}, nil, nil, nil, nil, nil, WithResponsibleExport(fakeExporter{}))
 	if !has(app) {
 		t.Fatalf("%s is missing", path)
 	}
 	res, err := app.Test(httptest.NewRequest(http.MethodGet, path, nil))
 	if err != nil || res.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated export = %v, %v (want 401)", res, err)
+	}
+}
+
+// A retired route answers 410 with the stable route-retired type once the caller is authenticated,
+// and the normal 401 before that, so retirement does not leak which routes exist.
+func TestRetiredRoutesAnswer410ToACallerAndTheNormal401ToAnonymous(t *testing.T) {
+	bare := fiber.New()
+	bare.Post("/x", retired)
+	resp, err := bare.Test(httptest.NewRequest(http.MethodPost, "/x", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusGone {
+		t.Fatalf("retired = %d, want 410", resp.StatusCode)
+	}
+
+	app := routerApp(t, false)
+	for _, path := range []string{
+		"/v1.0/wallet/sandbox/purchase",
+		"/v1.0/wallet/sandbox/purchases",
+		"/v1.0/internal/wallet/charge",
+		"/v1.0/internal/wallet/sandbox-purchase",
+		"/v1.0/internal/wallet/product-purchase/skus",
+		"/v1.0/internal/pix/confirm-deposit",
+	} {
+		method := http.MethodPost
+		if path == "/v1.0/internal/wallet/product-purchase/skus" {
+			method = http.MethodGet
+		}
+		r, err := app.Test(httptest.NewRequest(method, path, nil))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.StatusCode != http.StatusUnauthorized {
+			t.Errorf("%s %s anonymous = %d, want 401", method, path, r.StatusCode)
+		}
 	}
 }

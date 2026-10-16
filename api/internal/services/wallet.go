@@ -20,7 +20,6 @@ import (
 	"gopkg.aoctech.app/api-commons/observability"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
-	"gopkg.aoctech.app/wallet/api/internal/pix"
 	"gopkg.aoctech.app/wallet/api/internal/problem"
 	"gopkg.aoctech.app/wallet/api/internal/rail"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
@@ -165,22 +164,6 @@ type Broadcaster interface {
 	Broadcast(ctx context.Context, userID string, payload []byte)
 }
 
-// SandboxPurchaseRepo is the persistence surface for the direct PIX→sandbox
-// purchase flow (plan §9.1/§9.3) — its own repository, decoupled from Repo:
-// a deposit is custody, this is a sale, and the two tables must never blur.
-type SandboxPurchaseRepo interface {
-	PutIfAbsent(ctx context.Context, p *wallet.SandboxPurchase) error
-	Get(ctx context.Context, purchaseID string) (*wallet.SandboxPurchase, error)
-	ListByUser(ctx context.Context, userID string, limit int, startKey map[string]types.AttributeValue) (*repositories.Page[wallet.SandboxPurchase], error)
-	Update(ctx context.Context, purchaseID string, updates map[string]any) error
-	BuildConfirmTx(purchaseID, e2eID, creditSK string) types.TransactWriteItem
-	BuildRefundClaimTx(purchaseID string) types.TransactWriteItem
-	TransitionStatus(ctx context.Context, purchaseID, fromStatus, toStatus string) (bool, error)
-	ListPendingOlderThan(ctx context.Context, cutoff time.Time, limit int) ([]wallet.SandboxPurchase, error)
-	ListRefundPendingOlderThan(ctx context.Context, cutoff time.Time, limit int) ([]wallet.SandboxPurchase, error)
-	ListWebhookFailedOlderThan(ctx context.Context, cutoff time.Time, limit int) ([]wallet.SandboxPurchase, error)
-}
-
 // M2MClient is one registered M2M caller's notify-back configuration (e.g.
 // ctech-poker) — loaded once at startup from a single SSM SecureString JSON
 // blob (client_id → {webhook_url, hmac_secret}), the same "admin sets it,
@@ -226,8 +209,7 @@ type WalletService struct {
 	users            UserRepo
 	audit            Auditor
 	lock             Locker
-	pix              pix.PixClient // sandbox and product purchases; deposits and withdrawals go through rail
-	rail             rail.Rail     // deposits, refunds and payouts; LegacyRail unless SetRail says otherwise
+	rail             rail.Rail // deposits, refunds and payouts, through Billing
 	kyc              KYCClient
 	broadcaster      Broadcaster           // optional; see SetBroadcaster
 	sandboxPurchases SandboxPurchaseRepo   // required for PurchaseSandboxDirect/RefundSandboxPurchase/ConfirmSandboxPurchase; see SetSandboxPurchases
@@ -239,23 +221,15 @@ type WalletService struct {
 	gameMerged       bool                  // game operations act on `real`; see SetGameMerged
 }
 
-func NewWalletService(repo Repo, users UserRepo, audit Auditor, lock Locker, pixClient pix.PixClient, kyc KYCClient) *WalletService {
+func NewWalletService(repo Repo, users UserRepo, audit Auditor, lock Locker, r rail.Rail, kyc KYCClient) *WalletService {
 	return &WalletService{
-		repo: repo, users: users, audit: audit, lock: lock, pix: pixClient, rail: rail.NewLegacy(pixClient), kyc: kyc,
+		repo: repo, users: users, audit: audit, lock: lock, rail: r, kyc: kyc,
 	}
 }
 
-// SetRail replaces the rail deposits and withdrawals go through. Without it they
-// use the Inter Pix client directly, as before.
 // SetGameMerged makes the game-facing operations act on the user's `real`
 // wallet (GAME_WALLET_MERGED). Off by default.
 func (s *WalletService) SetGameMerged(on bool) { s.gameMerged = on }
-
-func (s *WalletService) SetRail(r rail.Rail) {
-	if r != nil {
-		s.rail = r
-	}
-}
 
 // SetBroadcaster wires the WebSocket registry after construction — kept as a
 // setter rather than a constructor parameter so cmd/reconcile and every
@@ -263,16 +237,6 @@ func (s *WalletService) SetRail(r rail.Rail) {
 // broadcaster makes ConfirmDeposit's broadcast a no-op.
 func (s *WalletService) SetBroadcaster(b Broadcaster) {
 	s.broadcaster = b
-}
-
-// SetSandboxPurchases wires the direct-PIX sandbox-purchase repository (plan
-// §9.1/§9.3) after construction — same setter pattern as SetBroadcaster,
-// so every existing NewWalletService(...) call site keeps compiling
-// unchanged. Unset, PurchaseSandboxDirect/RefundSandboxPurchase/
-// ConfirmSandboxPurchase panic on first use — this feature ships live with no
-// flag, so cmd/server and cmd/reconcile must always call this.
-func (s *WalletService) SetSandboxPurchases(r SandboxPurchaseRepo) {
-	s.sandboxPurchases = r
 }
 
 // SetM2MClients wires the registered M2M client → webhook-config map after
@@ -450,7 +414,7 @@ func breachProblem(b *wallet.DailyBreach) *problem.Problem {
 // balance mutation: money is credited only at ConfirmDeposit after re-querying
 // the charge. idemKey makes a retried POST return the same txid/QR and never
 // open a second Inter charge (SEC-08).
-func (s *WalletService) InitiateDeposit(ctx context.Context, userID, kycLevel string, amount int64, idemKey string) (*wallet.PixDeposit, *pix.Charge, error) {
+func (s *WalletService) InitiateDeposit(ctx context.Context, userID, kycLevel string, amount int64, idemKey string) (*wallet.PixDeposit, *rail.Charge, error) {
 	if err := checkErasure(ctx, s.erasureGate, userID); err != nil {
 		return nil, nil, err
 	}
@@ -624,7 +588,7 @@ func (s *WalletService) ConfirmDeposit(ctx context.Context, txid, payerCPF, paye
 	default:
 		return nil
 	}
-	if charge.Status != pix.ChargeCompleted {
+	if charge.Status != rail.ChargeCompleted {
 		return nil // not paid yet — safe to be re-woken later
 	}
 
@@ -739,9 +703,9 @@ func (s *WalletService) ConfirmDeposit(ctx context.Context, txid, payerCPF, paye
 
 // refunded reports whether the charge carries any completed devolução, per
 // Inter's own re-query — never the webhook body (Invariant 11).
-func refunded(charge *pix.Charge) bool {
+func refunded(charge *rail.Charge) bool {
 	for _, r := range charge.Refunds {
-		if r.Status == pix.RefundCompleted {
+		if r.Status == rail.RefundCompleted {
 			return true
 		}
 	}
@@ -775,7 +739,7 @@ func maskedCPFMatches(masked, full string) bool {
 // the charge's nominal value, never the sum of payments), so this never
 // touches the deposit's own status or the wallet balance; it only calls out to
 // Inter. A refund failure is never silent (Invariant 12).
-func (s *WalletService) refundExcessPayments(ctx context.Context, txid string, charge *pix.Charge) error {
+func (s *WalletService) refundExcessPayments(ctx context.Context, txid string, charge *rail.Charge) error {
 	if len(charge.Payments) < 2 {
 		return nil
 	}
@@ -791,9 +755,9 @@ func (s *WalletService) refundExcessPayments(ctx context.Context, txid string, c
 	return nil
 }
 
-func refundedPayment(p pix.Payment) bool {
+func refundedPayment(p rail.Payment) bool {
 	for _, r := range p.Refunds {
-		if r.Status == pix.RefundCompleted {
+		if r.Status == rail.RefundCompleted {
 			return true
 		}
 	}
@@ -803,9 +767,9 @@ func refundedPayment(p pix.Payment) bool {
 // processDepositRefund reverses an already-credited deposit's ledger entry for
 // every completed devolução Inter reports — the money left the PJ account, so
 // the credit must be taken back rather than left standing.
-func (s *WalletService) processDepositRefund(ctx context.Context, dep *wallet.PixDeposit, charge *pix.Charge) error {
+func (s *WalletService) processDepositRefund(ctx context.Context, dep *wallet.PixDeposit, charge *rail.Charge) error {
 	for _, r := range charge.Refunds {
-		if r.Status != pix.RefundCompleted {
+		if r.Status != rail.RefundCompleted {
 			continue
 		}
 		if err := s.reverseDeposit(ctx, dep, r); err != nil {
@@ -819,7 +783,7 @@ func (s *WalletService) processDepositRefund(ctx context.Context, dep *wallet.Pi
 // the devolução's own rtrId so a retried webhook never double-debits. A debit
 // failure (balance already spent) never fails silently: it flags the deposit
 // for manual reconciliation and raises an alarm (Invariant 12).
-func (s *WalletService) reverseDeposit(ctx context.Context, dep *wallet.PixDeposit, r pix.Refund) error {
+func (s *WalletService) reverseDeposit(ctx context.Context, dep *wallet.PixDeposit, r rail.Refund) error {
 	release, err := acquireWallet(ctx, s.lock, dep.WalletID)
 	if err != nil {
 		return err
@@ -881,7 +845,7 @@ func (s *WalletService) broadcastEvent(ctx context.Context, userID, eventType st
 	s.broadcaster.Broadcast(ctx, userID, payload)
 }
 
-func (s *WalletService) rejectMismatch(ctx context.Context, dep *wallet.PixDeposit, charge *pix.Charge) error {
+func (s *WalletService) rejectMismatch(ctx context.Context, dep *wallet.PixDeposit, charge *rail.Charge) error {
 	changed, err := s.repo.TransitionDepositStatus(ctx, dep.Txid, wallet.DepositPending, wallet.DepositRefundPending, charge.E2EID)
 	if err != nil {
 		return err
@@ -904,7 +868,7 @@ func (s *WalletService) rejectMismatch(ctx context.Context, dep *wallet.PixDepos
 // refundMismatch resumes the compensation from a durable non-terminal state.
 // The provider key is stable, so a crash after the provider accepted the
 // refund but before the local final transition is safe to replay.
-func (s *WalletService) refundMismatch(ctx context.Context, dep *wallet.PixDeposit, charge *pix.Charge) error {
+func (s *WalletService) refundMismatch(ctx context.Context, dep *wallet.PixDeposit, charge *rail.Charge) error {
 	if dep.Status != wallet.DepositRefundPending {
 		changed, err := s.repo.TransitionDepositStatus(ctx, dep.Txid, dep.Status, wallet.DepositRefundPending, charge.E2EID)
 		if err != nil {
@@ -1089,7 +1053,7 @@ func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, a
 
 	res, err := s.rail.Payout(ctx, pixKey, amount, interIdemKey(withdrawalID))
 	if err != nil {
-		if errors.Is(err, pix.ErrKeyNotFound) {
+		if errors.Is(err, rail.ErrKeyNotFound) {
 			// Nothing to retry: refund now instead of leaving it processing.
 			s.reverse(ctx, *w)
 			return nil, problem.PixKeyNotFound()
@@ -1098,10 +1062,10 @@ func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, a
 		return w, nil
 	}
 	switch res.Status {
-	case pix.TransferProcessing:
+	case rail.TransferProcessing:
 		// Accepted by a rail that settles later: the reconcile job completes it.
 		return w, nil
-	case pix.TransferFailed:
+	case rail.TransferFailed:
 		// The rail already says it will not happen: the money goes back at once.
 		s.reverse(ctx, *w)
 		return nil, problem.InternalServer("saque recusado pelo banco; o valor foi devolvido à carteira")

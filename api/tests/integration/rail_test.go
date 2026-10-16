@@ -12,8 +12,8 @@ import (
 
 	"gopkg.aoctech.app/wallet/api/internal/domain/id"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
-	"gopkg.aoctech.app/wallet/api/internal/pix"
 	"gopkg.aoctech.app/wallet/api/internal/problem"
+	"gopkg.aoctech.app/wallet/api/internal/rail"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
 )
 
@@ -50,11 +50,11 @@ func TestDepositFullLoopAndReplay(t *testing.T) {
 	if dep.Txid != dep2.Txid {
 		t.Fatalf("txid changed on replay: %s vs %s", dep.Txid, dep2.Txid)
 	}
-	if len(h.pix.CreatedCharges) != 1 {
-		t.Fatalf("charges created = %d, want 1", len(h.pix.CreatedCharges))
+	if len(h.rail.CreatedCharges) != 1 {
+		t.Fatalf("charges created = %d, want 1", len(h.rail.CreatedCharges))
 	}
 
-	h.pix.StageCharge(dep.Txid, 25000, pix.ChargeCompleted, cpf, "E2E-loop")
+	h.rail.StageCharge(dep.Txid, 25000, rail.ChargeCompleted, cpf, "E2E-loop")
 	for range 2 { // second call is the webhook retry
 		if err := h.svc.ConfirmDeposit(ctx, dep.Txid, cpf, "Pagador", false); err != nil {
 			t.Fatal(err)
@@ -73,8 +73,8 @@ func TestConfirmDepositConcurrentOverCapOnlyOneCredits(t *testing.T) {
 	user := "u-" + id.New()
 	a := seedPendingDeposit(t, h, user, 60000)
 	b := seedPendingDeposit(t, h, user, 60000)
-	h.pix.StageCharge(a.Txid, 60000, pix.ChargeCompleted, cpf, "E2E-a")
-	h.pix.StageCharge(b.Txid, 60000, pix.ChargeCompleted, cpf, "E2E-b")
+	h.rail.StageCharge(a.Txid, 60000, rail.ChargeCompleted, cpf, "E2E-a")
+	h.rail.StageCharge(b.Txid, 60000, rail.ChargeCompleted, cpf, "E2E-b")
 
 	var wg sync.WaitGroup
 	for _, tx := range []string{a.Txid, b.Txid} {
@@ -93,7 +93,7 @@ func TestConfirmDepositConcurrentOverCapOnlyOneCredits(t *testing.T) {
 	if got := balance(t, h, a.WalletID); got != 60000 {
 		t.Fatalf("balance = %d, want exactly one 60000 credit", got)
 	}
-	if n := len(h.pix.Refunds); n != 1 {
+	if n := len(h.rail.Refunds); n != 1 {
 		t.Fatalf("refunds = %d, want 1 (the over-cap payer)", n)
 	}
 }
@@ -144,8 +144,8 @@ func TestWithdrawalReplayNoSecondPayoutNoSecondSlot(t *testing.T) {
 	if err != nil || w2.WithdrawalID != w1.WithdrawalID {
 		t.Fatalf("replay: %+v %v", w2, err)
 	}
-	if len(h.pix.Transfers) != 1 {
-		t.Fatalf("transfers = %d, want 1", len(h.pix.Transfers))
+	if len(h.rail.Transfers) != 1 {
+		t.Fatalf("transfers = %d, want 1", len(h.rail.Transfers))
 	}
 	if got := balance(t, h, real.WalletID); got != 40000 {
 		t.Fatalf("balance = %d, want 40000", got)
@@ -158,7 +158,7 @@ func TestWithdrawalProcessingResolvedByReconcile(t *testing.T) {
 	user := "u-" + id.New()
 	fundReal(t, h, user, 50000)
 
-	h.pix.TransferErr = errors.New("bank timeout")
+	h.rail.TransferErr = errors.New("bank timeout")
 	w, err := h.svc.Withdraw(ctx, user, wallet.KYCVerified, 10000, "k1")
 	if err != nil {
 		t.Fatal(err)
@@ -166,7 +166,7 @@ func TestWithdrawalProcessingResolvedByReconcile(t *testing.T) {
 	if w.Status != wallet.WithdrawProcessing {
 		t.Fatalf("status = %s, want processing", w.Status)
 	}
-	h.pix.StageTransferStatus(h.pix.Transfers[0].IdemKey, pix.TransferDone)
+	h.rail.StageTransferStatus(h.rail.Transfers[0].IdemKey, rail.TransferDone)
 	if _, _, _, err := h.svc.ReconcileWithdrawals(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -185,12 +185,12 @@ func TestReversalReplayReleasesTheDailySlotOnlyOnce(t *testing.T) {
 	user := "u-" + id.New()
 	fundReal(t, h, user, 100000)
 
-	h.pix.TransferErr = errors.New("bank timeout")
+	h.rail.TransferErr = errors.New("bank timeout")
 	w1, err := h.svc.Withdraw(ctx, user, wallet.KYCVerified, 10000, "w1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	h.pix.TransferErr = nil
+	h.rail.TransferErr = nil
 	if err := h.svc.ReverseWithdrawal(ctx, w1.WithdrawalID); err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +226,7 @@ func TestStaleCounterNeverBlocksReversalBookkeeping(t *testing.T) {
 	h := newHarness(verified())
 	user := "u-" + id.New()
 	fundReal(t, h, user, 100000)
-	h.pix.TransferErr = errors.New("bank timeout")
+	h.rail.TransferErr = errors.New("bank timeout")
 	w, err := h.svc.Withdraw(ctx, user, wallet.KYCVerified, 10000, "w1")
 	if err != nil {
 		t.Fatal(err)

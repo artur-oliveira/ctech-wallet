@@ -154,11 +154,3 @@ func sendStatement(c fiber.Ctx, result *repositories.QueryResult) error {
 		HasNext:    len(result.LastEvaluatedKey) > 0,
 	})
 }
-
-func sendPage[T any](c fiber.Ctx, page *repositories.Page[T]) error {
-	return c.JSON(PaginatedResponse{
-		Items:      page.Items,
-		NextCursor: buildNextCursor(page.LastEvaluatedKey),
-		HasNext:    len(page.LastEvaluatedKey) > 0,
-	})
-}
