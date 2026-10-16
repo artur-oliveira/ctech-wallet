@@ -17,7 +17,7 @@ import (
 // BillingAPI is what BillingRail needs of Billing. *billingclient.Client is it.
 type BillingAPI interface {
 	EnsureCustomer(ctx context.Context, userID, taxID, name, email string) (string, error)
-	CreateInvoice(ctx context.Context, customerID, reference, description string, amountCents int64) (*billingclient.Invoice, error)
+	CreateInvoice(ctx context.Context, customerID, reference, description string, amountCents int64, pixLifetime time.Duration) (*billingclient.Invoice, error)
 	InvoiceByReference(ctx context.Context, reference string) (*billingclient.Invoice, error)
 	OpenPix(ctx context.Context, inv *billingclient.Invoice) error
 	RefundInvoice(ctx context.Context, invoiceID string, amountCents int64, reason, idemKey string) error
@@ -32,6 +32,9 @@ const MismatchPayer = "BILLING-MISMATCH"
 
 const (
 	depositDescription = "Depósito na carteira"
+	// depositPixLifetime is how long a deposit's Pix stays payable: the wallet's own deposit window
+	// (wallet.DepositChargeValidity), not the month a due-date Pix would live.
+	depositPixLifetime = 10 * time.Minute
 	payoutMessage      = "Saque da carteira"
 	refundReason       = "Devolução de depósito da carteira"
 )
@@ -58,7 +61,7 @@ func (r *BillingRail) OpenDeposit(ctx context.Context, in DepositRequest) (*Char
 	if err != nil {
 		return nil, fmt.Errorf("billing customer: %w", err)
 	}
-	inv, err := r.b.CreateInvoice(ctx, customer, in.Txid, depositDescription, in.AmountCents)
+	inv, err := r.b.CreateInvoice(ctx, customer, in.Txid, depositDescription, in.AmountCents, depositPixLifetime)
 	if err != nil {
 		return nil, fmt.Errorf("billing invoice: %w", err)
 	}
