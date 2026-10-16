@@ -108,7 +108,7 @@ func run(ctx context.Context) (*Result, error) {
 	repo := repositories.NewWalletRepository(clients.DynamoDB, cfg)
 	users := repositories.NewUserRepository(clients.DynamoDB, cfg)
 	audit := repositories.NewAuditRepository(clients.DynamoDB, cfg)
-	svc := services.NewWalletService(repo, users, audit, lock.NewLocker(cache.NewMemoryBackend(16)), rail.NewBilling(billingclient.New(cfg)), kycclient.New(cfg))
+	svc := services.NewWalletService(repo, users, audit, lock.NewLocker(cache.NewMemoryBackend(16)), rail.NewBilling(billingclient.New(cfg, nil)), kycclient.New(cfg, nil))
 	svc.SetBroadcaster(newBroadcaster(cfg))
 	svc.SetSandboxPurchases(repositories.NewSandboxPurchaseRepository(clients.DynamoDB, cfg))
 	svc.SetProductPurchases(repositories.NewProductPurchaseRepository(clients.DynamoDB, cfg))

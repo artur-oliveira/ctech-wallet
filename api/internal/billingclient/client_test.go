@@ -51,7 +51,7 @@ func newStub(t *testing.T) (*stub, *Client) {
 	}))
 	t.Cleanup(s.srv.Close)
 	cfg := &config.Config{BillingURL: s.srv.URL, CtechURL: s.srv.URL, BillingClientID: "wallet", BillingClientSecret: "s"}
-	return s, New(cfg)
+	return s, New(cfg, nil)
 }
 
 func (s *stub) on(route string, status int, body string) {
