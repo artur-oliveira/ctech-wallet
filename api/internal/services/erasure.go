@@ -11,7 +11,7 @@ import (
 
 	"gopkg.aoctech.app/api-commons/erasure"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
-	"gopkg.aoctech.app/wallet/api/internal/pix"
+	"gopkg.aoctech.app/wallet/api/internal/rail"
 )
 
 // ErasureRepo is the persistence side of the purge
@@ -57,9 +57,9 @@ type ErasureService struct {
 	now       func() time.Time
 }
 
-// ChargeQuerier is the one Inter call the blockers make.
+// ChargeQuerier is the one rail call the blockers make.
 type ChargeQuerier interface {
-	QueryCharge(ctx context.Context, txid string) (*pix.Charge, error)
+	QueryDeposit(ctx context.Context, txid string) (*rail.Charge, error)
 }
 
 // WithCharges enables the paid-but-unconfirmed deposit check (R19).
@@ -173,11 +173,11 @@ func (e *ErasureService) paidDepositBlockers(ctx context.Context, deps []wallet.
 			unchecked++
 			continue
 		}
-		ch, err := e.charges.QueryCharge(ctx, d.Txid)
+		ch, err := e.charges.QueryDeposit(ctx, d.Txid)
 		if err != nil {
 			return nil, err
 		}
-		if ch.Status == pix.ChargeCompleted {
+		if ch.Status == rail.ChargeCompleted {
 			paid++
 		}
 	}

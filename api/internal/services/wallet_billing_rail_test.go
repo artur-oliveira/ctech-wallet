@@ -8,22 +8,21 @@ import (
 
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
-	"gopkg.aoctech.app/wallet/api/internal/pix"
 	"gopkg.aoctech.app/wallet/api/internal/rail"
 )
 
 // scriptedRail is a Rail whose answers a test sets, and which records what it
 // was asked. It asks for the KYC identity and has a grace, like BillingRail.
 type scriptedRail struct {
-	charge    *pix.Charge
+	charge    *rail.Charge
 	queryErr  error
 	openErr   error
 	opened    []rail.DepositRequest
 	refunds   []string // idempotency keys
-	payout    *pix.TransferResult
+	payout    *rail.TransferResult
 	payoutErr error
 	payouts   []string
-	status    *pix.TransferResult
+	status    *rail.TransferResult
 	statusErr error
 	grace     time.Duration
 }
@@ -31,15 +30,15 @@ type scriptedRail struct {
 func (r *scriptedRail) NeedsIdentity() bool        { return true }
 func (r *scriptedRail) PayoutGrace() time.Duration { return r.grace }
 
-func (r *scriptedRail) OpenDeposit(_ context.Context, in rail.DepositRequest) (*pix.Charge, error) {
+func (r *scriptedRail) OpenDeposit(_ context.Context, in rail.DepositRequest) (*rail.Charge, error) {
 	r.opened = append(r.opened, in)
 	if r.openErr != nil {
 		return nil, r.openErr
 	}
-	return &pix.Charge{Txid: in.Txid, Amount: in.AmountCents, Status: pix.ChargeActive, QRCode: "qr"}, nil
+	return &rail.Charge{Txid: in.Txid, Amount: in.AmountCents, Status: rail.ChargeActive, QRCode: "qr"}, nil
 }
 
-func (r *scriptedRail) QueryDeposit(_ context.Context, txid string) (*pix.Charge, error) {
+func (r *scriptedRail) QueryDeposit(_ context.Context, txid string) (*rail.Charge, error) {
 	if r.queryErr != nil {
 		return nil, r.queryErr
 	}
@@ -49,17 +48,17 @@ func (r *scriptedRail) QueryDeposit(_ context.Context, txid string) (*pix.Charge
 	return r.charge, nil
 }
 
-func (r *scriptedRail) RefundDeposit(_ context.Context, _, _ string, _ int64, idemKey string) (*pix.TransferResult, error) {
+func (r *scriptedRail) RefundDeposit(_ context.Context, _, _ string, _ int64, idemKey string) (*rail.TransferResult, error) {
 	r.refunds = append(r.refunds, idemKey)
-	return &pix.TransferResult{Status: pix.TransferDone}, nil
+	return &rail.TransferResult{Status: rail.TransferDone}, nil
 }
 
-func (r *scriptedRail) Payout(_ context.Context, _ string, _ int64, idemKey string) (*pix.TransferResult, error) {
+func (r *scriptedRail) Payout(_ context.Context, _ string, _ int64, idemKey string) (*rail.TransferResult, error) {
 	r.payouts = append(r.payouts, idemKey)
 	return r.payout, r.payoutErr
 }
 
-func (r *scriptedRail) QueryPayout(context.Context, string) (*pix.TransferResult, error) {
+func (r *scriptedRail) QueryPayout(context.Context, string) (*rail.TransferResult, error) {
 	return r.status, r.statusErr
 }
 
@@ -74,14 +73,12 @@ func (k *countingKYC) Get(context.Context, string) (*kycclient.KYC, error) {
 }
 
 func billingSvc(repo Repo, r rail.Rail, kyc KYCClient) *WalletService {
-	svc := NewWalletService(repo, &stubUserRepo{}, &stubAudit{}, &stubLocker{}, pix.NewFake(), kyc)
-	svc.SetRail(r)
-	return svc
+	return NewWalletService(repo, &stubUserRepo{}, &stubAudit{}, &stubLocker{}, r, kyc)
 }
 
-func paidCharge(payer string) *pix.Charge {
-	return &pix.Charge{Txid: "tx1", Amount: 10000, Status: pix.ChargeCompleted, E2EID: "in_1", PayerCPF: payer,
-		Payments: []pix.Payment{{E2EID: "in_1", Amount: 10000, PayerCPF: payer}}}
+func paidCharge(payer string) *rail.Charge {
+	return &rail.Charge{Txid: "tx1", Amount: 10000, Status: rail.ChargeCompleted, E2EID: "in_1", PayerCPF: payer,
+		Payments: []rail.Payment{{E2EID: "in_1", Amount: 10000, PayerCPF: payer}}}
 }
 
 // ── deposits ────────────────────────────────────────────────────────────────
@@ -100,7 +97,7 @@ func TestADepositThroughBillingCarriesTheKYCIdentityAndNoOtherRailIsAsked(t *tes
 
 func TestTheInterPathMakesNoKYCCallWhenOpeningADeposit(t *testing.T) {
 	k := &countingKYC{rec: railKYC}
-	svc := NewWalletService(newStubRepo(), &stubUserRepo{}, &stubAudit{}, &stubLocker{}, pix.NewFake(), k)
+	svc := NewWalletService(newStubRepo(), &stubUserRepo{}, &stubAudit{}, &stubLocker{}, rail.NewFake(), k)
 	if _, _, err := svc.InitiateDeposit(context.Background(), "u1", wallet.KYCVerified, 5000, "k1"); err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +221,7 @@ func withdrawWith(r *scriptedRail) (*stubRepo, *WalletService) {
 }
 
 func TestAPayoutBillingHasOnlyAcceptedStaysProcessing(t *testing.T) {
-	repo, svc := withdrawWith(&scriptedRail{payout: &pix.TransferResult{Status: pix.TransferProcessing}})
+	repo, svc := withdrawWith(&scriptedRail{payout: &rail.TransferResult{Status: rail.TransferProcessing}})
 	w, err := svc.Withdraw(context.Background(), "u1", wallet.KYCVerified, 30000, "k1")
 	if err != nil {
 		t.Fatal(err)
@@ -254,8 +251,7 @@ func reconcileWith(t *testing.T, r *scriptedRail, age time.Duration) (*reconRepo
 		{WithdrawalID: "wd1", WalletID: "w-real", Amount: 5000, Status: wallet.WithdrawProcessing, CreatedAt: time.Now().Add(-age).UTC().Format(time.RFC3339Nano)},
 	}}
 	repo.withdrawals["wd1"] = &repo.processing[0]
-	svc := NewWalletService(repo, &stubUserRepo{}, &stubAudit{}, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
-	svc.SetRail(r)
+	svc := NewWalletService(repo, &stubUserRepo{}, &stubAudit{}, &stubLocker{}, r, &stubKYC{rec: &kycclient.KYC{}})
 	resolved, reversed, alarmed, err := svc.ReconcileWithdrawals(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -271,7 +267,7 @@ func TestReconcileLeavesAWithdrawalAloneWhenTheLookupFails(t *testing.T) {
 }
 
 func TestReconcileDoesNotBelieveUnknownAboutAFreshWithdrawalOnABillingRail(t *testing.T) {
-	r := &scriptedRail{status: &pix.TransferResult{Status: pix.TransferNotFound}, grace: 10 * time.Minute}
+	r := &scriptedRail{status: &rail.TransferResult{Status: rail.TransferNotFound}, grace: 10 * time.Minute}
 	repo, _, reversed, _ := reconcileWith(t, r, time.Minute)
 	if reversed != 0 || repo.credited != 0 {
 		t.Fatal("reversed a one-minute-old withdrawal Billing might simply not show yet")
@@ -283,7 +279,7 @@ func TestReconcileDoesNotBelieveUnknownAboutAFreshWithdrawalOnABillingRail(t *te
 }
 
 func TestReconcileCompletesAPayoutBillingSettled(t *testing.T) {
-	r := &scriptedRail{status: &pix.TransferResult{Status: pix.TransferDone, E2EID: "E2E9"}, grace: 10 * time.Minute}
+	r := &scriptedRail{status: &rail.TransferResult{Status: rail.TransferDone, E2EID: "E2E9"}, grace: 10 * time.Minute}
 	repo, resolved, _, _ := reconcileWith(t, r, time.Minute)
 	if resolved != 1 || repo.withdrawals["wd1"].Status != wallet.WithdrawCompleted {
 		t.Fatalf("resolved %d status %s", resolved, repo.withdrawals["wd1"].Status)
@@ -291,7 +287,7 @@ func TestReconcileCompletesAPayoutBillingSettled(t *testing.T) {
 }
 
 func TestReconcileKeepsWaitingOnAPayoutStillProcessing(t *testing.T) {
-	r := &scriptedRail{status: &pix.TransferResult{Status: pix.TransferProcessing}, grace: 10 * time.Minute}
+	r := &scriptedRail{status: &rail.TransferResult{Status: rail.TransferProcessing}, grace: 10 * time.Minute}
 	repo, resolved, reversed, alarmed := reconcileWith(t, r, time.Hour)
 	if resolved+reversed+alarmed != 0 || repo.withdrawals["wd1"].Status != wallet.WithdrawProcessing {
 		t.Fatalf("%d %d %d status %s", resolved, reversed, alarmed, repo.withdrawals["wd1"].Status)
@@ -304,7 +300,7 @@ func namedKYC() *countingKYC {
 	return &countingKYC{rec: &kycclient.KYC{Level: "enhanced", CPF: "12345678901", LegalName: "Artur Oliveira Carvalho"}}
 }
 
-func partialCharge(cpf, name string) *pix.Charge {
+func partialCharge(cpf, name string) *rail.Charge {
 	c := paidCharge(cpf)
 	c.PayerName, c.Payments[0].PayerName = name, name
 	return c
@@ -361,7 +357,7 @@ func TestTheInterPathNamesNoOneAndIsNotHeldToAName(t *testing.T) {
 }
 
 func TestAPayoutTheRailRefusedAtOnceReturnsTheMoneyAndIsNeverCompleted(t *testing.T) {
-	repo, svc := withdrawWith(&scriptedRail{payout: &pix.TransferResult{Status: pix.TransferFailed}})
+	repo, svc := withdrawWith(&scriptedRail{payout: &rail.TransferResult{Status: rail.TransferFailed}})
 	if _, err := svc.Withdraw(context.Background(), "u1", wallet.KYCVerified, 30000, "k1"); err == nil {
 		t.Fatal("a refused withdrawal is an error to the caller")
 	}
@@ -371,12 +367,12 @@ func TestAPayoutTheRailRefusedAtOnceReturnsTheMoneyAndIsNeverCompleted(t *testin
 }
 
 func TestReconcileReversesAFailedPayoutAtOnceButWaitsOnAnUnknownOne(t *testing.T) {
-	failed := &scriptedRail{status: &pix.TransferResult{Status: pix.TransferFailed}, grace: 10 * time.Minute}
+	failed := &scriptedRail{status: &rail.TransferResult{Status: rail.TransferFailed}, grace: 10 * time.Minute}
 	repo, _, reversed, _ := reconcileWith(t, failed, time.Second)
 	if reversed != 1 || repo.credited != 1 {
 		t.Fatalf("a rail's own 'failed' needs no grace: reversed %d credited %d", reversed, repo.credited)
 	}
-	unknown := &scriptedRail{status: &pix.TransferResult{Status: pix.TransferNotFound}, grace: 10 * time.Minute}
+	unknown := &scriptedRail{status: &rail.TransferResult{Status: rail.TransferNotFound}, grace: 10 * time.Minute}
 	repo, _, reversed, _ = reconcileWith(t, unknown, time.Second)
 	if reversed != 0 || repo.credited != 0 {
 		t.Fatal("an unknown payout still waits for its grace")

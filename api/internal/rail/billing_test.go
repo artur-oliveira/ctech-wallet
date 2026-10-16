@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"gopkg.aoctech.app/wallet/api/internal/billingclient"
-	"gopkg.aoctech.app/wallet/api/internal/pix"
 )
 
 type fakeBilling struct {
@@ -92,7 +91,7 @@ func TestOpenDepositMakesTheCustomerThenTheInvoiceByTheDepositIdAndReturnsTheQR(
 	if len(f.created) != 1 || f.created[0] != "dep-1" {
 		t.Fatalf("invoice references %v", f.created)
 	}
-	if c.Txid != "dep-1" || c.Amount != 5000 || c.QRCode != "000201-pix" || c.Status != pix.ChargeActive {
+	if c.Txid != "dep-1" || c.Amount != 5000 || c.QRCode != "000201-pix" || c.Status != ChargeActive {
 		t.Fatalf("charge %+v", c)
 	}
 	raw, err := base64.StdEncoding.DecodeString(c.QRCodeB64)
@@ -124,7 +123,7 @@ func TestAPaidInvoiceWhosePayerMatchesIsACompletedChargeCarryingThePayersDocumen
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Status != pix.ChargeCompleted || c.Amount != 5000 || len(c.Payments) != 1 || c.Payments[0].PayerCPF != "39053344705" || c.PayerCPF != "39053344705" || c.E2EID == "" {
+	if c.Status != ChargeCompleted || c.Amount != 5000 || len(c.Payments) != 1 || c.Payments[0].PayerCPF != "39053344705" || c.PayerCPF != "39053344705" || c.E2EID == "" {
 		t.Fatalf("charge %+v", c)
 	}
 }
@@ -132,7 +131,7 @@ func TestAPaidInvoiceWhosePayerMatchesIsACompletedChargeCarryingThePayersDocumen
 func TestAMismatchedPayerCarriesAPayerNoCheckCanAccept(t *testing.T) {
 	f := &fakeBilling{invoice: paid("mismatch", &billingclient.Payer{Name: "X", Document: "11144477735"}, 5000)}
 	c, _ := NewBilling(f).QueryDeposit(context.Background(), "dep-1")
-	if c.Status != pix.ChargeCompleted || c.PayerCPF != MismatchPayer || c.Payments[0].PayerCPF != MismatchPayer {
+	if c.Status != ChargeCompleted || c.PayerCPF != MismatchPayer || c.Payments[0].PayerCPF != MismatchPayer {
 		t.Fatalf("charge %+v", c)
 	}
 }
@@ -144,7 +143,7 @@ func TestAPaidInvoiceWithNoPayerYetHasNoPayerIdentitySoItStaysPending(t *testing
 		paid("match", nil, 5000), // a verdict with no payer behind it is not evidence
 	} {
 		c, _ := NewBilling(&fakeBilling{invoice: inv}).QueryDeposit(context.Background(), "dep-1")
-		if c.Status != pix.ChargeCompleted || c.PayerCPF != "" || c.Payments[0].PayerCPF != "" {
+		if c.Status != ChargeCompleted || c.PayerCPF != "" || c.Payments[0].PayerCPF != "" {
 			t.Fatalf("%+v: charge %+v", inv, c)
 		}
 	}
@@ -161,7 +160,7 @@ func TestAnUnderpaidInvoiceReportsWhatWasPaidSoTheAmountCheckRefundsIt(t *testin
 func TestAVoidInvoiceIsNotACompletedCharge(t *testing.T) {
 	f := &fakeBilling{invoice: &billingclient.Invoice{ID: "in_1", Status: "VOID", AmountCents: 5000, Txid: "dep-1"}}
 	c, _ := NewBilling(f).QueryDeposit(context.Background(), "dep-1")
-	if c.Status == pix.ChargeCompleted {
+	if c.Status == ChargeCompleted {
 		t.Fatalf("charge %+v", c)
 	}
 }
@@ -175,7 +174,7 @@ func TestRefundDepositCreditsTheInvoiceFoundByTheDepositWithTheCallersKey(t *tes
 	if len(f.refunds) != 1 || f.refunds[0] != (refundCall{"in_1", 5000, "refund#dep-1"}) {
 		t.Fatalf("refunds %+v", f.refunds)
 	}
-	if res.Status != pix.TransferDone {
+	if res.Status != TransferDone {
 		t.Fatalf("result %+v", res)
 	}
 }
@@ -190,7 +189,7 @@ func TestARefundThatFailsIsAnError(t *testing.T) {
 func TestPayoutIsAcceptedAsProcessingAndNeverAsDoneByTheCall(t *testing.T) {
 	f := &fakeBilling{payout: &billingclient.Payout{ID: "po_1", Status: billingclient.PayoutProcessing}}
 	res, err := NewBilling(f).Payout(context.Background(), "39053344705", 700, "w-1")
-	if err != nil || res.Status != pix.TransferProcessing {
+	if err != nil || res.Status != TransferProcessing {
 		t.Fatalf("result %+v err %v", res, err)
 	}
 	if len(f.payoutCalls) != 1 || f.payoutCalls[0] != "w-1" {
@@ -200,14 +199,14 @@ func TestPayoutIsAcceptedAsProcessingAndNeverAsDoneByTheCall(t *testing.T) {
 
 func TestAPayoutTheBankHasNoKeyForIsErrKeyNotFound(t *testing.T) {
 	f := &fakeBilling{payout: &billingclient.Payout{Status: billingclient.PayoutFailed, FailureReason: billingclient.ReasonKeyNotFound}}
-	if _, err := NewBilling(f).Payout(context.Background(), "1", 1, "w"); !errors.Is(err, pix.ErrKeyNotFound) {
+	if _, err := NewBilling(f).Payout(context.Background(), "1", 1, "w"); !errors.Is(err, ErrKeyNotFound) {
 		t.Fatalf("want ErrKeyNotFound, got %v", err)
 	}
 }
 
 func TestAPayoutTimeoutIsAnErrorNotAFailure(t *testing.T) {
 	f := &fakeBilling{payoutErr: context.DeadlineExceeded}
-	if _, err := NewBilling(f).Payout(context.Background(), "1", 1, "w"); err == nil || errors.Is(err, pix.ErrKeyNotFound) {
+	if _, err := NewBilling(f).Payout(context.Background(), "1", 1, "w"); err == nil || errors.Is(err, ErrKeyNotFound) {
 		t.Fatalf("a timeout leaves the withdrawal processing: %v", err)
 	}
 }
@@ -219,11 +218,11 @@ func TestQueryPayoutStates(t *testing.T) {
 		status string
 		err    bool
 	}{
-		{"done", &fakeBilling{payout: &billingclient.Payout{Status: billingclient.PayoutDone, PaymentID: "E2E1"}}, pix.TransferDone, false},
-		{"processing", &fakeBilling{payout: &billingclient.Payout{Status: billingclient.PayoutProcessing}}, pix.TransferProcessing, false},
-		{"refused", &fakeBilling{payout: &billingclient.Payout{Status: billingclient.PayoutFailed, FailureReason: "refused"}}, pix.TransferFailed, false},
-		{"no key for the cpf, asked afterwards", &fakeBilling{payout: &billingclient.Payout{Status: billingclient.PayoutFailed, FailureReason: billingclient.ReasonKeyNotFound}}, pix.TransferFailed, false},
-		{"never accepted", &fakeBilling{lookupErr: billingclient.ErrNotFound}, pix.TransferNotFound, false},
+		{"done", &fakeBilling{payout: &billingclient.Payout{Status: billingclient.PayoutDone, PaymentID: "E2E1"}}, TransferDone, false},
+		{"processing", &fakeBilling{payout: &billingclient.Payout{Status: billingclient.PayoutProcessing}}, TransferProcessing, false},
+		{"refused", &fakeBilling{payout: &billingclient.Payout{Status: billingclient.PayoutFailed, FailureReason: "refused"}}, TransferFailed, false},
+		{"no key for the cpf, asked afterwards", &fakeBilling{payout: &billingclient.Payout{Status: billingclient.PayoutFailed, FailureReason: billingclient.ReasonKeyNotFound}}, TransferFailed, false},
+		{"never accepted", &fakeBilling{lookupErr: billingclient.ErrNotFound}, TransferNotFound, false},
 		{"transport", &fakeBilling{lookupErr: errors.New("connection reset")}, "", true},
 	}
 	for _, tc := range cases {
@@ -245,33 +244,15 @@ func TestBillingRailAsksForTheIdentityAndAGraceBeforeBelievingUnknown(t *testing
 	if PayoutGrace(r) < 5*time.Minute {
 		t.Fatalf("grace %v", PayoutGrace(r))
 	}
-	if PayoutGrace(NewLegacy(pix.NewFake())) != 0 {
+	if PayoutGrace(NewFake()) != 0 {
 		t.Fatal("the Inter path keeps its behaviour: no grace")
-	}
-}
-
-func TestWithTheFlagOffNoBillingClientIsEverBuilt(t *testing.T) {
-	built := false
-	r := Select(false, pix.NewFake(), func() BillingAPI { built = true; return &fakeBilling{} })
-	if built {
-		t.Fatal("the flag is off and the Billing client was constructed")
-	}
-	if _, ok := r.(*LegacyRail); !ok {
-		t.Fatalf("rail %T", r)
-	}
-}
-
-func TestWithTheFlagOnTheRailIsBilling(t *testing.T) {
-	r := Select(true, pix.NewFake(), func() BillingAPI { return &fakeBilling{} })
-	if _, ok := r.(*BillingRail); !ok {
-		t.Fatalf("rail %T", r)
 	}
 }
 
 func TestAPartialPayerFromTheWebhookIsCompletedWithTheMaskedDocumentAndTheName(t *testing.T) {
 	f := &fakeBilling{invoice: paid("partial", &billingclient.Payer{Name: "Fulano de Tal", Document: "***456789**"}, 5000)}
 	c, _ := NewBilling(f).QueryDeposit(context.Background(), "dep-1")
-	if c.Status != pix.ChargeCompleted || c.PayerCPF != "***456789**" || c.PayerName != "Fulano de Tal" ||
+	if c.Status != ChargeCompleted || c.PayerCPF != "***456789**" || c.PayerName != "Fulano de Tal" ||
 		c.Payments[0].PayerCPF != "***456789**" || c.Payments[0].PayerName != "Fulano de Tal" {
 		t.Fatalf("charge %+v", c)
 	}
@@ -288,7 +269,7 @@ func TestAMatchCarriesTheNameToo(t *testing.T) {
 func TestAPayoutTheBankRefusedAtOnceIsAFailureNotACompletion(t *testing.T) {
 	f := &fakeBilling{payout: &billingclient.Payout{Status: billingclient.PayoutFailed, FailureReason: "refused"}}
 	res, err := NewBilling(f).Payout(context.Background(), "1", 1, "w")
-	if err != nil || res.Status != pix.TransferFailed {
+	if err != nil || res.Status != TransferFailed {
 		t.Fatalf("%+v %v", res, err)
 	}
 }

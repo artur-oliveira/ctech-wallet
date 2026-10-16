@@ -11,7 +11,6 @@ import {
   APP_PORT,
   APP_PORT_ALT,
   asgName,
-  BILLING_RAIL,
   GAME_WALLET_MERGED,
   HEALTH_CHECK_PATH,
   NGINX_PORT,
@@ -151,8 +150,6 @@ export class ApiStack extends cdk.Stack {
       `GAMBLING_ENABLED=true`,
       `PIX_GATEWAY_FUNCTION_NAME=${pixGatewayFunctionName}`,
       `ERASURE_QUEUE_URL=${erasureQueueUrl}`,
-      // off = the Inter Pix gateway as always; on = ctech-billing (the BILLING_* below).
-      `BILLING_RAIL=${BILLING_RAIL[environment]}`,
       `GAME_WALLET_MERGED=${GAME_WALLET_MERGED[environment]}`,
       `TRUSTED_PROXIES=127.0.0.1`,
       `ENV`,
@@ -170,15 +167,10 @@ export class ApiStack extends cdk.Stack {
       `WALLET_CLIENT_SECRET=${wallet.walletClientSecret}`,
       `ERASURE_CLIENT_ID=${wallet.erasureClientId}`,
       `ERASURE_CLIENT_SECRET=${wallet.erasureClientSecret}`,
-      // Only when the rail is on: an SSM path that is not seeded would stop the
-      // service from starting, so an environment that has not been cut over
-      // does not ask for it.
-      ...(BILLING_RAIL[environment] === 'on' ? [
-        `BILLING_URL=${wallet.billingUrl}`,
-        `BILLING_CLIENT_ID=${wallet.billingClientId}`,
-        `BILLING_CLIENT_SECRET=${wallet.billingClientSecret}`,
-        `BILLING_EVENT_SECRET=${wallet.billingEventSecret}`,
-      ] : []),
+      `BILLING_URL=${wallet.billingUrl}`,
+      `BILLING_CLIENT_ID=${wallet.billingClientId}`,
+      `BILLING_CLIENT_SECRET=${wallet.billingClientSecret}`,
+      `BILLING_EVENT_SECRET=${wallet.billingEventSecret}`,
     ];
     if (isAlpine) {
       const quoted = ssmEnvArgs.map((a) => `'${a.replace(/'/g, `'\\''`)}'`).join(' ');

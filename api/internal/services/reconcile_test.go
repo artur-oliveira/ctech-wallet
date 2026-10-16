@@ -11,7 +11,7 @@ import (
 
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
-	"gopkg.aoctech.app/wallet/api/internal/pix"
+	"gopkg.aoctech.app/wallet/api/internal/rail"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
 )
 
@@ -34,7 +34,7 @@ func (r *reconRepo) Credit(_ context.Context, _ repositories.Mutation, _ ...type
 	return &wallet.LedgerEntry{}, false, nil
 }
 
-func newReconSvc(repo Repo, pc pix.PixClient) *WalletService {
+func newReconSvc(repo Repo, pc rail.Rail) *WalletService {
 	return NewWalletService(repo, &stubUserRepo{}, &stubAudit{}, &stubLocker{}, pc, &stubKYC{rec: &kycclient.KYC{}})
 }
 
@@ -42,8 +42,8 @@ func TestReconcileCompletesDonePayout(t *testing.T) {
 	repo := &reconRepo{stubRepo: newStubRepo(), processing: []wallet.Withdrawal{
 		{WithdrawalID: "wd1", WalletID: "w-real", Amount: 5000, Status: wallet.WithdrawProcessing},
 	}}
-	fake := pix.NewFake()
-	fake.StageTransferStatus(interIdemKey("wd1"), pix.TransferDone)
+	fake := rail.NewFake()
+	fake.StageTransferStatus(interIdemKey("wd1"), rail.TransferDone)
 	repo.withdrawals["wd1"] = &repo.processing[0]
 
 	resolved, reversed, alarmed, err := newReconSvc(repo, fake).ReconcileWithdrawals(context.Background())
@@ -63,7 +63,7 @@ func TestReconcileReversesMissingPayout(t *testing.T) {
 		{WithdrawalID: "wd2", WalletID: "w-real", Amount: 5000, Status: wallet.WithdrawProcessing},
 	}}
 	repo.withdrawals["wd2"] = &repo.processing[0]
-	fake := pix.NewFake() // no staged status → NAO_ENCONTRADO
+	fake := rail.NewFake() // no staged status → NAO_ENCONTRADO
 
 	resolved, reversed, alarmed, err := newReconSvc(repo, fake).ReconcileWithdrawals(context.Background())
 	if err != nil {
@@ -85,7 +85,7 @@ func TestReconcileAlarmsOnFailedReversal(t *testing.T) {
 		{WithdrawalID: "wd3", WalletID: "w-real", Amount: 5000, Status: wallet.WithdrawProcessing},
 	}}
 	repo.withdrawals["wd3"] = &repo.processing[0]
-	fake := pix.NewFake()
+	fake := rail.NewFake()
 
 	_, reversed, alarmed, err := newReconSvc(repo, fake).ReconcileWithdrawals(context.Background())
 	if err != nil {
@@ -107,8 +107,8 @@ func TestReconcileBroadcastsOnComplete(t *testing.T) {
 	repo := &reconRepo{stubRepo: newStubRepo(), processing: []wallet.Withdrawal{
 		{WithdrawalID: "wd1", WalletID: "w-real", UserID: "u1", Amount: 5000, Status: wallet.WithdrawProcessing},
 	}}
-	fake := pix.NewFake()
-	fake.StageTransferStatus(interIdemKey("wd1"), pix.TransferDone)
+	fake := rail.NewFake()
+	fake.StageTransferStatus(interIdemKey("wd1"), rail.TransferDone)
 	repo.withdrawals["wd1"] = &repo.processing[0]
 
 	svc := newReconSvc(repo, fake)
@@ -135,7 +135,7 @@ func TestReconcileBroadcastsOnReversal(t *testing.T) {
 		{WithdrawalID: "wd2", WalletID: "w-real", UserID: "u1", Amount: 5000, Status: wallet.WithdrawProcessing},
 	}}
 	repo.withdrawals["wd2"] = &repo.processing[0]
-	fake := pix.NewFake() // no staged status → NAO_ENCONTRADO
+	fake := rail.NewFake() // no staged status → NAO_ENCONTRADO
 
 	svc := newReconSvc(repo, fake)
 	fb := &fakeBroadcaster{}
@@ -158,7 +158,7 @@ func TestReconcileBroadcastsOnAlarmedReversal(t *testing.T) {
 		{WithdrawalID: "wd3", WalletID: "w-real", UserID: "u1", Amount: 5000, Status: wallet.WithdrawProcessing},
 	}}
 	repo.withdrawals["wd3"] = &repo.processing[0]
-	fake := pix.NewFake()
+	fake := rail.NewFake()
 
 	svc := newReconSvc(repo, fake)
 	fb := &fakeBroadcaster{}
@@ -184,7 +184,7 @@ func TestReconcileReversalReturnsTheDailyWithdrawSlot(t *testing.T) {
 	repo.withdrawals["wd4"] = &repo.processing[0]
 	day, _, _ := wallet.WindowKeys(time.Now())
 	users := &stubUserRepo{user: &wallet.User{RealDailyCounters: &wallet.RealDailyCounters{DayKey: day, WithdrawCount: 1, WithdrawSum: 5000}}}
-	svc := NewWalletService(repo, users, &stubAudit{}, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	svc := NewWalletService(repo, users, &stubAudit{}, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 
 	if _, reversed, _, err := svc.ReconcileWithdrawals(context.Background()); err != nil || reversed != 1 {
 		t.Fatalf("reversed=%d err=%v", reversed, err)

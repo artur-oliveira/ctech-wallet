@@ -212,7 +212,7 @@ export class IAMStack extends cdk.Stack {
             // M2M sandbox-purchase client registry (webhook notify-back
             // config) — optional; unset means no M2M client is registered yet.
             `arn:aws:ssm:*:*:parameter${walletSsm.m2mClients}`,
-            // Billing rail (read only when BILLING_RAIL is on for the environment).
+            // Billing, which owns the Inter connection.
             `arn:aws:ssm:*:*:parameter${walletSsm.billingUrl}`,
             `arn:aws:ssm:*:*:parameter${walletSsm.billingClientId}`,
             `arn:aws:ssm:*:*:parameter${walletSsm.billingClientSecret}`,

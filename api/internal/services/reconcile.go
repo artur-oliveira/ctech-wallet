@@ -10,7 +10,6 @@ import (
 
 	"gopkg.aoctech.app/api-commons/observability"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
-	"gopkg.aoctech.app/wallet/api/internal/pix"
 	"gopkg.aoctech.app/wallet/api/internal/rail"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
 )
@@ -48,7 +47,7 @@ func (s *WalletService) ReconcileWithdrawals(ctx context.Context) (resolved, rev
 			continue
 		}
 		switch res.Status {
-		case pix.TransferDone:
+		case rail.TransferDone:
 			if err := s.repo.UpdateWithdrawal(ctx, w.WithdrawalID, map[string]any{
 				"status": wallet.WithdrawCompleted, "e2e_id": res.E2EID,
 			}); err != nil {
@@ -57,10 +56,10 @@ func (s *WalletService) ReconcileWithdrawals(ctx context.Context) (resolved, rev
 			}
 			s.broadcastWithdrawal(ctx, w.UserID, eventWithdrawalComplete, w.WithdrawalID, w.Amount)
 			resolved++
-		case pix.TransferNotFound, pix.TransferFailed:
+		case rail.TransferNotFound, rail.TransferFailed:
 			// "Unknown to the rail" is believed only after its grace; "failed" is the
 			// rail's own answer and needs none.
-			if res.Status == pix.TransferNotFound && tooYoungToReverse(w, rail.PayoutGrace(s.rail)) {
+			if res.Status == rail.TransferNotFound && tooYoungToReverse(w, rail.PayoutGrace(s.rail)) {
 				break // the rail may not show it yet; ask again next run
 			}
 			// Acquire the per-wallet lock for the reversal so it is serialized

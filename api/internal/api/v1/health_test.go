@@ -2,11 +2,9 @@ package v1
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"gopkg.aoctech.app/api-commons/cache"
-	"gopkg.aoctech.app/wallet/api/internal/pix"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -72,23 +70,6 @@ func TestCheckCache(t *testing.T) {
 	got = checkCache(context.Background(), nil, testTime)
 	if got.Status != statusWarn || got.ObservedValue != healthUnavailableV {
 		t.Fatalf("missing cache: got (%s, %v), want (%s, %v)", got.Status, got.ObservedValue, statusWarn, float64(healthUnavailableV))
-	}
-}
-
-// A bank outage must never fail the probe — deposits and withdrawals degrade,
-// but balances and the ledger stay fully serveable.
-func TestCheckPixDownWarnsOnly(t *testing.T) {
-	fake := pix.NewFake()
-	fake.PingErr = errors.New("inter unreachable")
-
-	got := checkPix(context.Background(), fake, testTime)
-	if got.Status != statusWarn {
-		t.Fatalf("bank down: status = %s, want %s", got.Status, statusWarn)
-	}
-
-	fake.PingErr = nil
-	if got := checkPix(context.Background(), fake, testTime); got.Status != statusPass {
-		t.Fatalf("bank up: status = %s, want %s", got.Status, statusPass)
 	}
 }
 

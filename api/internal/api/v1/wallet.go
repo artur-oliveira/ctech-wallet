@@ -96,16 +96,6 @@ func (h *handlers) createWithdrawal(c fiber.Ctx) error {
 	return c.Status(status).JSON(w)
 }
 
-// purchaseSandbox debits game and credits sandbox atomically. The source is the
-// game wallet, never real — see PurchaseSandbox.
-func (h *handlers) purchaseSandbox(c fiber.Ctx) error {
-	var body SandboxPurchaseRequest
-	if p := bindJSON(c, &body); p != nil {
-		return sendProblem(c, p)
-	}
-	return h.walletTransfer(c, h.svc.PurchaseSandbox, body.Amount)
-}
-
 // activateGambling opts the caller into the game + sandbox wallets. It records the
 // addendum acceptance and then activates, both audited.
 func (h *handlers) activateGambling(c fiber.Ctx) error {

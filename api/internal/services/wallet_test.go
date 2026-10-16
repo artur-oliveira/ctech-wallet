@@ -10,8 +10,8 @@ import (
 
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
-	"gopkg.aoctech.app/wallet/api/internal/pix"
 	"gopkg.aoctech.app/wallet/api/internal/problem"
+	"gopkg.aoctech.app/wallet/api/internal/rail"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
 )
 
@@ -298,7 +298,7 @@ func (s *stubRepo) ListRefundableDepositsOlderThan(_ context.Context, _ time.Tim
 	}
 }
 
-func newSvc(repo *stubRepo, locker *stubLocker, pc pix.PixClient, kyc KYCClient) *WalletService {
+func newSvc(repo *stubRepo, locker *stubLocker, pc rail.Rail, kyc KYCClient) *WalletService {
 	return NewWalletService(repo, &stubUserRepo{}, &stubAudit{}, locker, pc, kyc)
 }
 
@@ -318,8 +318,8 @@ func isProblem(t *testing.T, err error, wantType string) {
 func TestConfirmDepositCreditsOnCPFMatch(t *testing.T) {
 	repo := newStubRepo()
 	repo.deposit = &wallet.PixDeposit{Txid: "tx1", WalletID: "w-real", UserID: "u1", AmountExpected: 5000, Status: wallet.DepositPending}
-	fake := pix.NewFake()
-	fake.StageCharge("tx1", 5000, pix.ChargeCompleted, "", "E2E-1")
+	fake := rail.NewFake()
+	fake.StageCharge("tx1", 5000, rail.ChargeCompleted, "", "E2E-1")
 	kyc := &stubKYC{rec: &kycclient.KYC{Level: "enhanced", CPF: "12345678901"}}
 	svc := newSvc(repo, &stubLocker{}, fake, kyc)
 
@@ -343,8 +343,8 @@ func TestConfirmDepositCreditsOnCPFMatch(t *testing.T) {
 func TestConfirmDepositRejectsAndRefundsOnCPFMismatch(t *testing.T) {
 	repo := newStubRepo()
 	repo.deposit = &wallet.PixDeposit{Txid: "tx1", WalletID: "w-real", UserID: "u1", AmountExpected: 5000, Status: wallet.DepositPending}
-	fake := pix.NewFake()
-	fake.StageCharge("tx1", 5000, pix.ChargeCompleted, "", "E2E-9")
+	fake := rail.NewFake()
+	fake.StageCharge("tx1", 5000, rail.ChargeCompleted, "", "E2E-9")
 	kyc := &stubKYC{rec: &kycclient.KYC{Level: "enhanced", CPF: "12345678901"}}
 	svc := newSvc(repo, &stubLocker{}, fake, kyc)
 
@@ -365,8 +365,8 @@ func TestConfirmDepositRejectsAndRefundsOnCPFMismatch(t *testing.T) {
 func TestConfirmDepositNoopWhenNotPaid(t *testing.T) {
 	repo := newStubRepo()
 	repo.deposit = &wallet.PixDeposit{Txid: "tx1", WalletID: "w-real", UserID: "u1", Status: wallet.DepositPending}
-	fake := pix.NewFake()
-	fake.StageCharge("tx1", 5000, pix.ChargeActive, "", "")
+	fake := rail.NewFake()
+	fake.StageCharge("tx1", 5000, rail.ChargeActive, "", "")
 	svc := newSvc(repo, &stubLocker{}, fake, &stubKYC{rec: &kycclient.KYC{}})
 
 	if err := svc.ConfirmDeposit(context.Background(), "tx1", "", "", false); err != nil {
@@ -380,8 +380,8 @@ func TestConfirmDepositNoopWhenNotPaid(t *testing.T) {
 func TestConfirmDepositSweepNeverCreditsWithoutPayerIdentity(t *testing.T) {
 	repo := newStubRepo()
 	repo.deposit = &wallet.PixDeposit{Txid: "tx1", WalletID: "w-real", UserID: "u1", AmountExpected: 5000, Status: wallet.DepositPending}
-	fake := pix.NewFake()
-	fake.StageCharge("tx1", 5000, pix.ChargeCompleted, "", "E2E-1")
+	fake := rail.NewFake()
+	fake.StageCharge("tx1", 5000, rail.ChargeCompleted, "", "E2E-1")
 	svc := newSvc(repo, &stubLocker{}, fake, &stubKYC{rec: &kycclient.KYC{CPF: "12345678901"}})
 
 	if err := svc.ConfirmDeposit(context.Background(), "tx1", "", "", true); err == nil {
@@ -399,8 +399,8 @@ func TestConfirmDepositSweepNeverCreditsWithoutPayerIdentity(t *testing.T) {
 func TestConfirmDepositRefundsExcessPayment(t *testing.T) {
 	repo := newStubRepo()
 	repo.deposit = &wallet.PixDeposit{Txid: "tx1", WalletID: "w-real", UserID: "u1", AmountExpected: 5000, Status: wallet.DepositPending}
-	fake := pix.NewFake()
-	fake.StageCharge("tx1", 5000, pix.ChargeCompleted, "12345678901", "E2E-1")
+	fake := rail.NewFake()
+	fake.StageCharge("tx1", 5000, rail.ChargeCompleted, "12345678901", "E2E-1")
 	fake.StageChargePayment("tx1", "E2E-2", 5000, "99999999999")
 	kyc := &stubKYC{rec: &kycclient.KYC{Level: "enhanced", CPF: "12345678901"}}
 	svc := newSvc(repo, &stubLocker{}, fake, kyc)
@@ -428,12 +428,12 @@ func TestConfirmDepositRefundsExcessPayment(t *testing.T) {
 func TestConfirmDepositExcessPaymentRefundWebhookIsIdempotent(t *testing.T) {
 	repo := newStubRepo()
 	repo.deposit = &wallet.PixDeposit{Txid: "tx1", WalletID: "w-real", UserID: "u1", AmountExpected: 5000, Status: wallet.DepositConfirmed, E2EID: "E2E-1"}
-	fake := pix.NewFake()
-	fake.StageCharge("tx1", 5000, pix.ChargeCompleted, "12345678901", "E2E-1")
+	fake := rail.NewFake()
+	fake.StageCharge("tx1", 5000, rail.ChargeCompleted, "12345678901", "E2E-1")
 	fake.StageChargePayment("tx1", "E2E-2", 5000, "99999999999")
 	// The excess payment's own devolução already completed — as it would once
 	// our earlier Refund() call for it settles at Inter.
-	fake.Charges["tx1"].Payments[1].Refunds = []pix.Refund{{RtrID: "RTR-EXCESS", Amount: 5000, Status: pix.RefundCompleted}}
+	fake.Charges["tx1"].Payments[1].Refunds = []rail.Refund{{RtrID: "RTR-EXCESS", Amount: 5000, Status: rail.RefundCompleted}}
 	svc := newSvc(repo, &stubLocker{}, fake, &stubKYC{rec: &kycclient.KYC{}})
 
 	// A devolução-only webhook call carries no payer info.
@@ -458,9 +458,9 @@ func TestConfirmDepositExcessPaymentRefundWebhookIsIdempotent(t *testing.T) {
 func TestConfirmDepositRefundedBeforeConfirmNeverCredits(t *testing.T) {
 	repo := newStubRepo()
 	repo.deposit = &wallet.PixDeposit{Txid: "tx1", WalletID: "w-real", UserID: "u1", AmountExpected: 5000, Status: wallet.DepositPending}
-	fake := pix.NewFake()
-	fake.StageCharge("tx1", 5000, pix.ChargeCompleted, "", "E2E-1")
-	fake.StageChargeRefund("tx1", "RTR1", 5000, pix.RefundCompleted)
+	fake := rail.NewFake()
+	fake.StageCharge("tx1", 5000, rail.ChargeCompleted, "", "E2E-1")
+	fake.StageChargeRefund("tx1", "RTR1", 5000, rail.RefundCompleted)
 	kyc := &stubKYC{rec: &kycclient.KYC{Level: "enhanced", CPF: "12345678901"}}
 	svc := newSvc(repo, &stubLocker{}, fake, kyc)
 
@@ -482,9 +482,9 @@ func TestConfirmDepositRefundedBeforeConfirmNeverCredits(t *testing.T) {
 func TestConfirmDepositRefundAfterConfirmReversesCredit(t *testing.T) {
 	repo := newStubRepo()
 	repo.deposit = &wallet.PixDeposit{Txid: "tx1", WalletID: "w-real", UserID: "u1", AmountExpected: 5000, Status: wallet.DepositConfirmed, E2EID: "E2E-1"}
-	fake := pix.NewFake()
-	fake.StageCharge("tx1", 5000, pix.ChargeCompleted, "", "E2E-1")
-	fake.StageChargeRefund("tx1", "RTR1", 5000, pix.RefundCompleted)
+	fake := rail.NewFake()
+	fake.StageCharge("tx1", 5000, rail.ChargeCompleted, "", "E2E-1")
+	fake.StageChargeRefund("tx1", "RTR1", 5000, rail.RefundCompleted)
 	svc := newSvc(repo, &stubLocker{}, fake, &stubKYC{rec: &kycclient.KYC{}})
 
 	// A devolução-only webhook call carries no payer info.
@@ -507,9 +507,9 @@ func TestConfirmDepositRefundReversalFailureFlagsRefundFailed(t *testing.T) {
 	repo := newStubRepo()
 	repo.deposit = &wallet.PixDeposit{Txid: "tx1", WalletID: "w-real", UserID: "u1", AmountExpected: 5000, Status: wallet.DepositConfirmed, E2EID: "E2E-1"}
 	repo.debitErr = problem.InsufficientBalance()
-	fake := pix.NewFake()
-	fake.StageCharge("tx1", 5000, pix.ChargeCompleted, "", "E2E-1")
-	fake.StageChargeRefund("tx1", "RTR1", 5000, pix.RefundCompleted)
+	fake := rail.NewFake()
+	fake.StageCharge("tx1", 5000, rail.ChargeCompleted, "", "E2E-1")
+	fake.StageChargeRefund("tx1", "RTR1", 5000, rail.RefundCompleted)
 	svc := newSvc(repo, &stubLocker{}, fake, &stubKYC{rec: &kycclient.KYC{}})
 
 	err := svc.ConfirmDeposit(context.Background(), "tx1", "", "", false)
@@ -526,7 +526,7 @@ func TestConfirmDepositRefundReversalFailureFlagsRefundFailed(t *testing.T) {
 // could buy sandbox straight from their real balance.
 func TestPurchaseSandboxDebitsGameNotReal(t *testing.T) {
 	repo := newStubRepo()
-	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	svc := newSvc(repo, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 	d, c, err := svc.PurchaseSandbox(context.Background(), "u1", 3000, "idem-1")
 	if err != nil {
 		t.Fatalf("PurchaseSandbox: %v", err)
@@ -542,7 +542,7 @@ func TestPurchaseSandboxDebitsGameNotReal(t *testing.T) {
 func TestPurchaseSandboxRequiresActivation(t *testing.T) {
 	repo := newStubRepo()
 	repo.notActivated = true
-	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	svc := newSvc(repo, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 
 	_, _, err := svc.PurchaseSandbox(context.Background(), "u1", 3000, "idem-1")
 	var p *problem.Problem
@@ -557,7 +557,7 @@ func TestPurchaseSandboxRequiresActivation(t *testing.T) {
 func TestCreditSandboxWorksWithoutActivation(t *testing.T) {
 	repo := newStubRepo()
 	repo.notActivated = true
-	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	svc := newSvc(repo, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 
 	entry, err := svc.CreditSandbox(context.Background(), "u1", 500, "idem-1", "daily-reward", "")
 	if err != nil {
@@ -574,7 +574,7 @@ func TestCreditSandboxWorksWithoutActivation(t *testing.T) {
 func TestDebitSandboxWorksWithoutActivation(t *testing.T) {
 	repo := newStubRepo()
 	repo.notActivated = true
-	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	svc := newSvc(repo, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 
 	entry, err := svc.DebitSandbox(context.Background(), "u1", 200, "idem-2", "bet", "")
 	if err != nil {
@@ -591,7 +591,7 @@ func TestFundGameStillRequiresActivation(t *testing.T) {
 	repo := newStubRepo()
 	repo.notActivated = true
 	users := &stubUserRepo{user: &wallet.User{GameLimits: &wallet.GameLimits{Daily: 10000, Weekly: 10000, Monthly: 10000}}}
-	svc := NewWalletService(repo, users, &stubAudit{}, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	svc := NewWalletService(repo, users, &stubAudit{}, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 
 	_, _, err := svc.FundGame(context.Background(), "u1", 3000, "idem-3")
 	isProblem(t, err, problem.TypeGamblingNotActivated)
@@ -600,7 +600,7 @@ func TestFundGameStillRequiresActivation(t *testing.T) {
 func TestReturnFromGameStillRequiresActivation(t *testing.T) {
 	repo := newStubRepo()
 	repo.notActivated = true
-	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	svc := newSvc(repo, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 
 	_, _, err := svc.ReturnFromGame(context.Background(), "u1", 3000, "idem-4")
 	isProblem(t, err, problem.TypeGamblingNotActivated)
@@ -609,7 +609,7 @@ func TestReturnFromGameStillRequiresActivation(t *testing.T) {
 func TestBalancesForReturnsZeroForBrandNewUser(t *testing.T) {
 	repo := newStubRepo()
 	repo.notActivated = true
-	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	svc := newSvc(repo, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 
 	got, err := svc.BalancesFor(context.Background(), "u1")
 	if err != nil {
@@ -624,7 +624,7 @@ func TestBalancesForReturnsActualBalances(t *testing.T) {
 	repo := newStubRepo()
 	repo.game.Balance = 1500
 	repo.sandbox.Balance = 30000
-	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	svc := newSvc(repo, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 
 	got, err := svc.BalancesFor(context.Background(), "u1")
 	if err != nil {
@@ -640,7 +640,7 @@ func TestBalancesForSandboxOnlyUser(t *testing.T) {
 	repo.notActivated = true
 	repo.sandboxCreated = true
 	repo.sandbox.Balance = 700
-	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	svc := newSvc(repo, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 
 	got, err := svc.BalancesFor(context.Background(), "u1")
 	if err != nil {
@@ -655,7 +655,7 @@ func TestFundGameMovesRealIntoGame(t *testing.T) {
 	repo := newStubRepo()
 	// FundGame now requires configured personal limits (responsible gambling).
 	users := &stubUserRepo{user: &wallet.User{GameLimits: &wallet.GameLimits{Daily: 10000, Weekly: 10000, Monthly: 10000}}}
-	svc := NewWalletService(repo, users, &stubAudit{}, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	svc := NewWalletService(repo, users, &stubAudit{}, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 	d, c, err := svc.FundGame(context.Background(), "u1", 3000, "idem-1")
 	if err != nil {
 		t.Fatalf("FundGame: %v", err)
@@ -671,7 +671,7 @@ func TestFundGameMovesRealIntoGame(t *testing.T) {
 
 func TestReturnFromGameMovesGameIntoReal(t *testing.T) {
 	repo := newStubRepo()
-	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	svc := newSvc(repo, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 	d, c, err := svc.ReturnFromGame(context.Background(), "u1", 3000, "idem-1")
 	if err != nil {
 		t.Fatalf("ReturnFromGame: %v", err)
@@ -687,7 +687,7 @@ func TestReturnFromGameMovesGameIntoReal(t *testing.T) {
 
 func TestDebitRealHappyPath(t *testing.T) {
 	repo := newStubRepo()
-	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{CPF: "1"}})
+	svc := newSvc(repo, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{CPF: "1"}})
 	entry, err := svc.DebitReal(context.Background(), "u1", 5000, "charge-1", "subscription", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -706,13 +706,13 @@ func TestDebitRealHappyPath(t *testing.T) {
 func TestDebitRealInsufficientBalance(t *testing.T) {
 	repo := newStubRepo()
 	repo.debitErr = problem.InsufficientBalance()
-	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{CPF: "1"}})
+	svc := newSvc(repo, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{CPF: "1"}})
 	_, err := svc.DebitReal(context.Background(), "u1", 5000, "charge-1", "subscription", "")
 	isProblem(t, err, problem.TypeInsufficientBalance)
 }
 
 func TestDebitRealWalletBusy(t *testing.T) {
-	svc := newSvc(newStubRepo(), &stubLocker{busy: true}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{CPF: "1"}})
+	svc := newSvc(newStubRepo(), &stubLocker{busy: true}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{CPF: "1"}})
 	_, err := svc.DebitReal(context.Background(), "u1", 5000, "charge-1", "subscription", "")
 	isProblem(t, err, problem.TypeWalletBusy)
 }
@@ -721,7 +721,7 @@ func TestDebitRealWalletBusy(t *testing.T) {
 
 func TestHoldGameHappyPath(t *testing.T) {
 	repo := newStubRepo()
-	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	svc := newSvc(repo, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 	h, err := svc.HoldGame(context.Background(), "u1", 5000, "table-1:seat-2", "idem-1")
 	if err != nil {
 		t.Fatalf("HoldGame: %v", err)
@@ -743,7 +743,7 @@ func TestHoldGameHappyPath(t *testing.T) {
 func TestHoldGameInsufficientBalance(t *testing.T) {
 	repo := newStubRepo()
 	repo.createHoldErr = problem.InsufficientBalance()
-	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	svc := newSvc(repo, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 	_, err := svc.HoldGame(context.Background(), "u1", 5000, "table-1", "idem-1")
 	isProblem(t, err, problem.TypeInsufficientBalance)
 }
@@ -751,20 +751,20 @@ func TestHoldGameInsufficientBalance(t *testing.T) {
 func TestHoldGameRequiresActivation(t *testing.T) {
 	repo := newStubRepo()
 	repo.notActivated = true
-	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	svc := newSvc(repo, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 	_, err := svc.HoldGame(context.Background(), "u1", 5000, "table-1", "idem-1")
 	isProblem(t, err, problem.TypeGamblingNotActivated)
 }
 
 func TestHoldGameWalletBusy(t *testing.T) {
-	svc := newSvc(newStubRepo(), &stubLocker{busy: true}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	svc := newSvc(newStubRepo(), &stubLocker{busy: true}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 	_, err := svc.HoldGame(context.Background(), "u1", 5000, "table-1", "idem-1")
 	isProblem(t, err, problem.TypeWalletBusy)
 }
 
 func TestReleaseHoldRefundsFullAmount(t *testing.T) {
 	repo := newStubRepo()
-	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	svc := newSvc(repo, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 	h, err := svc.HoldGame(context.Background(), "u1", 5000, "table-1", "idem-hold")
 	if err != nil {
 		t.Fatalf("HoldGame: %v", err)
@@ -797,7 +797,7 @@ func TestReleaseHoldRefundsFullAmount(t *testing.T) {
 
 func TestReleaseHoldNotFound(t *testing.T) {
 	repo := newStubRepo()
-	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	svc := newSvc(repo, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 	_, err := svc.ReleaseHold(context.Background(), "u1", "hold#missing", "idem-1")
 	isProblem(t, err, problem.TypeNotFound)
 }
@@ -805,7 +805,7 @@ func TestReleaseHoldNotFound(t *testing.T) {
 // A cashout may span several holds but cannot exceed their aggregate value.
 func TestCashoutGameMayConsumeMultipleHolds(t *testing.T) {
 	repo := newStubRepo()
-	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	svc := newSvc(repo, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 
 	hA, err := svc.HoldGame(context.Background(), "u1", 10000, "table-1", "idem-a")
 	if err != nil {
@@ -838,7 +838,7 @@ func TestCashoutGameMayConsumeMultipleHolds(t *testing.T) {
 
 func TestCashoutGameCannotMintBeyondReservedHolds(t *testing.T) {
 	repo := newStubRepo()
-	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	svc := newSvc(repo, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 	h, err := svc.HoldGame(context.Background(), "u1", 5000, "table-1", "idem-hold")
 	if err != nil {
 		t.Fatalf("HoldGame: %v", err)
@@ -852,7 +852,7 @@ func TestCashoutGameCannotMintBeyondReservedHolds(t *testing.T) {
 
 func TestCashoutGameRejectsAlreadyConsumedHold(t *testing.T) {
 	repo := newStubRepo()
-	svc := newSvc(repo, &stubLocker{}, pix.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
+	svc := newSvc(repo, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 	h, err := svc.HoldGame(context.Background(), "u1", 5000, "table-1", "idem-hold")
 	if err != nil {
 		t.Fatalf("HoldGame: %v", err)

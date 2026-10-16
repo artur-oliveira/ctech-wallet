@@ -15,59 +15,10 @@ type WithdrawRequest struct {
 	Amount int64 `json:"amount" validate:"required,gt=0"`
 }
 
-type SandboxPurchaseRequest struct {
-	Amount int64 `json:"amount" validate:"required,gt=0"`
-}
-
 // SandboxPurchaseDirectRequest opens a direct PIX→sandbox-credits sale (plan
 // §9.1/§9.3) — a fixed server-side SKU, never a client-supplied amount.
 type SandboxPurchaseDirectRequest struct {
 	SKU string `json:"sku" validate:"required,max=64"`
-}
-
-// M2MSandboxPurchaseRequest opens a direct PIX→sandbox-credits sale on a
-// user's behalf (M2M, scope internal:wallet:sandbox-purchase) — same fixed
-// server-side SKU catalog as the user-facing route, just caller-initiated
-// (e.g. ctech-poker). The idempotency key travels in the body, not the
-// Idempotency-Key header, matching every other M2M request body in this file.
-type M2MSandboxPurchaseRequest struct {
-	UserID         string `json:"user_id" validate:"required,max=128"`
-	SKU            string `json:"sku" validate:"required,max=64"`
-	IdempotencyKey string `json:"idempotency_key" validate:"required,max=128"`
-	// Description is optional free-form display text for the purchase row, on
-	// the same terms as MovementOpRequest.Description: never price authority.
-	Description string `json:"description" validate:"max=255"`
-}
-
-// M2MRefundSandboxPurchaseRequest mirrors M2MSandboxPurchaseRequest's shape
-// for the refund leg — the purchase id travels in the route path.
-type M2MRefundSandboxPurchaseRequest struct {
-	UserID         string `json:"user_id" validate:"required,max=128"`
-	IdempotencyKey string `json:"idempotency_key" validate:"required,max=128"`
-}
-
-// M2MOpenChargeRequest opens a PIX charge for an amount the caller supplies
-// (M2M, scope internal:wallet:charge-amount).
-//
-// It is the one request body in this file that names its own price, which is
-// why it is a separate type under a separate scope rather than an optional
-// field on M2MSandboxPurchaseRequest: a nullable amount on the shared body
-// would be one forgotten scope check away from letting a catalogue client set
-// it. The ceiling is server-side (services.M2MClient.MaxCharge) — `gt=0` here
-// only rejects the nonsensical, never the excessive.
-type M2MOpenChargeRequest struct {
-	UserID      string `json:"user_id" validate:"required,max=128"`
-	AmountCents int64  `json:"amount_cents" validate:"required,gt=0"`
-	// Reference is the caller's own label for what is being paid — an invoice id,
-	// for ctech-billing. Opaque to wallet.
-	Reference      string `json:"reference" validate:"required,max=128"`
-	IdempotencyKey string `json:"idempotency_key" validate:"required,max=128"`
-	// PayerTaxID is an optional CPF the rail uses to match the payer. Not stored
-	// for that purpose and not required for the charge to open.
-	PayerTaxID string `json:"payer_tax_id" validate:"omitempty,max=14"`
-	// Description is optional free-form display text for the charge row, on the
-	// same terms as MovementOpRequest.Description: never price authority.
-	Description string `json:"description" validate:"max=255"`
 }
 
 // ConfirmPurchaseRequest is pix-gateway's webhook-Lambda call for either

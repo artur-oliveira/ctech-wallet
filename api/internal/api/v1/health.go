@@ -15,7 +15,6 @@ import (
 	"gopkg.aoctech.app/wallet/api/internal/config"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/middleware"
-	"gopkg.aoctech.app/wallet/api/internal/pix"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -53,7 +52,6 @@ const (
 	componentServer   = "server"
 	componentDynamoDB = "dynamodb"
 	componentCache    = "cache"
-	componentPix      = "pix"
 	componentJWKS     = "jwks"
 	componentCPU      = "cpu"
 	componentMemory   = "memory"
@@ -111,11 +109,10 @@ type liveness struct {
 // a 503 takes it out of rotation.
 //
 // DynamoDB is the only load-bearing dependency: without it the API cannot serve
-// a single wallet operation, so it alone can fail the check. Cache, PIX and JWKS
-// degrade to warn — the wallet keeps an in-memory cache/lock fallback, PIX is
-// only needed on the deposit/withdraw paths, and a warm JWKS cache outlives a
+// a single wallet operation, so it alone can fail the check. Cache and JWKS
+// degrade to warn — the wallet keeps an in-memory cache/lock fallback, and a warm JWKS cache outlives a
 // brief account outage.
-func RegisterHealth(router fiber.Router, clients *awsclient.Clients, cacheBackend cache.Backend, pixClient pix.PixClient, verifier *middleware.Verifier, cfg *config.Config) {
+func RegisterHealth(router fiber.Router, clients *awsclient.Clients, cacheBackend cache.Backend, verifier *middleware.Verifier, cfg *config.Config) {
 	router.Get("/health", func(c fiber.Ctx) error {
 		return c.JSON(liveness{Status: statusPass, ReleaseID: cfg.AppVersion, ServiceID: healthServiceID})
 	})
@@ -128,7 +125,6 @@ func RegisterHealth(router fiber.Router, clients *awsclient.Clients, cacheBacken
 
 		dynamo := checkDynamoDB(ctx, clients.DynamoDB, repositories.TableName(cfg, wallet.TableWallets), nowStr)
 		cachec := checkCache(ctx, cacheBackend, nowStr)
-		pixc := checkPix(ctx, pixClient, nowStr)
 		jwksc := checkJWKS(ctx, verifier, nowStr)
 		cpu := checkCPU(nowStr)
 		mem := checkMemory(nowStr)
@@ -147,7 +143,6 @@ func RegisterHealth(router fiber.Router, clients *awsclient.Clients, cacheBacken
 			measureUptime:     uptime,
 			componentDynamoDB: dynamo,
 			componentCache:    cachec,
-			componentPix:      pixc,
 			componentJWKS:     jwksc,
 			componentCPU:      cpu,
 			componentMemory:   mem,
@@ -212,23 +207,6 @@ func checkCache(ctx context.Context, cb cache.Backend, nowStr string) healthEntr
 		slog.Warn("health check degraded", "component", componentCache, "error", err)
 	}
 	return healthEntry{componentCache, measureResponse, typeDatastoreCch, ms, unitMillisecond, st, nowStr}
-}
-
-// checkPix reaches the partner bank through the cached OAuth token — it moves no
-// money and never fails the probe.
-func checkPix(ctx context.Context, pc pix.PixClient, nowStr string) healthEntry {
-	if pc == nil {
-		return healthEntry{componentPix, measureResponse, typeComponentSvc, healthUnavailableV, unitMillisecond, statusWarn, nowStr}
-	}
-	t0 := time.Now()
-	err := pc.Ping(ctx)
-	ms := float64(time.Since(t0).Milliseconds())
-	st := statusPass
-	if err != nil {
-		st = statusWarn
-		slog.Warn("health check degraded", "component", componentPix, "error", err)
-	}
-	return healthEntry{componentPix, measureResponse, typeComponentSvc, ms, unitMillisecond, st, nowStr}
 }
 
 func checkJWKS(ctx context.Context, v *middleware.Verifier, nowStr string) healthEntry {

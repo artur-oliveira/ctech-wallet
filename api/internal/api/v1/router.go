@@ -8,7 +8,7 @@ import (
 	"gopkg.aoctech.app/wallet/api/internal/config"
 	"gopkg.aoctech.app/wallet/api/internal/middleware"
 	"gopkg.aoctech.app/wallet/api/internal/oauthresource"
-	"gopkg.aoctech.app/wallet/api/internal/pix"
+	"gopkg.aoctech.app/wallet/api/internal/problem"
 	"gopkg.aoctech.app/wallet/api/internal/services"
 
 	"github.com/gofiber/fiber/v3"
@@ -42,7 +42,7 @@ func WithBillingEvents(e *BillingEvents) Option {
 
 // Register mounts all wallet routes under /v1.0. revocation is the shared
 // Valkey DB 0 holding ctech-account's JWT revocation list (nil in route tests).
-func Register(app *fiber.App, c cache.Backend, revocation cache.Backend, cfg *config.Config, clients *awsclient.Clients, pixClient pix.PixClient, svc *services.WalletService, userSvc *services.UserService, erasureSvc *services.ErasureService, wsRegistry ws.Registry, opts ...Option) {
+func Register(app *fiber.App, c cache.Backend, revocation cache.Backend, cfg *config.Config, clients *awsclient.Clients, svc *services.WalletService, userSvc *services.UserService, erasureSvc *services.ErasureService, wsRegistry ws.Registry, opts ...Option) {
 	var o registerOptions
 	for _, opt := range opts {
 		opt(&o)
@@ -64,7 +64,7 @@ func Register(app *fiber.App, c cache.Backend, revocation cache.Backend, cfg *co
 	// Health (unauthenticated): /v1.0/health is a dependency-free liveness probe;
 	// /v1.0/health-check is the detailed dependency report the ALB target group
 	// probes (it accepts 200 and 207).
-	RegisterHealth(v1, clients, c, pixClient, verifier, cfg)
+	RegisterHealth(v1, clients, c, verifier, cfg)
 	RegisterWS(v1, verifier, wsRegistry, cfg.CorsAllowedOrigins)
 
 	// Caller state + terms addendum acceptance.
@@ -77,15 +77,12 @@ func Register(app *fiber.App, c cache.Backend, revocation cache.Backend, cfg *co
 	w.Get("/", middleware.RequireUserScope(middleware.ScopeWalletBalancesRead), h.getWallet)
 	w.Post("/deposits", middleware.RequireUserScope(middleware.ScopeWalletDepositsWrite), middleware.RequireKYC(middleware.KYCVerified), fresh, h.createDeposit)
 	w.Post("/withdrawals", middleware.RequireUserScope(middleware.ScopeWalletWithdrawalsWrite), middleware.RequireKYC(middleware.KYCVerified), middleware.RequireRecentMFA(middleware.StepUpMaxAge), fresh, h.createWithdrawal)
-	w.Post("/sandbox/purchase", middleware.RequireUserScope(middleware.ScopeWalletSandboxPurchasesWrite), fresh, h.purchaseSandbox)
-	// Direct PIX→sandbox-credits sale (plan §9.1/§9.3) — decoupled from the
-	// ring-fence entirely, no KYC gate, no feature flag: ships live. Plural
-	// path to avoid colliding with /sandbox/purchase above (see
-	// purchaseSandboxDirect's own comment).
-	w.Post("/sandbox/purchases", middleware.RequireUserScope(middleware.ScopeWalletSandboxPurchasesWrite), fresh, h.purchaseSandboxDirect)
-	w.Get("/sandbox/purchases", middleware.RequireUserScope(middleware.ScopeWalletSandboxPurchasesRead), h.listSandboxPurchases)
-	w.Post("/sandbox/purchases/:id/refund", middleware.RequireUserScope(middleware.ScopeWalletSandboxPurchasesWrite), fresh, h.refundSandboxPurchase)
-	w.Get("/product-purchases", middleware.RequireUserScope(middleware.ScopeWalletProductPurchasesRead), h.listProductPurchases)
+	// The sale of Sandbox packs and goods moved to Poker, through Billing: the writes answer 410.
+	w.Post("/sandbox/purchase", retired)
+	w.Post("/sandbox/purchases", retired)
+	w.Get("/sandbox/purchases", middleware.RequireUserScope(middleware.ScopeWalletLedgerRead), h.listSandboxPurchases) // old purchases stay readable
+	w.Post("/sandbox/purchases/:id/refund", retired)
+	w.Get("/product-purchases", middleware.RequireUserScope(middleware.ScopeWalletLedgerRead), h.listProductPurchases)
 	w.Get("/:type/ledger", middleware.RequireUserScope(middleware.ScopeWalletLedgerRead), h.getLedger)
 
 	// Returning money OUT of the ring-fence is ALWAYS available — never behind the
@@ -124,17 +121,11 @@ func Register(app *fiber.App, c cache.Backend, revocation cache.Backend, cfg *co
 	// Account-deletion saga pre-check, called by ctech-account with a token it
 	// mints itself (docs/plans/2026-10-07-account-deletion-participant.md).
 	internal.Get("/erasure/eligibility/:sub", middleware.RequireScope(middleware.ScopeWalletErasureEligibility), h.erasureEligibility)
-	// pix-gateway's webhook Lambda, after it has already re-queried Inter.
-	internal.Post("/pix/confirm-deposit", middleware.RequireScope(middleware.ScopePixConfirmDeposit), h.confirmDeposit)
-	// Sibling route for the direct sandbox-purchase rail (plan §9.3) — same
-	// M2M caller (pix-gateway), same scope: confirm-deposit's scope already
-	// covers "pix-gateway telling api a PIX charge resolved," which is
-	// exactly what this is too, just for a sale instead of a deposit.
-	internal.Post("/pix/confirm-sandbox-purchase", middleware.RequireScope(middleware.ScopePixConfirmDeposit), h.confirmSandboxPurchase)
-	// Generic digital-product sales use the same narrow wake-up scope and the
-	// reserved "prdp" prefix, but transition their own purchase table and never
-	// touch a wallet balance or ledger.
-	internal.Post("/pix/confirm-product-purchase", middleware.RequireScope(middleware.ScopePixConfirmDeposit), h.confirmProductPurchase)
+	// The Pix gateway and the charge, purchase and SKU routes are gone: Billing owns the Inter
+	// connection and Poker sells through it. They answer 410, not a 404 that looks like a typo.
+	for _, path := range []string{"/pix/confirm-deposit", "/pix/confirm-sandbox-purchase", "/pix/confirm-product-purchase"} {
+		internal.Post(path, retired)
+	}
 	sb := internal.Group("/wallet/sandbox")
 	sb.Post("/credit", middleware.RequireScope(middleware.ScopeWalletCredit), h.sandboxCredit)
 	sb.Post("/debit", middleware.RequireScope(middleware.ScopeWalletDebit), h.sandboxDebit)
@@ -161,30 +152,18 @@ func Register(app *fiber.App, c cache.Backend, revocation cache.Backend, cfg *co
 	// Balance read for skill games (ctech-poker). Read-only, game+sandbox only.
 	bg := internal.Group("/wallet/balance")
 	bg.Get("/:user_id", middleware.RequireScope(middleware.ScopeWalletBalance), h.walletBalance)
-	// M2M direct PIX→sandbox-credits sale, opened on a user's behalf (e.g.
-	// ctech-poker) — mirrors /wallet/sandbox/purchases above, caller-initiated.
-	sp := internal.Group("/wallet/sandbox-purchase", middleware.RequireScope(middleware.ScopeWalletSandboxPurchase))
-	sp.Get("/skus", h.m2mListSandboxSKUs) // before /:id so "skus" never matches as a purchase id
-	sp.Post("/", h.m2mPurchaseSandbox)
-	sp.Get("/:id", h.m2mGetSandboxPurchase)
-	sp.Post("/:id/refund", h.m2mRefundSandboxPurchase)
-	// M2M generic PIX product sale, opened on a user's behalf (e.g.
-	// ctech-poker premium reactions) — no ledger effect whatsoever, unlike sp
-	// above (docs/specs/2026-08-12-product-purchase-skus.md).
-	pp := internal.Group("/wallet/product-purchase", middleware.RequireScope(middleware.ScopeWalletProductPurchase))
-	pp.Get("/skus", h.m2mListProductSKUs)
-	pp.Post("/", h.m2mPurchaseProduct)
-	pp.Get("/:id", h.m2mGetProductPurchase)
-	pp.Post("/:id/refund", h.m2mRefundProductPurchase)
-	// M2M PIX charge for an amount the caller supplies (ctech-billing: an invoice
-	// total is arbitrary because of proration and metered usage, so it cannot
-	// come from a catalogue). Its own scope, never pp's — see
-	// middleware.ScopeWalletChargeAmount for why widening the product scope
-	// instead would hand every catalogue client its own pricing.
-	//
-	// Rows land in the product-purchase table with the "prdp" prefix, so
-	// /pix/confirm-product-purchase above already wakes these up: one confirm
-	// path, one sweep, one refund, and no second copy of any of it.
-	internal.Post("/wallet/charge", middleware.RequireScope(middleware.ScopeWalletChargeAmount), h.m2mOpenCharge)
-	internal.Get("/wallet/charge/:id", middleware.RequireScope(middleware.ScopeWalletChargeAmount), h.m2mGetCharge)
+	for _, group := range []string{"/wallet/sandbox-purchase", "/wallet/product-purchase"} {
+		internal.Get(group+"/skus", retired)
+		internal.Post(group, retired)
+		internal.Get(group+"/:id", retired)
+		internal.Post(group+"/:id/refund", retired)
+	}
+	internal.Post("/wallet/charge", retired)
+	internal.Get("/wallet/charge/:id", retired)
+}
+
+// retired answers a route that no longer exists with a stable 410, after the normal authentication,
+// so a client that still calls it learns why instead of reading a 404 as a typo.
+func retired(c fiber.Ctx) error {
+	return problem.RouteMovedToBilling().Send(c)
 }

@@ -48,11 +48,6 @@ type Config struct {
 	WalletClientID     string `env:"WALLET_CLIENT_ID"`
 	WalletClientSecret string `env:"WALLET_CLIENT_SECRET"`
 
-	// PixGatewayFunctionName is pix-gateway's outbound Lambda — api invokes it
-	// synchronously for every PixClient call. api no longer talks to Inter
-	// directly (see docs/specs/2026-07-13-pix-gateway-lambda-design.md).
-	PixGatewayFunctionName string `env:"PIX_GATEWAY_FUNCTION_NAME,required"`
-
 	// Cache / lock
 	RedisURL string `env:"VALKEY_URL"` // Redis/Valkey URL — optional; falls back to in-memory
 
@@ -77,10 +72,6 @@ type Config struct {
 	// routes. Turn it on only after `merge-game` has emptied every game wallet.
 	GameWalletMerged bool `env:"GAME_WALLET_MERGED" envDefault:"false"`
 
-	// BillingRail chooses what moves the money for deposits and withdrawals:
-	// "off" (default) is the Inter Pix gateway as always, "on" is Billing. Off
-	// means no Billing call is ever made, and none of the BILLING_* below is read.
-	BillingRail string `env:"BILLING_RAIL" envDefault:"off"`
 	// BillingURL is Billing's API base (https://billing-api.aoctech.app).
 	BillingURL string `env:"BILLING_URL"`
 	// BillingClientID/Secret is the wallet's OAuth client for Billing (scopes
@@ -92,9 +83,6 @@ type Config struct {
 	BillingEventSecret string `env:"BILLING_EVENT_SECRET"`
 }
 
-// BillingRailOn reports whether deposits and withdrawals go through Billing.
-func (c *Config) BillingRailOn() bool { return c.BillingRail == "on" }
-
 // load parses the shared process configuration and enforces requirements that
 // apply to both the HTTP server and the scheduled reconciler.
 func load() (*Config, error) {
@@ -105,16 +93,10 @@ func load() (*Config, error) {
 	if cfg.CtechJWKSURL == "" && cfg.CtechURL != "" {
 		cfg.CtechJWKSURL = cfg.CtechURL + "/.well-known/jwks.json"
 	}
-	switch cfg.BillingRail {
-	case "off":
-	case "on":
-		// The client secret is not required here: the reconcile Lambda reads it from
-		// SSM itself (a SecureString never goes into a function's environment).
-		if cfg.BillingURL == "" || cfg.BillingClientID == "" || cfg.CtechURL == "" {
-			return nil, fmt.Errorf("config: BILLING_RAIL=on needs BILLING_URL, BILLING_CLIENT_ID and CTECH_URL")
-		}
-	default:
-		return nil, fmt.Errorf("config: BILLING_RAIL must be off or on, got %q", cfg.BillingRail)
+	// The client secret is not required here: the reconcile Lambda reads it from SSM itself
+	// (a SecureString never goes into a function's environment).
+	if cfg.BillingURL == "" || cfg.BillingClientID == "" || cfg.CtechURL == "" {
+		return nil, fmt.Errorf("config: BILLING_URL, BILLING_CLIENT_ID and CTECH_URL are required")
 	}
 	return cfg, nil
 }
@@ -127,9 +109,9 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	if cfg.BillingRailOn() && (cfg.BillingClientSecret == "" || cfg.BillingEventSecret == "") {
+	if cfg.BillingClientSecret == "" || cfg.BillingEventSecret == "" {
 		// The API verifies Billing's events and calls it: both secrets or nothing.
-		return nil, fmt.Errorf("config: BILLING_RAIL=on needs BILLING_CLIENT_SECRET and BILLING_EVENT_SECRET")
+		return nil, fmt.Errorf("config: BILLING_CLIENT_SECRET and BILLING_EVENT_SECRET are required")
 	}
 	if cfg.ServiceAudience == "" && cfg.Env == "prod" {
 		// Fail closed: without an audience check, any RS256 token the identity

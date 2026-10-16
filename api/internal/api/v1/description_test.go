@@ -47,20 +47,14 @@ func descriptionApp(h *handlers) *fiber.App {
 	app.Post("/sandbox/debit", h.sandboxDebit)
 	app.Post("/real/debit", h.realDebit)
 	app.Post("/game/cashout", h.cashoutGame)
-	app.Post("/sandbox-purchase", h.m2mPurchaseSandbox)
-	app.Post("/product-purchase", h.m2mPurchaseProduct)
-	app.Post("/charge", h.m2mOpenCharge)
 	return app
 }
 
 var descriptionBodies = map[string]string{
-	"/sandbox/credit":   `{"user_id":"u1","amount":100,"idempotency_key":"k1"%s}`,
-	"/sandbox/debit":    `{"user_id":"u1","amount":100,"idempotency_key":"k1"%s}`,
-	"/real/debit":       `{"user_id":"u1","amount":100,"idempotency_key":"k1"%s}`,
-	"/game/cashout":     `{"user_id":"u1","amount":100,"table_ref":"t1","hold_ids":["h1"],"idempotency_key":"k1"%s}`,
-	"/sandbox-purchase": `{"user_id":"u1","sku":"pack_100","idempotency_key":"k1"%s}`,
-	"/product-purchase": `{"user_id":"u1","sku":"poker_reaction_fire","idempotency_key":"k1"%s}`,
-	"/charge":           `{"user_id":"u1","amount_cents":1000,"reference":"inv1","idempotency_key":"k1"%s}`,
+	"/sandbox/credit": `{"user_id":"u1","amount":100,"idempotency_key":"k1"%s}`,
+	"/sandbox/debit":  `{"user_id":"u1","amount":100,"idempotency_key":"k1"%s}`,
+	"/real/debit":     `{"user_id":"u1","amount":100,"idempotency_key":"k1"%s}`,
+	"/game/cashout":   `{"user_id":"u1","amount":100,"table_ref":"t1","hold_ids":["h1"],"idempotency_key":"k1"%s}`,
 }
 
 func postRaw(t *testing.T, app *fiber.App, path, body string) int {

@@ -8,13 +8,13 @@ import (
 
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
-	"gopkg.aoctech.app/wallet/api/internal/pix"
 	"gopkg.aoctech.app/wallet/api/internal/problem"
+	"gopkg.aoctech.app/wallet/api/internal/rail"
 )
 
 var railKYC = &kycclient.KYC{Level: "enhanced", CPF: "12345678901"}
 
-func newRailSvc(repo *stubRepo, users *stubUserRepo, pc pix.PixClient) *WalletService {
+func newRailSvc(repo *stubRepo, users *stubUserRepo, pc rail.Rail) *WalletService {
 	return NewWalletService(repo, users, &stubAudit{}, &stubLocker{}, pc, &stubKYC{rec: railKYC})
 }
 
@@ -25,7 +25,7 @@ func todayKey() string {
 
 func TestInitiateDepositRejectsOverDailyCapBeforeCharge(t *testing.T) {
 	repo := newStubRepo()
-	fake := pix.NewFake()
+	fake := rail.NewFake()
 	users := &stubUserRepo{user: &wallet.User{RealDailyCounters: &wallet.RealDailyCounters{DayKey: todayKey(), DepositSum: 90000}}}
 	svc := newRailSvc(repo, users, fake)
 
@@ -41,7 +41,7 @@ func TestInitiateDepositRejectsOverDailyCapBeforeCharge(t *testing.T) {
 
 func TestInitiateDepositReplayReturnsSameChargeNoSecondCharge(t *testing.T) {
 	repo := newStubRepo()
-	fake := pix.NewFake()
+	fake := rail.NewFake()
 	svc := newRailSvc(repo, &stubUserRepo{}, fake)
 
 	d1, _, err := svc.InitiateDeposit(context.Background(), "u1", wallet.KYCVerified, 5000, "k1")
@@ -62,7 +62,7 @@ func TestInitiateDepositReplayReturnsSameChargeNoSecondCharge(t *testing.T) {
 
 func TestInitiateDepositReplayWithDifferentAmountConflicts(t *testing.T) {
 	repo := newStubRepo()
-	svc := newRailSvc(repo, &stubUserRepo{}, pix.NewFake())
+	svc := newRailSvc(repo, &stubUserRepo{}, rail.NewFake())
 	if _, _, err := svc.InitiateDeposit(context.Background(), "u1", wallet.KYCVerified, 5000, "k1"); err != nil {
 		t.Fatal(err)
 	}
@@ -71,14 +71,14 @@ func TestInitiateDepositReplayWithDifferentAmountConflicts(t *testing.T) {
 }
 
 func TestInitiateDepositRequiresKYC(t *testing.T) {
-	svc := newRailSvc(newStubRepo(), &stubUserRepo{}, pix.NewFake())
+	svc := newRailSvc(newStubRepo(), &stubUserRepo{}, rail.NewFake())
 	if _, _, err := svc.InitiateDeposit(context.Background(), "u1", "", 5000, "k1"); err == nil {
 		t.Fatal("empty KYC level must be rejected")
 	}
 }
 
 func TestInitiateDepositAmountOutsideRange(t *testing.T) {
-	fake := pix.NewFake()
+	fake := rail.NewFake()
 	svc := newRailSvc(newStubRepo(), &stubUserRepo{}, fake)
 	_, _, err := svc.InitiateDeposit(context.Background(), "u1", wallet.KYCVerified, 50, "k1")
 	isProblem(t, err, problem.TypeDepositOutOfRange)
@@ -87,11 +87,11 @@ func TestInitiateDepositAmountOutsideRange(t *testing.T) {
 	}
 }
 
-func paidDepositFixture(amount int64) (*stubRepo, *pix.FakePixClient) {
+func paidDepositFixture(amount int64) (*stubRepo, *rail.Fake) {
 	repo := newStubRepo()
 	repo.deposit = &wallet.PixDeposit{Txid: "tx1", WalletID: "w-real", UserID: "u1", AmountExpected: amount, Status: wallet.DepositPending}
-	fake := pix.NewFake()
-	fake.StageCharge("tx1", amount, pix.ChargeCompleted, "", "E2E-1")
+	fake := rail.NewFake()
+	fake.StageCharge("tx1", amount, rail.ChargeCompleted, "", "E2E-1")
 	return repo, fake
 }
 
@@ -145,11 +145,11 @@ func TestConfirmDepositPaidWithoutPayerCPFStaysPendingAndCreditsNothing(t *testi
 	}
 }
 
-func withdrawFixture(balance int64) (*stubRepo, *stubUserRepo, *pix.FakePixClient, *WalletService) {
+func withdrawFixture(balance int64) (*stubRepo, *stubUserRepo, *rail.Fake, *WalletService) {
 	repo := newStubRepo()
 	repo.real.Balance = balance
 	users := &stubUserRepo{}
-	fake := pix.NewFake()
+	fake := rail.NewFake()
 	return repo, users, fake, newRailSvc(repo, users, fake)
 }
 
@@ -208,7 +208,7 @@ func TestWithdrawReplaySameKeyNoSecondPayout(t *testing.T) {
 
 func TestWithdrawKeyNotFoundReverseGivesTheSlotBack(t *testing.T) {
 	repo, users, fake, svc := withdrawFixture(50000)
-	fake.TransferErr = pix.ErrKeyNotFound
+	fake.TransferErr = rail.ErrKeyNotFound
 	_, err := svc.Withdraw(context.Background(), "u1", wallet.KYCVerified, 10000, "k1")
 	isProblem(t, err, problem.TypePixKeyNotFound)
 	if len(repo.creditCalls) != 1 || repo.creditCalls[0].EntryType != wallet.EntryReversal {
@@ -271,7 +271,7 @@ func TestWithdrawSameKeyDifferentAmountConflicts(t *testing.T) {
 func TestWithdrawWithoutKYCCPFIsRejectedBeforeDebit(t *testing.T) {
 	repo := newStubRepo()
 	repo.real.Balance = 50000
-	fake := pix.NewFake()
+	fake := rail.NewFake()
 	svc := NewWalletService(repo, &stubUserRepo{}, &stubAudit{}, &stubLocker{}, fake, &stubKYC{rec: &kycclient.KYC{Level: "enhanced"}})
 	_, err := svc.Withdraw(context.Background(), "u1", wallet.KYCVerified, 10000, "k1")
 	isProblem(t, err, problem.TypeKYCNotVerified)
@@ -284,7 +284,7 @@ func TestRailLimitsReflectTodaysCounters(t *testing.T) {
 	repo := newStubRepo()
 	repo.real.Balance = 300000
 	users := &stubUserRepo{user: &wallet.User{RealDailyCounters: &wallet.RealDailyCounters{DayKey: todayKey(), DepositSum: 70000}}}
-	svc := newRailSvc(repo, users, pix.NewFake())
+	svc := newRailSvc(repo, users, rail.NewFake())
 
 	l, err := svc.RailLimits(context.Background(), "u1", &repo.real)
 	if err != nil {
@@ -297,7 +297,7 @@ func TestRailLimitsReflectTodaysCounters(t *testing.T) {
 
 func TestRailLimitsForUserWithoutARow(t *testing.T) {
 	repo := newStubRepo()
-	svc := newRailSvc(repo, &stubUserRepo{}, pix.NewFake())
+	svc := newRailSvc(repo, &stubUserRepo{}, rail.NewFake())
 	l, err := svc.RailLimits(context.Background(), "u1", &repo.real)
 	if err != nil || l.Deposit.MaxNow != 100000 {
 		t.Fatalf("limits = %+v err=%v", l, err)

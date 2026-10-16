@@ -4,12 +4,13 @@ package integration_test
 
 import (
 	"context"
-	"gopkg.aoctech.app/api-commons/erasure"
-	"gopkg.aoctech.app/wallet/api/internal/kycclient"
-	"gopkg.aoctech.app/wallet/api/internal/pix"
-	"gopkg.aoctech.app/wallet/api/internal/services"
 	"testing"
 	"time"
+
+	"gopkg.aoctech.app/api-commons/erasure"
+	"gopkg.aoctech.app/wallet/api/internal/kycclient"
+	"gopkg.aoctech.app/wallet/api/internal/rail"
+	"gopkg.aoctech.app/wallet/api/internal/services"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
@@ -294,6 +295,6 @@ func TestErasurePurgeBlockedByBalanceErasesNothing(t *testing.T) {
 // stubCharges answers Inter's QueryCharge: every charge is still active (unpaid).
 type stubCharges struct{}
 
-func (stubCharges) QueryCharge(_ context.Context, txid string) (*pix.Charge, error) {
-	return &pix.Charge{Txid: txid, Status: pix.ChargeActive}, nil
+func (stubCharges) QueryDeposit(_ context.Context, txid string) (*rail.Charge, error) {
+	return &rail.Charge{Txid: txid, Status: rail.ChargeActive}, nil
 }

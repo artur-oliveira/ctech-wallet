@@ -10,7 +10,7 @@ import (
 	"gopkg.aoctech.app/api-commons/erasure"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
-	"gopkg.aoctech.app/wallet/api/internal/pix"
+	"gopkg.aoctech.app/wallet/api/internal/rail"
 )
 
 type fakeErasureRepo struct {
@@ -78,8 +78,8 @@ var testNow = time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
 // stubCharges answers Inter's QueryCharge from a txid -> status map.
 type stubCharges struct{ status map[string]string }
 
-func (c *stubCharges) QueryCharge(_ context.Context, txid string) (*pix.Charge, error) {
-	return &pix.Charge{Txid: txid, Status: c.status[txid]}, nil
+func (c *stubCharges) QueryDeposit(_ context.Context, txid string) (*rail.Charge, error) {
+	return &rail.Charge{Txid: txid, Status: c.status[txid]}, nil
 }
 
 func newErasureSvc(repo *stubRepo, users *stubUserRepo, sp *stubSandboxPurchaseRepo, pp *stubProductPurchaseRepo, er *fakeErasureRepo, kyc *kycclient.KYC) *ErasureService {
@@ -180,13 +180,13 @@ func TestBlockers_PaidButUnconfirmedDepositBlocksAndAnAbandonedOneDoesNot(t *tes
 	er := newFakeErasureRepo()
 	old := testNow.Add(-48 * time.Hour).Format(time.RFC3339Nano)
 	er.deposits = []wallet.PixDeposit{{Txid: "abandoned", UserID: "u1", Status: wallet.DepositPending, CreatedAt: old}}
-	charges := &stubCharges{status: map[string]string{"abandoned": pix.ChargeActive}}
+	charges := &stubCharges{status: map[string]string{"abandoned": rail.ChargeActive}}
 	e := newErasureSvc(newStubRepo(), &stubUserRepo{}, newStubSandboxPurchaseRepo(), newStubProductPurchaseRepo(), er, &kycclient.KYC{}).WithCharges(charges)
 	if bs, err := e.Blockers(context.Background(), "u1"); err != nil || len(bs) != 0 {
 		t.Fatalf("abandoned QR: %v, %v; want none", bs, err)
 	}
 	er.deposits = append(er.deposits, wallet.PixDeposit{Txid: "paid", UserID: "u1", Status: wallet.DepositPending, CreatedAt: old})
-	charges.status["paid"] = pix.ChargeCompleted
+	charges.status["paid"] = rail.ChargeCompleted
 	bs, err := e.Blockers(context.Background(), "u1")
 	if err != nil || len(bs) != 1 || bs[0].Code != wallet.BlockerDepositQuarantined || bs[0].Detail["paid_unconfirmed"] != 1 {
 		t.Fatalf("blockers = %+v, %v; want one %s", bs, err, wallet.BlockerDepositQuarantined)

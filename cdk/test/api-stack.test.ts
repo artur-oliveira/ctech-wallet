@@ -3,7 +3,7 @@ import {test} from 'node:test';
 import * as cdk from 'aws-cdk-lib';
 import {Template} from 'aws-cdk-lib/assertions';
 import {ApiStack} from '../lib/api-stack';
-import {BILLING_RAIL, GAME_WALLET_MERGED} from '../lib/constants';
+import {GAME_WALLET_MERGED} from '../lib/constants';
 
 /** EC2's hard cap on user data, which a deploy discovers and not a review. */
 const USER_DATA_LIMIT_BYTES = 16384;
@@ -84,17 +84,11 @@ test('the game-wallet merge flag follows the environment constant', () => {
   assert.match(userDataText(), new RegExp(`GAME_WALLET_MERGED=${GAME_WALLET_MERGED.prod}`));
 });
 
-test('the Billing rail settings follow the environment flag, and no secret is inlined', () => {
+test('the Billing settings are always passed, and no secret is inlined', () => {
   const text = userDataText();
-  if (BILLING_RAIL.prod === 'on') {
-    assert.match(text, /BILLING_RAIL=on/);
-    assert.match(text, /'BILLING_URL=\/ctech-wallet\/prod\/billing-url'/);
-    assert.match(text, /'BILLING_CLIENT_SECRET=\/ctech-wallet\/prod\/billing-client-secret'/);
-    assert.match(text, /'BILLING_EVENT_SECRET=\/ctech-wallet\/prod\/billing-event-secret'/);
-  } else {
-    assert.match(text, /BILLING_RAIL=off/);
-    assert.doesNotMatch(text, /BILLING_URL|BILLING_CLIENT_SECRET|BILLING_EVENT_SECRET|billing-client-secret/,
-      'an unseeded SSM path would stop the service from starting');
-  }
+  assert.match(text, /'BILLING_URL=\/ctech-wallet\/prod\/billing-url'/);
+  assert.match(text, /'BILLING_CLIENT_SECRET=\/ctech-wallet\/prod\/billing-client-secret'/);
+  assert.match(text, /'BILLING_EVENT_SECRET=\/ctech-wallet\/prod\/billing-event-secret'/);
+  assert.doesNotMatch(text, /BILLING_RAIL/);
   assert.doesNotMatch(text, /BILLING_(CLIENT|EVENT)_SECRET=(?!\/)/, 'the SSM path, never the value');
 });

@@ -23,7 +23,7 @@ import (
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
 	"gopkg.aoctech.app/wallet/api/internal/lock"
-	"gopkg.aoctech.app/wallet/api/internal/pix"
+	"gopkg.aoctech.app/wallet/api/internal/rail"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
 	"gopkg.aoctech.app/wallet/api/internal/services"
 )
@@ -203,7 +203,7 @@ type harness struct {
 	userRepo *repositories.UserRepository
 	audit    *repositories.AuditRepository
 	svc      *services.WalletService
-	pix      *pix.FakePixClient
+	rail     *rail.Fake
 	locker   *lock.Locker
 }
 
@@ -213,12 +213,12 @@ func newHarness(kyc *kycclient.KYC) *harness {
 	userRepo := repositories.NewUserRepository(db, cfg)
 	audit := repositories.NewAuditRepository(db, cfg)
 	productRepo := repositories.NewProductPurchaseRepository(db, cfg)
-	fake := pix.NewFake()
+	fake := rail.NewFake()
 	locker := lock.NewLocker(cache.NewMemoryBackend(64))
 	svc := services.NewWalletService(repo, userRepo, audit, locker, fake, &stubKYC{rec: kyc})
 	svc.SetProductPurchases(productRepo)
 	return &harness{
-		repo: repo, userRepo: userRepo, audit: audit, svc: svc, pix: fake,
+		repo: repo, userRepo: userRepo, audit: audit, svc: svc, rail: fake,
 		locker: locker,
 	}
 }

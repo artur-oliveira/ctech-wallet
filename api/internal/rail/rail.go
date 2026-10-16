@@ -1,6 +1,5 @@
 // Package rail is the seam between the wallet's deposit and withdrawal flows
-// and whatever moves the money: today the Inter Pix client directly
-// (LegacyRail), and behind a flag Billing, which owns the Inter connection.
+// and whatever moves the money: Billing, which owns the Inter connection.
 // Everything past the seam (locks, idempotency, limits, quarantine, reconcile)
 // is the wallet's own and does not know which rail is in use.
 package rail
@@ -8,8 +7,6 @@ package rail
 import (
 	"context"
 	"time"
-
-	"gopkg.aoctech.app/wallet/api/internal/pix"
 )
 
 // DepositRequest is what opening a deposit needs. The identity fields are the
@@ -22,14 +19,14 @@ type DepositRequest struct {
 
 // Rail opens and reads deposits, refunds them, and pays out.
 type Rail interface {
-	OpenDeposit(ctx context.Context, in DepositRequest) (*pix.Charge, error)
-	QueryDeposit(ctx context.Context, txid string) (*pix.Charge, error)
-	RefundDeposit(ctx context.Context, txid, e2eID string, amountCents int64, idemKey string) (*pix.TransferResult, error)
+	OpenDeposit(ctx context.Context, in DepositRequest) (*Charge, error)
+	QueryDeposit(ctx context.Context, txid string) (*Charge, error)
+	RefundDeposit(ctx context.Context, txid, e2eID string, amountCents int64, idemKey string) (*TransferResult, error)
 	// Payout sends to the destination, which is always the KYC owner's CPF.
-	Payout(ctx context.Context, cpf string, amountCents int64, idemKey string) (*pix.TransferResult, error)
+	Payout(ctx context.Context, cpf string, amountCents int64, idemKey string) (*TransferResult, error)
 	// QueryPayout reports a payout by its idempotency key. A transport failure is
 	// an error; only a payout the rail never accepted is TransferNotFound.
-	QueryPayout(ctx context.Context, idemKey string) (*pix.TransferResult, error)
+	QueryPayout(ctx context.Context, idemKey string) (*TransferResult, error)
 }
 
 // IdentityRail is implemented by a rail that needs the KYC identity to open a
@@ -59,14 +56,4 @@ func PayoutGrace(r Rail) time.Duration {
 		return g.PayoutGrace()
 	}
 	return 0
-}
-
-// Select chooses the rail. With the flag off it is the Inter path, and
-// newBilling is never called, so no Billing client, token manager or config is
-// touched: off is byte-for-byte what it was.
-func Select(billingOn bool, legacy pix.PixClient, newBilling func() BillingAPI) Rail {
-	if !billingOn {
-		return NewLegacy(legacy)
-	}
-	return NewBilling(newBilling())
 }

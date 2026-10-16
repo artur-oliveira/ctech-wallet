@@ -12,23 +12,19 @@ import (
 // wallet:* scopes describe capabilities a user may delegate to another OAuth
 // client. internal:wallet:* scopes remain service-to-service only.
 const (
-	ScopeWalletStateRead             = "wallet:state:read"
-	ScopeWalletTermsWrite            = "wallet:terms:write"
-	ScopeWalletBalancesRead          = "wallet:balances:read"
-	ScopeWalletLedgerRead            = "wallet:ledger:read"
-	ScopeWalletDepositsWrite         = "wallet:deposits:write"
-	ScopeWalletWithdrawalsWrite      = "wallet:withdrawals:write"
-	ScopeWalletSandboxPurchasesRead  = "wallet:sandbox-purchases:read"
-	ScopeWalletSandboxPurchasesWrite = "wallet:sandbox-purchases:write"
-	ScopeWalletProductPurchasesRead  = "wallet:product-purchases:read"
-	ScopeWalletGameWrite             = "wallet:game:write"
-	ScopeWalletGamblingRead          = "wallet:gambling:read"
-	ScopeWalletGamblingWrite         = "wallet:gambling:write"
+	ScopeWalletStateRead        = "wallet:state:read"
+	ScopeWalletTermsWrite       = "wallet:terms:write"
+	ScopeWalletBalancesRead     = "wallet:balances:read"
+	ScopeWalletLedgerRead       = "wallet:ledger:read"
+	ScopeWalletDepositsWrite    = "wallet:deposits:write"
+	ScopeWalletWithdrawalsWrite = "wallet:withdrawals:write"
+	ScopeWalletGameWrite        = "wallet:game:write"
+	ScopeWalletGamblingRead     = "wallet:gambling:read"
+	ScopeWalletGamblingWrite    = "wallet:gambling:write"
 
-	ScopeWalletCredit      = "internal:wallet:credit"     // sandbox only
-	ScopeWalletDebit       = "internal:wallet:debit"      // sandbox only
-	ScopeWalletRealDebit   = "internal:wallet:debit-real" // real wallet — deliberately separate from sandbox debit
-	ScopePixConfirmDeposit = "internal:wallet:confirm-deposit"
+	ScopeWalletCredit    = "internal:wallet:credit"     // sandbox only
+	ScopeWalletDebit     = "internal:wallet:debit"      // sandbox only
+	ScopeWalletRealDebit = "internal:wallet:debit-real" // real wallet — deliberately separate from sandbox debit
 
 	// game wallet holds (skill-game integration, e.g. poker). Deliberately
 	// separate scopes so a caller that only ever holds/releases never needs
@@ -55,39 +51,6 @@ const (
 	// deliberately separate from ScopeWalletGameStatus (eligibility, not balance).
 	ScopeWalletBalance = "internal:wallet:balance"
 
-	// ScopeWalletSandboxPurchase lets an M2M client (e.g. ctech-poker) open,
-	// poll, and refund a direct PIX→sandbox-credits sale on a user's behalf —
-	// same underlying flow as the user-facing /wallet/sandbox/purchases
-	// routes, just caller-initiated. Deliberately its own scope, not reused
-	// from ScopeWalletCredit: this creates a PIX charge and a purchase
-	// record, not a bare ledger credit.
-	ScopeWalletSandboxPurchase = "internal:wallet:sandbox-purchase"
-
-	// ScopeWalletProductPurchase lets an M2M client sell a generic digital
-	// product for real PIX money with no ledger effect — deliberately its
-	// own scope, not reused from ScopeWalletSandboxPurchase: materially
-	// different blast radius (docs/specs/2026-08-12-product-purchase-skus.md).
-	ScopeWalletProductPurchase = "internal:wallet:product-purchase"
-
-	// ScopeWalletChargeAmount lets an M2M client open a PIX charge for an amount
-	// it supplies itself, instead of a catalogue price.
-	//
-	// It is a new scope and not a wider ScopeWalletProductPurchase, and that is
-	// the whole security argument. The catalogue is a fraud defense: a client
-	// holding the product scope can only ever sell a R$ 4,90 item, whatever it
-	// asks for. Accepting an amount field under that same scope would hand every
-	// existing holder — ctech-poker among them — the ability to name its own
-	// price the day the field lands. Removing the catalogue for one caller must
-	// not remove it for all of them.
-	//
-	// Granted to ctech-billing alone, whose amounts are arbitrary by construction
-	// (proration and metered usage), and bounded by M2MClient.MaxChargeCents
-	// rather than by a catalogue.
-	ScopeWalletChargeAmount = "internal:wallet:charge-amount"
-
-	// ScopeWalletErasureEligibility is carried by the short-lived token
-	// ctech-account mints to ask whether a user can be erased (account-
-	// deletion saga §4.1). Read-only; granted to no client.
 	ScopeWalletErasureEligibility = "internal:wallet:erasure-eligibility"
 )
 
@@ -100,9 +63,6 @@ var walletPublicScopes = []string{
 	ScopeWalletLedgerRead,
 	ScopeWalletDepositsWrite,
 	ScopeWalletWithdrawalsWrite,
-	ScopeWalletSandboxPurchasesRead,
-	ScopeWalletSandboxPurchasesWrite,
-	ScopeWalletProductPurchasesRead,
 	ScopeWalletGameWrite,
 	ScopeWalletGamblingRead,
 	ScopeWalletGamblingWrite,

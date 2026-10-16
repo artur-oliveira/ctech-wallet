@@ -13,7 +13,6 @@ import (
 	apiv1 "gopkg.aoctech.app/wallet/api/internal/api/v1"
 	"gopkg.aoctech.app/wallet/api/internal/awsclient"
 	"gopkg.aoctech.app/wallet/api/internal/config"
-	"gopkg.aoctech.app/wallet/api/internal/pix"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -41,7 +40,7 @@ func healthApp(t *testing.T) *fiber.App {
 	t.Helper()
 	app := fiber.New()
 	cfg := &config.Config{AppVersion: testAppVersion, TablePrefix: tablePrefix}
-	apiv1.RegisterHealth(app.Group("/v1.0"), &awsclient.Clients{DynamoDB: db}, cache.NewMemoryBackend(16), pix.NewFake(), nil, cfg)
+	apiv1.RegisterHealth(app.Group("/v1.0"), &awsclient.Clients{DynamoDB: db}, cache.NewMemoryBackend(16), nil, cfg)
 	return app
 }
 
@@ -89,7 +88,7 @@ func TestHealthCheckReportsDependencies(t *testing.T) {
 		t.Fatalf("dynamodb unit = %q, want ms", dynamo.ObservedUnit)
 	}
 
-	for name, want := range map[string]string{"cache": "pass", "pix": "pass", "jwks": "warn"} {
+	for name, want := range map[string]string{"cache": "pass", "jwks": "warn"} {
 		got, ok := body.Checks[name]
 		if !ok {
 			t.Fatalf("checks.%s missing", name)
