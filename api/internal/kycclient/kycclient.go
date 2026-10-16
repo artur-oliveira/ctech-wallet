@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"gopkg.aoctech.app/api-commons/cache"
 	"gopkg.aoctech.app/api-commons/oauth2client"
 	"gopkg.aoctech.app/api-commons/observability"
 	"gopkg.aoctech.app/wallet/api/internal/config"
@@ -62,13 +63,14 @@ type Client struct {
 }
 
 // New builds the KYC client. base is the account URL (CTECH_URL).
-func New(cfg *config.Config) *Client {
+// c shares the token between replicas (the fleet's Valkey); nil keeps it per process.
+func New(cfg *config.Config, c cache.Backend) *Client {
 	httpClient := &http.Client{Timeout: 10 * time.Second}
 	base := strings.TrimRight(cfg.CtechURL, "/")
 	return &Client{
 		base:   base,
 		http:   httpClient,
-		tokens: oauth2client.New(httpClient, nil, base+PathToken, cfg.WalletClientID, cfg.WalletClientSecret, scopeKYC),
+		tokens: oauth2client.New(httpClient, c, base+PathToken, cfg.WalletClientID, cfg.WalletClientSecret, scopeKYC),
 	}
 }
 

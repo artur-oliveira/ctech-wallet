@@ -122,12 +122,12 @@ func newWsRegistry(lc fx.Lifecycle, c cache.Backend) ws.Registry {
 	return reg
 }
 
-func newKYCClient(cfg *config.Config) services.KYCClient {
-	return kycclient.New(cfg)
+func newKYCClient(cfg *config.Config, c cache.Backend) services.KYCClient {
+	return kycclient.New(cfg, c)
 }
 
-func newBillingClient(cfg *config.Config) *billingclient.Client {
-	return billingclient.New(cfg)
+func newBillingClient(cfg *config.Config, c cache.Backend) *billingclient.Client {
+	return billingclient.New(cfg, c)
 }
 
 // newRail is Billing, which owns the Inter connection.
