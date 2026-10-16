@@ -1,12 +1,12 @@
 # CTech Wallet
 
-Serviço de carteira digital do ecossistema `aoctech.app`. Mantém **três saldos por usuário** — **real**
-(dinheiro real; depósito/saque PIX desligados até um novo provedor de custódia — ver
-`docs/specs/2026-10-07-asaas-removal.md`), **game** (dinheiro real cercado só para jogos, com limites de
-jogo responsável) e **sandbox** (moeda virtual, sem valor monetário, nunca convertível em real). Dinheiro real
-entra no cercado de jogo **somente** via `real → game`. Serve de base para cobrança de assinaturas (futuro
-`ctech-dfe`/billing) e para apostas de habilidade em poker/dominó. A superfície de jogo (`game`/`sandbox`) fica
-dormente enquanto `GAMBLING_ENABLED=false` (padrão), até a revisão legal do aditivo de jogo.
+Serviço de carteira digital do ecossistema `aoctech.app`: um **ledger**, não um gateway de pagamento. Mantém **dois saldos
+por usuário** — **real** (dinheiro real; depósito e saque por Pix, feitos pelo `ctech-billing`, que é dono da conexão com
+o Inter) e **sandbox** (moeda virtual, sem valor monetário, nunca convertível em real, vendida e gasta no Poker). A carteira
+**não** fala com o Inter, não abre cobrança, não vende produto e não conhece regra de jogo: consentimento, limites pessoais e
+autoexclusão são do `ctech-poker`. A antiga carteira `game` foi fundida em `real` (2026-10). Serve de base para cobrança de
+assinaturas e para apostas de habilidade em poker/dominó, que apostam o saldo `real` por reservas (holds).
+Especificação: `docs/specs/2026-10-14-wallet-ledger-billing-rail.md` no `ctech-billing`.
 
 Consome autenticação (OAuth 2.0 / OIDC, JWT via JWKS) e KYC do [`ctech-account`](../ctech-account). Ledger
 append-only, transacional, idempotente, sem saldo negativo.
@@ -22,9 +22,9 @@ essas versões. A fonte pública de verdade é
 ## Registro de scopes OAuth
 
 A Wallet é dona do manifesto versionado
-`api/internal/oauthresource/scope-manifest.json`, atualmente com 12 permissões
-públicas `wallet:*` e 11 permissões M2M `internal:wallet:*`. O teste de contrato
-compara o manifesto com as constantes realmente usadas pelo middleware. O registro do CTech Account recusa remover uma permissão ativa sem que ela tenha sido publicada antes como `deprecated`; por isso `wallet:custody:write` permanece no manifesto como `deprecated` (não é mais aplicada) até uma mudança posterior removê-la. O deploy
+`api/internal/oauthresource/scope-manifest.json`, atualmente com 6 permissões
+públicas `wallet:*` e 6 permissões M2M `internal:wallet:*` ativas (as demais ficam `deprecated`). O teste de contrato
+compara o manifesto com as constantes realmente usadas pelo middleware. O registro do CTech Account recusa remover uma permissão ativa sem que ela tenha sido publicada antes como `deprecated`; por isso as permissões das rotas aposentadas (`wallet:custody:write`, as de compra, as de jogo e jogo responsável) permanecem no manifesto como `deprecated` (não são mais aplicadas) até uma mudança posterior removê-las. O deploy
 o publica no CTech Account depois do CDK e antes da API usando um client
 confidencial vinculado somente ao Resource Server `wallet`; o papel OIDC lê
 apenas os três parâmetros necessários.
@@ -51,11 +51,10 @@ Client first-party `wallet`, sem alterar redirects, audience ou outros clients
 ## Subprojetos
 
 ```
-api/          # Backend REST — Go (Fiber v3), DynamoDB, Valkey, Reconcile, PIX
+api/          # Backend REST — Go (Fiber v3), DynamoDB, Valkey, Reconcile; o Pix passa pelo ctech-billing
 ui/           # Frontend — Next.js 16 + TypeScript + ShadCN
 cdk/          # Infraestrutura AWS — CDK TypeScript
-pix-gateway/  # Provedor e mock de gateway PIX
-rpc-contract/ # Contrato RPC e DTOs M2M
+rpc-contract/ # Constantes de dinheiro compartilhadas (api e ui)
 ```
 
 ## Observabilidade de erros
@@ -74,10 +73,10 @@ Este serviço custodia dinheiro real de terceiros. Invariantes não-negociáveis
 - **Ledger append-only** — saldo mora em `wallets` (atômico); `ledger_entries` é auditoria imutável.
 - **Idempotência obrigatória** — toda operação exige `Idempotency-Key`; replay retorna o resultado anterior.
 - **Uma operação por wallet por vez** — lock via Valkey `SETNX` com TTL curto.
-- **Webhook nunca é fonte de verdade** — pagamento só credita após reconsulta ao provedor pelo `txid`.
-- **Sem rail de depósito/saque** — o provedor de custódia foi removido; nenhum dinheiro de usuário entra na conta
-  Inter da CTech. Um rail futuro deve custodiar sob o CPF do próprio usuário e exigir `kyc_level == enhanced` +
-  step-up MFA + CPF da chave PIX destino == CPF do KYC no saque.
+- **Evento do Billing nunca é fonte de verdade** — o depósito só credita depois que a carteira relê a fatura no Billing e confere valor, CPF do pagador e `payer_match`; divergência quarentena e reembolsa.
+- **Saque só para o CPF do KYC** — o cliente nunca informa o destino; saque exige `kyc_level == enhanced` + step-up MFA, e um
+  saque cuja chamada ao Billing falha fica `processing` até a reconciliação resolver (erro de consulta nunca reverte).
+- **Sandbox nunca vira real, real nunca vira sandbox** — a lista de rotas que escrevem é fechada e testada.
 - **Sem taxa de saque** — o saque debita exatamente o `amount` e grava um único lançamento `withdraw`
   (`docs/specs/2026-08-16-withdrawal-fee-removal.md`). Tarifa de provedor de pagamento é custo de provedor,
   nunca receita da CTech.

@@ -1,11 +1,11 @@
 # ctech-wallet API
 
 Go REST API (Fiber v3) for the `aoctech.app` digital wallet. Custodies **real
-third‑party money** across three balances per user (`real`, `game`, `sandbox`)
-with an append‑only ledger, PIX (Banco Inter) sandbox/product purchases, and
-skill‑game holds/cash‑outs. User PIX deposits/withdrawals are currently off
-(`../docs/specs/2026-10-07-asaas-removal.md`). Talks to Inter **only through `pix-gateway`** (a
-Lambda) — it never opens an mTLS connection itself.
+third‑party money** across two balances per user (`real`, `sandbox`) with an
+append‑only ledger and skill‑game holds/cash‑outs on `real`. Deposits and
+withdrawals go through **ctech‑billing** (it owns the Inter connection); the wallet
+never talks to Inter, sells nothing and knows no gambling rule (Poker owns them).
+Spec: `docs/specs/2026-10-14-wallet-ledger-billing-rail.md` in `ctech-billing`.
 
 > **This service custodies real money.** The 14 Financial Safety Invariants in
 > the repo root `CLAUDE.md` are non‑negotiable and override convenience.
@@ -17,17 +17,17 @@ api/
 ├── cmd/server/main.go        # fx.New(app.Module).Run() — the HTTP API
 ├── cmd/reconcile/main.go     # scheduled Lambda / CLI: resolves stuck withdrawals
 ├── internal/
-│   ├── lambdarpc/             # shared Lambda RPC transport (pix-gateway)
 │   ├── app/                  # fx wiring (DI), Fiber app, error handler
 │   ├── config/               # 12-Factor env (caarlos0/env)
 │   ├── problem/              # RFC 7807 Problem + wallet codes
 │   ├── validation/           # go-playground/validator singleton
-│   ├── awsclient/            # aws-sdk-go-v2 (DynamoDB, Lambda)
+│   ├── awsclient/            # aws-sdk-go-v2 (DynamoDB, SQS, SSM)
 │   ├── lock/                 # Valkey SETNX per-wallet lock (fail-safe TTL)
 │   ├── middleware/           # auth (JWKS), scope, KYC, step-up
-│   ├── pix/                  # PixClient iface + fake + Lambda client + Inter token
+│   ├── rail/                 # Rail iface, BillingRail (the only rail), types, test fake
+│   ├── billingclient/        # ctech-billing client (invoices, payouts) + event signature
 │   ├── kycclient/            # ctech-account internal KYC client
-│   ├── domain/wallet/        # models, constants, fee/limit/responsible math
+│   ├── domain/wallet/        # models, constants, rail/daily limit math
 │   ├── domain/id/            # ULID generation
 │   ├── repositories/         # DynamoDB persistence (single-table helpers)
 │   ├── services/             # business logic (the money path)
@@ -53,38 +53,32 @@ binary at `/app`, `EXPOSE 8000`. The deployed binary **must** be named `app`
 
 ### Environment (`config.Load`, `.env.example`)
 
-Required: `TABLE_PREFIX`, `PIX_GATEWAY_FUNCTION_NAME`. Set in prod:
-`SERVICE_AUDIENCE`, `CTECH_URL`, `CTECH_ISSUER_URL`, `CORS_ALLOWED_ORIGINS`,
+Required: `TABLE_PREFIX`, `BILLING_URL`, `BILLING_CLIENT_ID`, `CTECH_URL` (and, for the
+API, `BILLING_CLIENT_SECRET` and `BILLING_EVENT_SECRET`). Set in prod:
+`SERVICE_AUDIENCE`, `CTECH_ISSUER_URL`, `CORS_ALLOWED_ORIGINS`,
 `VALKEY_URL` (fail‑closed if absent — see B7),
 `WALLET_CLIENT_ID`/`WALLET_CLIENT_SECRET` (wallet's own M2M client to call
-account KYC). `GAMBLING_ENABLED` (default `false`) gates the entire
-`real→game` funding + activation surface (routes 404 when off).
+account KYC).
 
-`cmd/reconcile` uses `config.LoadReconcile`: it shares required storage/PIX
-configuration validation, but deliberately skips HTTP-only
-issuer/audience/CORS checks and the API server's fleet-wide Valkey requirement.
-It verifies no JWTs, serves no browser traffic, and uses its in-memory locker;
-an optional `VALKEY_URL` is only used for best-effort WebSocket broadcasts.
-
-> **Drift note:** `.env.example` still lists `INTER_*` vars
-> (`INTER_BASE_URL`, `INTER_CLIENT_ID`, `INTER_CLIENT_SECRET`, `INTER_PIX_KEY`,
-> `INTER_WEBHOOK_SECRET`). The **api** no longer consumes these — it invokes
-> `pix-gateway` via `PIX_GATEWAY_FUNCTION_NAME` and the Inter mTLS/secret live in
-> `pix-gateway`/SSM. Those `INTER_*` lines belong to `pix-gateway`, not this
-> service; treat them as stale in this file.
+`cmd/reconcile` uses `config.LoadReconcile`: it shares the required storage and
+Billing configuration, but deliberately skips HTTP-only issuer/audience/CORS checks
+and the API server's fleet-wide Valkey requirement. It verifies no JWTs, serves no
+browser traffic, and uses its in-memory locker; an optional `VALKEY_URL` is only
+used for best-effort WebSocket broadcasts. It reads `billing-client-secret` from SSM
+itself (a SecureString never goes into a Lambda's environment).
 
 ## Data model (single DynamoDB table per concern, env‑prefixed)
 
 | Table (logical)         | Constant                       | Notes                                                                 |
 |-------------------------|--------------------------------|-----------------------------------------------------------------------|
-| `wallets`               | `TableWallets` (`model.go:74`) | authoritative balance (centavos for real/game, credits for sandbox)   |
+| `wallets`               | `TableWallets` (`model.go:74`) | authoritative balance (centavos for real, credits for sandbox; old `game` rows are retired, read‑only)   |
 | `wallet_ledger_entries` | `TableLedger` (`:75`)          | append‑only audit; GSI `gsi_idem` for replay                          |
 | `wallet_idempotency`    | `TableIdempotency` (`:76`)     | Permanent `IDEM#{key}` guard rows; financial replays never expire     |
-| `wallet_pix_deposits`   | `TablePixDeposits` (`:77`)     | durable charge records; GSI `gsi_status` for pending sweep            |
+| `wallet_pix_deposits`   | `TablePixDeposits` (`:77`)     | durable deposit records (reference = the Billing invoice); GSI `gsi_status` for pending sweep            |
 | `wallet_withdrawals`    | `TableWithdrawals` (`:78`)     | `processing`/`completed`/`reversed`/`refund_failed`; GSI `gsi_status` |
-| `wallet_users`          | `TableUsers` (`:79`)           | consent + responsible‑gambling state                                  |
+| `wallet_users`          | `TableUsers` (`:79`)           | terms acceptance, daily counters, and the old gambling state (read‑only; Poker owns the rules)                                  |
 | `wallet_audit`          | `TableAudit` (`:80`)           | append‑only non‑money events                                          |
-| `wallet_holds`          | `TableHolds` (`:81`)           | game buy‑in holds; GSI `gsi_hold_status`                              |
+| `wallet_holds`          | `TableHolds` (`:81`)           | game buy‑in holds (on `real`); GSI `gsi_hold_status`                              |
 
 Every balance mutation is a conditional `TransactWriteItems`
 (`balance >= :amount` on debits); the ledger entry + idempotency guard are
@@ -116,12 +110,10 @@ enforcement map.
   [`../README.md`](../README.md), [`../OPERATIONS.md`](../OPERATIONS.md)
 - Sibling services: [`../ui/README.md`](../ui/README.md),
   [`../cdk/README.md`](../cdk/README.md),
-  [`../pix-gateway/README.md`](../pix-gateway/README.md),
   [`../rpc-contract/README.md`](../rpc-contract/README.md)
-- Shared wire contract: [`../rpc-contract/types.go`](../rpc-contract/types.go)
-- Design specs: `../docs/specs/2026-07-10-wallet-design.md`,
-  `../docs/specs/2026-07-12-three-wallet-topology-design.md`,
-  `../docs/specs/2026-07-19-responsible-gambling-design.md`
+- Shared money constants: [`../rpc-contract/money.go`](../rpc-contract/money.go)
+- Design: `docs/specs/2026-10-14-wallet-ledger-billing-rail.md` in `ctech-billing`. The older specs in `../docs/specs/`
+  (wallet design, three-wallet topology, responsible gambling) describe the system before it and are history.
 
 ## Known divergences
 

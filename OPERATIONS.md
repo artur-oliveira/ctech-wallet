@@ -44,17 +44,13 @@ wallet:balances:read
 wallet:ledger:read
 wallet:deposits:write
 wallet:withdrawals:write
-wallet:sandbox-purchases:read
-wallet:sandbox-purchases:write
-wallet:product-purchases:read
-wallet:game:write
-wallet:gambling:read
-wallet:gambling:write
 ```
 
-`wallet:deposits:write` / `wallet:withdrawals:write` are still declared, but no route uses them since
-the user PIX deposit/withdrawal rail was removed (`docs/specs/2026-10-07-asaas-removal.md`).
-`wallet:custody:write` was removed from the manifest (2026-10-07).
+`wallet:deposits:write` / `wallet:withdrawals:write` guard the Pix deposit and the withdrawal (through Billing).
+The scopes of the retired routes (`wallet:custody:write`, `wallet:sandbox-purchases:*`, `wallet:product-purchases:read`,
+`wallet:game:write`, `wallet:gambling:*` and the internal `confirm-deposit`, `sandbox-purchase`, `product-purchase`,
+`charge-amount`, `game-hold`, `game-cashout`, `game-status`, `responsible-export`) stay in the manifest as `deprecated`:
+the registry refuses to drop an active scope. Do not request them; a later change removes them.
 
 The client must already exist as `public` + `first_party`; the publisher never
 creates/promotes clients and never grants scopes to any differently named
@@ -92,92 +88,23 @@ Poker, dominó, and future billing each get a confidential M2M client whose
 `ctech-account`'s token endpoint clamps requested scope to `allowed_scopes`, so a
 client can never request more than it was granted.
 
-## 3a. Billing rail (`BILLING_RAIL`)
+## 3a. Billing (the only rail)
 
-Deposits and withdrawals go through ctech-billing instead of the Inter Pix gateway when the rail is `on` for the
-environment (`cdk/lib/constants.ts`, `BILLING_RAIL`). It is `off` everywhere. The cutover, its SSM parameters
-(`billing-url`, `billing-client-id`, `billing-client-secret`, `billing-event-secret`) and the rollback are in
-`docs/runbooks/billing-rail-cutover.md`.
+Deposits and withdrawals go through ctech-billing, which owns the Inter connection. There is no flag: the API and the
+reconcile Lambda refuse to start without `BILLING_URL`, `BILLING_CLIENT_ID`, `BILLING_CLIENT_SECRET` and
+`BILLING_EVENT_SECRET` (SSM `billing-url`, `billing-client-id`, `billing-client-secret`, `billing-event-secret`).
+The signed `invoice.paid` and payout events arrive at `POST /v1.0/internal/billing/events`; the cutover that put it live
+is recorded in `docs/runbooks/billing-rail-cutover.md` (history; the rollback it describes no longer exists).
 
-## 4. Inter (PIX) partner-bank configuration — SSM SecureString
+## 4. Inter (Pix): not the wallet's any more
 
-Nothing here is an env var in the repo and nothing is committed. Seed these SSM
-parameters per environment (`dev` / `stage` / `prod`):
+The wallet no longer talks to Inter, holds no Inter secret and runs no gateway. The Pix gateway stack
+(`CtechWallet-Prod-PixGateway`, two Lambdas and the mTLS webhook domain) was removed from the CDK and destroyed on
+2026-10-15; its code is in git history before the P5 cleanup. The Inter connection, its keys and its webhook are Billing's
+(`ctech-billing/docs/runbooks/tenant-zero-inter-rail.md`).
 
-| Parameter                                  | Type             | Read by                             |
-|--------------------------------------------|------------------|-------------------------------------|
-| `/ctech-wallet/{env}/inter/mtls-cert`      | **SecureString** | `pix-gateway` (SDK)                 |
-| `/ctech-wallet/{env}/inter/mtls-key`       | **SecureString** | `pix-gateway` (SDK)                 |
-| `/ctech-wallet/{env}/inter/client-id`      | String           | `pix-gateway` `start.sh` → `INTER_CLIENT_ID`      |
-| `/ctech-wallet/{env}/inter/client-secret`  | **SecureString** | `pix-gateway` `start.sh` → `INTER_CLIENT_SECRET`  |
-| `/ctech-wallet/{env}/inter/webhook-secret` | **SecureString** | `pix-gateway` `start.sh` → `INTER_WEBHOOK_SECRET` |
-| `/ctech-wallet/{env}/pix-gateway/client-secret` | **SecureString** | `pix-gateway`'s own M2M secret (`ssm.go:20`) — signs/verifies the notify-back webhook, separate from `wallet-client-secret` below |
-| `/ctech-wallet/{env}/wallet-client-id`     | String           | `start.sh` → `WALLET_CLIENT_ID`     |
-| `/ctech-wallet/{env}/wallet-client-secret` | **SecureString** | `start.sh` → `WALLET_CLIENT_SECRET` |
-
-The **mTLS keypair is deliberately not an env var**: `pix-gateway` reads it from SSM with
-the SDK and holds it in memory, so the bank certificate can be
-rotated without a redeploy and the PEM never touches the disk or `/proc/<pid>/environ`.
-The wallet `api` does **not** read any Inter secret — it only reads its own M2M
-`WALLET_CLIENT_ID`/`WALLET_CLIENT_SECRET` and `ctech-account`'s base/JWKS URLs (from SSM
-or env), never `mtls-cert`/`mtls-key`/`INTER_*`.
-Cert and key are separate parameters because a standard-tier SecureString caps at 4 KB.
-
-Write them like this (example):
-
-```bash
-aws ssm put-parameter --type SecureString --overwrite \
-  --name "/ctech-wallet/prod/inter/mtls-cert" --value "file://inter-cert.pem"
-aws ssm put-parameter --type SecureString --overwrite \
-  --name "/ctech-wallet/prod/inter/mtls-key"  --value "file://inter-key.pem"
-```
-
-> These use the AWS-managed `alias/aws/ssm` KMS key, whose default grants cover
-> `--with-decryption` for the instance role. **If you ever move them to a
-> customer-managed KMS key, you must add an explicit `kms:Decrypt` statement to the
-> instance role** — otherwise the app fails to boot.
-
-Also register the webhook secret with Inter's webhook configuration, and set
-`INTER_PIX_KEY` (the receiving key for charges) in the API stack's static env.
-Register the webhook URL with Inter as `https://pix.wallet.aoctech.app/pix/webhook?hmac=<the
-same value stored in /ctech-wallet/{env}/inter/webhook-secret>` — Inter echoes this query
-string back on every callback and `pix-gateway`'s webhook Lambda now rejects any request
-where it doesn't match. (Route is `POST /pix/webhook`, not `/webhook` —
-`cdk/lib/pix-gateway-stack.ts`.)
-
-> Before enabling real money, confirm each Inter endpoint's request/response shape
-> against Inter's current API reference and sandbox (see `api/internal/pix/inter.go`).
-
-### Network caveat (verify before go-live)
-
-The shared VPC has **no NAT gateway and no public IPv4** on instances — egress is
-IPv6/dual-stack only. Every existing service only calls AWS and SEFAZ. The wallet is
-the first to call a **third-party API (Inter)**. If Inter's API is IPv4-only, the
-outbound PIX calls will not leave the instance. Confirm Inter's connectivity before
-relying on this network design.
-
-## 4a. M2M sandbox-purchase client registry (e.g. ctech-poker) — SSM SecureString
-
-Optional. Only needed once an M2M client is granted `internal:wallet:sandbox-purchase` and needs its purchase
-confirm/refund notify-back delivered (see
-`docs/specs/2026-07-30-m2m-sandbox-purchase-integration-design.md`). Unset is a valid "no M2M client registered
-yet" state — `api` and `cmd/reconcile` both boot fine without it.
-
-| Parameter                          | Type             | Read by                     |
-|-------------------------------------|------------------|------------------------------|
-| `/ctech-wallet/{env}/m2m-clients`  | **SecureString** | `api`, `cmd/reconcile` (SDK) |
-
-Value is a JSON object keyed by the client's OAuth `client_id` (the JWT's `azp` claim):
-
-```bash
-aws ssm put-parameter --type SecureString --overwrite \
-  --name "/ctech-wallet/prod/m2m-clients" \
-  --value '{"poker": {"WebhookURL": "https://poker.aoctech.app/internal/wallet-webhook", "HMACSecret": "<random-32-byte-hex>"}}'
-```
-
-`HMACSecret` is whatever random value you hand to the receiving service too — the wallet signs every notify-back
-POST with `X-Wallet-Signature: sha256=hex(HMAC-SHA256(body, HMACSecret))` and the receiver must verify it with the
-same secret. Rotate by updating both sides together; there is no versioning/overlap window.
+The SSM parameters `/ctech-wallet/{env}/inter/*` and `/ctech-wallet/{env}/pix-gateway/*` are no longer read. They were kept
+for 30 days after the cleanup in case of a rollback; delete them after **2026-11-14**.
 
 ## 4c. Log shipping: blank lines used to stop it dead
 
@@ -224,22 +151,16 @@ cp -a /var/log/app/app.log /tmp/app.log.bak   # setup-logs.sh also archives to S
 rc-service ctech-ec2-agent-logs-app restart
 ```
 
-## 4d. Inter Lambda failure alerts
-
-`pix-gateway` publishes failures to the shared `ctech-{env}-alerts` SNS topic (see `pix-gateway/README.md`). Confirm the
-operator's e-mail subscription is **confirmed** (`aws sns list-subscriptions-by-topic`: not `PendingConfirmation`).
-Smoke test after a deploy: invoke the webhook Lambda directly with a malformed body and expect a
-`[pix-gateway/<env>] webhook` mail. Not covered: the wallet API's own `ALARM` log lines (failed refunds/reversals).
-
 ## 5. Withdrawal reconciliation schedule
 
 Run `cmd/reconcile` on a schedule (e.g. EventBridge every 5 min). It resolves
 withdrawals stuck in `processing` (completes or reverses) and exits non-zero when a
 reversal's credit-back fails (`refund_failed`) so the scheduler raises an alarm.
-It also re-queries aged pending PIX deposits, sandbox purchases, and product
-purchases as a lost-webhook fallback. The Lambda role must include each purchase
-table, the PIX deposit table, and their status GSIs. It also queries the holds
-table status GSI for stale game holds.
+It asks Billing about every processing payout, and re-reads aged pending PIX deposits
+as a lost-event fallback. The Lambda role must include the PIX deposit table and its
+status GSI, and the holds table status GSI for stale holds (an alarm, never an
+automatic release). A lookup that errors leaves the withdrawal `processing`; it is
+never read as "not found".
 `cmd/reconcile` uses `config.LoadReconcile`; it does not require the API server's
 JWT issuer, CORS, or fleet-wide Valkey settings.
 
@@ -247,8 +168,8 @@ JWT issuer, CORS, or fleet-wide Valkey settings.
 
 Default off. Turn on only after ctech-poker and ctech-billing are deployed with the description changes (check each
 repo's latest release in its pipeline, not only in git). Add `REQUIRE_DESCRIPTION=true` to the static env written in
-`cdk/lib/api-stack.ts` (next to `GAMBLING_ENABLED`) and redeploy: dev first, exercise a daily reward, a table buy-in
-and cashout, a cosmetic purchase, a sandbox purchase and a billing checkout, and watch the access log for
+`cdk/lib/api-stack.ts` and redeploy: dev first, exercise a daily reward, a table buy-in
+and cashout, a cosmetic purchase and a deposit, and watch the access log for
 `400 description é obrigatório` for 24h before prod. Roll back by removing the line.
 
 ## 5a. Daily PIX limits (admin-only)
@@ -258,36 +179,16 @@ Per-wallet overrides are set directly in DynamoDB on the `real` wallet row (`wal
 Absent or 0 means the default. Counters (`real_daily_counters`) live on the user row in `wallet_users`; to give a
 user a fresh day by hand, remove that attribute. A paid deposit that exceeds the cap is refunded to the payer.
 
-## 6. `GAMBLING_ENABLED` — do not turn this on yet
+## 6. Gambling is Poker's
 
-`GAMBLING_ENABLED` (default **`false`**) gates everything that moves money **into** the gambling ring-fence:
-activation (`POST /wallet/gambling/activate`) and funding (`POST /wallet/game/deposit`). With the flag off those
-routes are **not registered at all** — they 404. That is deliberate: an absent route cannot be reached by a bug, a
-stale client, or a forgotten check.
+The wallet has no gambling switch, no activation, no limits and no self-exclusion screen: consent, personal limits and
+self-exclusion live in Poker (`ctech-poker/docs/runbooks/poker-owns-games.md`), and the game wallet was merged into `real`.
+Real money in Poker is still off in production. Before it is turned on, re-run Poker's `import-responsible` once more
+(the wallet can no longer record a change, but the state recorded before the move is what the import reads), and check the
+counts it prints against the wallet's own.
 
-`POST /wallet/game/withdraw` — the way **out** of the ring-fence — is deliberately **not** gated. The `game`
-balance is real money (Invariant #9), so a route out must always exist: flipping the flag off must never strand a
-user's own money in a game wallet. Reducing exposure is never blocked.
-
-**Precondition for turning it on — all of them, no exceptions:**
-
-1. The **personal limit engine is live** (daily/weekly/monthly caps on `real → game`, hierarchy validation,
-   asymmetric cooldown). Activating a user into a gambling wallet with **no limits configured** is the single
-   thing this design exists to prevent. Shipping activation with limits "to follow" is not an acceptable
-   intermediate state.
-2. `docs/legal/wallet-gambling-addendum.md` has passed **legal review** (it currently carries a PENDING banner),
-   and the text, the UI presentation of it, and `wallet.CurrentGamblingAddendumVersion` all agree. No
-   `ui/src/app/gambling-addendum/page.tsx` (or equivalent) exists yet — only `gambling/activate` and
-   `gambling/responsible` pages are built so far — so this UI surface still needs to be built before
-   the flag can go on.
-3. The `wallet_audit` table exists in the target environment and the API role can write it.
-
-Turning the flag on does **not** retroactively activate anyone: activation stays opt-in and per-user, gated on
-verified KYC plus explicit acceptance of the gambling addendum.
-
-Turning it back **off** is safe as a kill switch: it stops new money entering the ring-fence and stops new
-activations, but does not delete anyone's `game`/`sandbox` wallet or their balances, and users can still return
-their money to `real` because that route is never gated.
+The wallet keeps one guard: `HoldGame` refuses a user whose self-exclusion is still recorded on the wallet's user row
+(fail closed). It is the last line behind Poker's own check, for state an incomplete import could miss.
 
 ## 7. Account deletion (LGPD) participant
 
@@ -353,8 +254,7 @@ LOCKED, typically a PIX deposit confirmed or a poker cash-out credited after the
 purged after the restore point (ctech-account deletion-requests table, see its runbook) and re-publish `user.erase`
 for each. The purge reruns idempotently.
 
-**Balance blocker.** It covers `real` and `game` (both are the user's money). `game` returns to `real` from the wallet
-UI; `real` leaves by PIX to an account of the same CPF. The daily withdrawal limits apply (default R$ 1.000 and one
+**Balance blocker.** It covers `real` (a retired `game` wallet, if any row still holds a balance, counts too). `real` leaves by Pix to an account of the same CPF. The daily withdrawal limits apply (default R$ 1.000 and one
 withdrawal a day), so `detail.days_needed` can be more than one: the user must reach zero **before** requesting the
 deletion, because the account is locked from confirmation. Ask support to raise the wallet's `daily_withdraw_cap` /
 `daily_withdraw_count` (admin fields in DynamoDB) only after verifying the person.

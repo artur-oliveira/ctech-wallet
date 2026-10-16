@@ -1,217 +1,156 @@
 # ctech-wallet API — Endpoint Reference
 
-Go REST API (Fiber v3), base path **`/v1.0`**. Code is the source of truth; all
-anchors are `file:line`. Handlers: `internal/api/v1/*.go`; routing:
-`internal/api/v1/router.go`; business logic: `internal/services/wallet.go`.
+Go REST API (Fiber v3), base path **`/v1.0`**. The code is the source of truth: handlers in
+`internal/api/v1/*.go`, routing in `internal/api/v1/router.go`, business logic in `internal/services/wallet.go`.
+
+The wallet is a **ledger**. It keeps two balances (`real`, `sandbox`) and moves Pix through **ctech-billing**, which owns
+the Inter connection: a deposit is a Billing invoice, a withdrawal is a Billing payout. The wallet sells nothing and
+knows no gambling rule (Poker owns consent, personal limits, self-exclusion and the SKUs). Spec:
+`docs/specs/2026-10-14-wallet-ledger-billing-rail.md` in `ctech-billing`.
 
 Auth model (not multi-tenant):
 
-- **User routes** — `Authorization: Bearer <user JWT>` (RS256, JWKS from
-  `ctech-account`). Claims consumed: `sub` (user_id), `kyc_level`
-  (`""|basic|enhanced`), `last_mfa_at`, `sid` (empty ⇒ M2M). User route
-  groups require a non-empty `sid`; client-credentials tokens are rejected. See
-  `middleware/auth.go:28`, `middleware/claims.go`.
-- **Delegated user scopes** — a user token carrying any `wallet:*` is narrowed
-  to the exact capability assigned to the route. The Wallet SPA requests every
-  public scope; previously issued first-party tokens without `wallet:*` retain
-  their existing access during the migration. A scope from another Resource
-  Server does not opt a token into this narrowing. `GET /v1.0/ws` uses
-  `wallet:balances:read` because it streams the same balance state.
-- **Internal routes** — `client_credentials` M2M token carrying exactly one
-  scope per route; a non‑empty `sid` is **rejected** even if the scope matches
-  (`middleware/scope.go:39`).
+- **User routes** — `Authorization: Bearer <user JWT>` (RS256, JWKS from `ctech-account`). Claims consumed: `sub`
+  (user_id), `kyc_level` (`""|basic|enhanced`), `last_mfa_at`, `sid` (empty ⇒ M2M). User route groups require a non-empty
+  `sid`; client-credentials tokens are rejected (`middleware/auth.go`, `middleware/claims.go`).
+- **Delegated user scopes** — a user token carrying any `wallet:*` is narrowed to the exact capability assigned to the
+  route. The Wallet SPA requests every public scope; previously issued first-party tokens without `wallet:*` keep their
+  access. `GET /v1.0/ws` uses `wallet:balances:read` because it streams the same balance state.
+- **Internal routes** — `client_credentials` M2M token carrying the scope of the route; a non-empty `sid` is rejected even
+  if the scope matches (`middleware/scope.go`).
+- **Billing's event route** — `POST /internal/billing/events` is authenticated by an HMAC signature, not a token.
 
-All errors are RFC 7807 Problem JSON (`problem/*`); never raw errors or
-`fiber.Map`. See `internal/problem/problem.go` for type URIs.
+All errors are RFC 7807 Problem JSON (`problem/*`); never raw errors or `fiber.Map`.
 
 ---
 
 ## 1. Health & realtime (unauthenticated)
 
-| Method | Path                 | Handler         | Notes                                                                                                                                                                                                                                                                                                                                    |
-|--------|----------------------|-----------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| GET    | `/v1.0/health`       | `health.go:119` | Liveness. Returns `{status:"pass",releaseId,serviceId}`. Dependency‑free.                                                                                                                                                                                                                                                                |
-| GET    | `/v1.0/health-check` | `health.go:123` | Detailed draft‑inadarei health check. ALB target group accepts **200 and 207** (degraded). DynamoDB is the only dependency that can fail the probe (`503`); cache/PIX/JWKS degrade to `warn`. `health.go:118`,`aggregate:170`.                                                                                                           |
-| GET    | `/v1.0/ws`           | `ws.go:82`      | WebSocket upgrade. **Auth is the first post‑upgrade text frame** (`{"token":"<jwt>"}`), NOT a `?token=` query param (that leaked into LB/CF logs — see `ws.go:74`). Origin policy mirrors CORS (`wsAllowedOrigin:58`). The registry fans `deposit_confirmed` / `withdraw_*` events to the user's connections (`services/wallet.go:489`). |
+| Method | Path                 | Notes |
+|--------|----------------------|-------|
+| GET    | `/v1.0/health`       | Liveness. `{status:"pass",releaseId,serviceId}`. Dependency-free. |
+| GET    | `/v1.0/health-check` | Detailed health check. The ALB accepts **200 and 207** (degraded). DynamoDB is the only dependency that can fail the probe (`503`); cache and JWKS degrade to `warn`. There is no Inter or Pix check: Billing owns that connection. |
+| GET    | `/v1.0/ws`           | WebSocket upgrade. **Auth is the first post-upgrade text frame** (`{"token":"<jwt>"}`), never a `?token=` query parameter. Origin policy mirrors CORS. Fans `deposit_confirmed` and `withdraw_*` events to the user's connections. |
 
 ---
 
-## 2. Auth / caller state (Bearer user JWT)
+## 2. Caller state (Bearer user JWT)
 
-| Method | Path                               | Handler      | Auth     | Body | Behaviour                                                                                                                                                                                                                                                                                                                                                    |
-|--------|------------------------------------|--------------|----------|------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| GET    | `/v1.0/auth/me`                    | `auth.go:11` | user JWT | —    | Returns `Me{user_id, terms_addendum_accepted, terms_addendum_version, gambling_addendum_accepted, gambling_addendum_version}`. Both `*_accepted` flags are **computed** against the current version constants (`user.go:44`, `domain/wallet/user.go:53,60`) — never stored — so bumping a version re‑gates everyone at once. UI gates the whole app on this. |
-| POST   | `/v1.0/auth/terms-addendum/accept` | `auth.go:20` | user JWT | —    | Records acceptance of the **current** terms addendum version (partial upsert, never overwrites the gambling acceptance). `204 No Content`. `repositories/user.go:39`.                                                                                                                                                                                        |
+| Method | Path                               | Behaviour |
+|--------|------------------------------------|-----------|
+| GET    | `/v1.0/auth/me`                    | `Me{user_id, terms_addendum_accepted, terms_addendum_version}`. The flag is **computed** against the current version constant, never stored, so bumping a version re-gates everyone. The UI gates the app on it. |
+| POST   | `/v1.0/auth/terms-addendum/accept` | Records acceptance of the **current** terms addendum. `204`. |
 
 ---
 
 ## 3. Wallet user routes (Bearer user JWT)
 
-Public scope map:
-
 | Scope | Operations |
 |---|---|
-| `wallet:state:read` | Read Wallet-side caller state (`GET /auth/me`). |
+| `wallet:state:read` | Wallet-side caller state (`GET /auth/me`). |
 | `wallet:terms:write` | Accept the Wallet terms addendum. |
-| `wallet:balances:read` | Read balances and connect to the balance-update WebSocket. |
-| `wallet:ledger:read` | Read statements for real, game, and sandbox wallets. |
-| `wallet:deposits:write` | Declared but unused — no deposit route exists (`../docs/specs/2026-10-07-asaas-removal.md`). |
-| `wallet:withdrawals:write` | Declared but unused — no withdrawal route exists. |
-| `wallet:sandbox-purchases:read` | Read sandbox-credit purchase history. |
-| `wallet:sandbox-purchases:write` | Buy sandbox credits or refund an eligible purchase. |
-| `wallet:product-purchases:read` | Read digital-product purchase history. |
-| `wallet:game:write` | Move value `real↔game`; feature/KYC/limit gates still apply. |
-| `wallet:gambling:read` | Read responsible-gambling limits and status. |
-| `wallet:gambling:write` | Activate gambling and manage limits or self-exclusion. |
+| `wallet:balances:read` | Read balances; connect to the balance-update WebSocket. |
+| `wallet:ledger:read` | Read statements (`real`, `sandbox`) and the history of old Sandbox-pack and product purchases. |
+| `wallet:deposits:write` | Open a Pix deposit. |
+| `wallet:withdrawals:write` | Request a withdrawal. |
 
-Scopes add a permission gate; they never bypass KYC, feature flags,
-idempotency, responsible-gambling limits, ownership, or financial invariants.
+Scopes add a permission gate; they never bypass KYC, idempotency, ownership or the financial invariants.
 
-| Method | Path                                        | Handler         | Extra gate                                               | Body                                                           | Side‑effects / business rules                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-|--------|---------------------------------------------|-----------------|----------------------------------------------------------|----------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| GET    | `/v1.0/wallet/`                             | `wallet.go:17`  | —                                                        | —                                                              | Returns `{real, activated, [game], [sandbox]}`. **`real` is always present.** `activated` and `game` remain tied exclusively to gambling consent. An independently created `sandbox` is returned before activation so its read-only ledger remains available; its presence never implies consent. `real` wallet is auto‑created on first access (`EnsureRealWallet`). Also returns `limits` (display metadata for the PIX dialogs, centavos): `deposit{min,max,daily_cap,daily_remaining,max_now}`, `withdraw{min,daily_cap,daily_remaining,count_remaining,max_now}` and `resets_at`; `max_now` already folds in today's headroom and the balance, `0` means not possible now. Enforcement stays in the deposit/withdraw services.                                                                                                                                                                                                                                                                        |
-| POST   | `/v1.0/wallet/sandbox/purchase`             | `wallet.go:85`  | —                                                        | `{amount:int64>0}`                                             | Converts **game→sandbox** credits (`PurchaseSandbox`). Source is `game`, **never `real`** — real money reaches sandbox only by first crossing `real→game` (Invariant #7). Sandbox is a sink (Invariant #6). Credit = `amount × 10` credits (`model.go:115`). Idempotency key required.                                                                                                                                                                                                                                                                                                                        |
-| GET    | `/v1.0/wallet/sandbox/purchases`            | `sandbox_purchase.go` | —                                                 | —                                                              | Read-only, newest-first history of the caller's sandbox-credit purchase records, including M2M-opened purchases. Ownership is enforced by `gsi_user` (`user_id`, `created_at`); supports `limit` (default 50, max 200) and opaque `cursor`. Separate from the sandbox ledger. |
-| GET    | `/v1.0/wallet/product-purchases`            | `m2m_product_purchase.go` | —                                             | —                                                              | Read-only, newest-first history of generic digital-product purchases owned by the caller, including M2M-created sales. Queries `gsi_user` and returns no requesting-client/webhook metadata. Supports `limit` and opaque `cursor`; these records have no ledger effect. |
-| GET    | `/v1.0/wallet/:type/ledger`                 | `wallet.go:161` | —                                                        | —                                                              | Paginated statement for `type ∈ {real,game,sandbox}`. `game` ⇒ `gambling-not-activated` before consent; an existing independently created `sandbox` remains readable before activation, while an absent sandbox returns the same problem. `limit` (default 50, max 200) + opaque `cursor` (a cursor naming another wallet is `400`). Newest first. Each item: `{entry_id, wallet_id, type, amount, balance_before, balance_after, ref?, description?, created_at}`; `balance_before = balance_after - amount` is derived server-side. `pk`, `sk` and `idempotency_key` are not returned. Response: `{items, next_cursor, has_next}`.                                                                                                                                                                                                                                                                                              |
-| POST   | `/v1.0/wallet/game/withdraw`                | `wallet.go:125` | —                                                        | `{amount:int64>0}`                                             | **Always registered, never flag‑gated** (`router.go:55`). `game→real` (`ReturnFromGame`): never limited, never charged (Invariant #8). A route **out** of the ring‑fence must always exist so `GAMBLING_ENABLED=false` can never strand a user's own money.                                                                                                                                                                                                                                                                                                                                                   |
-| POST   | `/v1.0/wallet/gambling/self-exclude`        | `wallet.go:188` | —                                                        | `{period:"30d"                                                 | "90d"                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |"indefinite"}` | Self‑exclusion (reduces exposure ⇒ always available). Extension‑only: a new exclusion may never end earlier than the one it replaces; indefinite cannot be lengthened. Audited. `responsible.go:36`. |
-| POST   | `/v1.0/wallet/gambling/self-exclude/revoke` | `wallet.go:202` | —                                                        | —                                                              | Lifts an **indefinite** exclusion only, and only after its 90‑day floor (`responsible.go:73`). Fixed periods expire on their own. `204`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| GET    | `/v1.0/wallet/gambling/limits`              | `wallet.go:211` | —                                                        | —                                                              | Returns `{limits, usage, excluded}` — current caps, São‑Paulo window sums + reset times, exclusion state. `responsible.go:191`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| PUT    | `/v1.0/wallet/gambling/limits`              | `wallet.go:221` | —                                                        | `{daily,weekly,monthly:int64>0}`                               | Sets the three personal deposit caps (must satisfy `0 < daily ≤ weekly ≤ monthly`). Decreases apply immediately; increases wait out a cooldown (7d, or 14d when monthly grows) as a `pending` set. First configuration / activation requires limits. Audited. `responsible.go:102`.                                                                                                                                                                                                                                                                                                                           |
-| DELETE | `/v1.0/wallet/gambling/limits/pending`      | `wallet.go:237` | —                                                        | —                                                              | Cancels a scheduled increase (keeps stricter current limits). `204`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| POST   | `/v1.0/wallet/gambling/activate`            | `wallet.go:95`  | `RequireKYC(basic)` (`router.go:76`)                     | `{accept_addendum:bool(required), daily,weekly,monthly:int64}` | Opts the caller into `game`+`sandbox`. Records gambling‑addendum acceptance (audited) then activates. Gates: `kyc_level != ""` (a **minimum** of `basic`, so `enhanced` also passes — see `ActivateGambling`) **and** current gambling addendum accepted. Mandatory limits on first activation. Idempotent (replay returns same wallets, appends nothing). `wallet.go:128`.                                                                                                                                                                                                                                                                                                              |
-| POST   | `/v1.0/wallet/game/deposit`                 | `wallet.go:115` | `RequireKYC(verified)`                                   | `{amount:int64>0}`                                             | **Registered ONLY when `GAMBLING_ENABLED=true`** (`router.go:73`) — else `404`. `real→game` (`FundGame`): the **one** edge real money enters the ring‑fence, metered by the personal limit engine (GROSS INFLOW, Invariant #8). Also capped at `MaxInboundAmount`. `wallet.go:680`.                                                                                                                                                                                                                                                                                                                           |
+| Method | Path                              | Gates | Behaviour |
+|--------|-----------------------------------|-------|-----------|
+| GET    | `/v1.0/wallet/`                   | — | `{real, [sandbox], limits}`. `real` is always present (auto-created on first access). `sandbox` appears when a Sandbox wallet exists, as history. `limits` is display metadata for the Pix dialogs (centavos): `deposit{min,max,daily_cap,daily_remaining,max_now}`, `withdraw{min,daily_cap,daily_remaining,count_remaining,max_now}`, `resets_at`; `max_now` already folds in today's headroom and the balance (`0` = not possible now). Enforcement stays in the services. |
+| GET    | `/v1.0/wallet/:type/ledger`       | — | Paginated statement for `type ∈ {real, sandbox}` (a retired `game` wallet is read-only data and no longer offered). `limit` (default 50, max 200) + opaque `cursor` (a cursor naming another wallet is `400`). Newest first. Item: `{entry_id, wallet_id, type, amount, balance_before, balance_after, ref?, description?, created_at}`; `balance_before` is derived. Response `{items, next_cursor, has_next}`. |
+| GET    | `/v1.0/wallet/sandbox/purchases`  | `wallet:ledger:read` | Read-only, newest-first history of the caller's old Sandbox-pack purchase records. Poker sells packs now (through Billing); nothing writes these rows. `limit` and `cursor` as above. |
+| GET    | `/v1.0/wallet/product-purchases`  | `wallet:ledger:read` | The same for old digital-product purchases. |
+| POST   | `/v1.0/wallet/deposits`           | KYC verified, `Idempotency-Key` | `{amount:int64>0}` ⇒ `201 {txid, amount, status, pix_copia_e_cola, qr_code_base64?, expires_at}`. Opens a **Billing invoice** (customer ensured from the KYC identity, reference = the deposit's `txid`). Range and daily cap are checked **before** the invoice is opened; a replay of the key returns the same txid/QR. If Billing is down the call fails closed (`502`) and leaves no row that blocks a retry. Errors: `422 deposit-out-of-range`, `422 amount-above-limit`, `409 daily-deposit-limit`, `409 idempotency-conflict`. |
+| POST   | `/v1.0/wallet/withdrawals`        | KYC verified + step-up MFA, `Idempotency-Key` | `{amount:int64>0}`. No destination field: the payout goes to the KYC CPF, through a **Billing payout**. Debits exactly `amount` (no fee). `201` completed, `202` still `processing` (Billing has only accepted it; the reconcile job and Billing's `payout.done`/`payout.failed` events resolve it). Errors: `403 step-up-required`, `409 daily-withdraw-limit`, `409 insufficient-balance`, `409 wallet-busy`, `422 pix-key-not-found` (debit reversed, slot returned). |
 
-### 3b. User PIX deposit / withdrawal (Inter)
+### Retired routes
 
-Both require `Idempotency-Key`, KYC `enhanced` and their scope (`wallet:deposits:write` /
-`wallet:withdrawals:write`). Daily limits per wallet: see root `CLAUDE.md` (Money math).
+These answer **`410 route-retired`** (after the normal 401 for an anonymous caller, so retirement does not leak which
+routes exist). They are listed, and checked, in `router_test.go`.
 
-| Method | Path                         | Gates                                   | Body                | Notes |
-|--------|------------------------------|-----------------------------------------|---------------------|-------|
-| POST   | `/v1.0/wallet/deposits`      | KYC verified                            | `{amount:int64>0}`  | `201 {txid, amount, status, pix_copia_e_cola, qr_code_base64?, expires_at}`. Range and daily cap checked **before** `CreateCharge`; replay of the key returns the same txid/QR. Errors: `422 deposit-out-of-range`, `422 amount-above-limit`, `409 daily-deposit-limit`, `409 idempotency-conflict`. Credit happens only after the webhook wake-up re-queries Inter and the masked payer CPF matches the KYC CPF; a deposit that would exceed the daily cap at credit time is refunded to the payer. |
-| POST   | `/v1.0/wallet/withdrawals`   | KYC verified + step-up MFA (`RequireRecentMFA`) | `{amount:int64>0}`  | No destination field: the payout goes to the KYC CPF. Debits exactly `amount` (no fee). `201` completed, `202` still `processing` (the reconcile job resolves it). Errors: `403 step-up-required`, `409 daily-withdraw-limit`, `409 insufficient-balance`, `409 wallet-busy`, `422 pix-key-not-found` (debit reversed, daily slot returned). |
+- Sale of Sandbox packs and goods (moved to Poker and Billing): `POST /wallet/sandbox/purchase`, `POST /wallet/sandbox/purchases`,
+  `POST /wallet/sandbox/purchases/:id/refund`; internal `/wallet/sandbox-purchase*`, `/wallet/product-purchase*`.
+- The charge and the Pix gateway: `POST|GET /internal/wallet/charge*`, `POST /internal/pix/confirm-deposit|confirm-sandbox-purchase|confirm-product-purchase`.
+- The game wallet and the gambling rules (merged into `real`; Poker owns the rules): `POST /wallet/game/withdraw`, `POST /wallet/game/deposit`,
+  `/wallet/gambling/*` (activate, limits, self-exclude), `/internal/wallet/game/*`, `GET /internal/wallet/holds/status/:user_id`,
+  `GET /internal/wallet/responsible/export`.
 
 ---
 
-## 4. Internal M2M routes (Bearer M2M + scope)
+## 4. Internal routes
 
-> `description` (3-255 chars) is **required** on `sandbox/credit`, `sandbox/debit`, `real/debit`, `game/cashout`, `sandbox-purchase`, `product-purchase` and `charge` when the wallet runs with `REQUIRE_DESCRIPTION=true`; otherwise optional. Hold and release are exempt.
+> `description` (3-255 chars) is **required** on `sandbox/credit`, `sandbox/debit`, `real/debit` and `holds/cashout` when the
+> wallet runs with `REQUIRE_DESCRIPTION=true`; otherwise optional. Hold and release are exempt.
 
-Scope constants: `middleware/scope.go:11`. Every route also rejects a
-non‑empty `sid` (`scope.go:42`).
+| Method | Path                                          | Scope / auth | Body | Behaviour |
+|--------|-----------------------------------------------|--------------|------|-----------|
+| POST   | `/v1.0/internal/billing/events`               | HMAC: `X-Billing-Signature` + `X-Billing-Timestamp` (no JWT) | Billing's event envelope | The `invoice.paid` wake-up and the payout events. The wallet reads only the event `type` and the invoice `reference`, then **re-reads the invoice from Billing** and applies its own rules before it credits (Invariants 11, 12). A bad signature or a stale timestamp is `401`; an unknown reference is `200` so Billing stops retrying; two events for one deposit credit once. Mounted before the `/internal` JWT check. |
+| POST   | `/v1.0/internal/wallet/sandbox/credit`        | `internal:wallet:credit` | `{user_id, amount>0, idempotency_key, reason?}` | Grants Sandbox credits (a pack Poker sold, a bonus). `CreditSandbox`. |
+| POST   | `/v1.0/internal/wallet/sandbox/debit`         | `internal:wallet:debit` | same | Spends Sandbox credits (a bet). **Sandbox-only**. |
+| POST   | `/v1.0/internal/wallet/real/debit`            | `internal:wallet:debit-real` | same | Debits the **real** wallet for an authorized M2M client (a table fee, a subscription). Deliberately separate from `:debit` so a Sandbox-only client can never touch `real`. |
+| POST   | `/v1.0/internal/wallet/holds/`                | `internal:wallet:hold` | `{user_id, amount>0, table_ref, idempotency_key}` | Reserves a buy-in against `real` (conditional debit, Invariant 1). **Refused while a self-exclusion recorded here is active** (fail closed); consent, limits and exclusion are otherwise Poker's and are checked before it calls. The hold record never bounds the later cash-out. |
+| POST   | `/v1.0/internal/wallet/holds/:hold_id/release`| `internal:wallet:hold` | `{user_id, idempotency_key}` | Refunds a `held` hold in full. `user_id` must match the owner. Idempotent. A hold opened on the retired game wallet is refunded to `real`. |
+| POST   | `/v1.0/internal/wallet/holds/cashout`         | `internal:wallet:hold` | `{user_id, amount>0, table_ref, hold_ids[], idempotency_key, description?}` | Fail-closed settlement: the amount may not exceed the referenced held value. The credit, the guard and every `held→settled` transition commit atomically. Never refused for an excluded player. |
+| GET    | `/v1.0/internal/wallet/balance/:user_id`      | `internal:wallet:balance` | — | Read-only `{game_balance, sandbox_balance}` (centavos): `game_balance` is the **real** balance, what a game can stake. Never creates a wallet. |
+| GET    | `/v1.0/internal/erasure/eligibility/:sub`     | `internal:wallet:erasure-eligibility` | — | Account-deletion pre-check, called by **ctech-account**. `{eligible, blockers[]}`. Codes: `wallet.balance_nonzero`, `wallet.hold_open`, `wallet.deposit_pending`, `wallet.deposit_quarantined`, `wallet.withdrawal_pending`, `wallet.purchase_pending` (old rows only). Unknown `sub` ⇒ eligible; nothing is created. |
 
-| Method | Path                                               | Scope (const)                                     | Handler           | Body                                                                        | Behaviour                                                                                                                                                                                                                                                      |
-|--------|----------------------------------------------------|---------------------------------------------------|-------------------|-----------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| POST   | `/v1.0/internal/pix/confirm-deposit`               | `internal:wallet:confirm-deposit` (`scope.go:15`) | `internal.go:12`  | `{txid, payer_cpf?, payer_name?}` (`dto.go:69`)                             | Called by **pix‑gateway's webhook Lambda** (which already re‑queried Inter). api **re‑queries Inter itself again** via the Lambda PixClient before crediting (Invariant #11). CPF match anti‑fraud gate; amount must equal the opened charge. `wallet.go:278`. |
-| POST   | `/v1.0/internal/pix/confirm-product-purchase`      | `internal:wallet:confirm-deposit` (`scope.go:15`) | `m2m_product_purchase.go` | `{txid}` (`ConfirmPurchaseRequest`) | Called by pix-gateway for reserved `prdp` txids. Re-queries Inter, validates completed status and the catalog-owned amount, then conditionally transitions `wallet_product_purchases` from `pending` to `confirmed` and notifies the owning M2M client. Never touches a wallet balance or ledger. |
-| POST   | `/v1.0/internal/wallet/sandbox/credit`             | `internal:wallet:credit` (`scope.go:12`)          | `internal.go:24`  | `{user_id, amount>0, idempotency_key, reason?}` (`dto.go:52`)               | Grants sandbox currency (e.g. poker/dominó bonus). `CreditSandbox`.                                                                                                                                                                                            |
-| POST   | `/v1.0/internal/wallet/sandbox/debit`              | `internal:wallet:debit` (`scope.go:13`)           | `internal.go:37`  | same                                                                        | Spends sandbox currency (e.g. a bet). `DebitSandbox`. **Sandbox‑only** — distinct from `real` debit.                                                                                                                                                           |
-| POST   | `/v1.0/internal/wallet/real/debit`                 | `internal:wallet:debit-real` (`scope.go:14`)      | `internal.go:52`  | same                                                                        | Debits the **real** wallet for an authorized M2M client (e.g. `ctech-billing` subscription). No PIX leg. **Deliberately separate from `internal:wallet:debit`** so a sandbox‑only client can never touch `real`. `wallet.go:811`.                              |
-| POST   | `/v1.0/internal/wallet/game/hold`                  | `internal:wallet:game-hold` (`scope.go:22`)       | `internal.go:66`  | `{user_id, amount>0, table_ref, idempotency_key}` (`dto.go:78`)             | Reserves a buy‑in against `game` (real conditional debit, Invariant #1). Hold record never bounds the later cash‑out. `wallet.go:843`.                                                                                                                         |
-| POST   | `/v1.0/internal/wallet/game/hold/:hold_id/release` | `internal:wallet:game-hold`                       | `internal.go:80`  | `{user_id, idempotency_key}` (`dto.go:89`)                                  | Refunds a `held` hold in full (table/hand aborted before play). Requires `user_id` to match the hold's owner (SEC‑07). Idempotent. `wallet.go:871`.                                                                                                            |
-| POST   | `/v1.0/internal/wallet/game/cashout`               | `internal:wallet:game-cashout` (`scope.go:24`)    | `internal.go:95`  | `{user_id, amount>0, table_ref, hold_ids[], idempotency_key, description?}` (`dto.go:97`; description required when `REQUIRE_DESCRIPTION=true`) | Fail-closed settlement: amount may not exceed the referenced held value. Wallet credit, ledger/idempotency guard, and every `held→settled` transition commit atomically. Multi-player winnings require the future zero-sum settlement protocol.                |
-| GET    | `/v1.0/internal/wallet/game/status/:user_id`       | `internal:wallet:game-status` (`scope.go:27`)     | `internal.go:111` | —                                                                           | Real‑money eligibility for a skill game: `{activated, self_excluded, limits_configured}`. Registered unconditionally so poker sees "not eligible" even while the flag is off. `responsible.go:236`.                                                            |
-| GET    | `/v1.0/internal/wallet/balance/:user_id`           | `internal:wallet:balance` (`scope.go:32`)         | `internal.go:121` | —                                                                           | Read‑only `{game_balance, sandbox_balance}` (centavos). `real` deliberately excluded — poker never touches real money directly. Never creates a wallet; a wallet that doesn't exist reports `0`. `wallet.go` `BalancesFor`.                                    |
-| GET    | `/v1.0/internal/erasure/eligibility/:sub`          | `internal:wallet:erasure-eligibility`             | `erasure.go`      | —                                                                           | Account-deletion pre-check, called by **ctech-account** with a token it mints (aud = wallet, M2M). Returns `{eligible, blockers[]}` (`erasure.Eligibility`). Codes: `wallet.balance_nonzero` (`detail.wallet`, `detail.amount_cents`; `action_url` = wallet home; for `real` also `daily_withdraw_cap_cents`, `daily_withdraw_count`, `days_needed`), `wallet.hold_open`, `wallet.deposit_pending`, `wallet.deposit_quarantined`, `wallet.withdrawal_pending`, `wallet.purchase_pending`. Unknown `sub` → eligible, nothing created. Never creates a wallet. |
+> **Scope naming.** The wallet's **own** M2M client requests `internal:account:kyc` from `ctech-account` to read the verified CPF
+> (`kycclient/kycclient.go`) and `billing:customers:*`, `billing:invoices:*`, `internal:billing:payouts-*` from Billing: different
+> scopes on different services. The scopes of the retired routes stay in the manifest as `deprecated` (the registry refuses to drop an
+> active scope): `wallet:sandbox-purchases:*`, `wallet:product-purchases:read`, `wallet:game:write`, `wallet:gambling:*`,
+> `internal:wallet:confirm-deposit`, `:sandbox-purchase`, `:product-purchase`, `:charge-amount`, `:game-hold`, `:game-cashout`,
+> `:game-status`, `:responsible-export`.
 
-> **Scope naming note (divergence B2/B3).** The scope guarding
-> `/internal/pix/confirm-deposit` is `internal:wallet:confirm-deposit`
-> (pix‑gateway → api). The wallet's **own** M2M client requests
-> `internal:account:kyc` from `ctech-account` to read the verified CPF
-> (`kycclient/kycclient.go:24`) — a *different* scope on a *different*
-> service. Some older docs/comments conflate the two; the code is
-> authoritative. Similarly `internal:wallet:debit-real` (code, `scope.go:14`)
-> is the correct real‑wallet debit scope; the stale string
-> `internal:wallet:real:debit` survives only in
-> `docs/specs/2026-07-19-poker-game-holds-design.md`.
-
-> **Account deletion lock.** While ctech-account's deletion saga holds a user (grace, purging or erased), every
-> operation that opens new exposure for that `user_id` answers `409 /problems/account-erasure-pending`, on user
-> AND internal routes (`sandbox/credit|debit`, `real/debit`, `game/hold`, purchases, `charge`). Settlement is never
-> refused: `game/hold/:id/release`, `game/cashout`, and the `pix/confirm-*` routes. A deposit paid for an ERASED user
-> is refunded to the payer, never credited. User routes that change money or consent also re-check the JWT
-> revocation list fail-closed and answer `503 /problems/service-unavailable` when it is unreachable. Plan:
-> `docs/plans/2026-10-07-account-deletion-participant.md`.
+> **Account deletion lock.** While ctech-account's deletion saga holds a user (grace, purging or erased), every operation that opens new
+> exposure for that `user_id` answers `409 /problems/account-erasure-pending`, on user AND internal routes (`sandbox/credit|debit`,
+> `real/debit`, `holds`, deposits). Settlement is never refused: `holds/:id/release`, `holds/cashout` and the Billing events. A deposit paid
+> for an ERASED user is refunded to the payer, never credited. User routes that change money or consent also re-check the JWT revocation
+> list fail-closed and answer `503 /problems/service-unavailable` when it is unreachable.
 
 ---
 
 ## 5. Money math (all integer **centavos**)
 
-- **Withdrawal** — debits exactly the requested amount. CTech does not charge a
-  withdrawal fee and writes no fee ledger entry.
-- **PIX deposit range** — per‑wallet `min_deposit`/`max_deposit` override
-  defaults `100`/`1000000` (R$1 / R$10.000) (`deposit_limits.go:9`); minimum
-  never below absolute floor `100`; incoherent `max<min` widens rather than
-  rejecting. Checked before `CreateCharge`.
-- **Absolute inbound ceiling** `MaxInboundAmount = 1_000_000 × 100` (R$1.000.000)
-  — hard cap on a single deposit **or** `real→game` fund; no override may
-  exceed it (`model.go:105`).
-- **Sandbox conversion** `SandboxCreditsPerCent = 10` (R$1 ⇒ 1000 credits)
-  (`model.go:115`).
-- `real↔game` transfers carry **no fee**.
+- **Withdrawal** — debits exactly the requested amount. CTech charges no withdrawal fee and writes no fee ledger entry.
+- **Pix deposit range** — per-wallet `min_deposit`/`max_deposit` override the defaults `100`/`1000000` (R$1 / R$10.000); the minimum never
+  drops below the absolute floor `100`; an incoherent `max<min` widens rather than rejecting. Checked before the invoice is opened.
+- **Daily limits** (per wallet, `domain/wallet/daily_limits.go`) — deposit cap R$1.000, withdraw cap R$1.000, withdraw count 1; counters live on
+  the user row, written under the real wallet lock in the same transaction as the movement. The deposit cap is enforced at credit (the excess is refunded).
+- **Absolute inbound ceiling** `MaxInboundAmount = 1_000_000 × 100` (R$1.000.000) — a hard cap on a single deposit.
+- **Sandbox** `SandboxCreditsPerCent = 10` (R$1 ⇒ 1000 credits) — used only to display and to price packs in Poker.
 
 ---
 
-## 6. Financial Safety Invariants — how each is enforced in code
+## 6. Financial Safety Invariants — how each is enforced
 
-1. **Balance never negative** — every debit carries `balance >= :amount`
-   condition in `balanceTx` (`repositories/wallet.go:591`, expr at `:596`).
-   Failure ⇒ `insufficient-balance` (`problem.go:143`).
-2. **Ledger append‑only** — `ledger_entries` written only via
-   `BuildPutTxItemIfAbsent`; authoritative balance is `wallets.balance`
-   (`model.go:149`). `wallet_audit` likewise append‑only
-   (`repositories/audit.go:28`).
-3. **Idempotent** — guard item `IDEM#{key}` written `attribute_not_exists` in
-   the same `TransactWriteItems` (`repositories/wallet.go:619`); replay by
-   `Idempotency-Key` header (user) or `idempotency_key` body (internal)
-   returns the prior result, and a payload hash drift ⇒ `idempotency-conflict`.
-   Guard rows are permanent; a replay does not become fresh after a retention window.
-   (`checkReplay:638`).
-4. **One op / wallet** — Valkey `SETNX` lock, `LockTTL = 10s` auto‑release
-   (`lock/lock.go:23`). Contention ⇒ `wallet-busy` (`problem.go:147`).
-5. **Cross‑wallet lock order** — `lock.AcquireOrdered` sorts keys
-   lexicographically (total, deadlock‑free); used by `ringTransfer`
-   (`wallet.go:655`).
-6. **Sandbox never becomes real** — `PurchaseSandbox` debits `game`, never
-   `real`; no route accepts `type=sandbox` for withdrawal/conversion
-   (`wallet.go:746`).
-7. **Real money enters ring‑fence ONLY via `real→game`** — `FundGame` is the
-   single `real→game` edge (`wallet.go:680`); regression test
-   `TestSandboxPurchaseNeverDebitsRealWallet` guards it.
-8. **`real→game` limit = GROSS INFLOW** — `FundGame` meters and **never**
-   refunds headroom on `ReturnFromGame` (`wallet.go:737`).
-9. **`game` is real money** — withdrawable via `real`; total real = `real +
-   game` (`model.go:6`).
-10. **Consent opt‑in + auditable** — `game` absent until KYC at least `basic` +
-    current gambling addendum accepted; every activation / limit change
-    appends to `wallet_audit` (`Event*` in `domain/wallet/audit.go:6`). `sandbox`
-    is play currency and is created independently, lazily, with no KYC/consent
-    requirement (`EnsureSandboxWallet`, `repositories/wallet.go`).
-11. **Webhook never source of truth** — `ConfirmDeposit` re‑queries Inter by
-    `txid` before crediting; webhook body only supplies the payer CPF/name
-    (masked‑compare, fails closed) (`wallet.go:358`, `maskedCPFMatches:490`).
-12. **User money never lands in CTech's Inter account** — enforced by absence:
-    no route opens a user deposit or pays out a withdrawal
-    (`../docs/specs/2026-10-07-asaas-removal.md`).
+1. **Balance never negative** — every debit carries `balance >= :amount` in `balanceTx` (`repositories/wallet.go`). Failure ⇒ `insufficient-balance`.
+2. **Ledger append-only** — `ledger_entries` is written only via `BuildPutTxItemIfAbsent`; the authoritative balance is `wallets.balance`.
+   `wallet_audit` likewise.
+3. **Idempotent** — guard item `IDEM#{key}` written `attribute_not_exists` in the same `TransactWriteItems`; a replay returns the prior result
+   and a payload-hash drift is `idempotency-conflict`. Guard rows are permanent.
+4. **One op per wallet** — Valkey `SETNX` lock, `LockTTL = 10s`. Contention ⇒ `wallet-busy`.
+5. **Cross-wallet lock order** — `lock.AcquireOrdered` sorts keys lexicographically.
+6. **Sandbox never becomes real, real never becomes Sandbox** — the list of writing routes is closed (`TestNoRouteConvertsSandboxToAnything`);
+   `TestSandboxHasNoRealDebitPath`, `TestCreditingSandboxNeverDebitsReal` and `TestDebitingRealNeverCreditsSandbox` pin the services.
+7–10. *(Retired 2026-10-15: the ring-fence rules, the `game` wallet, gross-inflow limits and consent moved to Poker.)*
+11. **A Billing event is never the source of truth** — `ConfirmDeposit` re-reads the invoice from Billing before crediting; the pending-deposit
+    sweep is the backstop for a lost event.
+12. **Attribution before credit** — a paid deposit credits only when the amount equals the expected amount, the payer matches the KYC CPF by the
+    wallet's own check **and** Billing says `payer_match = match`. Any disagreement quarantines and refunds; no payer yet ⇒ pending (the
+    operator is told after 30 minutes). Payouts go only to the KYC CPF.
 13. *(Retired 2026-10-07 — was the BaaS verification-fee rule.)*
-14. **No money in limbo** — legacy withdrawal `processing` resolved by the
-    **reconcile** job (`services/reconcile.go:35`): completed ⇒ mark done,
-    not‑found ⇒ reverse (credit back), failed reversal ⇒ `refund_failed` +
-    alarm. Deposit sweep re‑queries pending deposits, but a paid deposit with no
-    verified payer identity remains quarantined and is never credited.
-    (`reconcile.go:139`). Stale `held` holds alarm only, never auto‑release
-    (`reconcile.go:180`).
+14. **No money in limbo** — a `processing` withdrawal is resolved by the **reconcile** job from Billing: done ⇒ complete; not found after the grace
+    period or failed ⇒ reverse (credit back); a failed reversal ⇒ `refund_failed` + alarm. A lookup that errors is never read as "not found". Stale
+    `held` holds alarm only, never auto-release.
 
 ---
 
 ## 7. Known divergences (documented, NOT fixed here)
 
-| ID  | Where                                                                                                                                                                                                                                                                                                                                                              | Status                      |
-|-----|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------|
-| B1  | Every money op uses `Base.TransactWrite` → `dynamodb:TransactWriteItems` (`repositories/wallet.go:275,323,383,444`, `base.go` wraps `ctech-go-common/dynamo`). Verify the CDK IAM role grants `dynamodb:TransactWriteItems` — if missing, **all** money ops are denied at runtime.                                                                                 | Open — see `cdk/README.md`. |
-| B2  | `internal:account:kyc` (wallet→account KYC, `kycclient.go:24`) vs `internal:wallet:confirm-deposit` (pix‑gateway→api) — distinct scopes; misleading comments at `kycclient.go:2` and `config.go:41`.                                                                                                                                                               | Documented.                 |
-| B3  | `internal:wallet:debit-real` (code, `scope.go:14`) vs stale `internal:wallet:real:debit` in `docs/specs/2026-07-19-poker-game-holds-design.md`.                                                                                                                                                                                                                    | Documented.                 |
-| B7  | Valkey fail‑closed in prod (`config.go:74`) but `newCacheBackend` silently falls back to in‑memory on missing/!redis (`app.go:65`) and even on redis connect failure (`app.go:72`); same for the WS registry (`app.go:91`). Non‑prod ⇒ locks/WS not fleet‑shared with no hard failure.                                                                             | Open.                       |
-| B18 | Money constants mirrored api↔ui (no float): `SANDBOX_CREDITS_PER_CENTAVO=10` (`ui/src/lib/utils/money.ts:46` ↔ `model.go:115`). No fee constants exist on either side any more (`docs/specs/2026-08-16-withdrawal-fee-removal.md`). **`rpc-contract` defines NO money constants** — the mirror is purely api↔ui. Keep them in sync by hand. | Documented. |
+| ID  | Where | Status |
+|-----|-------|--------|
+| B1  | Every money op uses `Base.TransactWrite` ⇒ `dynamodb:TransactWriteItems`. Verify the CDK IAM role grants it: if missing, **all** money ops are denied at runtime. | Open — see `cdk/README.md`. |
+| B7  | Valkey is fail-closed in prod but `newCacheBackend` falls back to in-memory on a missing/!redis URL and on a connect failure; the same for the WS registry. Non-prod ⇒ locks/WS are not fleet-shared and nothing fails hard. | Open. |
+| B18 | Money constants mirrored api↔ui (no float): `SANDBOX_CREDITS_PER_CENTAVO=10` (`ui/src/lib/utils/money.ts` ↔ `domain/wallet/model.go`, from `rpc-contract`). No fee constants exist on either side. Keep them in sync. | Documented. |
