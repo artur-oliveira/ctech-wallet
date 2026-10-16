@@ -17,9 +17,6 @@ export interface Wallet {
   updated_at: string
 }
 
-// game is absent until the user activates gambling. sandbox may exist before
-// activation after virtual-credit play or a direct credit purchase. `activated`
-// therefore mirrors game presence only; sandbox presence must never imply consent.
 /** What the real wallet's PIX dialogs may offer right now (server-computed, centavos). */
 export interface RailLimits {
   deposit: { min: number; max: number; daily_cap: number; daily_remaining: number; max_now: number }
@@ -30,8 +27,7 @@ export interface RailLimits {
 export interface Balances {
   real: Wallet
   limits?: RailLimits
-  activated: boolean
-  game?: Wallet
+  /** Present only while a Sandbox wallet exists (history; Poker sells and spends the credits). */
   sandbox?: Wallet
 }
 
@@ -133,41 +129,3 @@ export interface MeResponse {
   terms_addendum_version: string
 }
 
-export interface PendingGameLimits {
-  daily: number
-  weekly: number
-  monthly: number
-  applies_at: string
-}
-
-export interface GameLimits {
-  daily: number
-  weekly: number
-  monthly: number
-  pending?: PendingGameLimits
-}
-
-export interface SelfExclusion {
-  period: '30d' | '90d' | 'indefinite'
-  requested_at: string
-  until?: string
-}
-
-export interface GameLimitsStatus {
-  limits: GameLimits | null
-  usage: {
-    daily: number
-    weekly: number
-    monthly: number
-    day_resets_at: string
-    week_resets_at: string
-    month_resets_at: string
-  }
-  excluded?: SelfExclusion
-}
-
-export interface GameLimitsInput {
-  daily_limit: number
-  weekly_limit: number
-  monthly_limit: number
-}

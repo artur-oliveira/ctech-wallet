@@ -20,11 +20,11 @@ function panelID(type: LedgerTab): string {
   return `${PANEL_ID_PREFIX}${type}`
 }
 
-export function LedgerTabs({activated, hasSandbox, hasGame}: { activated: boolean; hasSandbox: boolean; hasGame: boolean }) {
+export function LedgerTabs({hasSandbox}: { hasSandbox: boolean }) {
   const {t} = useTranslation()
   const [tab, setTab] = useState<LedgerTab>('real')
   const tabRefs = useRef<Partial<Record<LedgerTab, HTMLButtonElement | null>>>({})
-  const tabs: LedgerTab[] = availableLedgerTabs(activated, hasSandbox, hasGame)
+  const tabs: LedgerTab[] = availableLedgerTabs(hasSandbox)
   const selectedTab = tabs.includes(tab) ? tab : tabs[0]
 
   function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>, current: LedgerTab) {
@@ -69,11 +69,6 @@ export function LedgerTabs({activated, hasSandbox, hasGame}: { activated: boolea
         ))}
       </div>
 
-      {!activated && hasSandbox && selectedTab === 'sandbox' && (
-        <div className="border-b border-border bg-muted/40 px-5 py-3">
-          <p className="text-sm font-medium text-foreground">{t('dashboard.ledger.readOnly.title')}</p>
-        </div>
-      )}
 
       {tabs.map((type) => (
         <div

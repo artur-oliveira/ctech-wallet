@@ -35,24 +35,7 @@ func activate(t *testing.T, h *harness, userID string) (game, sandbox *wallet.Wa
 	if err != nil {
 		t.Fatalf("EnsureGamblingWallets: %v", err)
 	}
-	// Since personal limits became mandatory, an activated test user must carry
-	// coherent limits too. This helper bypasses the service activation flow, so it
-	// must establish the same postcondition explicitly.
-	if err := h.userRepo.SetGameLimits(ctx, userID, &wallet.GameLimits{
-		Daily: testDailyGameLimit, Weekly: testWeeklyGameLimit, Monthly: testMonthlyGameLimit,
-	}); err != nil {
-		t.Fatalf("SetGameLimits: %v", err)
-	}
 	return game, sandbox
-}
-
-// acceptGambling records the user's acceptance of the current gambling addendum,
-// which service-level activation requires.
-func acceptGambling(t *testing.T, h *harness, userID string) {
-	t.Helper()
-	if err := h.userRepo.AcceptGamblingAddendum(context.Background(), userID); err != nil {
-		t.Fatalf("AcceptGamblingAddendum: %v", err)
-	}
 }
 
 // fundedAndActivated is the common setup for ring-fence tests: a verified user
@@ -260,34 +243,6 @@ func TestDepositRejectsAndRefundsOnCPFMismatch(t *testing.T) {
 
 // The purchase is atomic: game is debited and sandbox credited in one
 // transaction, and `real` is not touched at all.
-func TestSandboxPurchaseAtomic(t *testing.T) {
-	ctx := context.Background()
-	h := newHarness(verified())
-	user := fundedAndActivated(t, h, 10000)
-	real, game, sandbox, err := h.repo.LoadWallets(ctx, user)
-	if err != nil {
-		t.Fatalf("LoadWallets: %v", err)
-	}
-
-	// Sandbox is bought from `game`, so the ring-fence must be funded first.
-	if _, _, err := h.svc.FundGame(ctx, user, 5000, "idem-"+id.New()); err != nil {
-		t.Fatalf("FundGame: %v", err)
-	}
-	if _, _, err := h.svc.PurchaseSandbox(ctx, user, 3000, "idem-"+id.New()); err != nil {
-		t.Fatalf("PurchaseSandbox: %v", err)
-	}
-
-	if got := balance(t, h, real.WalletID); got != 5000 {
-		t.Fatalf("real = %d, want 5000 (only the 5000 funded left it)", got)
-	}
-	if got := balance(t, h, game.WalletID); got != 2000 {
-		t.Fatalf("game = %d, want 2000 (5000 funded - 3000 spent)", got)
-	}
-	if got := balance(t, h, sandbox.WalletID); got != 3000*wallet.SandboxCreditsPerCent {
-		t.Fatalf("sandbox = %d, want %d", got, 3000*wallet.SandboxCreditsPerCent)
-	}
-}
-
 func TestSandboxDebitNoNegative(t *testing.T) {
 	ctx := context.Background()
 	h := newHarness(verified())
@@ -337,42 +292,6 @@ func TestDebitSandboxOnNeverActivatedUserRespectsBalanceFloor(t *testing.T) {
 }
 
 // The game wallet's activation gate must remain fully intact.
-func TestFundGameAndReturnFromGameStillGatedWithoutActivation(t *testing.T) {
-	ctx := context.Background()
-	h := newHarness(verified())
-	user := "u-" + id.New()
-
-	_, _, err := h.svc.FundGame(ctx, user, 3000, "idem-"+id.New())
-	wantProblem(t, err, problem.TypeGamblingNotActivated)
-
-	_, _, err = h.svc.ReturnFromGame(ctx, user, 3000, "idem-"+id.New())
-	wantProblem(t, err, problem.TypeGamblingNotActivated)
-}
-
-func TestBalancesForReflectsRealBalances(t *testing.T) {
-	ctx := context.Background()
-	h := newHarness(verified())
-	user := fundedAndActivated(t, h, 10000)
-
-	if _, _, err := h.svc.FundGame(ctx, user, 4000, "idem-"+id.New()); err != nil {
-		t.Fatalf("FundGame: %v", err)
-	}
-	if _, _, err := h.svc.PurchaseSandbox(ctx, user, 1000, "idem-"+id.New()); err != nil {
-		t.Fatalf("PurchaseSandbox: %v", err)
-	}
-
-	got, err := h.svc.BalancesFor(ctx, user)
-	if err != nil {
-		t.Fatalf("BalancesFor: %v", err)
-	}
-	if got.GameBalance != 3000 {
-		t.Fatalf("GameBalance = %d, want 3000 (4000 funded - 1000 spent)", got.GameBalance)
-	}
-	if got.SandboxBalance != 1000*wallet.SandboxCreditsPerCent {
-		t.Fatalf("SandboxBalance = %d, want %d", got.SandboxBalance, 1000*wallet.SandboxCreditsPerCent)
-	}
-}
-
 func TestIdempotentReplaySameResult(t *testing.T) {
 	ctx := context.Background()
 	h := newHarness(verified())
@@ -584,36 +503,6 @@ func TestConcurrentCreditSameIdempotencyKeyAppliesOnce(t *testing.T) {
 
 // TestConcurrentFundGameSameIdempotencyKeyAppliesOnce proves the real→game
 // ring-fence transfer applies exactly once under concurrent identical calls.
-func TestConcurrentFundGameSameIdempotencyKeyAppliesOnce(t *testing.T) {
-	ctx := context.Background()
-	h := newHarness(verified())
-	user := fundedAndActivated(t, h, 50000)
-	real, err := h.repo.EnsureRealWallet(ctx, user)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	const n = 10
-	var wg sync.WaitGroup
-	errs := make([]error, n)
-	for i := 0; i < n; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			_, _, errs[i] = h.svc.FundGame(ctx, user, 5000, "fund-race")
-		}(i)
-	}
-	wg.Wait()
-	for i, err := range errs {
-		if err != nil && !isWalletBusy(err) {
-			t.Fatalf("goroutine %d: %v", i, err)
-		}
-	}
-	if got := balance(t, h, real.WalletID); got != 45000 {
-		t.Fatalf("real balance = %d, want 45000 (double-fund if lower)", got)
-	}
-}
-
 func isWalletBusy(err error) bool {
 	p, ok := errors.AsType[*problem.Problem](err)
 	return ok && p.Type == problem.TypeWalletBusy
@@ -621,39 +510,6 @@ func isWalletBusy(err error) bool {
 
 // TestConcurrentPurchaseSandboxSameIdempotencyKeyAppliesOnce proves the
 // game→sandbox conversion applies exactly once under concurrent identical calls.
-func TestConcurrentPurchaseSandboxSameIdempotencyKeyAppliesOnce(t *testing.T) {
-	ctx := context.Background()
-	h := newHarness(verified())
-	user := "u-" + id.New()
-	game, _ := activate(t, h, user)
-	if _, _, err := h.repo.Credit(ctx, repositories.Mutation{
-		WalletID: game.WalletID, Amount: 20000, EntryType: wallet.EntryGameFundCredit,
-		Ref: "seed", IdempotencyKey: "seed-game#" + user, ReqHash: "seed",
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	const n = 10
-	var wg sync.WaitGroup
-	errs := make([]error, n)
-	for i := 0; i < n; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			_, _, errs[i] = h.svc.PurchaseSandbox(ctx, user, 5000, "purchase-race")
-		}(i)
-	}
-	wg.Wait()
-	for i, err := range errs {
-		if err != nil && !isWalletBusy(err) {
-			t.Fatalf("goroutine %d: %v", i, err)
-		}
-	}
-	if got := balance(t, h, game.WalletID); got != 15000 {
-		t.Fatalf("game balance = %d, want 15000 (double-purchase if lower)", got)
-	}
-}
-
 // A caller-supplied description is persisted verbatim on the ledger entry and
 // is display metadata only: it is deliberately outside the idempotency request
 // hash, so replaying the same key with different text returns the original

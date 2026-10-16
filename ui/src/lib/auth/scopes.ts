@@ -10,12 +10,6 @@ export const WALLET_SCOPES = [
   'wallet:ledger:read',
   'wallet:deposits:write',
   'wallet:withdrawals:write',
-  'wallet:sandbox-purchases:read',
-  'wallet:sandbox-purchases:write',
-  'wallet:product-purchases:read',
-  'wallet:game:write',
-  'wallet:gambling:read',
-  'wallet:gambling:write',
 ] as const
 
 export const OAUTH_SCOPE = [...IDENTITY_SCOPES, ...WALLET_SCOPES].join(' ')

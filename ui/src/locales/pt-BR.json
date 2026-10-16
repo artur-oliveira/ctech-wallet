@@ -58,7 +58,6 @@
       "label": "Extratos",
       "tab": {
         "real": "Real",
-        "game": "Jogo",
         "sandbox": "Sandbox",
         "purchases": "Compras"
       },
@@ -66,12 +65,8 @@
       "error": "Não foi possível carregar o extrato",
       "loadingMore": "Carregando movimentações anteriores…",
       "loadMoreError": "Não foi possível carregar mais",
-      "readOnly": {
-        "title": "Somente consulta"
-      },
       "empty": {
         "real": "Nenhuma movimentação",
-        "game": "Nenhuma movimentação",
         "sandbox": "Nenhuma movimentação"
       }
     }
@@ -81,44 +76,18 @@
       "label": "Saldo real",
       "subtitle": "Depósitos e saques via PIX estão temporariamente indisponíveis."
     },
-    "fundGame": "Enviar para jogos",
-    "game": {
-      "label": "Saldo de jogo",
-      "badge": "Não saca direto",
-      "subtitle": "Dinheiro real reservado para jogos. Devolva ao saldo real para sacar."
-    },
-    "return": "Devolver",
-    "credits": "Créditos",
     "sandbox": {
       "label": "Créditos sandbox",
       "subtitle": "Moeda virtual para partidas, comprada com o saldo de jogo. Não tem valor em dinheiro e não pode ser sacada nem convertida de volta."
     },
-    "activateLink": "Vai usar a carteira para jogos? Ative a carteira de jogo.",
-    "responsibleLink": "Jogo responsável e limites",
     "deposit": "Depositar",
     "withdraw": "Sacar"
   },
   "dialog": {
-    "credits": {
-      "title": "Comprar créditos sandbox",
-      "description": "Debita do seu saldo de jogo. Créditos sandbox não voltam a virar dinheiro.",
-      "submit": "Comprar"
-    },
-    "fundGame": {
-      "title": "Enviar para a carteira de jogo",
-      "description": "Continua sendo seu dinheiro: você pode devolvê-lo ao saldo real quando quiser. Seus limites de jogo valem aqui.",
-      "submit": "Enviar"
-    },
-    "returnGame": {
-      "title": "Devolver ao saldo real",
-      "description": "Sem taxa e sem limite.",
-      "submit": "Devolver"
-    },
     "amount": {
       "label": "Valor",
       "placeholder": "0,00",
-      "maxButton": "Máx {{max}}",
-      "creditsPreview": "Corresponde a {{credits}}."
+      "maxButton": "Máx {{max}}"
     },
     "max": "Máximo {{max}}",
     "available": "Disponível {{amount}}",
@@ -144,14 +113,6 @@
     "limitReached": "Limite diário atingido"
   },
   "confirm": {
-    "fundGame": {
-      "title": "Confirmar envio para o jogo",
-      "description": "Este envio conta para o seu limite de jogo. Devolver depois não libera limite de novo."
-    },
-    "returnGame": {
-      "title": "Confirmar devolução ao saldo real",
-      "description": "Sem taxa e sem limite."
-    },
     "amount": "Valor",
     "total": "Total debitado",
     "resulting": "Saldo resultante",
@@ -209,10 +170,6 @@
     "withdrawSent": "Saque enviado.",
     "withdrawReversed": "Não foi possível concluir o saque. O valor voltou para o seu saldo.",
     "withdrawRefundFailed": "O saque falhou e o estorno está pendente. Nossa equipe já foi avisada.",
-    "creditsAdded": "Créditos adicionados.",
-    "fundGameSent": "Saldo enviado para a carteira de jogo.",
-    "returned": "Saldo devolvido ao saldo real.",
-    "gamblingActivated": "Carteira de jogo ativada.",
     "pixCopied": "Código PIX copiado",
     "withdrawProcessing": "Saque enviado e aguardando confirmação do banco."
   },
@@ -230,83 +187,12 @@
     "lookupSignOut": "Sair",
     "lookupRetrying": "Verificando novamente…"
   },
-  "gambling": {
-    "title": "Ativar a carteira de jogo",
-    "description": "Carteira separada para jogos. O dinheiro continua seu e volta ao saldo real quando quiser, sem taxa e sem limite.",
-    "bullet1": "É a única porta para jogos: não dá para jogar direto do saldo real.",
-    "bullet2": "Seus limites valem no envio para a carteira de jogo. Devolver dinheiro não libera limite de volta.",
-    "bullet3": "Créditos sandbox não têm valor em dinheiro e nunca voltam a virar dinheiro.",
-    "checkboxPrefix": "Li e concordo com o",
-    "termsLink": "Termo de Jogo Responsável",
-    "later": "Agora não",
-    "activate": "Ativar",
-    "activating": "Ativando…",
-    "limitsTitle": "Defina seus limites",
-    "limitsDescription": "Informe quanto pode enviar para jogos por dia, semana e mês.",
-    "error": {
-      "kycNotVerified": "Verifique sua identidade na sua conta CTech antes de ativar a carteira de jogo.",
-      "termsRequired": "Aceite o termo de jogo responsável para continuar.",
-      "generic": "Não foi possível ativar. Tente de novo."
-    }
-  },
-  "responsible": {
-    "back": "Voltar para a carteira",
-    "title": "Jogo responsável",
-    "description": "Acompanhe e ajuste seus limites ou faça uma pausa do jogo com dinheiro real.",
-    "limits": {
-      "title": "Limites de depósito em jogos",
-      "description": "Eles contam todo valor enviado do saldo real para o saldo de jogo. Devoluções não liberam limite.",
-      "daily": "Diário",
-      "weekly": "Semanal",
-      "monthly": "Mensal",
-      "coherence": "Use valores maiores que zero, com diário menor ou igual ao semanal e semanal menor ou igual ao mensal.",
-      "cooldown": "Aumentos entram em vigor em 7 dias; aumentos no limite mensal entram em vigor em 14 dias. Reduções valem imediatamente.",
-      "pending": "Há um aumento agendado para {{date}}.",
-      "cancelPending": "Cancelar aumento",
-      "pendingCancelled": "Aumento cancelado.",
-      "save": "Salvar limites",
-      "saved": "Limites atualizados."
-    },
-    "exclusion": {
-      "title": "Autoexclusão",
-      "description": "Bloqueia novos depósitos e partidas com dinheiro real. Você ainda poderá devolver seu saldo de jogo e usar o sandbox.",
-      "periodLabel": "Escolha por quanto tempo bloquear jogos com dinheiro real",
-      "period": {
-        "30d": "30 dias",
-        "90d": "90 dias",
-        "indefinite": "Por tempo indeterminado"
-      },
-      "action": "Iniciar autoexclusão",
-      "confirm": "Prazo escolhido: {{period}}. A autoexclusão começa imediatamente e não pode terminar antes. Digite {{phrase}} para confirmar.",
-      "confirmationPhrase": "EXCLUIR",
-      "confirmationLabel": "Frase de confirmação",
-      "confirmationHint": "Digite {{phrase}}. Letras maiúsculas e minúsculas são aceitas.",
-      "confirmationMismatch": "A frase não corresponde a {{phrase}}.",
-      "confirming": "Ativando autoexclusão…",
-      "error": "Não foi possível ativar a autoexclusão. Suas configurações não mudaram. Tente de novo.",
-      "confirmAction": "Confirmar autoexclusão",
-      "success": "Autoexclusão ativada.",
-      "activeTitle": "Autoexclusão ativa",
-      "until": "Depósitos e partidas com dinheiro real estão bloqueados até {{date}}.",
-      "indefinite": "Depósitos e partidas com dinheiro real estão bloqueados por tempo indeterminado.",
-      "helpTitle": "Precisa de ajuda agora?",
-      "helpDescription": "Estes serviços independentes de apoio estão disponíveis antes ou depois de iniciar a autoexclusão.",
-      "cvvPhone": "Ligar para o CVV no 188 (24 horas)",
-      "cvvWebsite": "Acessar o site do CVV",
-      "gamblersAnonymous": "Acessar Jogadores Anônimos"
-    }
-  },
   "errors": {
     "insufficientBalance": "Saldo insuficiente para essa operação.",
     "walletBusy": "Já existe uma operação em andamento. Aguarde alguns segundos.",
     "kycNotVerified": "Verifique sua identidade na sua conta antes de continuar.",
     "idempotencyConflict": "Essa operação já foi enviada com outros dados. Recarregue a página.",
-    "gamblingNotActivated": "Ative a carteira de jogo para usar essa operação.",
-    "gamblingTermsRequired": "Aceite o termo de jogo responsável para continuar.",
     "amountAboveLimit": "O valor máximo por operação é {{max}}.",
-    "selfExcluded": "Sua autoexclusão bloqueia depósitos na carteira de jogo.",
-    "limitsNotConfigured": "Defina seus limites de jogo antes de continuar.",
-    "depositLimitExceeded": "Esse envio ultrapassa um dos seus limites de jogo.",
     "generic": "Algo deu errado. Tente de novo.",
     "accountBlocked": "Esta conta está bloqueada para movimentações. Fale com o suporte.",
     "withdrawCpfMismatch": "A chave PIX pertence a outro CPF. Use uma chave no seu nome.",

@@ -2,6 +2,8 @@
 package v1
 
 import (
+	"net/http"
+
 	"gopkg.aoctech.app/api-commons/cache"
 	"gopkg.aoctech.app/api-commons/ws"
 	"gopkg.aoctech.app/wallet/api/internal/awsclient"
@@ -20,15 +22,13 @@ type handlers struct {
 	userSvc            *services.UserService
 	erasureSvc         *services.ErasureService
 	requireDescription bool
-	exporter           ResponsibleExporter
 }
 
 // Option adjusts what Register mounts.
 type Option func(*registerOptions)
 
 type registerOptions struct {
-	billingEvents     *BillingEvents
-	responsibleExport ResponsibleExporter
+	billingEvents *BillingEvents
 }
 
 // WithBillingEvents mounts Billing's signed invoice.paid route. It is an option
@@ -47,7 +47,7 @@ func Register(app *fiber.App, c cache.Backend, revocation cache.Backend, cfg *co
 	for _, opt := range opts {
 		opt(&o)
 	}
-	h := &handlers{svc: svc, userSvc: userSvc, erasureSvc: erasureSvc, requireDescription: cfg.RequireDescription, exporter: o.responsibleExport}
+	h := &handlers{svc: svc, userSvc: userSvc, erasureSvc: erasureSvc, requireDescription: cfg.RequireDescription}
 	verifier := middleware.NewVerifier(cfg.CtechJWKSURL, cfg.ServiceAudience, cfg.CtechIssuerURL, c)
 	if revocation != nil {
 		// Fail-open on every route (D3); money routes re-check fail-closed via fresh.
@@ -85,32 +85,19 @@ func Register(app *fiber.App, c cache.Backend, revocation cache.Backend, cfg *co
 	w.Get("/product-purchases", middleware.RequireUserScope(middleware.ScopeWalletLedgerRead), h.listProductPurchases)
 	w.Get("/:type/ledger", middleware.RequireUserScope(middleware.ScopeWalletLedgerRead), h.getLedger)
 
-	// Returning money OUT of the ring-fence is ALWAYS available — never behind the
-	// flag. game holds real money (Invariant #9), so a route out must exist no
-	// matter how the flag is set: turning GAMBLING_ENABLED off must never strand a
-	// user's own money in a game wallet with no way to get it back. Reducing
-	// exposure is never something we block. A user who never activated simply gets
-	// 409 gambling-not-activated.
-	w.Post("/game/withdraw", middleware.RequireUserScope(middleware.ScopeWalletGameWrite), fresh, h.gameWithdraw)
-
-	// Responsible gambling — ALWAYS registered, never behind the flag: self-
-	// excluding and lowering limits reduce exposure (same principle as
-	// game/withdraw above). The deposit door itself stays flag-gated.
-	w.Post("/gambling/self-exclude", middleware.RequireUserScope(middleware.ScopeWalletGamblingWrite), fresh, h.selfExclude)
-	w.Post("/gambling/self-exclude/revoke", middleware.RequireUserScope(middleware.ScopeWalletGamblingWrite), fresh, h.revokeSelfExclusion)
-	w.Get("/gambling/limits", middleware.RequireUserScope(middleware.ScopeWalletGamblingRead), h.getGameLimits)
-	w.Put("/gambling/limits", middleware.RequireUserScope(middleware.ScopeWalletGamblingWrite), fresh, h.putGameLimits)
-	w.Delete("/gambling/limits/pending", middleware.RequireUserScope(middleware.ScopeWalletGamblingWrite), fresh, h.cancelPendingLimits)
-	w.Post("/gambling/activate", middleware.RequireUserScope(middleware.ScopeWalletGamblingWrite), middleware.RequireKYC(middleware.KYCBasic), fresh, h.activateGambling)
-
-	// Everything that moves money INTO the ring-fence is flag-gated: with
-	// GAMBLING_ENABLED off these routes do not exist (404). An absent route cannot
-	// be reached by a bug, a stale client, or a forgotten check. The flag flips only
-	// once the personal limit engine is live — a user must never reach a gambling
-	// wallet with no limits configured. /sandbox/purchase stays registered above
-	// because the service already refuses it for a non-activated user.
-	if cfg.GamblingEnabled {
-		w.Post("/game/deposit", middleware.RequireUserScope(middleware.ScopeWalletGameWrite), middleware.RequireKYC(middleware.KYCVerified), fresh, h.gameDeposit)
+	// The game wallet was merged into `real` and the responsible-gambling rules (consent, limits,
+	// self-exclusion) are Poker's now: these answer 410, never a 404 that looks like a typo.
+	for _, route := range []struct{ method, path string }{
+		{http.MethodPost, "/game/withdraw"},
+		{http.MethodPost, "/game/deposit"},
+		{http.MethodPost, "/gambling/self-exclude"},
+		{http.MethodPost, "/gambling/self-exclude/revoke"},
+		{http.MethodGet, "/gambling/limits"},
+		{http.MethodPut, "/gambling/limits"},
+		{http.MethodDelete, "/gambling/limits/pending"},
+		{http.MethodPost, "/gambling/activate"},
+	} {
+		w.Add([]string{route.method}, route.path, retired)
 	}
 
 	// Internal routes — all M2M client_credentials + scope, gated after auth.
@@ -131,24 +118,20 @@ func Register(app *fiber.App, c cache.Backend, revocation cache.Backend, cfg *co
 	sb.Post("/debit", middleware.RequireScope(middleware.ScopeWalletDebit), h.sandboxDebit)
 	rw := internal.Group("/wallet/real")
 	rw.Post("/debit", middleware.RequireScope(middleware.ScopeWalletRealDebit), h.realDebit)
-	// game wallet holds (skill-game integration, e.g. ctech-poker real-money mode).
-	gw := internal.Group("/wallet/game")
-	gw.Post("/hold", middleware.RequireScope(middleware.ScopeWalletGameHold), h.holdGame)
-	gw.Post("/hold/:hold_id/release", middleware.RequireScope(middleware.ScopeWalletGameHold), h.releaseHold)
-	gw.Post("/cashout", middleware.RequireScope(middleware.ScopeWalletGameCashout), h.cashoutGame)
-	// Real-money eligibility for skill games (ctech-poker Phase 5). Registered
-	// unconditionally: poker must see "not eligible" even while the flag is off.
-	gw.Get("/status/:user_id", middleware.RequireScope(middleware.ScopeWalletGameStatus), h.gameStatus)
-	// The same holds under names that do not say "game": the wallet only reserves
-	// and settles money on `real` now, the games are Poker's. Same handlers.
+	// The old game-named hold routes, the eligibility status and the one-off export left with the
+	// rules (Poker owns them): 410.
+	internal.Post("/wallet/game/hold", retired)
+	internal.Post("/wallet/game/hold/:hold_id/release", retired)
+	internal.Post("/wallet/game/cashout", retired)
+	internal.Get("/wallet/game/status/:user_id", retired)
+	internal.Get("/wallet/holds/status/:user_id", retired)
+	internal.Get("/wallet/responsible/export", retired)
+	// Holds stake `real`: the wallet reserves and settles the money, the games and their rules are
+	// Poker's.
 	hw := internal.Group("/wallet/holds")
 	hw.Post("/", middleware.RequireScope(middleware.ScopeWalletHold), h.holdGame)
 	hw.Post("/cashout", middleware.RequireScope(middleware.ScopeWalletHold), h.cashoutGame)
-	hw.Get("/status/:user_id", middleware.RequireScope(middleware.ScopeWalletHold), h.gameStatus)
 	hw.Post("/:hold_id/release", middleware.RequireScope(middleware.ScopeWalletHold), h.releaseHold)
-	if o.responsibleExport != nil {
-		internal.Get("/wallet/responsible/export", middleware.RequireScope(middleware.ScopeWalletResponsibleExport), h.responsibleExport)
-	}
 	// Balance read for skill games (ctech-poker). Read-only, game+sandbox only.
 	bg := internal.Group("/wallet/balance")
 	bg.Get("/:user_id", middleware.RequireScope(middleware.ScopeWalletBalance), h.walletBalance)

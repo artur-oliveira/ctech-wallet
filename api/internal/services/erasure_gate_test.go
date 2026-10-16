@@ -35,7 +35,7 @@ func gatedServices(gate ErasureGate) (*WalletService, *UserService) {
 func TestErasureGateFailsClosedOnStoreError(t *testing.T) {
 	gate := &stubGate{err: errors.New("dynamodb down")}
 	svc, _ := gatedServices(gate)
-	if _, _, err := svc.FundGame(context.Background(), "u1", 100, "k"); err == nil {
+	if _, err := svc.HoldGame(context.Background(), "u1", 100, "t", "k"); err == nil {
 		t.Fatal("a gate read error must refuse the operation")
 	}
 }

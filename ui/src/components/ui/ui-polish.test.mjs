@@ -10,8 +10,6 @@ const homeSource = read('../home.tsx')
 const loginSource = read('../../app/login/page.tsx')
 const dashboardSource = read('../../app/dashboard/page.tsx')
 const termsGateSource = read('../terms-addendum-gate.tsx')
-const activationSource = read('../../app/gambling/activate/page.tsx')
-const responsibleSource = read('../../app/gambling/responsible/page.tsx')
 const portuguese = JSON.parse(read('../../locales/pt-BR.json'))
 const english = JSON.parse(read('../../locales/en.json'))
 
@@ -36,8 +34,6 @@ test('language switching remains available across entry, consent, and wallet she
         loginSource,
         dashboardSource,
         termsGateSource,
-        activationSource,
-        responsibleSource,
     ]) {
         assert.match(source, /<LanguageSwitcher\s*\/>/)
     }
@@ -48,6 +44,5 @@ test('language switching remains available across entry, consent, and wallet she
 test('long bilingual actions can reflow at narrow widths and high zoom', () => {
     assert.match(homeSource, /whitespace-normal/)
     assert.match(loginSource, /whitespace-normal/)
-    assert.match(activationSource, /flex flex-col-reverse gap-2 sm:flex-row/)
     assert.match(termsGateSource, /flex flex-col-reverse gap-2 sm:flex-row/)
 })

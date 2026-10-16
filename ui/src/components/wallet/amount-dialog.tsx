@@ -1,7 +1,7 @@
 'use client'
 
 import {useMemo} from 'react'
-import {Controller, useForm, useWatch} from 'react-hook-form'
+import {Controller, useForm} from 'react-hook-form'
 import {zodResolver} from '@hookform/resolvers/zod'
 import {z} from 'zod'
 import {useTranslation} from 'react-i18next'
@@ -9,27 +9,22 @@ import {Button} from '@/components/ui/button'
 import {
   formatBRL,
   formatCredits,
-  formatCreditsAmount,
   MAX_AMOUNT_CENTS,
-  MAX_AMOUNT_DIGITS,
-  toCredits
+  MAX_AMOUNT_DIGITS
 } from '@/lib/utils/money'
 import {Dialog, DialogContent, DialogDescription, DialogTitle} from '@/components/ui/dialog'
 import {amountBounds} from '@/lib/utils/amount-bounds'
 
-type Flow = 'deposit' | 'withdraw' | 'credits' | 'fund-game' | 'return-game'
+type Flow = 'deposit' | 'withdraw'
 
-const FLOW_KEY: Record<Flow, 'deposit' | 'withdraw' | 'credits' | 'fundGame' | 'returnGame'> = {
+const FLOW_KEY: Record<Flow, 'deposit' | 'withdraw'> = {
   deposit: 'deposit',
   withdraw: 'withdraw',
-  credits: 'credits',
-  'fund-game': 'fundGame',
-  'return-game': 'returnGame',
 }
 
 interface AmountDialogProps {
   flow: Flow
-  /** Caps the amount at the available balance (withdraw, fund-game, credits, return-game). */
+  /** Caps the amount at the available balance (withdraw). */
   maxCents?: number
   /** Server-reported minimum for this flow (deposit/withdraw). */
   minCents?: number
@@ -42,7 +37,7 @@ interface AmountDialogProps {
   onClose: () => void
 }
 
-/** Shared amount entry used by deposit, withdrawal, and credit purchase. */
+/** Shared amount entry used by deposit and withdrawal. */
 export function AmountDialog({
                                flow,
                                maxCents,
@@ -56,19 +51,15 @@ export function AmountDialog({
   const {t} = useTranslation()
   const flowKey = FLOW_KEY[flow]
 
-  // The R$ 1.000.000 ceiling applies ONLY to money entering the game ring-fence:
-  // a PIX deposit and a real → game transfer. Withdrawals and returns out of the
-  // ring-fence are capped only by the current balance (maxCents) — never by the
-  // million cap. See CLAUDE.md invariant 7.
-  const capMillion = flow === 'deposit' || flow === 'fund-game'
+  // The R$ 1.000.000 ceiling applies only to money coming in (a PIX deposit). A withdrawal is capped
+  // only by the current balance (maxCents), never by the million cap.
+  const capMillion = flow === 'deposit'
   const balanceCap = maxCents ?? Number.POSITIVE_INFINITY
   const millionCap = capMillion ? MAX_AMOUNT_CENTS : Number.POSITIVE_INFINITY
   const bounds = amountBounds({ceiling: millionCap, balance: balanceCap, limitNow: limitCents, min: minCents})
   const effectiveMax = bounds.max
   const hasServerLimit = limitCents != null
-  // Credits never show R$ (contract + invariant #7); raw credit amounts use ₡ via formatCreditsAmount. Every
-  // amount shown to the user in the credits flow must go through formatCredits.
-  const fmt = flow === 'credits' ? formatCredits : formatBRL
+  const fmt = formatBRL
 
   const schema = useMemo(() => {
     const overMsg =
@@ -98,8 +89,6 @@ export function AmountDialog({
     resolver: zodResolver(schema),
     defaultValues: {amount: 0},
   })
-
-  const amount = useWatch({control, name: 'amount'}) ?? 0
 
   const submit = handleSubmit((data) => {
     if (onProceed) {
@@ -167,11 +156,6 @@ export function AmountDialog({
                     {t('dialog.amount.maxButton', {max: fmt(effectiveMax)})}
                   </button>
                 </div>
-              )}
-              {flow === 'credits' && amount > 0 && (
-                <p className="mt-1.5 text-xs text-muted-foreground">
-                  {t('dialog.amount.creditsPreview', {credits: formatCreditsAmount(toCredits(amount))})}
-                </p>
               )}
             </>
           )}

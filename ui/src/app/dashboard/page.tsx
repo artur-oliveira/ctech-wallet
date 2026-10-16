@@ -7,7 +7,7 @@ import {toast} from 'sonner'
 import {LogOut} from 'lucide-react'
 import {useTranslation} from 'react-i18next'
 import {apiClient, ApiError} from '@/lib/api/client'
-import {formatBRL, formatCreditsAmount, toCredits} from '@/lib/utils/money'
+import {formatBRL} from '@/lib/utils/money'
 import {useAuth} from '@/lib/hooks/useAuth'
 import {ProtectedRoute} from '@/components/protected-route'
 import {BalanceCards} from '@/components/wallet/balance-cards'
@@ -19,7 +19,7 @@ import {useWalletRealtime} from '@/lib/hooks/useWalletRealtime'
 import type {DepositResult} from '@/lib/types/api'
 import Image from 'next/image'
 
-type Flow = 'deposit' | 'withdraw' | 'credits' | 'fund-game' | 'return-game' | null
+type Flow = 'deposit' | 'withdraw' | null
 
 const AmountDialog = dynamic(() => import('@/components/wallet/amount-dialog').then((module) => module.AmountDialog))
 const ConfirmMoneyDialog = dynamic(() => import('@/components/wallet/confirm-money-dialog').then((module) => module.ConfirmMoneyDialog))
@@ -37,12 +37,7 @@ const PROBLEM_KEY: Record<string, string> = {
   '/problems/daily-deposit-limit': 'errors.dailyDepositLimit',
   '/problems/daily-withdraw-limit': 'errors.dailyWithdrawLimit',
   '/problems/idempotency-conflict': 'errors.idempotencyConflict',
-  '/problems/gambling-not-activated': 'errors.gamblingNotActivated',
-  '/problems/gambling-terms-required': 'errors.gamblingTermsRequired',
   '/problems/amount-above-limit': 'errors.amountAboveLimit',
-  '/problems/self-excluded': 'errors.selfExcluded',
-  '/problems/limits-not-configured': 'errors.limitsNotConfigured',
-  '/problems/deposit-limit-exceeded': 'errors.depositLimitExceeded',
   '/problems/account-blocked': 'errors.accountBlocked',
 }
 
@@ -75,7 +70,7 @@ function DashboardInner() {
   const qc = useQueryClient()
   const [flow, setFlow] = useState<Flow>(null)
   const [confirm, setConfirm] = useState<{
-    flow: 'withdraw' | 'fund-game' | 'return-game';
+    flow: 'withdraw';
     amount: number
   } | null>(null)
   const [charge, setCharge] = useState<DepositResult | null>(null)
@@ -86,7 +81,6 @@ function DashboardInner() {
     details?: Array<{ label: string; value: string }>
   } | null>(null)
   const balances = useQuery({queryKey: ['balances'], queryFn: () => apiClient.getBalances()})
-  const responsible = useQuery({queryKey: ['gambling-limits'], queryFn: () => apiClient.getGameLimits()})
 
   const {wsStatus} = useWalletRealtime({onDepositConfirmed: () => setCharge(null)})
 
@@ -123,38 +117,6 @@ function DashboardInner() {
       }
       toast.error(problemMessage(err, t))
     },
-  })
-
-  const buyCredits = useMutation({
-    mutationFn: (amount: number) => apiClient.purchaseSandbox(amount, newIdemKey()),
-    onSuccess: (_transfer, amount) => {
-      setFlow(null)
-      refresh()
-      setReceipt({title: t('toast.creditsAdded'), amountLabel: formatCreditsAmount(toCredits(amount))})
-    },
-    onError: (err) => toast.error(problemMessage(err, t)),
-  })
-
-  const fundGame = useMutation({
-    mutationFn: (amount: number) => apiClient.fundGame(amount, newIdemKey()),
-    onSuccess: (_transfer, amount) => {
-      setConfirm(null)
-      setFlow(null)
-      refresh()
-      setReceipt({title: t('toast.fundGameSent'), amountLabel: formatBRL(amount)})
-    },
-    onError: (err) => toast.error(problemMessage(err, t)),
-  })
-
-  const returnFromGame = useMutation({
-    mutationFn: (amount: number) => apiClient.returnFromGame(amount, newIdemKey()),
-    onSuccess: (_transfer, amount) => {
-      setConfirm(null)
-      setFlow(null)
-      refresh()
-      setReceipt({title: t('toast.returned'), amountLabel: formatBRL(amount)})
-    },
-    onError: (err) => toast.error(problemMessage(err, t)),
   })
 
   const name = profile?.first_name ?? profile?.username ?? ''
@@ -233,26 +195,9 @@ function DashboardInner() {
               balances={balances.data}
               onDeposit={() => setFlow('deposit')}
               onWithdraw={() => setFlow('withdraw')}
-              onBuyCredits={() => setFlow('credits')}
-              onFundGame={() => setFlow('fund-game')}
-              onReturnFromGame={() => setFlow('return-game')}
-              selfExcluded={!!responsible.data?.excluded}
             />
 
-            {responsible.data?.excluded && (
-              <section className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm">
-                <p className="font-semibold">{t('responsible.exclusion.activeTitle')}</p>
-                <p className="mt-1 text-muted-foreground">{responsible.data.excluded.until
-                  ? t('responsible.exclusion.until', {date: new Intl.DateTimeFormat(undefined, {dateStyle: 'long'}).format(new Date(responsible.data.excluded.until))})
-                  : t('responsible.exclusion.indefinite')}</p>
-              </section>
-            )}
-
-            <LedgerTabs
-              activated={balances.data.activated}
-              hasSandbox={!!balances.data.sandbox}
-              hasGame={!!balances.data.game}
-            />
+            <LedgerTabs hasSandbox={!!balances.data.sandbox}/>
           </>
         )}
       </main>
@@ -283,63 +228,15 @@ function DashboardInner() {
         />
       )}
 
-      {flow === 'credits' && (
-        <AmountDialog
-          flow="credits"
-          maxCents={balances.data?.game?.balance}
-          pending={buyCredits.isPending}
-          onSubmit={(amount) => buyCredits.mutate(amount)}
-          onClose={() => setFlow(null)}
-        />
-      )}
-
-      {flow === 'fund-game' && (
-        <AmountDialog
-          flow="fund-game"
-          maxCents={balances.data?.real?.balance}
-          pending={fundGame.isPending || confirm?.flow === 'fund-game'}
-          onProceed={(amount) => setConfirm({flow: 'fund-game', amount})}
-          onClose={() => setFlow(null)}
-        />
-      )}
-
-      {flow === 'return-game' && (
-        <AmountDialog
-          flow="return-game"
-          maxCents={balances.data?.game?.balance}
-          pending={returnFromGame.isPending || confirm?.flow === 'return-game'}
-          onProceed={(amount) => setConfirm({flow: 'return-game', amount})}
-          onClose={() => setFlow(null)}
-        />
-      )}
-
       {confirm && (
         <ConfirmMoneyDialog
           flow={confirm.flow}
           stepUp={stepUp}
           onReverify={reverify}
           amountCents={confirm.amount}
-          availableCents={
-            confirm.flow === 'return-game'
-              ? balances.data?.game?.balance ?? 0
-              : balances.data?.real?.balance ?? 0
-          }
-          pending={
-            confirm.flow === 'withdraw'
-              ? withdraw.isPending
-              : confirm.flow === 'fund-game'
-                ? fundGame.isPending
-                : returnFromGame.isPending
-          }
-          onConfirm={() => {
-            if (confirm.flow === 'withdraw') {
-              withdraw.mutate(confirm.amount)
-            } else if (confirm.flow === 'fund-game') {
-              fundGame.mutate(confirm.amount)
-            } else {
-              returnFromGame.mutate(confirm.amount)
-            }
-          }}
+          availableCents={balances.data?.real?.balance ?? 0}
+          pending={withdraw.isPending}
+          onConfirm={() => withdraw.mutate(confirm.amount)}
           onClose={() => {
             setStepUp(false)
             setConfirm(null)

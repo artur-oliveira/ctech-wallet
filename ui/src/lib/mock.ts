@@ -5,16 +5,12 @@ import type {
   DepositResult,
   Withdrawal,
   Balances,
-  GameLimits,
-  GameLimitsInput,
-  GameLimitsStatus,
   LedgerEntry,
   LedgerPage,
   MeResponse,
   ProductPurchase,
   PurchasePage,
   SandboxPurchase,
-  Transfer,
   Wallet,
   WalletType,
 } from '@/lib/types/api'
@@ -39,11 +35,7 @@ function mk(type: WalletType, balance: number): Wallet {
 
 const state = {
   real: mk('real', 2_500_00),
-  game: mk('game', 50_000),
   sandbox: mk('sandbox', 1200),
-  activated: true,
-  limits: {daily: 50_000, weekly: 200_000, monthly: 500_000} as GameLimits,
-  excluded: undefined as GameLimitsStatus['excluded'],
   ledger: [
     {
       entry_id: 'e3',
@@ -147,7 +139,7 @@ export class MockApiClient {
   }
 
   async getBalances(): Promise<Balances> {
-    return {real: state.real, activated: state.activated, game: state.game, sandbox: state.sandbox}
+    return {real: state.real, sandbox: state.sandbox}
   }
 
   async createDeposit(amount: number): Promise<DepositResult> {
@@ -174,67 +166,6 @@ export class MockApiClient {
       created_at: now,
       updated_at: now,
     }
-  }
-
-  async purchaseSandbox(amount: number): Promise<Transfer> {
-    const debit = addEntry(state.game, 'sandbox_purchase', -amount)
-    const credit = addEntry(state.sandbox, 'sandbox_credit', amount)
-    return {debit, credit}
-  }
-
-  async activateGambling(limits: GameLimitsInput): Promise<{ game: Wallet; sandbox: Wallet }> {
-    state.activated = true
-    state.limits = {daily: limits.daily_limit, weekly: limits.weekly_limit, monthly: limits.monthly_limit}
-    return {game: state.game, sandbox: state.sandbox}
-  }
-
-  async getGameLimits(): Promise<GameLimitsStatus> {
-    return {
-      limits: state.limits,
-      usage: {
-        daily: 12_000,
-        weekly: 35_000,
-        monthly: 80_000,
-        day_resets_at: new Date(Date.now() + 86_400_000).toISOString(),
-        week_resets_at: new Date(Date.now() + 4 * 86_400_000).toISOString(),
-        month_resets_at: new Date(Date.now() + 12 * 86_400_000).toISOString(),
-      },
-      excluded: state.excluded,
-    }
-  }
-
-  async setGameLimits(input: GameLimitsInput): Promise<GameLimits> {
-    state.limits = {daily: input.daily_limit, weekly: input.weekly_limit, monthly: input.monthly_limit}
-    return state.limits
-  }
-
-  async cancelPendingGameLimits(): Promise<GameLimits> {
-    state.limits = {...state.limits, pending: undefined}
-    return state.limits
-  }
-
-  async selfExclude(period: '30d' | '90d' | 'indefinite'): Promise<void> {
-    state.excluded = {
-      period,
-      requested_at: new Date().toISOString(),
-      until: period === 'indefinite' ? undefined : new Date(Date.now() + (period === '30d' ? 30 : 90) * 86_400_000).toISOString(),
-    }
-  }
-
-  async revokeSelfExclusion(): Promise<void> {
-    state.excluded = undefined
-  }
-
-  async fundGame(amount: number): Promise<Transfer> {
-    const debit = addEntry(state.real, 'game_fund_debit', -amount)
-    const credit = addEntry(state.game, 'game_fund_credit', amount)
-    return {debit, credit}
-  }
-
-  async returnFromGame(amount: number): Promise<Transfer> {
-    const debit = addEntry(state.game, 'game_return_debit', -amount)
-    const credit = addEntry(state.real, 'game_return_credit', amount)
-    return {debit, credit}
   }
 
   async getLedger(type: WalletType): Promise<LedgerPage> {
