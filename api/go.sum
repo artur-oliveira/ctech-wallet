@@ -2,8 +2,6 @@ github.com/aws/aws-lambda-go v1.55.1 h1:We2cCp4BwqqH/JW+bEEo1FhgG71rslvjfi4y7Kml
 github.com/aws/aws-lambda-go v1.55.1/go.mod h1:V+NzkHNR6vBC8C1PDloqSLE+7jYWFiPvJJFiCiTm8nE=
 github.com/aws/aws-sdk-go-v2 v1.47.1 h1:uOIZnp4PK3ZhKI0dNrJrhTEsLxbpXHTAJlwoS1pvAtw=
 github.com/aws/aws-sdk-go-v2 v1.47.1/go.mod h1:bttEH6JqnUL8LepvDVfdrds/fZ5bCIxzpe3abyUrhDU=
-github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.20 h1:GPRlPwz40I2B2VrBEASOA3Bi77NyeqejNLkifosX0rs=
-github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.20/go.mod h1:g7PNzKcsOKWb4fkSRBA7BZVAS6Y8IcxzN+nRohhQ1Q8=
 github.com/aws/aws-sdk-go-v2/config v1.33.7 h1:vgG8uuhm7vNsxr6BsXNG+Ciesh9iLdNPzarAAu/dB6A=
 github.com/aws/aws-sdk-go-v2/config v1.33.7/go.mod h1:5KWNY38altxnd5cxcNoOTrFtJ7asFEiCiWfb2m+M2pE=
 github.com/aws/aws-sdk-go-v2/credentials v1.20.7 h1:mit8rRVnmt+wvT4U6putiWSlwe3eKD2n6ElgyfcP/Mw=
@@ -28,8 +26,6 @@ github.com/aws/aws-sdk-go-v2/service/internal/endpoint-discovery v1.13.4 h1:6Hvm
 github.com/aws/aws-sdk-go-v2/service/internal/endpoint-discovery v1.13.4/go.mod h1:zv2N29aiQUhG2XZNM9zgwCnAyVBdTBbcIpfNAlNmA20=
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.4 h1:29SvnfGhXjTl8ONxFwbj2rs6lbhiFXD2CgFQmbT/bXY=
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.4/go.mod h1:wm04I5DMuNVvZHFe/dHnUxincvNbbK7AiNBbYsQivek=
-github.com/aws/aws-sdk-go-v2/service/lambda v1.111.0 h1:/P13I8ouMzMIa2yY32aUh+GIh0wYbJ/auQb1KAEhB8k=
-github.com/aws/aws-sdk-go-v2/service/lambda v1.111.0/go.mod h1:jUmFXtUKRVCKTaKap+NgL32pmSkVehamqqMENlGMApk=
 github.com/aws/aws-sdk-go-v2/service/signin v1.10.2 h1:vrPP4O9VABnquYrDHfU+Fu0Fp6TuzaqPUu9Fh7VBBVY=
 github.com/aws/aws-sdk-go-v2/service/signin v1.10.2/go.mod h1:xpo/geVldu8payT375WekctUzopG/hBU7miiqItMUlw=
 github.com/aws/aws-sdk-go-v2/service/sqs v1.52.2 h1:6ZXe/lG2mbGhw10y/aiKbe/poytLoYJsdbKV1pT9+ws=
@@ -129,7 +125,5 @@ golang.org/x/text v0.42.0 h1:JbOZXgfeCPU9gacVtYliJqOhD+zhrEqK4LfdpmlUZqI=
 golang.org/x/text v0.42.0/go.mod h1:ojzP1Z+2QtioaF8DTtO8K5q7JWVVYwZKenzujK0Zd0E=
 golang.org/x/tools v0.49.0 h1:3NI7VXzL9+1WZD52Dx2ttoPwD5DWrFGpl9mFZDlmisI=
 golang.org/x/tools v0.49.0/go.mod h1:SJNXV9DBKT0UbdttsQjbfJlAE/q+y36++zo3uL3N0Oo=
-gopkg.aoctech.app/api-commons v1.20.0 h1:SHQ9HJqtAR6cm+yp4L9D5afDTf+29PZZ5hgmgvcGpyE=
-gopkg.aoctech.app/api-commons v1.20.0/go.mod h1:CrvKeQweOS+/piP/lLtFJcKyIQjDhzqtPWqN8LwHfog=
-gopkg.aoctech.app/api-commons v1.27.2 h1:FJjey1jXhlaGU8LLdVijUdWUM4KqKOnIDM3KwJwastY=
-gopkg.aoctech.app/api-commons v1.27.2/go.mod h1:CrvKeQweOS+/piP/lLtFJcKyIQjDhzqtPWqN8LwHfog=
+gopkg.aoctech.app/api-commons v1.28.0 h1:W43IL6BEtniETfjhBUdODGDUFEmFPDqVRT+xwGBRTbU=
+gopkg.aoctech.app/api-commons v1.28.0/go.mod h1:CrvKeQweOS+/piP/lLtFJcKyIQjDhzqtPWqN8LwHfog=
