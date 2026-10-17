@@ -263,3 +263,22 @@ deletion, because the account is locked from confirmation. Ask support to raise 
 blocker. A deposit paid after the user is ERASED is refunded to the payer automatically (R18); check the refund
 in the logs (`deposit for an erased user; refunding payer`) and the `ALARM` on failure. A paid charge with no payer
 identity stays `pending` (quarantined) and blocks (`wallet.deposit_quarantined`): support attributes or refunds it.
+
+### 7a. Personal-data export (LGPD art. 18, V)
+
+The erasure queue also carries `user.export` from ctech-account (spec ctech-account `docs/specs/2026-10-17-data-export.md`;
+`api-commons` ≥ v1.29.1, `dataexport.Handler` plugged into the consumer with `WithExporter` in `startErasureConsumer`).
+`services.DataExporter` builds one zip, PUT to the presigned S3 URL in the message and acked to `/v1.0/internal/export/ack`.
+
+- **Operator steps to enable:** grant the wallet's erasure-ack client the extra scope `internal:account:export-ack`
+  (`createclient -grant`), then set `"export": true` on the wallet's entry in account's SSM `erasure-participants` and restart
+  account. Until then account never asks the wallet.
+- **Included:** `wallets.json`, `ledger-{type}.json` (the whole statement, paged to 100k entries), `deposits.json`,
+  `withdrawals.json`, `holds.json`, `purchases-sandbox.json`, `purchases-product.json`, `settings.json` (terms, self-exclusion,
+  limits, counters) and `audit.json` (latest 1000 events). Read-only: the ledger is append-only and the export is not an edit.
+- **Counterparties are opaque** (spec E4): a transfer's other side is only a wallet id or the caller's reference. The payer of a
+  deposit refused by the CPF check is a third party, so that payer's name and CPF are removed. Idempotency keys and request hashes
+  never leave.
+- `TestEveryTableIsClassifiedForTheExport` reads the CDK table names: a new table must be exported or excluded with a reason, **next
+  to its erasure treatment**. The four retired `wallet_*` tables (baas, transfer intents, settlement legs, MED receivables) are
+  excluded as no longer written; they are not in the purge either, so confirm they hold no person data before deleting them.
