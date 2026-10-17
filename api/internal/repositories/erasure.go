@@ -89,6 +89,11 @@ func (r *ErasureRepository) WithdrawalsForUser(ctx context.Context, userID strin
 	return allByUser[wallet.Withdrawal](ctx, r.withdrawals, userID)
 }
 
+// HoldsForUser returns every hold row of userID, any status (personal-data export).
+func (r *ErasureRepository) HoldsForUser(ctx context.Context, userID string) ([]wallet.Hold, error) {
+	return allByUser[wallet.Hold](ctx, r.holds, userID)
+}
+
 // OpenHoldsForUser returns userID's holds still `held`. A user has few holds,
 // so the status is filtered over the user's own partition, not the shared
 // `held` partition of gsi_hold_status.

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"gopkg.aoctech.app/api-commons/cache"
+	"gopkg.aoctech.app/api-commons/dataexport"
 	"gopkg.aoctech.app/api-commons/erasure"
 	"gopkg.aoctech.app/api-commons/oauth2client"
 	fiberobs "gopkg.aoctech.app/api-commons/observability/fiber"
@@ -61,6 +62,7 @@ var Module = fx.Options(
 		newWalletService,
 		newUserService,
 		newErasureService,
+		newDataExporter,
 		newFiberApp,
 	),
 	fx.Invoke(registerRoutes),
@@ -277,7 +279,7 @@ func newErasureService(repo *repositories.WalletRepository, users *repositories.
 // startErasureConsumer runs the account-deletion SQS consumer for the process
 // lifetime. Every API instance runs one: the consumer takes one message per
 // receive and erasure.Store uses optimistic concurrency, so replicas are safe.
-func startErasureConsumer(lc fx.Lifecycle, cfg *config.Config, sqsClient *sqs.Client, store *erasure.Store, svc *services.ErasureService) {
+func startErasureConsumer(lc fx.Lifecycle, cfg *config.Config, sqsClient *sqs.Client, store *erasure.Store, svc *services.ErasureService, exporter *services.DataExporter) {
 	if store == nil {
 		slog.Warn("ERASURE_QUEUE_URL not set — account-deletion lock and purge are OFF (dev only)")
 		return
@@ -286,7 +288,15 @@ func startErasureConsumer(lc fx.Lifecycle, cfg *config.Config, sqsClient *sqs.Cl
 	base := strings.TrimRight(cfg.CtechURL, "/")
 	acks := erasure.NewAckClient(httpClient, base+wallet.PathAccountErasureAck,
 		oauth2client.New(httpClient, nil, base+kycclient.PathToken, cfg.ErasureClientID, cfg.ErasureClientSecret, wallet.ScopeAccountErasureAck))
-	consumer := erasure.NewConsumer(sqsClient, cfg.ErasureQueueURL, wallet.ErasureServiceID, store, svc.Purge, acks)
+	// The personal-data export rides the same queue (ctech-account
+	// docs/specs/2026-10-17-data-export.md): the part is PUT to a presigned S3 URL
+	// and acked, with a longer timeout than the saga's because it is data.
+	uploads := &http.Client{Timeout: 60 * time.Second}
+	exportAcks := dataexport.NewAckClient(uploads, base+wallet.PathAccountExportAck,
+		oauth2client.New(httpClient, nil, base+kycclient.PathToken, cfg.ErasureClientID, cfg.ErasureClientSecret, wallet.ScopeAccountExportAck))
+	handler := dataexport.NewHandler(wallet.ErasureServiceID, exporter.Part, uploads, exportAcks)
+	consumer := erasure.NewConsumer(sqsClient, cfg.ErasureQueueURL, wallet.ErasureServiceID, store, svc.Purge, acks).
+		WithExporter(handler.Handle)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	lc.Append(fx.Hook{

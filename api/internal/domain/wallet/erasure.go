@@ -42,6 +42,13 @@ const (
 	// PathAccountErasureAck is appended to CTECH_URL.
 	PathAccountErasureAck = "/v1.0/internal/erasure/ack"
 
+	// ScopeAccountExportAck acks an uploaded part of the personal-data export
+	// (ctech-account docs/specs/2026-10-17-data-export.md); an operator grants it
+	// to the same M2M client before account is told "export": true for the wallet.
+	ScopeAccountExportAck = "internal:account:export-ack"
+	// PathAccountExportAck is appended to CTECH_URL.
+	PathAccountExportAck = "/v1.0/internal/export/ack"
+
 	// ActorErasureCarryOver is the audit actor of a carried self-exclusion
 	// re-applied at activation.
 	ActorErasureCarryOver = "erasure-carry-over"
