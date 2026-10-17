@@ -62,7 +62,7 @@ var exportInventory = map[string]string{
 	wallet.TableWallets:          "exported: wallets.json",
 	wallet.TableLedger:           "exported: ledger-<wallet type>.json, the whole statement; the other side of a transfer is an opaque wallet id",
 	wallet.TableIdempotency:      "excluded: request keys and cached responses, no data of the person's own",
-	wallet.TablePixDeposits:      "exported: deposits.json; the payer's name and CPF only when the CPF matched the person's, never a rejected third party's",
+	wallet.TablePixDeposits:      "exported: deposits.json; the payer's name and CPF only on a confirmed deposit (the CPF check passed), never on any other status",
 	wallet.TableWithdrawals:      "exported: withdrawals.json (the PIX key the person typed)",
 	wallet.TableUsers:            "exported: settings.json (terms, self-exclusion, limits, counters)",
 	wallet.TableAudit:            "exported: audit.json, the latest events",
@@ -125,9 +125,12 @@ func (e *DataExporter) Part(ctx context.Context, sub string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("export: deposits: %w", err)
 	}
+	// Allowlist, not a denylist: only a confirmed deposit passed the CPF check, so only
+	// then is the payer the person. Every other status (pending, expired, the refund
+	// states, the legacy rejection) may carry a third party's name and CPF.
 	for i := range deps {
-		if deps[i].Status == wallet.DepositRejectedCPF {
-			deps[i].PayerCPF, deps[i].PayerName = "", "" // a third party's, not the person's
+		if deps[i].Status != wallet.DepositConfirmed {
+			deps[i].PayerCPF, deps[i].PayerName = "", ""
 		}
 	}
 	if err := write("deposits.json", deps, len(deps), false); err != nil {
@@ -273,7 +276,7 @@ func (e *DataExporter) readme(files, truncated []string) string {
 	}
 	b.WriteString("\nAmounts are in centavos (sandbox wallets: credits). Each file is {truncated, items}.\n")
 	b.WriteString("ledger-*.json is your whole statement per wallet; the other side of a transfer appears only as an opaque wallet id or reference.\n")
-	b.WriteString("deposits.json and withdrawals.json include the PIX data you gave. A deposit refused because it came from someone else's CPF has that payer's data removed.\n")
+	b.WriteString("deposits.json and withdrawals.json include the PIX data you gave. The payer's name and CPF appear only on confirmed deposits; on any other status they are removed, because they may be someone else's.\n")
 	b.WriteString("audit.json is the latest " + fmt.Sprint(auditExportLimit) + " events.\n")
 	if len(truncated) > 0 {
 		b.WriteString("\nThese files were cut at the size limit: " + strings.Join(truncated, ", ") + "\n")

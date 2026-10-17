@@ -276,8 +276,8 @@ The erasure queue also carries `user.export` from ctech-account (spec ctech-acco
 - **Included:** `wallets.json`, `ledger-{type}.json` (the whole statement, paged to 100k entries), `deposits.json`,
   `withdrawals.json`, `holds.json`, `purchases-sandbox.json`, `purchases-product.json`, `settings.json` (terms, self-exclusion,
   limits, counters) and `audit.json` (latest 1000 events). Read-only: the ledger is append-only and the export is not an edit.
-- **Counterparties are opaque** (spec E4): a transfer's other side is only a wallet id or the caller's reference. The payer of a
-  deposit refused by the CPF check is a third party, so that payer's name and CPF are removed. Idempotency keys and request hashes
+- **Counterparties are opaque** (spec E4): a transfer's other side is only a wallet id or the caller's reference. A deposit's payer name and CPF are exported only when the
+  deposit is `confirmed` (the CPF check passed); on any other status they may be a third party's and are removed. Idempotency keys and request hashes
   never leave.
 - `TestEveryTableIsClassifiedForTheExport` reads the CDK table names: a new table must be exported or excluded with a reason, **next
   to its erasure treatment**. The four retired `wallet_*` tables (baas, transfer intents, settlement legs, MED receivables) are

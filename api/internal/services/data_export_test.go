@@ -60,10 +60,12 @@ func (f *fakeSource) Statement(_ context.Context, walletID string, _ int, start 
 }
 
 func (fakeSource) Deposits(context.Context, string) ([]wallet.PixDeposit, error) {
-	return []wallet.PixDeposit{
-		{Txid: "t1", Status: wallet.DepositConfirmed, PayerCPF: "111.222.333-44", PayerName: "Alice"},
-		{Txid: "t2", Status: wallet.DepositRejectedCPF, PayerCPF: "999.888.777-66", PayerName: "Mallory"},
-	}, nil
+	deps := []wallet.PixDeposit{{Txid: "t1", Status: wallet.DepositConfirmed, PayerCPF: "111.222.333-44", PayerName: "Alice"}}
+	// Every non-confirmed status may carry a third party's payer.
+	for i, st := range []string{wallet.DepositRejectedCPF, wallet.DepositRefundPending, wallet.DepositRefunded, wallet.DepositRefundFailed, wallet.DepositPending, wallet.DepositExpired} {
+		deps = append(deps, wallet.PixDeposit{Txid: "t" + string(rune('2'+i)), Status: st, PayerCPF: "999.888.777-66", PayerName: "Mallory"})
+	}
+	return deps, nil
 }
 
 func (fakeSource) Withdrawals(context.Context, string) ([]wallet.Withdrawal, error) {
