@@ -12,6 +12,7 @@ import (
 
 	"gopkg.aoctech.app/api-commons/cache"
 	"gopkg.aoctech.app/api-commons/dataexport"
+	"gopkg.aoctech.app/api-commons/deadline"
 	"gopkg.aoctech.app/api-commons/erasure"
 	"gopkg.aoctech.app/api-commons/oauth2client"
 	fiberobs "gopkg.aoctech.app/api-commons/observability/fiber"
@@ -192,6 +193,17 @@ func newFiberApp(cfg *config.Config) *fiber.App {
 			return c.Path() == "/v1.0/health" || c.Path() == "/v1.0/health-check"
 		},
 	}))
+	// A time budget for every HTTP request, so a DynamoDB, Valkey, billing, KYC or
+	// rail call ends with it instead of outliving the client. Websockets are exempt
+	// (the middleware skips an upgrade). Billing's signed invoice.paid is exempt too:
+	// it confirms a deposit, and a deposit refund or credit must not be cut by a
+	// request budget (Billing retries, and every step is idempotent). Withdrawal
+	// reversals run under their own context (services.compensationContext).
+	if cfg.RequestTimeout > 0 {
+		app.Use(deadline.New(cfg.RequestTimeout, func(c fiber.Ctx) bool {
+			return strings.HasSuffix(c.Path(), apiv1.PathBillingEvents)
+		}))
+	}
 	return app
 }
 
@@ -227,6 +239,9 @@ func startServer(lc fx.Lifecycle, app *fiber.App, cfg *config.Config) {
 }
 
 func errorHandler(c fiber.Ctx, err error) error {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return problem.GatewayTimeout("a requisição demorou demais; tente novamente").WithCause(err).Send(c)
+	}
 	if f, ok := errors.AsType[*fiber.Error](err); ok {
 		return problem.FromFiber(f).Send(c)
 	}

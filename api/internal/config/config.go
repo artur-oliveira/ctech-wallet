@@ -1,6 +1,8 @@
 package config
 
 import (
+	"time"
+
 	"fmt"
 
 	"github.com/caarlos0/env/v11"
@@ -20,11 +22,15 @@ type Config struct {
 	// ctech-billing send real descriptions, then turn it on per environment.
 	RequireDescription bool `env:"REQUIRE_DESCRIPTION" envDefault:"false"`
 
-	ReadTimeout        int64    `env:"READ_TIMEOUT" envDefault:"10"`
-	IdleTimeout        int64    `env:"IDLE_TIMEOUT" envDefault:"60"`
-	WriteTimeout       int64    `env:"WRITE_TIMEOUT" envDefault:"10"`
-	TrustedProxies     []string `env:"TRUSTED_PROXIES"`
-	CorsAllowedOrigins []string `env:"CORS_ALLOWED_ORIGINS"`
+	ReadTimeout  int64 `env:"READ_TIMEOUT" envDefault:"10"`
+	IdleTimeout  int64 `env:"IDLE_TIMEOUT" envDefault:"60"`
+	WriteTimeout int64 `env:"WRITE_TIMEOUT" envDefault:"10"`
+	// RequestTimeout is the time budget of one HTTP request: the context every
+	// DynamoDB, Valkey, billing, KYC and rail call is made with. Under WriteTimeout
+	// so the client gets a 504 instead of a cut connection. Zero disables it.
+	RequestTimeout     time.Duration `env:"REQUEST_TIMEOUT" envDefault:"8s"`
+	TrustedProxies     []string      `env:"TRUSTED_PROXIES"`
+	CorsAllowedOrigins []string      `env:"CORS_ALLOWED_ORIGINS"`
 
 	// AWS
 	AWSRegion        string `env:"AWS_REGION" envDefault:"us-east-1"`

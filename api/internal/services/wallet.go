@@ -847,6 +847,19 @@ func (s *WalletService) markDepositRefunded(ctx context.Context, dep *wallet.Pix
 // in ONE TransactWriteItems. If the CPF has no PIX key at the bank the debit is
 // reversed immediately (and the daily slot returned); any other payout failure
 // leaves the withdrawal processing for the reconciliation job (Invariant 14).
+// compensationTimeout bounds one compensation made after a request's own context
+// may already be over.
+const compensationTimeout = 5 * time.Second
+
+// compensationContext is the context a compensation runs under. It outlives the
+// request: a withdrawal the bank refused while the request's deadline was
+// expiring must still be credited back, and a credit made with that expired
+// context would fail and leave the debit standing. It keeps the request's values
+// and gets its own short limit.
+func compensationContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), compensationTimeout)
+}
+
 func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, amount int64, idemKey string) (*wallet.Withdrawal, error) {
 	if kycLevel != wallet.KYCVerified {
 		return nil, problem.KYCNotVerified()
@@ -960,7 +973,9 @@ func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, a
 	if err != nil {
 		if errors.Is(err, rail.ErrKeyNotFound) {
 			// Nothing to retry: refund now instead of leaving it processing.
-			s.reverse(ctx, *w)
+			cctx, cancel := compensationContext(ctx)
+			s.reverse(cctx, *w)
+			cancel()
 			return nil, problem.PixKeyNotFound()
 		}
 		slog.Warn("withdrawal transfer failed, left in processing", "withdrawal_id", withdrawalID, "err", err)
@@ -972,7 +987,9 @@ func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, a
 		return w, nil
 	case rail.TransferFailed:
 		// The rail already says it will not happen: the money goes back at once.
-		s.reverse(ctx, *w)
+		cctx, cancel := compensationContext(ctx)
+		s.reverse(cctx, *w)
+		cancel()
 		return nil, problem.InternalServer("saque recusado pelo banco; o valor foi devolvido à carteira")
 	}
 	w.Status, w.E2EID = wallet.WithdrawCompleted, res.E2EID
