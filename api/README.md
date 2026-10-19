@@ -15,15 +15,17 @@ Spec: `docs/specs/2026-10-14-wallet-ledger-billing-rail.md` in `ctech-billing`.
 ```
 api/
 ├── cmd/server/main.go        # fx.New(app.Module).Run() — the HTTP API
-├── cmd/reconcile/main.go     # scheduled Lambda / CLI: resolves stuck withdrawals
+├── cmd/reconcile/main.go     # Lambda on EventBridge Scheduler (5 min): resolves stuck withdrawals, sweeps pending deposits and stale holds
 ├── internal/
 │   ├── app/                  # fx wiring (DI), Fiber app, error handler
 │   ├── config/               # 12-Factor env (caarlos0/env)
-│   ├── problem/              # RFC 7807 Problem + wallet codes
+│   ├── problem/              # wraps api-commons/problem + wallet problem types
 │   ├── validation/           # go-playground/validator singleton
 │   ├── awsclient/            # aws-sdk-go-v2 (DynamoDB, SQS, SSM)
-│   ├── lock/                 # Valkey SETNX per-wallet lock (fail-safe TTL)
-│   ├── middleware/           # auth (JWKS), scope, KYC, step-up
+│   ├── lock/                 # per-wallet lock over api-commons/lock (Valkey SETNX, fail-safe TTL)
+│   ├── middleware/           # auth (JWKS), scope, KYC, step-up, revocation
+│   ├── oauthresource/        # RFC 9728 metadata + scope-manifest.json
+│   ├── secrets/              # SSM reader
 │   ├── rail/                 # Rail iface, BillingRail (the only rail), types, test fake
 │   ├── billingclient/        # ctech-billing client (invoices, payouts) + event signature
 │   ├── kycclient/            # ctech-account internal KYC client
@@ -56,9 +58,9 @@ binary at `/app`, `EXPOSE 8000`. The deployed binary **must** be named `app`
 Required: `TABLE_PREFIX`, `BILLING_URL`, `BILLING_CLIENT_ID`, `CTECH_URL` (and, for the
 API, `BILLING_CLIENT_SECRET` and `BILLING_EVENT_SECRET`). Set in prod:
 `SERVICE_AUDIENCE`, `CTECH_ISSUER_URL`, `CORS_ALLOWED_ORIGINS`,
-`VALKEY_URL` (fail‑closed if absent — see B7),
+`VALKEY_URL`, `ERASURE_QUEUE_URL`, `VALKEY_REVOCATION_URL` (all fail‑closed if absent in prod),
 `WALLET_CLIENT_ID`/`WALLET_CLIENT_SECRET` (wallet's own M2M client to call
-account KYC).
+account KYC), `ERASURE_CLIENT_ID`/`ERASURE_CLIENT_SECRET` (account-deletion acks).
 
 `cmd/reconcile` uses `config.LoadReconcile`: it shares the required storage and
 Billing configuration, but deliberately skips HTTP-only issuer/audience/CORS checks
@@ -71,18 +73,20 @@ itself (a SecureString never goes into a Lambda's environment).
 
 | Table (logical)         | Constant                       | Notes                                                                 |
 |-------------------------|--------------------------------|-----------------------------------------------------------------------|
-| `wallets`               | `TableWallets` (`model.go:74`) | authoritative balance (centavos for real, credits for sandbox; old `game` rows are retired, read‑only)   |
-| `wallet_ledger_entries` | `TableLedger` (`:75`)          | append‑only audit; GSI `gsi_idem` for replay                          |
-| `wallet_idempotency`    | `TableIdempotency` (`:76`)     | Permanent `IDEM#{key}` guard rows; financial replays never expire     |
-| `wallet_pix_deposits`   | `TablePixDeposits` (`:77`)     | durable deposit records (reference = the Billing invoice); GSI `gsi_status` for pending sweep            |
-| `wallet_withdrawals`    | `TableWithdrawals` (`:78`)     | `processing`/`completed`/`reversed`/`refund_failed`; GSI `gsi_status` |
-| `wallet_users`          | `TableUsers` (`:79`)           | terms acceptance, daily counters, and the old gambling state (read‑only; Poker owns the rules)                                  |
-| `wallet_audit`          | `TableAudit` (`:80`)           | append‑only non‑money events                                          |
-| `wallet_holds`          | `TableHolds` (`:81`)           | game buy‑in holds (on `real`); GSI `gsi_hold_status`                              |
+| `wallets`               | `TableWallets` (`model.go`) | authoritative balance (centavos for real, credits for sandbox; old `game` rows are retired, read‑only)   |
+| `wallet_ledger_entries` | `TableLedger`          | append‑only audit; GSI `gsi_idem` for replay                          |
+| `wallet_idempotency`    | `TableIdempotency`     | Permanent `IDEM#{key}` guard rows; financial replays never expire     |
+| `wallet_pix_deposits`   | `TablePixDeposits`     | durable deposit records (reference = the Billing invoice); GSI `gsi_status` for pending sweep            |
+| `wallet_withdrawals`    | `TableWithdrawals`     | `processing`/`completed`/`reversed`/`refund_failed`; GSI `gsi_status` |
+| `wallet_users`          | `TableUsers`           | terms acceptance, daily counters, and the old gambling state (read‑only; Poker owns the rules)                                  |
+| `wallet_audit`          | `TableAudit`           | append‑only non‑money events                                          |
+| `wallet_holds`          | `TableHolds`           | game buy‑in holds (on `real`); GSI `gsi_hold_status`                              |
+| `wallet_sandbox_purchases`, `wallet_product_purchases` | — | old purchase records, read‑only history (the sale moved to Poker/Billing); pending sweeps still run |
+| `wallet_erasure_state`, `wallet_erasure_retention` | — | account‑deletion lock/tombstone and write‑only retained PII (see root `CLAUDE.md`) |
 
 Every balance mutation is a conditional `TransactWriteItems`
 (`balance >= :amount` on debits); the ledger entry + idempotency guard are
-co‑written in the same transaction (`repositories/wallet.go:275`).
+co‑written in the same transaction (`repositories/wallet.go`).
 
 ### Durable money workflows
 
@@ -93,10 +97,6 @@ co‑written in the same transaction (`repositories/wallet.go:275`).
 - A rejected deposit is persisted as `refund_pending` before the provider call.
   The provider request uses the stable deposit transaction ID, and reconciliation
   resumes both `refund_pending` and `refund_failed` rows until `refunded`.
-- Sandbox purchase confirmation co-writes the credit and purchase status. Refund
-  initiation atomically writes the reversal debit and `refund_pending`; retries
-  reuse the purchase ID at the provider and never debit twice. Reconciliation
-  resumes non-terminal refunds.
 
 ## Endpoint reference
 
@@ -117,17 +117,10 @@ enforcement map.
 
 ## Known divergences
 
-Tracked in [ENDPOINTS.md §7](ENDPOINTS.md#7-known-divergences-documented-not-fixed-here)
-(B1 IAM `TransactWriteItems`, B2/B3 scope strings, B7 Valkey fail‑closed,
-B18 money‑constant mirror). See also root `CLAUDE.md` "Open divergences".
+B1/B7/B18 are closed; see [ENDPOINTS.md §7](ENDPOINTS.md#7-known-divergences) and the root `CLAUDE.md` "Known gaps vs the standard".
 
 ### Concurrency
 
 Wallet balance mutations condition on the persisted wallet version and increment it in the same transaction. This keeps
 each committed `ledger_entries.balance_after` snapshot tied to the exact balance state it updates, even if a distributed
 lock expires.
-
-### Concurrency
-
-Each wallet mutation conditions on the persisted wallet version and increments it in the same transaction. Therefore a
-committed ledger balance_after snapshot corresponds to the exact wallet state it changes.
