@@ -88,7 +88,7 @@ it is.
 14. **No money left in limbo.** A withdrawal whose Billing payout call fails or times out after the internal debit stays
     `processing`, and a reconciliation job MUST resolve it from Billing (complete or reverse). A lookup that fails is never
     read as "not found", so a transport error never reverses a withdrawal. Failed refunds and failed credit-backs log an
-    `ALARM` line for manual reconciliation — never a silent path (no SNS alert yet; see "Known gaps vs the standard").
+    `ALARM` line for manual reconciliation — never a silent path (failed refunds and reversals also go to SNS via `alerts`; see "Known gaps vs the standard").
 
 If a requested change appears to require breaking one of these, stop and ask.
 
@@ -200,7 +200,6 @@ elsewhere into a money path, check whether this repo already does it better.
 
 - Local `internal/walletproblem` (wallet types on top of go-common `problem`) and local `internal/middleware` (auth, scope, step-up, revocation) instead of go-common's guards.
 - App-level rate limiting (go-common `ratelimit`, `api/internal/api/v1/ratelimit.go`) per user (JWT sub): reads 120/min FailOpen; deposits and withdrawals 10/min FailClosed (503 if Valkey is down). Retired 410 and internal M2M routes are not limited. nginx `limit_req` stays at the edge.
-- No go-common `alerts` (SNS): failures that need a human are `ALARM` log lines only (reconcile, quarantined deposits,
-  stale holds).
+- go-common `alerts` (SNS, `ALERTS_TOPIC_ARN`) covers failed refunds and reversals (deposit refund, excess-payment refund, withdrawal credit-back); `alerts.Nop` when unset. Quarantined deposits and stale holds are still `ALARM` log lines only.
 - DynamoDB GSIs project `ALL`; `cdk/lib/dynamodb-stack.ts` has no `KEYS_ONLY`/`INCLUDE`.
 - The UI does not use `@aoctech/ui` (not in `ui/package.json`); its tests run on `node --test`, not vitest.

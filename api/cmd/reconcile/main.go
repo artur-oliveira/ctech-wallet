@@ -112,6 +112,7 @@ func run(ctx context.Context) (*Result, error) {
 	svc.SetBroadcaster(newBroadcaster(cfg))
 	svc.SetSandboxPurchases(repositories.NewSandboxPurchaseRepository(clients.DynamoDB, cfg))
 	svc.SetProductPurchases(repositories.NewProductPurchaseRepository(clients.DynamoDB, cfg))
+	svc.SetAlerts(services.NewAlerts(ctx, cfg.AWSRegion, cfg.AlertsTopicARN, cfg.Env))
 
 	resolved, reversed, alarmed, err := svc.ReconcileWithdrawals(ctx)
 	if err != nil {

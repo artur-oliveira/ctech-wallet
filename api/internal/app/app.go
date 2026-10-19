@@ -143,6 +143,7 @@ func newWalletService(cfg *config.Config, repo *repositories.WalletRepository, u
 	svc := services.NewWalletService(repo, users, audit, l, r, k)
 	svc.SetSandboxPurchases(sandboxPurchases)
 	svc.SetProductPurchases(productPurchases)
+	svc.SetAlerts(services.NewAlerts(context.Background(), cfg.AWSRegion, cfg.AlertsTopicARN, cfg.Env))
 	if store != nil { // never pass a nil *Store through the interface
 		svc.SetErasure(store, er)
 		svc.SetErased(services.StoreErased(store))
