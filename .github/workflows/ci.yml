@@ -1,0 +1,149 @@
+name: CI
+
+# PR gate. No AWS credentials: nothing here deploys. deploy.yml (push to
+# main/staging/dev) and infra.yml (CDK diff) are separate. Require the `CI`
+# job in branch protection; it always runs and is green when skipped jobs
+# were simply not needed.
+on:
+  pull_request:
+  push:
+    branches-ignore: [ main, staging, dev ]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-26.04-arm
+    outputs:
+      api: ${{ steps.filter.outputs.api }}
+      ui: ${{ steps.filter.outputs.ui }}
+      cdk: ${{ steps.filter.outputs.cdk }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            api:
+              - 'api/**'
+              - 'rpc-contract/**'
+              - '.github/workflows/ci.yml'
+            ui:
+              - 'ui/**'
+              - '.github/workflows/ci.yml'
+            cdk:
+              - 'cdk/**'
+              - 'api/cmd/reconcile/**'
+              - '.github/workflows/ci.yml'
+
+  api:
+    name: API (Go)
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-26.04-arm
+    defaults:
+      run:
+        working-directory: api
+    services:
+      # DynamoDB Local, same as api/docker-compose.test.yml (static dummy creds).
+      dynamodb:
+        image: amazon/dynamodb-local:latest
+        ports:
+          - 8123:8000
+        options: >-
+          --health-cmd "curl -sf http://localhost:8000 || exit 0"
+    env:
+      DYNAMODB_ENDPOINT: http://localhost:8123
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          # Pinned patch: govulncheck fails on stdlib CVEs fixed in 1.27.2.
+          go-version: '1.27.2'
+          cache-dependency-path: api/go.sum
+
+      - name: gofmt
+        run: |
+          out="$(gofmt -l .)"
+          if [ -n "$out" ]; then echo "$out"; echo "::error::gofmt needed"; exit 1; fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: staticcheck
+        run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
+
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
+      # No golangci-lint: the Makefile target exists but the repo has no
+      # .golangci config, so it would run with unreviewed defaults.
+
+      - name: Unit tests
+        run: go test ./... -race -count=1
+
+      - name: Integration tests (DynamoDB Local)
+        run: go test -tags integration -race -count=1 ./tests/integration/
+
+  ui:
+    name: UI
+    needs: changes
+    if: needs.changes.outputs.ui == 'true'
+    runs-on: ubuntu-26.04-arm
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - run: npm ci
+      - run: npx eslint --max-warnings 0
+      - run: npx tsc --noEmit
+      - run: npm test
+
+  cdk:
+    name: CDK
+    needs: changes
+    if: needs.changes.outputs.cdk == 'true'
+    runs-on: ubuntu-26.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      # Stack tests bundle the api/cmd/reconcile Lambda.
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.2'
+          cache-dependency-path: api/go.sum
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: cdk/package-lock.json
+      - run: npm ci
+        working-directory: cdk
+      - run: npx tsc --noEmit
+        working-directory: cdk
+      # Script is `node --test` + ts-node (no jest in this repo).
+      - run: npm test
+        working-directory: cdk
+
+  ci:
+    name: CI
+    if: always()
+    needs: [ changes, api, ui, cdk ]
+    runs-on: ubuntu-26.04-arm
+    steps:
+      - name: Fail if any job failed or was cancelled
+        run: |
+          echo '${{ toJSON(needs.*.result) }}'
+          if echo '${{ toJSON(needs.*.result) }}' | grep -qE 'failure|cancelled'; then exit 1; fi
