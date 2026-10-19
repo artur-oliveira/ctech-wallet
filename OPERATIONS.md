@@ -1,7 +1,7 @@
 # ctech-wallet — Operations
 
-Out-of-band steps that live in **ctech-account**, not in this repo. The wallet API
-needs them before it can promote KYC or accept sandbox M2M traffic.
+Out-of-band steps that live in **ctech-account** and **ctech-billing**, not in this repo. The wallet API
+needs them before it can read KYC, call Billing or accept M2M traffic.
 
 ## 0. Create/update service URL parameters
 
@@ -21,9 +21,9 @@ or refresh the instance; a CDK template change is not needed.
 
 The Wallet owns `api/internal/oauthresource/scope-manifest.json`. The deploy
 workflow publishes it to CTech Account through the Wallet-bound confidential
-scope publisher before deploying the API. The manifest currently contains 12
-public `wallet:*` permissions and 11 service-only `internal:wallet:*`
-permissions; no Account source-code edit or legacy `seedscopes` execution is
+scope publisher before deploying the API. The manifest currently has 6
+active public `wallet:*` permissions and 6 active service-only `internal:wallet:*`
+permissions (the rest are `deprecated`, see below); no Account source-code edit or legacy `seedscopes` execution is
 required.
 
 ### 1a. First-party UI client grant
@@ -61,7 +61,7 @@ an access token containing `wallet:*`.
 
 ## 2. Seed the wallet's own M2M client
 
-So the wallet can call account's `internal:account:kyc` (confirm on first deposit, read CPF).
+So the wallet can call account's `internal:account:kyc` (read the verified CPF and KYC level; KYC promotion is manual-review-only on account's side).
 Direct DynamoDB put into `{env}_account_oauth_clients` (`pk=CLIENT_<id>`), exactly:
 
 - confidential (has a client secret)
@@ -79,11 +79,14 @@ into `{env}_account_oauth_clients` with `first_party: true` and `allowed_scopes:
 
 ## 3. Seed each consumer app's M2M client
 
-Poker, dominó, and future billing each get a confidential M2M client whose
+Each consumer app (Poker, dominó) gets a confidential M2M client whose
 `allowed_scopes` is only the subset they need:
 
-- poker/dominó → `internal:wallet:credit`, `internal:wallet:debit`
-- billing (future) → `internal:wallet:debit`
+- Sandbox clients → `internal:wallet:credit`, `internal:wallet:debit`
+- Clients that stake or spend `real` (Poker) → `internal:wallet:hold` and/or `internal:wallet:debit-real`, `internal:wallet:balance` (read)
+- Never grant `debit-real` to a client that only needs Sandbox credit/debit.
+
+Which clients exist today and what each is granted lives in `ctech-account`, not here (not verified from this repo).
 
 `ctech-account`'s token endpoint clamps requested scope to `allowed_scopes`, so a
 client can never request more than it was granted.
@@ -153,9 +156,10 @@ rc-service ctech-ec2-agent-logs-app restart
 
 ## 5. Withdrawal reconciliation schedule
 
-Run `cmd/reconcile` on a schedule (e.g. EventBridge every 5 min). It resolves
+`cmd/reconcile` runs as a Lambda on EventBridge Scheduler every 5 min (`ReconcileStack`; it can also run as a CLI). It resolves
 withdrawals stuck in `processing` (completes or reverses) and exits non-zero when a
-reversal's credit-back fails (`refund_failed`) so the scheduler raises an alarm.
+reversal's credit-back fails (`refund_failed`) or a hold is stale. No CloudWatch alarm or SNS alert is wired to that exit, so
+check the logs (`ALARM` lines) and the Lambda's error count.
 It asks Billing about every processing payout, and re-reads aged pending PIX deposits
 as a lost-event fallback. The Lambda role must include the PIX deposit table and its
 status GSI, and the holds table status GSI for stale holds (an alarm, never an
