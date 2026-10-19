@@ -17,6 +17,7 @@ import (
 	"gopkg.aoctech.app/api-commons/cache"
 	"gopkg.aoctech.app/api-commons/oauth2client"
 	"gopkg.aoctech.app/api-commons/observability"
+	"gopkg.aoctech.app/api-commons/resilient"
 	"gopkg.aoctech.app/wallet/api/internal/config"
 )
 
@@ -65,7 +66,9 @@ type Client struct {
 // New builds the KYC client. base is the account URL (CTECH_URL).
 // c shares the token between replicas (the fleet's Valkey); nil keeps it per process.
 func New(cfg *config.Config, c cache.Backend) *Client {
-	httpClient := &http.Client{Timeout: 10 * time.Second}
+	// A pooled transport and a circuit per host: while the account is down a call is
+	// refused at once (resilient.ErrCircuitOpen) instead of waiting out the timeout.
+	httpClient := resilient.Client(10*time.Second, resilient.Config{})
 	base := strings.TrimRight(cfg.CtechURL, "/")
 	return &Client{
 		base:   base,

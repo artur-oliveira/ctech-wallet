@@ -16,6 +16,7 @@ import (
 	"gopkg.aoctech.app/api-commons/erasure"
 	"gopkg.aoctech.app/api-commons/oauth2client"
 	fiberobs "gopkg.aoctech.app/api-commons/observability/fiber"
+	"gopkg.aoctech.app/api-commons/resilient"
 	"gopkg.aoctech.app/api-commons/ws"
 	apiv1 "gopkg.aoctech.app/wallet/api/internal/api/v1"
 	"gopkg.aoctech.app/wallet/api/internal/awsclient"
@@ -302,7 +303,7 @@ func startErasureConsumer(lc fx.Lifecycle, cfg *config.Config, sqsClient *sqs.Cl
 		slog.Warn("ERASURE_QUEUE_URL not set — account-deletion lock and purge are OFF (dev only)")
 		return
 	}
-	httpClient := &http.Client{Timeout: 10 * time.Second}
+	httpClient := resilient.Client(10*time.Second, resilient.Config{}) // the account: acks and token
 	base := strings.TrimRight(cfg.CtechURL, "/")
 	acks := erasure.NewAckClient(httpClient, base+wallet.PathAccountErasureAck,
 		oauth2client.New(httpClient, nil, base+kycclient.PathToken, cfg.ErasureClientID, cfg.ErasureClientSecret, wallet.ScopeAccountErasureAck))

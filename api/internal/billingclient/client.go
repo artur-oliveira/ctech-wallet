@@ -22,6 +22,7 @@ import (
 
 	"gopkg.aoctech.app/api-commons/cache"
 	"gopkg.aoctech.app/api-commons/oauth2client"
+	"gopkg.aoctech.app/api-commons/resilient"
 	"gopkg.aoctech.app/wallet/api/internal/config"
 )
 
@@ -105,7 +106,9 @@ type Client struct {
 // New builds the client. It makes no request: the token is fetched on first use.
 // c shares the token between replicas (the fleet's Valkey); nil keeps it per process.
 func New(cfg *config.Config, c cache.Backend) *Client {
-	h := &http.Client{Timeout: 8 * time.Second}
+	// A circuit per host: billing and the account (token) are separate hosts, so one
+	// being down does not cut off the other.
+	h := resilient.Client(8*time.Second, resilient.Config{})
 	ctech := strings.TrimRight(cfg.CtechURL, "/")
 	return &Client{
 		base:   strings.TrimRight(cfg.BillingURL, "/"),
