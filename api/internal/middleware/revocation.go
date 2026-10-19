@@ -7,7 +7,7 @@ import (
 
 	"gopkg.aoctech.app/api-commons/cache"
 	"gopkg.aoctech.app/api-commons/jwtverify"
-	"gopkg.aoctech.app/wallet/api/internal/problem"
+	"gopkg.aoctech.app/api-commons/problem"
 )
 
 // RequireUnrevoked re-checks ctech-account's JWT revocation list for a route

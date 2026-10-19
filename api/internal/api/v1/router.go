@@ -10,8 +10,8 @@ import (
 	"gopkg.aoctech.app/wallet/api/internal/config"
 	"gopkg.aoctech.app/wallet/api/internal/middleware"
 	"gopkg.aoctech.app/wallet/api/internal/oauthresource"
-	"gopkg.aoctech.app/wallet/api/internal/problem"
 	"gopkg.aoctech.app/wallet/api/internal/services"
+	"gopkg.aoctech.app/wallet/api/internal/walletproblem"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -148,5 +148,5 @@ func Register(app *fiber.App, c cache.Backend, revocation cache.Backend, cfg *co
 // retired answers a route that no longer exists with a stable 410, after the normal authentication,
 // so a client that still calls it learns why instead of reading a 404 as a typo.
 func retired(c fiber.Ctx) error {
-	return problem.RouteMovedToBilling().Send(c)
+	return walletproblem.RouteMovedToBilling().Send(c)
 }

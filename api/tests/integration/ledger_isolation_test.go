@@ -8,7 +8,7 @@ import (
 
 	"gopkg.aoctech.app/wallet/api/internal/domain/id"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
-	"gopkg.aoctech.app/wallet/api/internal/problem"
+	"gopkg.aoctech.app/wallet/api/internal/walletproblem"
 )
 
 // The successors of the ring-fence regression tests (the game wallet, the Sandbox purchase from it and
@@ -25,7 +25,7 @@ func TestSandboxHasNoRealDebitPath(t *testing.T) {
 	fund(t, h, user, 10000)
 
 	_, err := h.svc.DebitSandbox(ctx, user, 1000, "idem-sbx-debit", "bet", "")
-	wantProblem(t, err, problem.TypeInsufficientBalance)
+	wantProblem(t, err, walletproblem.TypeInsufficientBalance)
 
 	real, _, sandbox, err := h.repo.LoadWallets(ctx, user)
 	if err != nil {

@@ -1,9 +1,10 @@
 package v1
 
 import (
+	"gopkg.aoctech.app/api-commons/problem"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/middleware"
-	"gopkg.aoctech.app/wallet/api/internal/problem"
+	"gopkg.aoctech.app/wallet/api/internal/walletproblem"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -110,7 +111,7 @@ func (h *handlers) getLedger(c fiber.Ctx) error {
 		return sendProblem(c, problem.BadRequest("tipo de carteira inválido"))
 	}
 	if target == nil {
-		return sendProblem(c, problem.GamblingNotActivated())
+		return sendProblem(c, walletproblem.GamblingNotActivated())
 	}
 	limit := historyLimit(c)
 	startKey := decodeCursor(c.Query(queryParamCursor))

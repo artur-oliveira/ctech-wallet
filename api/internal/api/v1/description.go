@@ -3,7 +3,7 @@ package v1
 import (
 	"strings"
 
-	"gopkg.aoctech.app/wallet/api/internal/problem"
+	"gopkg.aoctech.app/api-commons/problem"
 )
 
 // DescriptionMinLen is the shortest acceptable description once the

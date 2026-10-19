@@ -6,8 +6,8 @@ import (
 
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
-	"gopkg.aoctech.app/wallet/api/internal/problem"
 	"gopkg.aoctech.app/wallet/api/internal/rail"
+	"gopkg.aoctech.app/wallet/api/internal/walletproblem"
 )
 
 // mergedSvc is a service over the single-user stub. The game wallet is merged into `real` for good.
@@ -74,7 +74,7 @@ func TestAHoldIsRefusedWhileASelfExclusionIsRecorded(t *testing.T) {
 	svc.users = &stubUserRepo{user: &wallet.User{SelfExclusion: &wallet.SelfExclusion{Period: "indefinite"}}}
 
 	_, err := svc.HoldGame(context.Background(), "u1", 5000, "table-1", "idem-1")
-	isProblem(t, err, problem.TypeSelfExcluded)
+	isProblem(t, err, walletproblem.TypeSelfExcluded)
 	if len(repo.holds) != 0 {
 		t.Fatalf("an excluded player got a hold: %+v", repo.holds)
 	}

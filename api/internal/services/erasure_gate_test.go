@@ -5,9 +5,10 @@ import (
 	"errors"
 	"testing"
 
+	"gopkg.aoctech.app/api-commons/problem"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
-	"gopkg.aoctech.app/wallet/api/internal/problem"
 	"gopkg.aoctech.app/wallet/api/internal/rail"
+	"gopkg.aoctech.app/wallet/api/internal/walletproblem"
 )
 
 type stubGate struct {
@@ -45,7 +46,7 @@ func TestErasureGateOpenUserProceeds(t *testing.T) {
 	svc, _ := gatedServices(gate)
 	_, err := svc.CreditSandbox(context.Background(), "u1", 100, "k", "r", "")
 	var p *problem.Problem
-	if errors.As(err, &p) && p.Type == problem.TypeAccountErasurePending {
+	if errors.As(err, &p) && p.Type == walletproblem.TypeAccountErasurePending {
 		t.Fatal("an active user must not be refused")
 	}
 	if len(gate.calls) != 1 || gate.calls[0] != "u1" {
@@ -103,8 +104,8 @@ func TestErasureGateRefusesEveryNewExposure(t *testing.T) {
 	}
 	for name, op := range ops {
 		var p *problem.Problem
-		if err := op(); !errors.As(err, &p) || p.Type != problem.TypeAccountErasurePending {
-			t.Errorf("%s: err = %v, want %s", name, err, problem.TypeAccountErasurePending)
+		if err := op(); !errors.As(err, &p) || p.Type != walletproblem.TypeAccountErasurePending {
+			t.Errorf("%s: err = %v, want %s", name, err, walletproblem.TypeAccountErasurePending)
 		}
 	}
 }

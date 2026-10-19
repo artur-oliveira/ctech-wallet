@@ -18,11 +18,12 @@ import (
 	"github.com/google/uuid"
 
 	"gopkg.aoctech.app/api-commons/observability"
+	"gopkg.aoctech.app/api-commons/problem"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
-	"gopkg.aoctech.app/wallet/api/internal/problem"
 	"gopkg.aoctech.app/wallet/api/internal/rail"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
+	"gopkg.aoctech.app/wallet/api/internal/walletproblem"
 )
 
 // depositTTLMinutes is the DynamoDB TTL lifetime of a pending PIX charge row.
@@ -131,7 +132,7 @@ func acquireWallet(ctx context.Context, locker Locker, walletID string) (func(),
 		return nil, err
 	}
 	if !acquired {
-		return nil, problem.WalletBusy()
+		return nil, walletproblem.WalletBusy()
 	}
 	return release, nil
 }
@@ -142,7 +143,7 @@ func acquireWallets(ctx context.Context, locker Locker, walletIDs ...string) (fu
 		return nil, err
 	}
 	if !acquired {
-		return nil, problem.WalletBusy()
+		return nil, walletproblem.WalletBusy()
 	}
 	return release, nil
 }
@@ -308,9 +309,9 @@ func breachProblem(b *wallet.DailyBreach) *problem.Problem {
 		return nil
 	}
 	if b.Kind == wallet.DailyBreachDepositCap {
-		return problem.DailyDepositLimit(b.Limit, b.Used, b.ResetsAt)
+		return walletproblem.DailyDepositLimit(b.Limit, b.Used, b.ResetsAt)
 	}
-	return problem.DailyWithdrawLimit(b.Kind, b.Limit, b.Used, b.ResetsAt)
+	return walletproblem.DailyWithdrawLimit(b.Kind, b.Limit, b.Used, b.ResetsAt)
 }
 
 // InitiateDeposit opens a PIX charge and records a pending deposit. Gates:
@@ -324,19 +325,19 @@ func (s *WalletService) InitiateDeposit(ctx context.Context, userID, kycLevel st
 		return nil, nil, err
 	}
 	if kycLevel == "" {
-		return nil, nil, problem.KYCNotVerified()
+		return nil, nil, walletproblem.KYCNotVerified()
 	}
 	realw, err := s.repo.EnsureRealWallet(ctx, userID)
 	if err != nil {
 		return nil, nil, err
 	}
 	if amount > wallet.MaxInboundAmount {
-		return nil, nil, problem.AmountAboveLimit(wallet.MaxInboundAmount)
+		return nil, nil, walletproblem.AmountAboveLimit(wallet.MaxInboundAmount)
 	}
 	// Range first: never open a PIX charge for an amount we will reject.
 	if err := wallet.ValidateDepositAmount(amount, realw); err != nil {
 		minAmt, maxAmt := wallet.DepositLimits(realw)
-		return nil, nil, problem.DepositOutOfRange(minAmt, maxAmt)
+		return nil, nil, walletproblem.DepositOutOfRange(minAmt, maxAmt)
 	}
 
 	txid := depositTxID(userID, idemKey)
@@ -348,7 +349,7 @@ func (s *WalletService) InitiateDeposit(ctx context.Context, userID, kycLevel st
 	}
 	if existing != nil {
 		if existing.UserID != userID || existing.AmountExpected != amount {
-			return nil, nil, problem.IdempotencyConflict()
+			return nil, nil, walletproblem.IdempotencyConflict()
 		}
 		charge, qerr := s.rail.QueryDeposit(ctx, txid)
 		if qerr != nil {
@@ -862,7 +863,7 @@ func compensationContext(ctx context.Context) (context.Context, context.CancelFu
 
 func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, amount int64, idemKey string) (*wallet.Withdrawal, error) {
 	if kycLevel != wallet.KYCVerified {
-		return nil, problem.KYCNotVerified()
+		return nil, walletproblem.KYCNotVerified()
 	}
 	withdrawalID := withdrawalIDPrefix + userID + "#" + idemKey
 
@@ -881,7 +882,7 @@ func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, a
 		return nil, err
 	} else if existing != nil {
 		if existing.UserID != userID || existing.Amount != amount {
-			return nil, problem.IdempotencyConflict()
+			return nil, walletproblem.IdempotencyConflict()
 		}
 		return existing, nil
 	}
@@ -927,7 +928,7 @@ func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, a
 	}
 	pixKey := kyc.CPF // destination is ALWAYS the KYC owner's CPF
 	if pixKey == "" {
-		return nil, problem.KYCNotVerified() // no CPF on record means no payout destination
+		return nil, walletproblem.KYCNotVerified() // no CPF on record means no payout destination
 	}
 
 	w := &wallet.Withdrawal{
@@ -964,7 +965,7 @@ func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, a
 			return nil, err
 		}
 		if existing == nil {
-			return nil, problem.WalletBusy() // guard visible, row not yet: tell the client to retry
+			return nil, walletproblem.WalletBusy() // guard visible, row not yet: tell the client to retry
 		}
 		return existing, nil
 	}
@@ -976,7 +977,7 @@ func (s *WalletService) Withdraw(ctx context.Context, userID, kycLevel string, a
 			cctx, cancel := compensationContext(ctx)
 			s.reverse(cctx, *w)
 			cancel()
-			return nil, problem.PixKeyNotFound()
+			return nil, walletproblem.PixKeyNotFound()
 		}
 		slog.Warn("withdrawal transfer failed, left in processing", "withdrawal_id", withdrawalID, "err", err)
 		return w, nil
@@ -1041,7 +1042,7 @@ func (s *WalletService) refuseIfExcluded(ctx context.Context, userID string) err
 		if u.SelfExclusion != nil {
 			until = u.SelfExclusion.Until
 		}
-		return problem.SelfExcluded(until)
+		return walletproblem.SelfExcluded(until)
 	}
 	return nil
 }
@@ -1055,7 +1056,7 @@ func (s *WalletService) realWallet(ctx context.Context, userID string) (*wallet.
 		return nil, err
 	}
 	if real == nil {
-		return nil, problem.GamblingNotActivated()
+		return nil, walletproblem.GamblingNotActivated()
 	}
 	return real, nil
 }

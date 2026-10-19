@@ -16,6 +16,7 @@ import (
 	"gopkg.aoctech.app/api-commons/erasure"
 	"gopkg.aoctech.app/api-commons/oauth2client"
 	fiberobs "gopkg.aoctech.app/api-commons/observability/fiber"
+	"gopkg.aoctech.app/api-commons/problem"
 	"gopkg.aoctech.app/api-commons/resilient"
 	"gopkg.aoctech.app/api-commons/ws"
 	apiv1 "gopkg.aoctech.app/wallet/api/internal/api/v1"
@@ -25,7 +26,6 @@ import (
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
 	"gopkg.aoctech.app/wallet/api/internal/lock"
-	"gopkg.aoctech.app/wallet/api/internal/problem"
 	"gopkg.aoctech.app/wallet/api/internal/rail"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
 	"gopkg.aoctech.app/wallet/api/internal/services"
@@ -243,8 +243,16 @@ func errorHandler(c fiber.Ctx, err error) error {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return problem.GatewayTimeout("a requisição demorou demais; tente novamente").WithCause(err).Send(c)
 	}
+	// Preserved behaviour: only 404 and 504 keep their status; every other fiber
+	// error is a generic 500 (the shared problem.ErrorHandler would map 4xx too).
 	if f, ok := errors.AsType[*fiber.Error](err); ok {
-		return problem.FromFiber(f).Send(c)
+		switch f.Code {
+		case http.StatusNotFound:
+			return problem.NotFound(f.Error()).WithCause(f).Send(c)
+		case http.StatusGatewayTimeout:
+			return problem.GatewayTimeout("a requisição demorou demais; tente novamente").WithCause(f).Send(c)
+		}
+		return problem.InternalServer("erro interno").WithCause(f).Send(c)
 	}
 	// Never surface a raw error string (DynamoDB/AWS/panic details) to the
 	// caller — that is an internal-info leak. Genuine, client-safe failures

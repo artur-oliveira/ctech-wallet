@@ -8,8 +8,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
+	"gopkg.aoctech.app/api-commons/problem"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
-	"gopkg.aoctech.app/wallet/api/internal/problem"
+	"gopkg.aoctech.app/wallet/api/internal/walletproblem"
 )
 
 const (
@@ -92,7 +93,7 @@ func (r *WalletRepository) CreateHold(ctx context.Context, holdID, walletID, use
 			h2, gErr := r.GetHold(ctx, holdID)
 			return h2, true, gErr
 		}
-		return nil, false, problem.InsufficientBalance()
+		return nil, false, walletproblem.InsufficientBalance()
 	}
 	return h, false, nil
 }

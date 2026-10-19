@@ -15,7 +15,8 @@ import (
 	"strings"
 	"sync"
 
-	"gopkg.aoctech.app/wallet/api/internal/problem"
+	"gopkg.aoctech.app/api-commons/problem"
+	"gopkg.aoctech.app/wallet/api/internal/walletproblem"
 
 	"github.com/go-playground/validator/v10"
 )
@@ -70,7 +71,7 @@ func Struct(v any) *problem.Problem {
 			Tag:     fe.Tag(),
 		})
 	}
-	return problem.Validation(errs)
+	return walletproblem.Validation(errs)
 }
 
 // asInvalid reports whether err is an *InvalidValidationError (programmer error,

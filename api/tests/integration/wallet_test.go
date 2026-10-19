@@ -9,12 +9,13 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.aoctech.app/api-commons/problem"
 	"gopkg.aoctech.app/wallet/api/internal/domain/id"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
-	"gopkg.aoctech.app/wallet/api/internal/problem"
 	"gopkg.aoctech.app/wallet/api/internal/rail"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
+	"gopkg.aoctech.app/wallet/api/internal/walletproblem"
 )
 
 const cpf = "12345678901"
@@ -249,7 +250,7 @@ func TestSandboxDebitNoNegative(t *testing.T) {
 	user := fundedAndActivated(t, h, 0) // sandbox starts at 0
 
 	_, err := h.svc.DebitSandbox(ctx, user, 500, "round-1", "bet", "")
-	wantProblem(t, err, problem.TypeInsufficientBalance)
+	wantProblem(t, err, walletproblem.TypeInsufficientBalance)
 }
 
 // The reported poker bug: a daily-reward sandbox credit must work for a user
@@ -288,7 +289,7 @@ func TestDebitSandboxOnNeverActivatedUserRespectsBalanceFloor(t *testing.T) {
 	user := "u-" + id.New()
 
 	_, err := h.svc.DebitSandbox(ctx, user, 500, "round-1", "bet", "")
-	wantProblem(t, err, problem.TypeInsufficientBalance)
+	wantProblem(t, err, walletproblem.TypeInsufficientBalance)
 }
 
 // The game wallet's activation gate must remain fully intact.
@@ -323,7 +324,7 @@ func TestIdempotencyConflictOnDifferentPayload(t *testing.T) {
 	}
 	// Same key, different amount → conflict.
 	_, err := h.svc.CreditSandbox(ctx, user, 2000, idem, "bonus", "")
-	wantProblem(t, err, problem.TypeIdempotencyConflict)
+	wantProblem(t, err, walletproblem.TypeIdempotencyConflict)
 }
 
 // TestRealDebitNeverTouchesSandboxWallet proves F3's new DebitReal only ever
@@ -505,7 +506,7 @@ func TestConcurrentCreditSameIdempotencyKeyAppliesOnce(t *testing.T) {
 // ring-fence transfer applies exactly once under concurrent identical calls.
 func isWalletBusy(err error) bool {
 	p, ok := errors.AsType[*problem.Problem](err)
-	return ok && p.Type == problem.TypeWalletBusy
+	return ok && p.Type == walletproblem.TypeWalletBusy
 }
 
 // TestConcurrentPurchaseSandboxSameIdempotencyKeyAppliesOnce proves the

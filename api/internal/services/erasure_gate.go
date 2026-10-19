@@ -7,7 +7,7 @@ import (
 
 	"gopkg.aoctech.app/api-commons/erasure"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
-	"gopkg.aoctech.app/wallet/api/internal/problem"
+	"gopkg.aoctech.app/wallet/api/internal/walletproblem"
 )
 
 // ErasureGate reports whether the account-deletion saga has locked or erased
@@ -40,7 +40,7 @@ func checkErasure(ctx context.Context, gate ErasureGate, userID string) error {
 		return fmt.Errorf("erasure gate: %w", err)
 	}
 	if blocked {
-		return problem.AccountErasurePending()
+		return walletproblem.AccountErasurePending()
 	}
 	return nil
 }

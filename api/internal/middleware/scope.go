@@ -4,8 +4,9 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
+	"gopkg.aoctech.app/api-commons/problem"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
-	"gopkg.aoctech.app/wallet/api/internal/problem"
+	"gopkg.aoctech.app/wallet/api/internal/walletproblem"
 )
 
 // Scopes the wallet defines for user-delegated and internal callers. Public
@@ -128,11 +129,11 @@ func RequireKYC(min string) fiber.Handler {
 		switch min {
 		case KYCVerified:
 			if cl.KYCLevel != KYCVerified {
-				return problem.KYCNotVerified().Send(c)
+				return walletproblem.KYCNotVerified().Send(c)
 			}
 		case KYCBasic:
 			if cl.KYCLevel == "" {
-				return problem.KYCNotVerified().Send(c)
+				return walletproblem.KYCNotVerified().Send(c)
 			}
 		}
 		return c.Next()
