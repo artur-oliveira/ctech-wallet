@@ -1,7 +1,8 @@
 # AGENTS.md — ui (ctech-wallet-ui)
 
-Context for AI agents working on the `ctech-wallet` frontend. Identical intent
-to [`CLAUDE.md`](CLAUDE.md); this file is the agent-facing summary.
+Context for AI agents working on the `ctech-wallet` frontend. Same intent
+as [`CLAUDE.md`](CLAUDE.md) (read it for resilience, locale routes and statements); this file is the agent-facing summary.
+Family frontend standard: the `ctech-dev-standards` skill, `references/frontend.md`.
 
 Next.js 16 **static-export SPA** (React 19) for the wallet API. This app
 drives **real third-party money** — the 14 Financial Safety Invariants in the
@@ -14,15 +15,15 @@ convenience.
   proxy) only under `next dev`. The two are mutually exclusive by design.
 - Auth: `@aoctech/auth-client` (OAuth2 PKCE). `src/lib/auth/oauth.ts`:
   scope assembled from the identity scopes plus every public `wallet:*` scope
-  in `src/lib/auth/scopes.ts`; `startOAuthFlow` (`:26`). No step-up wrapper:
-  PIX deposits/withdrawals of the `real` wallet run on the Inter rail (withdrawals need step-up MFA). Refresh token is the **HttpOnly + SameSite `ctech_rt`
-  cookie namespaced by OAuth client** (`:48-50,57`); the **access token is in-memory only**
-  (`src/lib/api/client.ts:23`), never persisted.
+  in `src/lib/auth/scopes.ts`; `startOAuthFlow`. Withdrawals need step-up
+  (`startStepUpFlow`, `max_age=0`); Pix deposits/withdrawals of the `real` wallet go through the API (Billing). Refresh token is the **HttpOnly + SameSite `ctech_rt`
+  cookie namespaced by OAuth client** ; the **access token is in-memory only**
+  (`src/lib/api/client.ts`), never persisted.
 - API access is **cross-origin** in deployed environments: the browser calls
-  `NEXT_PUBLIC_API_URL` directly (`client.ts:20`) and **CORS applies**. Only
+  `NEXT_PUBLIC_API_URL` directly (`client.ts`) and **CORS applies**. Only
   `next dev` is same-origin, via the `next.config.ts` rewrite.
-- Realtime: `src/lib/hooks/useWalletRealtime.ts` — WS at `/v1.0/ws` (`:19`),
-  JWT passed as the **first frame** (`authToken`, `:101`); events
+- Realtime: `src/lib/hooks/useWalletRealtime.ts` — WS at `/v1.0/ws` ,
+  JWT passed as the **first frame** (`authToken`); events
   `deposit_confirmed`, `withdraw_completed`/`withdraw_reversed`/`withdraw_refund_failed`.
 
 ## Rules (MUST follow)
@@ -37,28 +38,19 @@ convenience.
 - Mutating calls MUST send an `Idempotency-Key` header (`idemConfig`,
   `client.ts:115`) — never omit it on POSTs that move money.
 - i18n: no hardcoded strings; pt-BR default, en first-class.
-- `npx eslint src --ext .ts,.tsx` MUST pass with zero errors/warnings.
+- `npm run lint` MUST pass with zero errors/warnings.
 
-## Known divergences
+## Known gaps vs the standard
 
-- **B18** — money constants mirrored api↔ui by hand:
-  `SANDBOX_CREDITS_PER_CENTAVO=10` (`src/lib/utils/money.ts`). `rpc-contract`
-  defines NONE. Keep in sync manually. No fee constants exist — see
-  `../docs/specs/2026-08-16-withdrawal-fee-removal.md`.
+- `@aoctech/ui` is not used (not in `package.json`); tests run on `node --test`, not vitest.
+- Money constants (`SANDBOX_CREDITS_PER_CENTAVO` = 100, `MAX_AMOUNT_CENTS`) are pinned to `../rpc-contract/money.json` by
+  `money-contract.test.mjs`. No fee constants exist (`../docs/specs/2026-08-16-withdrawal-fee-removal.md`).
 
 ## Cross-links
 
 - API: [`../api/README.md`](../api/README.md), [`../api/ENDPOINTS.md`](../api/ENDPOINTS.md)
 - Root invariants: [`../CLAUDE.md`](../CLAUDE.md)
 - Infra: [`../cdk/README.md`](../cdk/README.md)
-
-## Mandatory Documentation Policy
-
-**Every code change MUST be documented.**
-
-There are NO exceptions.
-
-Any modification affecting behavior, architecture, APIs, integrations, configuration, deployment, security, business rules, or developer workflow MUST include the corresponding documentation update in the same change.
 
 <!-- BEGIN:nextjs-agent-rules -->
 
