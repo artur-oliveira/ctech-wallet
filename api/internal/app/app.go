@@ -269,7 +269,10 @@ func newErasureStore(cfg *config.Config, db *dynamodb.Client) *erasure.Store {
 	if cfg.ErasureQueueURL == "" {
 		return nil
 	}
-	return erasure.NewStore(db, cfg.TablePrefix+"_"+wallet.ErasureStateTableSegment, wallet.ErasureTombstoneTTL)
+	// No memory of the answer (TTL 0): this gate guards operations that open new
+	// exposure with money, and a lock must refuse the very next one, not after the
+	// 10 s other services accept.
+	return erasure.NewStore(db, cfg.TablePrefix+"_"+wallet.ErasureStateTableSegment, wallet.ErasureTombstoneTTL).WithBlockedMemoryTTL(0)
 }
 
 func newErasureService(repo *repositories.WalletRepository, users *repositories.UserRepository, sp *repositories.SandboxPurchaseRepository, pp *repositories.ProductPurchaseRepository, er *repositories.ErasureRepository, k services.KYCClient, charges rail.Rail, cfg *config.Config) *services.ErasureService {
