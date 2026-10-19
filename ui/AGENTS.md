@@ -36,7 +36,7 @@ convenience.
   block anything else. `wss://` counts separately from `https://`.
 - All money is **integer centavos** end-to-end; format for display only.
 - Mutating calls MUST send an `Idempotency-Key` header (`idemConfig`,
-  `client.ts:115`) — never omit it on POSTs that move money.
+  `client.ts`) — never omit it on POSTs that move money.
 - i18n: no hardcoded strings; pt-BR default, en first-class.
 - `npm run lint` MUST pass with zero errors/warnings.
 
