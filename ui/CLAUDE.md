@@ -1,6 +1,8 @@
 # CLAUDE.md — ui (ctech-wallet-ui)
 
-Next.js 16 (static export) + React 19 frontend for the ctech-wallet API.
+Next.js 16 (static export) + React 19 frontend for the ctech-wallet API. Family frontend standard (API client, resilience,
+i18n, theme, CI gate): the `ctech-dev-standards` skill, `references/frontend.md`. Gap: `@aoctech/ui` is not used here yet and
+tests run on `node --test`, not vitest.
 
 ## Stack
 
@@ -18,8 +20,8 @@ Next.js 16 (static export) + React 19 frontend for the ctech-wallet API.
 - OAuth **PKCE** (`Authorization Code + code_challenge`). `src/lib/auth/oauth.ts` wraps
   the SDK's `startOAuthFlow`. Withdrawals require step-up: on
   `step-up-required` the confirm dialog offers a re-verify that calls
-  `startStepUpFlow` (`max_age=0`). PIX deposit and withdrawal of the `real` wallet
-  run on the Inter rail (QR dialog for deposits).
+  `startStepUpFlow` (`max_age=0`). Pix deposit and withdrawal of the `real` wallet
+  go through the API, which uses Billing (QR dialog for deposits).
 - The authorization request includes `openid profile kyc` and all public active
   `wallet:*` scopes from `src/lib/auth/scopes.ts`; its contract test reads the
   API manifest so the UI cannot silently drift from the Resource Server.
@@ -88,17 +90,9 @@ probe.
   `build-env-*` (or `extra-connect-src`), or the generated `connect-src` blocks it.
 - Money is integer **centavos** end to end; format for display only.
 
-## Mandatory Documentation Policy
-
-**Every code change MUST be documented.**
-
-There are NO exceptions.
-
-Any modification affecting behavior, architecture, APIs, integrations, configuration, deployment, security, business rules, or developer workflow MUST include the corresponding documentation update in the same change.
-
 ## Statements, purchases and copy
 
-- The dashboard statement is a four-tab control: Real, Jogo (game), Sandbox and **Compras** (purchases). Purchases
+- The dashboard statement is a tab control: Real, Sandbox (only when a Sandbox wallet exists) and **Compras** (purchases; there is no game statement any more). Purchases
   keep two filters (sandbox credits, digital products) because they are different objects with their own
   endpoints; each list is its own paginated query.
 - Lists load by infinite scroll: `useInfiniteSentinel` (`lib/hooks`) plus the pure `shouldLoadMore`

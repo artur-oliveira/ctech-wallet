@@ -1,136 +1,59 @@
 # CLAUDE.md — cdk (ctech-wallet-cdk)
 
-AWS CDK (TypeScript) infrastructure for the wallet. Deploys the DynamoDB
-tables, the API on an EC2 ASG behind the CTech HAProxy edge, the reconcile Lambda, the
-`pix-gateway` Lambdas, the static frontend (S3 + CloudFront), and the
-GitHub-Actions OIDC deploy roles.
+Family infra standard (CDK frozen, no NAT/ALB/CloudWatch alarms/custom metrics, alerts via the shared SNS topic, deploy
+rules): the `ctech-dev-standards` skill, `references/infra.md`. This file holds only what is wallet-specific.
 
-**Before any task:** Read the root [`../CLAUDE.md`](../CLAUDE.md) Financial
-Safety Invariants. This stack custodies real money — the invariants are
-enforced here wherever they can be (IAM, table shape), and the rest in `api`.
+AWS CDK (TypeScript, `@aoctech/cdk` 0.10.2) for the wallet: DynamoDB tables, the account-deletion queue, the API on an EC2 ASG
+behind the shared HAProxy edge, the reconcile Lambda and the GitHub-Actions OIDC roles. The frontend is **not** here: it
+deploys to Cloudflare Workers Static Assets through `.github/workflows/frontend.yml` (reusable workflow in `ctech-cdk`).
+There is no pix-gateway: Billing owns the Inter connection.
 
-> **B1 is a FALSE POSITIVE (closed).** `dynamodb:TransactWriteItems` is
-> not an IAM action — a `TransactWriteItems` call needs the item‑level
-> permissions (`ConditionCheckItem`/`DeleteItem`/`PutItem`/`UpdateItem`),
-> which the wallet IAM role already grants. Monetary transactions work in
-> production. No IAM change needed. (See `README.md`.)
+**Before any task:** Read the root [`../CLAUDE.md`](../CLAUDE.md) Financial Safety Invariants. This stack custodies real money;
+the invariants are enforced here wherever they can be (IAM, table shape), the rest in `api`. Details: [`README.md`](README.md).
 
----
-
-## Stacks (`bin/ctech-wallet-cdk.ts`, `cdk.json` → ts-node)
+## Stacks (`bin/ctech-wallet-cdk.ts`)
 
 | Stack | File | Provisions |
 |-------|------|-----------|
-| `DynamoDBStack` | `lib/dynamodb-stack.ts` | 14 tables + GSIs (OnDemand) |
+| `CtechWallet-Global-OIDC` | `lib/oidc-stack.ts` | GitHub OIDC roles: API deploy, reconcile deploy, infra (AdministratorAccess), scope publisher |
+| `DynamoDBStack` | `lib/dynamodb-stack.ts` | 12 live tables + 4 retired BaaS tables kept as RETAIN (OnDemand) |
+| `ErasureStack` | `lib/erasure-stack.ts` | account-deletion SQS queue + DLQ, SNS subscription (`services=wallet`) |
 | `IAMStack` | `lib/iam-stack.ts` | EC2 instance role for the API |
-| `ApiStack` | `lib/api-stack.ts` | EC2 ASG + HAProxy route + nginx |
+| `ApiStack` | `lib/api-stack.ts` | EC2 ASG (`HaproxyEc2Service`) + nginx + deploy scripts |
 | `ReconcileStack` | `lib/reconcile-stack.ts` | reconcile Lambda + EventBridge Scheduler (5 min) |
-| `PixGatewayStack` | `lib/pix-gateway-stack.ts` | outbound + webhook Lambdas, mTLS HTTP API |
-| `FrontendStack` | `lib/frontend-stack.ts` | S3 + CloudFront + URL-rewrite Function + KVS route store |
-| `OidcStack` | `lib/oidc-stack.ts` | GitHub Actions deploy roles (OIDC, no keys) |
 
-Shared infra (VPC, retained edge SG, Valkey) is owned by `ctech-cdk` and referenced
-via SSM (`lib/constants.ts` `SSM_SHARED`).
-
-## DynamoDB (`lib/dynamodb-stack.ts`)
-
-All tables env-prefixed (`TABLE_PREFIX=env` ⇒ `dev_wallets`). **OnDemand**
-(`maxRead/WriteRequestUnits: 1000`); PITR enabled **prod only**
-(`:70-71`); encryption `awsManagedKey`; `RETAIN` prod / `DESTROY` dev.
-
-| Logical table | GSI(s) | Key notes |
-|---------------|--------|-----------|
-| `wallets` | `gsi_user` | pk `WALLET#{id}`; authoritative balance |
-| `wallet_ledger_entries` | `gsi_idem` | pk+sk; **append-only** (Invariant #2) |
-| `wallet_idempotency` | — | Permanent `IDEM#{key}` guards; financial replay protection never expires |
-| `wallet_pix_deposits` | `gsi_status` | keyed by txid; **TTL** 60m |
-| `wallet_withdrawals` | `gsi_status` | `processing`/`completed`/… drives reconcile |
-| `wallet_users` | — | consent + responsible-gambling state |
-| `wallet_holds` | `gsi_hold_status` | game buy-in holds |
-| `wallet_audit` | — | pk+sk; **append-only** (Invariant #10) |
-| `wallet_sandbox_purchases` | `gsi_sandbox_purchase_status`, `gsi_sandbox_purchase_webhook_status`, `gsi_user` (`created_at` sort) | pk `purchase_id`; direct PIX→sandbox sale, decoupled from `wallet_pix_deposits` (plan §9.1/§9.3); user GSI backs newest-first purchase history without scans |
-| `wallet_product_purchases` | `gsi_product_purchase_status`, `gsi_product_purchase_webhook_status`, `gsi_user` (`created_at` sort) | pk `purchase_id`; generic digital-product PIX sales with no ledger effect; user GSI backs ownership-scoped history |
-
-Retired BaaS custody tables (`wallet_baas_accounts`, `wallet_transfer_intents`, `wallet_settlement_legs`,
-`wallet_med_receivables`) are still declared in `dynamodb-stack.ts` with a forced `RETAIN` and **no IAM access**, only
-so CloudFormation does not delete them (dev defaults to `DESTROY`), and their ARN exports are kept so the DynamoDB
-stack update does not fail on "export in use". Once that has deployed to every env, delete the block; the tables are
-then orphaned (data kept) for manual deletion.
-
-Names/keys/GSIs mirror `api/internal/domain/wallet/model.go` exactly
-(`dynamodb-stack.ts:8-11`) — a mismatch silently breaks every query.
+Shared infra (VPC, edge SG, Valkey) is owned by `ctech-cdk` and referenced via SSM (`lib/constants.ts` `SSM_SHARED`).
 
 ## How the Financial Safety Invariants are enforced in infra
 
-- **#2 / #10 (append-only ledger & audit):** `APPEND_ONLY_TABLES`
-  (`constants.ts:178`) → IAM grants create+read and an explicit **DENY** on
-  `UpdateItem`/`DeleteItem` (`iam-stack.ts:97-111`). A bug or a compromised
-  instance can add but never rewrite/erase the record.
-- **#4 / #5 (one op/wallet, lock order):** enforced in `api` via Valkey
-  `SETNX` (`VALKEY_DB=2`, `constants.ts:112`), **not** in CDK. The ASG
-  shares one Valkey (shared VPC) so locks are fleet-wide.
-- **#1 / #3 / #6-#9 / #11 / #12:** enforced in `api` code (see
-  `../api/ENDPOINTS.md` §6). CDK only provisions the tables the code needs.
-- **#12 (no money in limbo):** `ReconcileStack` EventBridge every 5 min
-  (`RECONCILE_RATE_MINUTES`, `reconcile-stack.ts`); role touches `wallets,
-  wallet_ledger_entries, wallet_idempotency, wallet_pix_deposits,
-  wallet_withdrawals, wallet_holds, wallet_sandbox_purchases,
-  wallet_product_purchases` (+indexes) and invokes pix-gateway's outbound
-  Lambda. Deposit grants are read/update/query; holds are query-only.
+- **#2 (append-only ledger and audit):** `APPEND_ONLY_TABLES` (`constants.ts`) get create+read only and an explicit DENY on
+  `DeleteItem`; `UpdateItem` is denied outright on the ledger, and on `wallet_audit` is allowed only to remove `ip`/`user_agent`
+  (LGPD anonymization, `AUDIT_ANONYMIZABLE_ATTRIBUTES`). A bug or a compromised instance can add but not rewrite the record.
+- **#4 / #5 (one op per wallet, lock order):** enforced in `api` via Valkey `SETNX` (`VALKEY_DB=2`), not in CDK.
+- **Others:** enforced in `api` code (see `../api/ENDPOINTS.md` §6). CDK only provisions the tables the code needs.
+- **#14 (no money in limbo):** `ReconcileStack` runs every 5 min (`RECONCILE_RATE_MINUTES`); it must stay well below the API's
+  `sweepAgeThreshold` (10m) and `depositTTLMinutes` (60m). Its role covers `wallets`, ledger, idempotency, withdrawals,
+  sandbox/product purchases, deposits (read/update/query) and holds (query only).
 
-## Engineering Rules
+## Rules specific to this repo
 
-### Constants — no magic strings
-Every resource name, listener priority, SSM path, port, and table/GSIs name
-lives in `lib/constants.ts` / `lib/types.ts` (root CLAUDE.md: "Constants —
-no magic variables"). Names the CDK creates are never inlined at a call site.
+- Table names, keys and GSIs mirror `api/internal/domain/wallet/model.go` exactly; a mismatch silently breaks every query.
+- No `dynamodb:Scan` in any role. Never recreate a table: logical ids are frozen (the retired BaaS tables stay declared with
+  `RETAIN` and no IAM until a reviewed change removes them).
+- The API role has no Inter/Billing secrets of its own beyond the SSM paths it reads at boot (`iam-stack.ts`).
+- `TransactWriteItems` is not an IAM action; the item-level actions it needs are granted (the old "B1" finding was a false positive).
 
-### IAM — least privilege
-- No `dynamodb:Scan` anywhere — GetItem/Query only.
-- Append-only tables get a NARROWER action set + explicit DENY (Invariant #2/#10).
-- Inter mTLS/OAuth/webhook secrets live in **pix-gateway's** role
-  (`pix-gateway-stack.ts`), never the API role — the API no longer talks to
-  Inter (`iam-stack.ts:115-137` scopes SSM to `wallet-client-id/secret`,
-  `ctech-account/*`, `ctech/{env}/*`).
-- **B1 is a false positive (closed)** — `TransactWriteItems` is not an IAM action; the item‑level perms it needs are already granted. No IAM change.
+## Deploy
 
-### Money
-All money math is **integer centavos**, computed in `api` — CDK stores
-exactly what `api` writes; never round or transform values here.
+CI is `.github/workflows/deploy.yml` (infra -> scopes -> API -> frontend; calls `infra.yml`, `api.yml`, `frontend.yml`).
+Manual: `cd cdk && npm ci && npx cdk deploy CtechWallet-<Env>-DynamoDB` then IAM, Erasure, API, Reconcile.
+The API deploy is an SSM RunCommand of `/opt/app/deploy.sh` per in-service instance, not an ASG instance refresh; see README.
 
-## Critical Areas (analyze before touching)
+## Known gaps vs the standard (code/infra, not docs)
 
-- The IAM role — grants the item‑level actions (`PutItem`/`UpdateItem`/`ConditionCheckItem`/`DeleteItem`) that `TransactWriteItems` needs (B1 was a false positive).
-- Table names/keys/GSIs — must match `api/internal/domain/wallet/model.go`.
-- The reconcile Lambda role + scheduler cadence (must stay below the API's
-  `sweepAgeThreshold` 10m and `depositTTLMinutes` 60m).
-
-## Deploy flow
-
-```bash
-cd cdk && npm ci
-npx cdk deploy CtechWallet-<Env>-DynamoDB   # then IAM, Api, Reconcile, PixGateway, Frontend
-```
-CI: `.github/workflows/{api,frontend,infra,deploy}.yml`.
-
-## Known divergences (documented, NOT fixed here)
-
-| ID | Where | Status |
-|----|-------|--------|
-| **B1** | `dynamodb:TransactWriteItems` absent from API (`iam-stack.ts:81`) + reconcile roles. | Closed — false positive; item-level perms already cover it (see top of this file). |
-| — | ~~OPERATIONS.md §4 registered webhook as `…/webhook?hmac=` but CDK routes `POST /pix/webhook` (`pix-gateway-stack.ts`). Path mismatch.~~ | Fixed — OPERATIONS.md now says `/pix/webhook`. |
-| — | ~~OPERATIONS.md §4 omitted the pix-gateway webhook M2M secret `/ctech-wallet/{env}/pix-gateway/client-secret`.~~ | Fixed — OPERATIONS.md §4 now lists it. |
-
-## Cross-links
-
-- API: [`../api/README.md`](../api/README.md) · pix-gateway: [`../pix-gateway/README.md`](../pix-gateway/README.md)
-- Secrets / SSM seeding: [`../OPERATIONS.md`](../OPERATIONS.md)
-- Wire contract: [`../rpc-contract/README.md`](../rpc-contract/README.md)
-
-## Mandatory Documentation Policy
-
-**Every code change MUST be documented.**
-
-There are NO exceptions.
-
-Any modification affecting behavior, architecture, APIs, integrations, configuration, deployment, security, business rules, or developer workflow MUST include the corresponding documentation update in the same change.
+- DynamoDB GSIs use `ProjectionType.ALL` (standard prefers `KEYS_ONLY`/`INCLUDE`).
+- OIDC trust is `repo:<repo>:*` (any ref), not an explicit `allowedSubSuffixes`.
+- `bin/ctech-wallet-cdk.ts` hard-codes a VPC id fallback; `lib/constants.ts` still has dead ALB/CloudFront constants
+  (`ALB_LISTENER_PRIORITY`, `API_PATH_PATTERNS`, `CERT_ARN`, `LOCALE_*`, `frontendBucketName`, `routeStoreName`).
+- `.github/workflows/frontend-cloudfront.yml` exists but `deploy.yml` calls `frontend.yml` (Cloudflare).
+- No SNS alert wiring: reconcile/ALARM failures are log lines.

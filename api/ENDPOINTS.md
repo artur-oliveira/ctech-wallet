@@ -29,7 +29,7 @@ All errors are RFC 7807 Problem JSON (`problem/*`); never raw errors or `fiber.M
 | Method | Path                 | Notes |
 |--------|----------------------|-------|
 | GET    | `/v1.0/health`       | Liveness. `{status:"pass",releaseId,serviceId}`. Dependency-free. |
-| GET    | `/v1.0/health-check` | Detailed health check. The ALB accepts **200 and 207** (degraded). DynamoDB is the only dependency that can fail the probe (`503`); cache and JWKS degrade to `warn`. There is no Inter or Pix check: Billing owns that connection. |
+| GET    | `/v1.0/health-check` | Detailed health check. Returns **200** or **207** (degraded) or `503`; HAProxy routing uses the dependency-free `/v1.0/health`, not this endpoint. DynamoDB is the only dependency that can make it `503`; cache and JWKS degrade to `warn`. There is no Inter or Pix check: Billing owns that connection. |
 | GET    | `/v1.0/ws`           | WebSocket upgrade. **Auth is the first post-upgrade text frame** (`{"token":"<jwt>"}`), never a `?token=` query parameter. Origin policy mirrors CORS. Fans `deposit_confirmed` and `withdraw_*` events to the user's connections. |
 
 ---
@@ -119,7 +119,7 @@ routes exist). They are listed, and checked, in `router_test.go`.
 - **Daily limits** (per wallet, `domain/wallet/daily_limits.go`) — deposit cap R$1.000, withdraw cap R$1.000, withdraw count 1; counters live on
   the user row, written under the real wallet lock in the same transaction as the movement. The deposit cap is enforced at credit (the excess is refunded).
 - **Absolute inbound ceiling** `MaxInboundAmount = 1_000_000 × 100` (R$1.000.000) — a hard cap on a single deposit.
-- **Sandbox** `SandboxCreditsPerCent = 10` (R$1 ⇒ 1000 credits) — used only to display and to price packs in Poker.
+- **Sandbox** `SandboxCreditsPerCent = 100` (R$1 ⇒ 10000 credits), from `rpc-contract/money.json` — used only to display and to price packs in Poker.
 
 ---
 
@@ -138,19 +138,20 @@ routes exist). They are listed, and checked, in `router_test.go`.
 11. **A Billing event is never the source of truth** — `ConfirmDeposit` re-reads the invoice from Billing before crediting; the pending-deposit
     sweep is the backstop for a lost event.
 12. **Attribution before credit** — a paid deposit credits only when the amount equals the expected amount, the payer matches the KYC CPF by the
-    wallet's own check **and** Billing says `payer_match = match`. Any disagreement quarantines and refunds; no payer yet ⇒ pending (the
-    operator is told after 30 minutes). Payouts go only to the KYC CPF.
+    wallet's own check **and** Billing says `payer_match = match`. Any disagreement quarantines and refunds; no payer yet ⇒ pending (an `ALARM` line is logged on each sweep). Payouts go only to the KYC CPF.
 13. *(Retired 2026-10-07 — was the BaaS verification-fee rule.)*
 14. **No money in limbo** — a `processing` withdrawal is resolved by the **reconcile** job from Billing: done ⇒ complete; not found after the grace
-    period or failed ⇒ reverse (credit back); a failed reversal ⇒ `refund_failed` + alarm. A lookup that errors is never read as "not found". Stale
+    period or failed ⇒ reverse (credit back); a failed reversal ⇒ `refund_failed` + an `ALARM` log line (no SNS alert). A lookup that errors is never read as "not found". Stale
     `held` holds alarm only, never auto-release.
 
 ---
 
-## 7. Known divergences (documented, NOT fixed here)
+## 7. Known divergences
 
-| ID  | Where | Status |
-|-----|-------|--------|
-| B1  | Every money op uses `Base.TransactWrite` ⇒ `dynamodb:TransactWriteItems`. Verify the CDK IAM role grants it: if missing, **all** money ops are denied at runtime. | Open — see `cdk/README.md`. |
-| B7  | Valkey is fail-closed in prod but `newCacheBackend` falls back to in-memory on a missing/!redis URL and on a connect failure; the same for the WS registry. Non-prod ⇒ locks/WS are not fleet-shared and nothing fails hard. | Open. |
-| B18 | Money constants mirrored api↔ui (no float): `SANDBOX_CREDITS_PER_CENTAVO=10` (`ui/src/lib/utils/money.ts` ↔ `domain/wallet/model.go`, from `rpc-contract`). No fee constants exist on either side. Keep them in sync. | Documented. |
+Closed, kept here only so old references resolve:
+
+- **B1** (`dynamodb:TransactWriteItems` in IAM): false positive. It is not an IAM action; the item-level permissions are granted.
+- **B7** (Valkey in prod): `config.Load` and `newCacheBackend` fail closed in prod on a missing URL or a connect failure; only non-prod
+  falls back to in-memory.
+- **B18** (money constants): `SANDBOX_CREDITS_PER_CENTAVO` (100) and `MAX_AMOUNT_CENTS` live in `rpc-contract/money.json` and are pinned
+  by a Go test and a UI test. No fee constants exist.

@@ -1,6 +1,6 @@
 ---
 name: CTech Wallet
-description: A precise, restrained instrument for custoding real money across three balances.
+description: A precise, restrained instrument for custoding real money across two balances.
 colors:
   primary: "#7c3aed"
   neutral-bg: "#f8fafc"
@@ -71,7 +71,7 @@ components:
 
 CTech Wallet is a calibrated tool. Every screen reads like a precise meter — no flourish, just correct, legible state. Signal Violet is the signal light; cool slate gray is the casing. Nothing decorative fires; state is always legible. The brand personality is sharp, efficient, and confident: terse, data-forward copy and motion that conveys state only — the interface behaves like an instrument, not a salesperson.
 
-This system explicitly rejects three things carried from PRODUCT.md: **legacy bank clutter** (dense gray dashboards, tiny tables, jargon walls), **crypto-bro flash** (neon, volatility theater, speculative energy, hype motion), and **gamified casino patterns** (banners, points, streaks, reward loops, any nudge toward betting). The gambling surface appears only on consent and the entry is one quiet link — never a lit banner.
+This system explicitly rejects three things carried from PRODUCT.md: **legacy bank clutter** (dense gray dashboards, tiny tables, jargon walls), **crypto-bro flash** (neon, volatility theater, speculative energy, hype motion), and **gamified casino patterns** (banners, points, streaks, reward loops, any nudge toward betting). There is no gambling surface in the wallet: consent, limits and self-exclusion are Poker's.
 
 **Key Characteristics:**
 - Signal Violet is rare by design — one action color per screen, never a decorative tint.
@@ -113,7 +113,7 @@ A cool slate casing (never warm cream) carries the interface; one violet is the 
 - **Headline** (600, 1.125rem / 18px, line-height 1.3): card headings, prominent labels.
 - **Title** (600, 1rem / 16px): list item titles, ledger row primary text.
 - **Body** (400, 0.875rem / 14px, line-height 1.5): descriptions, hints, general copy. Held to 65–75ch where prose runs.
-- **Label** (600, 0.75rem / 12px, 0.08em tracking, uppercase): eyebrows, wallet-type tags ("REAL", "GAME", "SANDBOX"), mono-tracked over violet.
+- **Label** (600, 0.75rem / 12px, 0.08em tracking, uppercase): eyebrows, wallet-type tags ("REAL", "SANDBOX"), mono-tracked over violet.
 
 ### Named Rules
 **The Mono-for-Money Rule.** Every numeric money value — balances, amounts, ledger figures — renders in IBM Plex Mono with `tabular-nums`. Proportional numerals are forbidden in financial readouts; alignment is part of the instrument feel.
@@ -135,7 +135,7 @@ Flat by default. A surface earns a shadow only when it lifts (card hover) or ove
 ### Buttons
 - **Shape:** gently rounded (10px radius, `rounded-lg`), height 32px, text-sm, medium weight.
 - **Primary (brand):** Signal Violet fill, white label. The single CTA per screen. Hover deepens to #6d28d9.
-- **Outline:** white surface, 1px Signal Violet border at 60% (`border-brand-400/60`), violet label — used for *secondary* money actions on the violet card (fund-game) and for neutral secondary actions elsewhere (return, credits). Hover tints the fill.
+- **Outline:** white surface, 1px Signal Violet border at 60% (`border-brand-400/60`), violet label — used for *secondary* money actions on the violet card (withdraw) and for neutral secondary actions elsewhere. Hover tints the fill.
 - **Ghost:** transparent, ink label; for low-emphasis controls (logout icon, dialog cancel). Hover fills a muted gray.
 - **Destructive:** red-tinted text/background for irreversible confirmations; red-600 fill where a hard delete is offered.
 - **States:** every variant carries default, hover, focus-visible (3px ring), active (1px press), disabled (50% opacity, no pointer). Loading maps to the disabled state with a pending flag.
@@ -149,7 +149,7 @@ Flat by default. A surface earns a shadow only when it lifts (card hover) or ove
 ### Cards / Containers
 - **Corner Style:** 16px radius (`rounded-2xl`) on the balance cards; 12px (`rounded-xl`) on the ledger panel and dialogs.
 - **Background:** white for neutral containers; the real-money card is Signal Violet filled.
-- **Border:** 1px Line on neutral cards; the game card uses a 2px Signal Violet border (`border-brand-200`) to read as ring-fenced; the sandbox card uses a 1px dashed Line.
+- **Border:** 1px Line on neutral cards; the sandbox card uses a 1px dashed Line.
 - **Shadow Strategy:** see Elevation — resting `card`, hover `card-hover`.
 - **Internal Padding:** 24px (balance cards), 20px (ledger panel), 24px (dialog).
 
@@ -158,11 +158,9 @@ Flat by default. A surface earns a shadow only when it lifts (card hover) or ove
 - **States:** the user name (hidden under sm) and a ghost logout icon on the right. No tab rail on the dashboard; the ledger switches via in-panel text tabs, not nav.
 
 ### [Signature Component] Balance Hierarchy
-The three balances are deliberately **not** a symmetric card set — the visual treatment encodes what each balance is, so they cannot be mistaken for one another:
-- **Real — money:** solid filled Signal Violet card, white text, R$ prefix, bold mono balance, Deposit (brand) and Withdraw (outlined) actions; Send-to-games when the game wallet is active.
-- **Game — real money, ring-fenced:** outlined card (2px Signal Violet border, white fill), R$ prefix, violet "GAME" tag. Spendable only on games, subject to the user's personal limit.
-- **Sandbox — not money:** dashed-border card, whole-number balance with the virtual symbol **₡** (never "R$"), explicit "não vira dinheiro" line; it has no monetary value and can never convert back.
-- **Not activated:** balance and action surfaces stay absent; one quiet activation link stands in. If a sandbox wallet already exists, its statement remains available as an explicitly read-only history surface so prior play and credit purchases are never hidden.
+The two balances are deliberately **not** a symmetric card set — the visual treatment encodes what each balance is, so they cannot be mistaken for one another:
+- **Real — money:** solid filled Signal Violet card, white text, R$ prefix, bold mono balance, Deposit (brand) and Withdraw (outlined) actions.
+- **Sandbox — not money:** dashed-border card, whole-number balance with the virtual symbol **₡** (never "R$"), explicit "não vira dinheiro" line, no actions; it has no monetary value and can never convert back. It shows only when a Sandbox wallet exists, as history (credits are bought and spent in Poker).
 
 ### [Signature Component] Ledger Row
 A divided list (`divide-gray-100`) of entries: left side is the localized type label (title weight, ink) over a muted timestamp; right side is the signed amount in IBM Plex Mono — violet (#6d28d9 / brand-700) when inflow, muted gray when outflow. Loading and empty states are explicit, centered, and teach the interface ("nothing here yet") rather than spinner-in-content.
@@ -175,7 +173,7 @@ Purchase records remain a separate, read-only surface below wallet statements be
 
 ### Do:
 - **Do** reserve Signal Violet for the single primary action and live state per screen (The Signal Violet Rule).
-- **Do** render the three balances with explicit semantics — filled = real, outlined = ring-fenced real, dashed = not money (The Money-Has-Semantics Rule).
+- **Do** render the balances with explicit semantics — filled = real, dashed = not money (The Money-Has-Semantics Rule).
 - **Do** keep surfaces flat; let shadow answer hover and elevation only (The Flat-By-Default Rule).
 - **Do** render every money value in IBM Plex Mono `tabular-nums` (The Mono-for-Money Rule).
 - **Do** keep transitions at 150–250 ms and state-only; honor `prefers-reduced-motion` with a crossfade or instant cut.
@@ -191,7 +189,7 @@ Purchase records remain a separate, read-only surface below wallet statements be
 - **Don't** animate decorative motion, orchestrate page-load sequences, or bounce/elastic.
 - **Don't** invent affordances — standard buttons, dialogs, and form controls only; modals are the last resort, not the first thought.
 - **Don't** let any heading overflow its container at tablet/mobile widths.
-- **Don't** treat the three wallets as interchangeable: never show a currency symbol on sandbox, never fill the game card, never dash the real card.
+- **Don't** treat the wallets as interchangeable: never show a currency symbol on sandbox, never dash the real card.
 - **Don't** drift into **legacy bank clutter** — no dense gray dashboards, tiny tables, or jargon walls.
 - **Don't** drift into **crypto-bro flash** — no neon, no volatility theater, no speculative/casino energy, no hype motion.
 - **Don't** drift into **gamified casino patterns** — no banners, points, streaks, reward loops, or any nudge toward betting; the gambling entry stays one quiet link.
