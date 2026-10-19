@@ -59,6 +59,8 @@ func Register(app *fiber.App, c cache.Backend, revocation cache.Backend, cfg *co
 	fresh := middleware.RequireUnrevoked(revocation)
 	oauthresource.Register(app, cfg.ServiceAudience, cfg.CtechIssuerURL)
 
+	limit := newUserLimits(c)
+
 	v1 := app.Group("/v1.0")
 
 	// Health (unauthenticated): /v1.0/health is a dependency-free liveness probe;
@@ -69,21 +71,21 @@ func Register(app *fiber.App, c cache.Backend, revocation cache.Backend, cfg *co
 
 	// Caller state + terms addendum acceptance.
 	a := v1.Group("/auth", auth, middleware.RequireUser)
-	a.Get("/me", middleware.RequireUserScope(middleware.ScopeWalletStateRead), h.getMe)
-	a.Post("/terms-addendum/accept", middleware.RequireUserScope(middleware.ScopeWalletTermsWrite), fresh, h.acceptTermsAddendum)
+	a.Get("/me", limit.read, middleware.RequireUserScope(middleware.ScopeWalletStateRead), h.getMe)
+	a.Post("/terms-addendum/accept", limit.read, middleware.RequireUserScope(middleware.ScopeWalletTermsWrite), fresh, h.acceptTermsAddendum)
 
 	// User routes — Bearer user JWT.
 	w := v1.Group("/wallet", auth, middleware.RequireUser)
-	w.Get("/", middleware.RequireUserScope(middleware.ScopeWalletBalancesRead), h.getWallet)
-	w.Post("/deposits", middleware.RequireUserScope(middleware.ScopeWalletDepositsWrite), middleware.RequireKYC(middleware.KYCVerified), fresh, h.createDeposit)
-	w.Post("/withdrawals", middleware.RequireUserScope(middleware.ScopeWalletWithdrawalsWrite), middleware.RequireKYC(middleware.KYCVerified), middleware.RequireRecentMFA(middleware.StepUpMaxAge), fresh, h.createWithdrawal)
+	w.Get("/", limit.read, middleware.RequireUserScope(middleware.ScopeWalletBalancesRead), h.getWallet)
+	w.Post("/deposits", limit.money, middleware.RequireUserScope(middleware.ScopeWalletDepositsWrite), middleware.RequireKYC(middleware.KYCVerified), fresh, h.createDeposit)
+	w.Post("/withdrawals", limit.money, middleware.RequireUserScope(middleware.ScopeWalletWithdrawalsWrite), middleware.RequireKYC(middleware.KYCVerified), middleware.RequireRecentMFA(middleware.StepUpMaxAge), fresh, h.createWithdrawal)
 	// The sale of Sandbox packs and goods moved to Poker, through Billing: the writes answer 410.
 	w.Post("/sandbox/purchase", retired)
 	w.Post("/sandbox/purchases", retired)
-	w.Get("/sandbox/purchases", middleware.RequireUserScope(middleware.ScopeWalletLedgerRead), h.listSandboxPurchases) // old purchases stay readable
+	w.Get("/sandbox/purchases", limit.read, middleware.RequireUserScope(middleware.ScopeWalletLedgerRead), h.listSandboxPurchases) // old purchases stay readable
 	w.Post("/sandbox/purchases/:id/refund", retired)
-	w.Get("/product-purchases", middleware.RequireUserScope(middleware.ScopeWalletLedgerRead), h.listProductPurchases)
-	w.Get("/:type/ledger", middleware.RequireUserScope(middleware.ScopeWalletLedgerRead), h.getLedger)
+	w.Get("/product-purchases", limit.read, middleware.RequireUserScope(middleware.ScopeWalletLedgerRead), h.listProductPurchases)
+	w.Get("/:type/ledger", limit.read, middleware.RequireUserScope(middleware.ScopeWalletLedgerRead), h.getLedger)
 
 	// The game wallet was merged into `real` and the responsible-gambling rules (consent, limits,
 	// self-exclusion) are Poker's now: these answer 410, never a 404 that looks like a typo.
