@@ -330,3 +330,59 @@ func TestADownBillingOpensTheCircuitAndTheNextCallIsRefusedAtOnce(t *testing.T) 
 		t.Fatal("the refused call still reached billing")
 	}
 }
+
+func TestAKeyedPayoutIsRetriedOn5xxWithTheSameKeyAndA429IsNot(t *testing.T) {
+	s, c := newStub(t)
+	n := 0
+	s.mu.Lock()
+	s.routes["POST /v1.0/payouts"] = func(w http.ResponseWriter, _ *http.Request, _ []byte) {
+		n++
+		if n == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = w.Write([]byte(`{"id":"po_1","reference":"w-1","status":"processing","amount_cents":100}`))
+	}
+	s.mu.Unlock()
+	p, err := c.CreatePayout(context.Background(), "39053344705", 100, "w-1", "saque")
+	if err != nil || p.ID != "po_1" {
+		t.Fatalf("payout %+v err %v", p, err)
+	}
+	s.mu.Lock()
+	var keys []string
+	for _, cl := range s.calls {
+		if cl.path == "/v1.0/payouts" {
+			keys = append(keys, cl.idem)
+		}
+	}
+	s.mu.Unlock()
+	if len(keys) != 2 || keys[0] != "w-1" || keys[1] != "w-1" {
+		t.Fatalf("want 2 attempts with the same key, got %v", keys)
+	}
+
+	s2, c2 := newStub(t)
+	s2.on("POST /v1.0/payouts", http.StatusTooManyRequests, `{}`)
+	if _, err := c2.CreatePayout(context.Background(), "39053344705", 100, "w-2", "saque"); err == nil {
+		t.Fatal("a 429 must be an error")
+	}
+	s2.mu.Lock()
+	defer s2.mu.Unlock()
+	if len(s2.calls) != 1 {
+		t.Fatalf("a 429 must not be retried, got %d calls", len(s2.calls))
+	}
+}
+
+func TestAPayoutLookup404IsNotFoundAndIsNeverServedFromACache(t *testing.T) {
+	s, c := newStub(t)
+	s.on("GET /v1.0/payouts/by-reference/w-1", http.StatusNotFound, `{}`)
+	for range 2 {
+		if _, err := c.PayoutByReference(context.Background(), "w-1"); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("want ErrNotFound, got %v", err)
+		}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.calls) != 2 {
+		t.Fatalf("both lookups must reach Billing, got %d", len(s.calls))
+	}
+}
