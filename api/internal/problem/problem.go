@@ -146,10 +146,19 @@ func InternalServer(detail string) *Problem {
 	return wrap(commonproblem.InternalServer(detail))
 }
 
+// GatewayTimeout answers a request that used its whole time budget
+// (REQUEST_TIMEOUT). Retryable; a write's outcome is unknown until it is read
+// back, which the caller's Idempotency-Key makes safe.
+func GatewayTimeout(detail string) *Problem {
+	return wrap(commonproblem.New(http.StatusGatewayTimeout, "/problems/timeout", "Gateway Timeout", detail))
+}
+
 func FromFiber(err *fiber.Error) *Problem {
 	switch err.Code {
 	case http.StatusNotFound:
 		return NotFound(err.Error()).WithCause(err)
+	case http.StatusGatewayTimeout:
+		return GatewayTimeout("a requisição demorou demais; tente novamente").WithCause(err)
 	default:
 		return InternalServer("erro interno").WithCause(err)
 	}

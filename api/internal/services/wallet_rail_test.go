@@ -6,10 +6,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
 	"gopkg.aoctech.app/wallet/api/internal/problem"
 	"gopkg.aoctech.app/wallet/api/internal/rail"
+	"gopkg.aoctech.app/wallet/api/internal/repositories"
 )
 
 var railKYC = &kycclient.KYC{Level: "enhanced", CPF: "12345678901"}
@@ -301,5 +304,45 @@ func TestRailLimitsForUserWithoutARow(t *testing.T) {
 	l, err := svc.RailLimits(context.Background(), "u1", &repo.real)
 	if err != nil || l.Deposit.MaxNow != 100000 {
 		t.Fatalf("limits = %+v err=%v", l, err)
+	}
+}
+
+// ctxRepo refuses a credit made with a cancelled context, as DynamoDB calls do.
+type ctxRepo struct{ *stubRepo }
+
+func (r ctxRepo) Credit(ctx context.Context, m repositories.Mutation, extra ...types.TransactWriteItem) (*wallet.LedgerEntry, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
+	return r.stubRepo.Credit(ctx, m, extra...)
+}
+
+// cancellingRail ends the request's context while the payout is in flight and
+// then reports the key as unknown: the withdrawal must be refunded right then.
+type cancellingRail struct {
+	*rail.Fake
+	cancel context.CancelFunc
+}
+
+func (r cancellingRail) Payout(ctx context.Context, cpf string, amountCents int64, idemKey string) (*rail.TransferResult, error) {
+	r.cancel()
+	return r.Fake.Payout(ctx, cpf, amountCents, idemKey)
+}
+
+// A withdrawal refused by the bank while the request's deadline expires must still
+// be credited back. The reversal ran under the request's context: with it already
+// expired the credit failed and the debit stayed, with the money in neither place.
+func TestWithdrawReversalSurvivesTheRequestDeadline(t *testing.T) {
+	repo := newStubRepo()
+	repo.real.Balance = 50000
+	fake := rail.NewFake()
+	fake.TransferErr = rail.ErrKeyNotFound
+	ctx, cancel := context.WithCancel(context.Background())
+	svc := NewWalletService(ctxRepo{repo}, &stubUserRepo{}, &stubAudit{}, &stubLocker{}, cancellingRail{fake, cancel}, &stubKYC{rec: railKYC})
+
+	_, err := svc.Withdraw(ctx, "u1", wallet.KYCVerified, 10000, "k1")
+	isProblem(t, err, problem.TypePixKeyNotFound)
+	if len(repo.creditCalls) != 1 || repo.creditCalls[0].EntryType != wallet.EntryReversal {
+		t.Fatalf("the reversal did not reach the ledger after the request context ended: %+v", repo.creditCalls)
 	}
 }
