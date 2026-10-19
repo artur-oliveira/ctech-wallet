@@ -59,6 +59,12 @@ type Config struct {
 	// deletion lock, the purge consumer and the self-exclusion carry-over
 	// are ON; empty = OFF (local dev only).
 	ErasureQueueURL string `env:"ERASURE_QUEUE_URL"`
+	// ErasureQueueVisibility is the queue's own visibility timeout
+	// (cdk/lib/erasure-stack.ts, 5 min). While a purge or an export runs, the
+	// consumer keeps the message invisible by setting that timeout again every third
+	// of it, so a long one is not delivered to another replica half done. Keep it
+	// equal to the queue's. Zero turns the heartbeat off.
+	ErasureQueueVisibility time.Duration `env:"ERASURE_QUEUE_VISIBILITY" envDefault:"5m"`
 
 	// ErasureClientID/Secret is the DEDICATED confidential client that acks
 	// purges to ctech-account (scope internal:account:erasure-ack only). It is

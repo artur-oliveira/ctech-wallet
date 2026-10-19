@@ -30,7 +30,8 @@ export class ErasureStack extends cdk.Stack {
     });
     const queue = new sqs.Queue(this, 'ErasureQueue', {
       queueName: erasureQueueName(environment),
-      // ≥ 2× the slowest purge (the consumer has no visibility heartbeat).
+      // The consumer extends this while a purge or export runs (ERASURE_QUEUE_VISIBILITY
+      // in the API's config must equal it), so it is not tied to the slowest one.
       visibilityTimeout: cdk.Duration.minutes(5),
       retentionPeriod: cdk.Duration.days(14),
       encryption: sqs.QueueEncryption.SQS_MANAGED,

@@ -313,9 +313,9 @@ func startErasureConsumer(lc fx.Lifecycle, cfg *config.Config, sqsClient *sqs.Cl
 	uploads := &http.Client{Timeout: 60 * time.Second}
 	exportAcks := dataexport.NewAckClient(uploads, base+wallet.PathAccountExportAck,
 		oauth2client.New(httpClient, nil, base+kycclient.PathToken, cfg.ErasureClientID, cfg.ErasureClientSecret, wallet.ScopeAccountExportAck))
-	handler := dataexport.NewHandler(wallet.ErasureServiceID, exporter.Part, uploads, exportAcks)
+	handler := dataexport.NewStreamHandler(wallet.ErasureServiceID, exporter.Write, uploads, exportAcks)
 	consumer := erasure.NewConsumer(sqsClient, cfg.ErasureQueueURL, wallet.ErasureServiceID, store, svc.Purge, acks).
-		WithExporter(handler.Handle)
+		WithExporter(handler.Handle).WithVisibilityHeartbeat(cfg.ErasureQueueVisibility)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	lc.Append(fx.Hook{

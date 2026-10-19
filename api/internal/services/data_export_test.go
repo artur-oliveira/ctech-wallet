@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"regexp"
@@ -88,16 +89,22 @@ func (fakeSource) Audit(context.Context, string, int) ([]wallet.AuditEvent, erro
 func TestDataExporterPart(t *testing.T) {
 	src := &fakeSource{}
 	e := &DataExporter{src: src, now: time.Now}
-	data, err := e.Part(context.Background(), "alice")
-	if err != nil {
+	var out bytes.Buffer
+	if err := e.Write(context.Background(), "alice", &out); err != nil {
 		t.Fatal(err)
 	}
+	data := out.Bytes()
 	zr, _ := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	files := map[string]string{}
 	for _, f := range zr.File {
 		r, _ := f.Open()
 		b, _ := io.ReadAll(r)
 		files[f.Name] = string(b)
+	}
+	for name, body := range files {
+		if strings.HasSuffix(name, ".json") && !json.Valid([]byte(body)) {
+			t.Errorf("%s is not valid JSON: %s", name, body)
+		}
 	}
 	for _, want := range []string{"wallets.json", "ledger-real.json", "deposits.json", "withdrawals.json", "purchases-product.json", "settings.json", "audit.json", "README.txt"} {
 		if _, ok := files[want]; !ok {
@@ -122,5 +129,35 @@ func TestDataExporterPart(t *testing.T) {
 	}
 	if !strings.Contains(files["settings.json"], "30d") {
 		t.Errorf("self-exclusion missing: %s", files["settings.json"])
+	}
+}
+
+// A list longer than the cap is cut, says so in its own file and in the README,
+// and the file is still valid JSON: the ledger's pages are cut mid-page.
+func TestDataExporterCutsALongListAndSaysSo(t *testing.T) {
+	e := &DataExporter{src: &fakeSource{}, now: time.Now, maxItems: 1}
+	var out bytes.Buffer
+	if err := e.Write(context.Background(), "alice", &out); err != nil {
+		t.Fatal(err)
+	}
+	zr, _ := zip.NewReader(bytes.NewReader(out.Bytes()), int64(out.Len()))
+	files := map[string]string{}
+	for _, f := range zr.File {
+		r, _ := f.Open()
+		b, _ := io.ReadAll(r)
+		files[f.Name] = string(b)
+	}
+	var ledger struct {
+		Items     []map[string]any `json:"items"`
+		Truncated bool             `json:"truncated"`
+	}
+	if err := json.Unmarshal([]byte(files["ledger-real.json"]), &ledger); err != nil {
+		t.Fatalf("not valid JSON: %v\n%s", err, files["ledger-real.json"])
+	}
+	if len(ledger.Items) != 1 || !ledger.Truncated {
+		t.Fatalf("the ledger of two entries cut at one: %+v", ledger)
+	}
+	if !strings.Contains(files["README.txt"], "cut at the size limit: ledger-real.json") {
+		t.Errorf("the README must name the cut file: %s", files["README.txt"])
 	}
 }
