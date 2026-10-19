@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.aoctech.app/api-commons/resilient"
 	"gopkg.aoctech.app/wallet/api/internal/config"
 )
 
@@ -301,5 +302,31 @@ func TestVerifySignature(t *testing.T) {
 		if ok {
 			t.Errorf("%s verified", name)
 		}
+	}
+}
+
+// While Billing is down, five failures in a row open the circuit and the next call is
+// refused at once without reaching it: a deposit request no longer waits out the
+// client timeout. The account (token) is another host and stays reachable.
+func TestADownBillingOpensTheCircuitAndTheNextCallIsRefusedAtOnce(t *testing.T) {
+	s, c := newStub(t)
+	for i := 0; i < 5; i++ {
+		s.on("GET /v1.0/invoices/by-reference/dep-"+strconv.Itoa(i), http.StatusServiceUnavailable, `{}`)
+		if _, err := c.InvoiceByReference(context.Background(), "dep-"+strconv.Itoa(i)); err == nil {
+			t.Fatalf("call %d against a down billing succeeded", i)
+		}
+	}
+	s.mu.Lock()
+	reached := len(s.calls)
+	s.mu.Unlock()
+	_, err := c.InvoiceByReference(context.Background(), "dep-6")
+	if !errors.Is(err, resilient.ErrCircuitOpen) {
+		t.Fatalf("err = %v, want the open-circuit error", err)
+	}
+	s.mu.Lock()
+	after := len(s.calls)
+	s.mu.Unlock()
+	if after != reached {
+		t.Fatal("the refused call still reached billing")
 	}
 }
