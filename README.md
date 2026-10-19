@@ -30,9 +30,9 @@ confidencial vinculado somente ao Resource Server `wallet`; o papel OIDC lê
 apenas os três parâmetros necessários.
 
 `GET /.well-known/oauth-protected-resource` implementa RFC 9728 e anuncia apenas
-os 12 scopes públicos. Tokens delegados que carregam qualquer `wallet:*` são
+os 6 scopes públicos ativos. Tokens delegados que carregam qualquer `wallet:*` são
 limitados ao scope exato de cada rota; os scopes internos nunca são anunciados.
-A UI solicita os 12 scopes junto de `openid profile kyc`. Durante a migração,
+A UI solicita os 6 scopes públicos junto de `openid profile kyc`. Durante a migração,
 tokens first-party já emitidos sem `wallet:*` mantêm o acesso atual. Publicar
 o manifesto também acrescenta os scopes públicos ao `allowed_scopes` do OAuth
 Client first-party `wallet`, sem alterar redirects, audience ou outros clients
@@ -42,19 +42,21 @@ Client first-party `wallet`, sem alterar redirects, audience ou outros clients
 
 | Documento                                                                              | Descrição                                              |
 |----------------------------------------------------------------------------------------|--------------------------------------------------------|
-| [`docs/specs/2026-07-10-wallet-design.md`](docs/specs/2026-07-10-wallet-design.md)     | Design aprovado — ledger, PIX, sandbox, escopos OAuth  |
+| `docs/specs/2026-10-14-wallet-ledger-billing-rail.md` (no repo `ctech-billing`)          | Fonte de verdade atual: o que a carteira é hoje        |
+| [`docs/specs/2026-07-10-wallet-design.md`](docs/specs/2026-07-10-wallet-design.md)     | Design original (histórico, anterior ao Billing)       |
 | [`docs/legal/wallet-terms-addendum.md`](docs/legal/wallet-terms-addendum.md)           | Aditivo aos Termos de Uso (rascunho)                   |
 | [`docs/plans/2026-10-07-account-deletion-participant.md`](docs/plans/2026-10-07-account-deletion-participant.md) | Exclusão de conta (LGPD): participante da saga |
 | [`CLAUDE.md`](CLAUDE.md)                                                                | Instruções para Claude Code                            |
-| [`AGENTS.md`](AGENTS.md)                                                                | Contexto para agentes de IA (idêntico ao `CLAUDE.md`)  |
+| [`AGENTS.md`](AGENTS.md)                                                                | Contexto para agentes de IA (mesmo conteúdo do `CLAUDE.md`) |
+| Padrão da família CTech                                                                | skill `ctech-dev-standards` (repo `ctech-skills`)      |
 
 ## Subprojetos
 
 ```
 api/          # Backend REST — Go (Fiber v3), DynamoDB, Valkey, Reconcile; o Pix passa pelo ctech-billing
-ui/           # Frontend — Next.js 16 + TypeScript + ShadCN
+ui/           # Frontend — Next.js 16 + TypeScript (export estático, Cloudflare Workers Static Assets)
 cdk/          # Infraestrutura AWS — CDK TypeScript
-rpc-contract/ # Constantes de dinheiro compartilhadas (api e ui)
+rpc-contract/ # Constantes de dinheiro compartilhadas (api e ui): money.json
 ```
 
 ## Observabilidade de erros
