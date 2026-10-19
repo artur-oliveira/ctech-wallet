@@ -167,7 +167,7 @@ different scope on a different service. Do not conflate it with
   constants exist (`docs/specs/2026-08-16-withdrawal-fee-removal.md`).
 - Production fails closed on an empty `VALKEY_URL`, `SERVICE_AUDIENCE`, `CTECH_ISSUER_URL`, CORS, `ERASURE_QUEUE_URL` or
   `VALKEY_REVOCATION_URL` (`internal/config/config.go`).
-- Gaps vs the standard (code changes, tracked in the root `CLAUDE.md`): local `internal/problem`/`middleware`, no go-common
+- Gaps vs the standard (code changes, tracked in the root `CLAUDE.md`): local `internal/middleware`, no go-common
   `alerts` (failures are `ALARM` log lines), no app-level rate limit.
 
 ---
