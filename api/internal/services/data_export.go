@@ -2,14 +2,16 @@ package services
 
 import (
 	"archive/zip"
-	"bytes"
+	"cmp"
 	"context"
-	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+
+	"gopkg.aoctech.app/api-commons/dataexport"
 
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
@@ -31,7 +33,6 @@ type ExportSource interface {
 
 // exportMaxItems bounds one file; ledger and purchase reads stop paging at it.
 // auditExportLimit is the most recent audit events (the repository reads one page).
-// ponytail: 100k entries covers any wallet; stream to S3 in pages if one outgrows memory.
 const (
 	exportMaxItems   = 100_000
 	exportPageSize   = 100
@@ -52,6 +53,8 @@ const (
 type DataExporter struct {
 	src ExportSource
 	now func() time.Time
+	// maxItems overrides exportMaxItems (tests).
+	maxItems int
 }
 
 func NewDataExporter(src ExportSource) *DataExporter { return &DataExporter{src: src, now: time.Now} }
@@ -77,53 +80,108 @@ var exportInventory = map[string]string{
 	"wallet_med_receivables":     "excluded: retired table, no longer written (kept provisioned for preservation)",
 }
 
-// Part is the dataexport.PartFunc of the wallet. Idempotent.
-func (e *DataExporter) Part(ctx context.Context, sub string) ([]byte, error) {
-	var buf bytes.Buffer
-	zw := zip.NewWriter(&buf)
-	var files, truncated []string
-	write := func(name string, items any, n int, cut bool) error {
-		if n == 0 {
-			return nil
-		}
-		data, err := json.MarshalIndent(map[string]any{"truncated": cut, "items": items}, "", "  ")
+// exportFiles is what one export wrote, for the README.
+type exportFiles struct {
+	zw               *zip.Writer
+	max              int // items per file
+	files, truncated []string
+}
+
+// list streams one file {items, truncated} an item at a time. next yields
+// pages (items and the continuation key) until the source is exhausted or
+// exportMaxItems were written; a list with no items writes no file.
+func list[T any](f *exportFiles, name string, next func(start map[string]types.AttributeValue) ([]T, map[string]types.AttributeValue, error)) error {
+	var it *dataexport.Items
+	n, cut := 0, false
+	var start map[string]types.AttributeValue
+paging:
+	for {
+		items, last, err := next(start)
 		if err != nil {
 			return err
 		}
-		w, err := zw.Create(name)
-		if err != nil {
-			return err
+		for _, item := range items {
+			if n >= f.max {
+				cut = true
+				break paging
+			}
+			if it == nil {
+				if it, err = dataexport.BeginItems(f.zw, name); err != nil {
+					return err
+				}
+				f.files = append(f.files, name)
+			}
+			if err := it.Add(item); err != nil {
+				return err
+			}
+			n++
 		}
-		if _, err := w.Write(data); err != nil {
-			return err
+		if len(last) == 0 {
+			break
 		}
-		files = append(files, name)
-		if cut {
-			truncated = append(truncated, name)
-		}
+		start = last
+	}
+	if it == nil {
 		return nil
 	}
+	if cut {
+		f.truncated = append(f.truncated, name)
+	}
+	return it.End(cut)
+}
+
+// whole writes a list the source answered in one call; cut is the source's own
+// "there was more" (the audit trail's latest-N).
+func whole[T any](f *exportFiles, name string, items []T, cut bool) error {
+	if len(items) == 0 {
+		return nil
+	}
+	it, err := dataexport.BeginItems(f.zw, name)
+	if err != nil {
+		return err
+	}
+	f.files = append(f.files, name)
+	for _, item := range items {
+		if err := it.Add(item); err != nil {
+			return err
+		}
+	}
+	if cut {
+		f.truncated = append(f.truncated, name)
+	}
+	return it.End(cut)
+}
+
+// Write is the dataexport.PartStreamFunc of the wallet: it writes the zip to w
+// as it reads, a page of ledger or purchases at a time, so a wallet of any size
+// costs one page of memory. Idempotent.
+func (e *DataExporter) Write(ctx context.Context, sub string, w io.Writer) error {
+	f := &exportFiles{zw: zip.NewWriter(w), max: cmp.Or(e.maxItems, exportMaxItems)}
 
 	wallets, err := e.src.Wallets(ctx, sub)
 	if err != nil {
-		return nil, fmt.Errorf("export: wallets: %w", err)
+		return fmt.Errorf("export: wallets: %w", err)
 	}
-	if err := write("wallets.json", wallets, len(wallets), false); err != nil {
-		return nil, err
+	if err := whole(f, "wallets.json", wallets, false); err != nil {
+		return err
 	}
-	for _, w := range wallets {
-		entries, cut, err := e.statement(ctx, w.WalletID)
+	for _, wl := range wallets {
+		err := list(f, "ledger-"+wl.Type+".json", func(start map[string]types.AttributeValue) ([]wallet.LedgerEntry, map[string]types.AttributeValue, error) {
+			res, err := e.src.Statement(ctx, wl.WalletID, exportPageSize, start)
+			if err != nil {
+				return nil, nil, err
+			}
+			items, err := repositories.DecodeItems[wallet.LedgerEntry](res.Items)
+			return items, res.LastEvaluatedKey, err
+		})
 		if err != nil {
-			return nil, fmt.Errorf("export: statement %s: %w", w.Type, err)
-		}
-		if err := write("ledger-"+w.Type+".json", entries, len(entries), cut); err != nil {
-			return nil, err
+			return fmt.Errorf("export: statement %s: %w", wl.Type, err)
 		}
 	}
 
 	deps, err := e.src.Deposits(ctx, sub)
 	if err != nil {
-		return nil, fmt.Errorf("export: deposits: %w", err)
+		return fmt.Errorf("export: deposits: %w", err)
 	}
 	// Allowlist, not a denylist: only a confirmed deposit passed the CPF check, so only
 	// then is the payer the person. Every other status (pending, expired, the refund
@@ -133,128 +191,68 @@ func (e *DataExporter) Part(ctx context.Context, sub string) ([]byte, error) {
 			deps[i].PayerCPF, deps[i].PayerName = "", ""
 		}
 	}
-	if err := write("deposits.json", deps, len(deps), false); err != nil {
-		return nil, err
+	if err := whole(f, "deposits.json", deps, false); err != nil {
+		return err
 	}
 	wds, err := e.src.Withdrawals(ctx, sub)
 	if err != nil {
-		return nil, fmt.Errorf("export: withdrawals: %w", err)
+		return fmt.Errorf("export: withdrawals: %w", err)
 	}
-	if err := write("withdrawals.json", wds, len(wds), false); err != nil {
-		return nil, err
+	if err := whole(f, "withdrawals.json", wds, false); err != nil {
+		return err
 	}
 	holds, err := e.src.Holds(ctx, sub)
 	if err != nil {
-		return nil, fmt.Errorf("export: holds: %w", err)
+		return fmt.Errorf("export: holds: %w", err)
 	}
-	if err := write("holds.json", holds, len(holds), false); err != nil {
-		return nil, err
+	if err := whole(f, "holds.json", holds, false); err != nil {
+		return err
 	}
 
-	var sandbox []wallet.SandboxPurchase
-	cut, err := pageAll(func(start map[string]types.AttributeValue) ([]wallet.SandboxPurchase, map[string]types.AttributeValue, error) {
+	if err := list(f, "purchases-sandbox.json", func(start map[string]types.AttributeValue) ([]wallet.SandboxPurchase, map[string]types.AttributeValue, error) {
 		p, err := e.src.SandboxPurchases(ctx, sub, exportPageSize, start)
 		if err != nil {
 			return nil, nil, err
 		}
 		return p.Items, p.LastEvaluatedKey, nil
-	}, &sandbox)
-	if err != nil {
-		return nil, fmt.Errorf("export: sandbox purchases: %w", err)
+	}); err != nil {
+		return fmt.Errorf("export: sandbox purchases: %w", err)
 	}
-	if err := write("purchases-sandbox.json", sandbox, len(sandbox), cut); err != nil {
-		return nil, err
-	}
-	var product []wallet.ProductPurchase
-	cut, err = pageAll(func(start map[string]types.AttributeValue) ([]wallet.ProductPurchase, map[string]types.AttributeValue, error) {
+	if err := list(f, "purchases-product.json", func(start map[string]types.AttributeValue) ([]wallet.ProductPurchase, map[string]types.AttributeValue, error) {
 		p, err := e.src.ProductPurchases(ctx, sub, exportPageSize, start)
 		if err != nil {
 			return nil, nil, err
 		}
 		return p.Items, p.LastEvaluatedKey, nil
-	}, &product)
-	if err != nil {
-		return nil, fmt.Errorf("export: product purchases: %w", err)
-	}
-	if err := write("purchases-product.json", product, len(product), cut); err != nil {
-		return nil, err
+	}); err != nil {
+		return fmt.Errorf("export: product purchases: %w", err)
 	}
 
 	u, err := e.src.User(ctx, sub)
 	if err != nil {
-		return nil, fmt.Errorf("export: settings: %w", err)
+		return fmt.Errorf("export: settings: %w", err)
 	}
 	if u != nil {
-		if err := write("settings.json", []any{settingsView(u)}, 1, false); err != nil {
-			return nil, err
+		if err := whole(f, "settings.json", []any{settingsView(u)}, false); err != nil {
+			return err
 		}
 	}
 	audit, err := e.src.Audit(ctx, sub, auditExportLimit)
 	if err != nil {
-		return nil, fmt.Errorf("export: audit: %w", err)
+		return fmt.Errorf("export: audit: %w", err)
 	}
-	if err := write("audit.json", audit, len(audit), len(audit) >= auditExportLimit); err != nil {
-		return nil, err
+	if err := whole(f, "audit.json", audit, len(audit) >= auditExportLimit); err != nil {
+		return err
 	}
 
-	w, err := zw.Create("README.txt")
+	rw, err := f.zw.Create("README.txt")
 	if err != nil {
-		return nil, err
+		return err
 	}
-	if _, err := w.Write([]byte(e.readme(files, truncated))); err != nil {
-		return nil, err
+	if _, err := rw.Write([]byte(e.readme(f.files, f.truncated))); err != nil {
+		return err
 	}
-	if err := zw.Close(); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
-
-// statement pages a wallet's ledger, newest first, until exportMaxItems.
-func (e *DataExporter) statement(ctx context.Context, walletID string) ([]wallet.LedgerEntry, bool, error) {
-	var out []wallet.LedgerEntry
-	var start map[string]types.AttributeValue
-	for {
-		res, err := e.src.Statement(ctx, walletID, exportPageSize, start)
-		if err != nil {
-			return nil, false, err
-		}
-		items, err := repositories.DecodeItems[wallet.LedgerEntry](res.Items)
-		if err != nil {
-			return nil, false, err
-		}
-		for _, it := range items {
-			if len(out) >= exportMaxItems {
-				return out, true, nil
-			}
-			out = append(out, it)
-		}
-		if len(res.LastEvaluatedKey) == 0 {
-			return out, false, nil
-		}
-		start = res.LastEvaluatedKey
-	}
-}
-
-// pageAll collects pages into out until exportMaxItems and reports whether it stopped early.
-func pageAll[T any](next func(start map[string]types.AttributeValue) ([]T, map[string]types.AttributeValue, error), out *[]T) (bool, error) {
-	var start map[string]types.AttributeValue
-	for {
-		items, last, err := next(start)
-		if err != nil {
-			return false, err
-		}
-		for _, it := range items {
-			if len(*out) >= exportMaxItems {
-				return true, nil
-			}
-			*out = append(*out, it)
-		}
-		if len(last) == 0 {
-			return false, nil
-		}
-		start = last
-	}
+	return f.zw.Close()
 }
 
 // settingsView is the person's wallet-user row. The model hides it from JSON
@@ -274,7 +272,7 @@ func (e *DataExporter) readme(files, truncated []string) string {
 	for _, f := range files {
 		b.WriteString("  " + f + "\n")
 	}
-	b.WriteString("\nAmounts are in centavos (sandbox wallets: credits). Each file is {truncated, items}.\n")
+	b.WriteString("\nAmounts are in centavos (sandbox wallets: credits). Each file is {items, truncated}.\n")
 	b.WriteString("ledger-*.json is your whole statement per wallet; the other side of a transfer appears only as an opaque wallet id or reference.\n")
 	b.WriteString("deposits.json and withdrawals.json include the PIX data you gave. The payer's name and CPF appear only on confirmed deposits; on any other status they are removed, because they may be someone else's.\n")
 	b.WriteString("audit.json is the latest " + fmt.Sprint(auditExportLimit) + " events.\n")
