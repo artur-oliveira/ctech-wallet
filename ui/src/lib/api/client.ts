@@ -11,15 +11,17 @@ import type {
   Withdrawal,
 } from '@/lib/types/api'
 import {MockApiClient, USE_MOCK} from '@/lib/mock'
-import {
-  ApiUnavailableError,
-  checkApiLiveness,
-  HTTP_TIMEOUT_MS,
-  requireApiLiveness,
-} from '@/lib/network/liveness'
-import {httpRetryDelay, isRetryableFailure} from '@/lib/network/retry'
+import {withRetry} from '@aoctech/ui'
+import {ApiUnavailableError, assertApiReachable, classifyApiFailure} from '@/lib/network/api-reachability'
 import {SESSION_KEY_RETURN_AFTER_OUTAGE} from '@/lib/constants/storage'
 import {UNAVAILABLE_PATH} from '@/lib/constants/routes'
+
+/**
+ * 10s covers a cold Lambda behind pix-gateway and a slow mobile network, and
+ * still fails inside a user's patience. Longer and the UI lies about being
+ * busy; shorter and a legitimate PIX charge round-trip gets cancelled mid-flight.
+ */
+const HTTP_TIMEOUT_MS = 10_000
 
 // Empty means same-origin: CloudFront forwards /v1.0/* to the ALB in deployed
 // environments, and `next dev` proxies it locally (next.config.ts). Either way
@@ -91,6 +93,7 @@ export class ApiError extends Error {
     public readonly detail: string,
     public readonly type?: string,
     public readonly raw?: unknown,
+    public readonly retryAfter?: string,
   ) {
     super(detail)
     this.name = 'ApiError'
@@ -99,11 +102,6 @@ export class ApiError extends Error {
 
 interface RetryableConfig extends AxiosRequestConfig {
   _retry?: boolean
-  _networkRetryCount?: number
-}
-
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 /**
@@ -137,9 +135,6 @@ function createAxiosInstance(): AxiosInstance {
   })
 
   instance.interceptors.request.use(async (config) => {
-    // One health probe owns "is the API up", so a dead API fails these fast
-    // instead of turning every mounted query into its own retry loop.
-    if (!USE_MOCK) await requireApiLiveness()
     if (_accessToken) config.headers.Authorization = `Bearer ${_accessToken}`
     return config
   })
@@ -165,26 +160,16 @@ function createAxiosInstance(): AxiosInstance {
         return
       }
 
-      // Verify an ambiguous failure against liveness before retrying it: a
-      // timeout during a real outage should stop, not retry twice more and then
-      // report a generic error.
-      let mayRetry = !(error instanceof ApiUnavailableError)
-      if (!USE_MOCK && !error.response && mayRetry) mayRetry = await checkApiLiveness()
-      if (mayRetry && original && isRetryableFailure({response: error.response, config: original})) {
-        original._networkRetryCount = (original._networkRetryCount || 0) + 1
-        const retryAfter = error.response?.headers?.['retry-after'] as string | undefined
-        await wait(httpRetryDelay(original._networkRetryCount, retryAfter))
-        return instance(original)
-      }
-
-      if (error instanceof ApiUnavailableError) {
-        redirectOnServiceUnavailable(503)
-        throw new ApiError(503, error.message, '/problems/service-unavailable', error)
-      }
-      redirectOnServiceUnavailable(error.response?.status)
+      // Retries live in ApiClient.call (withRetry); here the failure is only parsed.
       const data = error.response ? await parseErr(error.response) : undefined
       const detail = data?.detail ?? data?.title ?? error.message ?? `HTTP ${error.response?.status}`
-      throw new ApiError(error.response?.status ?? 0, detail, data?.type, data)
+      throw new ApiError(
+        error.response?.status ?? 0,
+        detail,
+        data?.type,
+        data,
+        error.response?.headers?.['retry-after'] as string | undefined,
+      )
     },
   )
 
@@ -208,46 +193,73 @@ class ApiClient {
     if (token) notifyTokenListeners(token)
   }
 
+  /**
+   * One health probe (NetworkProvider) owns "is the API up", so a dead API fails
+   * fast here. Retry is withRetry's: safe methods, or a mutation carrying an
+   * Idempotency-Key (money safety), max 2, jittered, honoring Retry-After.
+   * A 503 is redirected to /unavailable only once retries are exhausted.
+   */
+  private async call<T>(config: AxiosRequestConfig): Promise<T> {
+    let response
+    try {
+      response = await withRetry(
+        () => {
+          if (!USE_MOCK) assertApiReachable()
+          return this.http.request<T>(config)
+        },
+        {
+          method: config.method,
+          idempotent: Boolean(config.headers?.['Idempotency-Key']),
+          classify: classifyApiFailure,
+        },
+      )
+    } catch (error) {
+      if (error instanceof ApiUnavailableError) {
+        redirectOnServiceUnavailable(503)
+        throw new ApiError(503, error.message, '/problems/service-unavailable', error)
+      }
+      if (error instanceof ApiError) redirectOnServiceUnavailable(error.status)
+      throw error
+    }
+    return response.data
+  }
+
   async me(): Promise<MeResponse> {
-    return (await this.http.get<MeResponse>('/v1.0/auth/me')).data
+    return this.call({method: 'get', url: '/v1.0/auth/me'})
   }
 
   async acceptTermsAddendum(): Promise<void> {
-    await this.http.post('/v1.0/auth/terms-addendum/accept')
+    await this.call({method: 'post', url: '/v1.0/auth/terms-addendum/accept'})
   }
 
   async getBalances(): Promise<Balances> {
-    return (await this.http.get<Balances>('/v1.0/wallet')).data
+    return this.call({method: 'get', url: '/v1.0/wallet'})
   }
 
   async createDeposit(amount: number, idempotencyKey: string): Promise<DepositResult> {
-    return (
-      await this.http.post<DepositResult>('/v1.0/wallet/deposits', {amount}, idemConfig(idempotencyKey))
-    ).data
+    return this.call({method: 'post', url: '/v1.0/wallet/deposits', data: {amount}, ...idemConfig(idempotencyKey)})
   }
 
   async createWithdrawal(amount: number, idempotencyKey: string): Promise<Withdrawal> {
-    return (
-      await this.http.post<Withdrawal>('/v1.0/wallet/withdrawals', {amount}, idemConfig(idempotencyKey))
-    ).data
+    return this.call({method: 'post', url: '/v1.0/wallet/withdrawals', data: {amount}, ...idemConfig(idempotencyKey)})
   }
 
   async getLedger(type: WalletType, cursor?: string, limit = 50): Promise<LedgerPage> {
     const params = new URLSearchParams({limit: String(limit)})
     if (cursor) params.set('cursor', cursor)
-    return (await this.http.get<LedgerPage>(`/v1.0/wallet/${type}/ledger?${params}`)).data
+    return this.call({method: 'get', url: `/v1.0/wallet/${type}/ledger?${params}`})
   }
 
   async getSandboxPurchases(cursor?: string, limit = 50): Promise<PurchasePage<SandboxPurchase>> {
     const params = new URLSearchParams({limit: String(limit)})
     if (cursor) params.set('cursor', cursor)
-    return (await this.http.get<PurchasePage<SandboxPurchase>>(`${SANDBOX_PURCHASES_PATH}?${params}`)).data
+    return this.call({method: 'get', url: `${SANDBOX_PURCHASES_PATH}?${params}`})
   }
 
   async getProductPurchases(cursor?: string, limit = 50): Promise<PurchasePage<ProductPurchase>> {
     const params = new URLSearchParams({limit: String(limit)})
     if (cursor) params.set('cursor', cursor)
-    return (await this.http.get<PurchasePage<ProductPurchase>>(`${PRODUCT_PURCHASES_PATH}?${params}`)).data
+    return this.call({method: 'get', url: `${PRODUCT_PURCHASES_PATH}?${params}`})
   }
 }
 
