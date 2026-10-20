@@ -199,7 +199,7 @@ elsewhere into a money path, check whether this repo already does it better.
 ## Known gaps vs the standard (code, not docs; do not "fix" by editing docs)
 
 - Local `internal/walletproblem` (wallet types on top of go-common `problem`) and local `internal/middleware` (auth, scope, step-up, revocation) instead of go-common's guards.
-- No app-level rate limiting (go-common `ratelimit`); only nginx `limit_req` at the edge of each instance.
+- App-level rate limiting (go-common `ratelimit`, `api/internal/api/v1/ratelimit.go`) per user (JWT sub): reads 120/min FailOpen; deposits and withdrawals 10/min FailClosed (503 if Valkey is down). Retired 410 and internal M2M routes are not limited. nginx `limit_req` stays at the edge.
 - No go-common `alerts` (SNS): failures that need a human are `ALARM` log lines only (reconcile, quarantined deposits,
   stale holds).
 - DynamoDB GSIs project `ALL`; `cdk/lib/dynamodb-stack.ts` has no `KEYS_ONLY`/`INCLUDE`.
