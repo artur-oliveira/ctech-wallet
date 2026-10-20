@@ -26,6 +26,9 @@ const (
 	PathToken  = "/v1.0/token"
 	pathKYCGet = "/v1.0/internal/kyc/%s"
 	scopeKYC   = "internal:account:kyc"
+
+	// requestTimeout bounds one call including its retries.
+	requestTimeout = 10 * time.Second
 )
 
 // KYCAddress mirrors ctech-account's existing user.Address struct exactly —
@@ -66,9 +69,11 @@ type Client struct {
 // New builds the KYC client. base is the account URL (CTECH_URL).
 // c shares the token between replicas (the fleet's Valkey); nil keeps it per process.
 func New(cfg *config.Config, c cache.Backend) *Client {
-	// A pooled transport and a circuit per host: while the account is down a call is
-	// refused at once (resilient.ErrCircuitOpen) instead of waiting out the timeout.
-	httpClient := resilient.Client(10*time.Second, resilient.Config{})
+	// A pooled transport, a circuit per host and retry of the idempotent GET on a
+	// transport error or 5xx. While the account is down a call is refused at once
+	// (resilient.ErrCircuitOpen). It fails CLOSED: any non-2xx or error is returned
+	// as an error, never as "no KYC"; no negative cache on purpose.
+	httpClient := resilient.NewHTTPClient(resilient.WithTimeout(requestTimeout))
 	base := strings.TrimRight(cfg.CtechURL, "/")
 	return &Client{
 		base:   base,

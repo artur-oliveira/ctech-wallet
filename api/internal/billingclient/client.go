@@ -51,6 +51,9 @@ const (
 	// OwnerKey is the routing key of the wallet's invoices and credentials.
 	OwnerKey = "wallet"
 
+	// requestTimeout bounds one call including its retries.
+	requestTimeout = 8 * time.Second
+
 	pathToken = "/v1.0/token"
 	scopes    = "billing:customers:read billing:customers:write billing:invoices:read billing:invoices:write internal:billing:payouts-read internal:billing:payouts-write"
 
@@ -106,9 +109,13 @@ type Client struct {
 // New builds the client. It makes no request: the token is fetched on first use.
 // c shares the token between replicas (the fleet's Valkey); nil keeps it per process.
 func New(cfg *config.Config, c cache.Backend) *Client {
-	// A circuit per host: billing and the account (token) are separate hosts, so one
-	// being down does not cut off the other.
-	h := resilient.Client(8*time.Second, resilient.Config{})
+	// A circuit per host (billing and the account token endpoint are separate hosts, so
+	// one being down does not cut off the other). Calls carrying an Idempotency-Key
+	// (every mutation here except OpenPix) and every GET are retried on a transport
+	// error or 5xx; a 4xx (408/425/429 included) is never retried. No negative cache:
+	// ErrNotFound drives decisions (e.g. a payout Billing never accepted), so a stale
+	// 404 would be dangerous.
+	h := resilient.NewHTTPClient(resilient.WithTimeout(requestTimeout))
 	ctech := strings.TrimRight(cfg.CtechURL, "/")
 	return &Client{
 		base:   strings.TrimRight(cfg.BillingURL, "/"),

@@ -66,6 +66,16 @@ specifics: route errors go through `sendProblem(c, err)`; the wallet problem typ
 `DailyDepositLimit`, `DailyWithdrawLimit`, `AccountErasurePending`, `RouteRetired`, ...). The deployed binary is named `app`.
 Never commit Billing/Inter credentials, webhook secrets, JWT keys, AWS credentials or real CPFs.
 
+### Outbound calls (Billing, KYC)
+
+`billingclient` and `kycclient` use `resilient.NewHTTPClient` (breaker per host, up to 3 attempts, jitter backoff).
+Retried: GETs and any request with an `Idempotency-Key` (every Billing mutation but `OpenPix`; the key is the
+deterministic wallet reference, so a replay is deduped by Billing) on a transport error or 5xx. A 4xx is never
+retried: 408/425/429 are no longer retried (the old client did not retry at all; the family loop retried them).
+Both fail CLOSED: an error or non-2xx is returned, a KYC lookup failure is never "not found", and there is no
+negative cache (a stale 404 on a payout lookup would reverse money that was paid). One call, retries included, is
+bounded by the client timeout (Billing 8s, KYC 10s).
+
 ### Money & ledger (CRITICAL)
 
 - All amounts are integer **centavos**. Never float.
