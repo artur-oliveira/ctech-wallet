@@ -128,6 +128,8 @@ func (s *WalletService) reverse(ctx context.Context, w wallet.Withdrawal) bool {
 	})
 	if err != nil {
 		observability.Error(ctx, "ALARM withdrawal reversal credit-back failed", err, "withdrawal_id", w.WithdrawalID, "amount", total)
+		s.alarm(ctx, alertJobWithdrawReversal, "withdrawal reversal credit-back failed; the user was debited and not refunded", err,
+			fmt.Sprintf("withdrawal_id=%s amount=%d", w.WithdrawalID, total))
 		if updateErr := s.repo.UpdateWithdrawal(ctx, w.WithdrawalID, map[string]any{"status": wallet.WithdrawRefundFail}); updateErr != nil {
 			observability.Error(ctx, "withdrawal refund failure status update failed", updateErr, "withdrawal_id", w.WithdrawalID)
 		}

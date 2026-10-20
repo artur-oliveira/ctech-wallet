@@ -17,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/google/uuid"
 
+	"gopkg.aoctech.app/api-commons/alerts"
 	"gopkg.aoctech.app/api-commons/observability"
 	"gopkg.aoctech.app/api-commons/problem"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
@@ -219,11 +220,12 @@ type WalletService struct {
 	erasureGate      ErasureGate           // optional; see SetErasure
 	carried          CarriedExclusionStore // optional; see SetErasure
 	erased           ErasedChecker         // optional; see SetErased
+	alerts           alerts.Publisher      // operator alerts for failed refunds; Nop unless SetAlerts
 }
 
 func NewWalletService(repo Repo, users UserRepo, audit Auditor, lock Locker, r rail.Rail, kyc KYCClient) *WalletService {
 	return &WalletService{
-		repo: repo, users: users, audit: audit, lock: lock, rail: r, kyc: kyc,
+		repo: repo, users: users, audit: audit, lock: lock, rail: r, kyc: kyc, alerts: alerts.Nop{},
 	}
 }
 
@@ -655,6 +657,8 @@ func (s *WalletService) refundExcessPayments(ctx context.Context, txid string, c
 		}
 		if _, err := s.rail.RefundDeposit(ctx, txid, p.E2EID, p.Amount, "excess#"+p.E2EID); err != nil {
 			slog.Error("ALARM excess PIX payment refund failed", "txid", txid, "e2e_id", p.E2EID, "amount", p.Amount, "err", err)
+			s.alarm(ctx, alertJobExcessRefund, "excess PIX payment refund failed; manual reconciliation needed", err,
+				fmt.Sprintf("txid=%s e2e_id=%s amount=%d", txid, p.E2EID, p.Amount))
 			return problem.InternalServer("estorno de pagamento excedente falhou; reconciliação manual necessária")
 		}
 	}
@@ -706,6 +710,8 @@ func (s *WalletService) reverseDeposit(ctx context.Context, dep *wallet.PixDepos
 		ReqHash:        reqHash(idemKey, r.Amount),
 	}); err != nil {
 		observability.Error(ctx, "ALARM deposit refund debit failed", err, "txid", dep.Txid, "rtr_id", r.RtrID, "amount", r.Amount)
+		s.alarm(ctx, alertJobDepositRefund, "deposit refund debit failed; manual reconciliation needed", err,
+			fmt.Sprintf("txid=%s rtr_id=%s amount=%d", dep.Txid, r.RtrID, r.Amount))
 		if updateErr := s.repo.UpdateDepositStatus(ctx, dep.Txid, wallet.DepositRefundFailed, dep.E2EID); updateErr != nil {
 			observability.Error(ctx, "deposit refund failure status update failed", updateErr, "txid", dep.Txid)
 		}
@@ -805,6 +811,8 @@ func (s *WalletService) refundMismatch(ctx context.Context, dep *wallet.PixDepos
 		changed, stateErr := s.repo.TransitionDepositStatus(ctx, dep.Txid, wallet.DepositRefundPending, wallet.DepositRefundFailed, charge.E2EID)
 		if stateErr != nil {
 			slog.Error("ALARM deposit refund and durable failure transition both failed", "txid", dep.Txid, "refund_err", refundErr, "state_err", stateErr)
+			s.alarm(ctx, alertJobDepositRefund, "deposit refund and its durable failure transition both failed", refundErr,
+				fmt.Sprintf("txid=%s amount=%d state_err=%v", dep.Txid, charge.Amount, stateErr))
 			return problem.InternalServer("estorno do depósito falhou; estado será reconciliado")
 		}
 		if !changed {

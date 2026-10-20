@@ -14,6 +14,7 @@ import {
   reconcileRoleName,
   SERVICE,
   SSM_ACCOUNT,
+  SSM_ALERTS_TOPIC_ARN,
   SSM_WALLET,
   TABLE_HOLDS,
   TABLE_LEDGER,
@@ -173,6 +174,9 @@ export class ReconcileStack extends cdk.Stack {
       ],
     }));
 
+    const alertsTopicArn = ssm.StringParameter.valueForStringParameter(this, SSM_ALERTS_TOPIC_ARN(environment));
+    role.addToPolicy(new iam.PolicyStatement({actions: ['sns:Publish'], resources: [alertsTopicArn]}));
+
     const fn = new lambda.Function(this, 'ReconcileFunction', {
       functionName: this.functionName,
       runtime: lambda.Runtime.PROVIDED_AL2023,
@@ -192,6 +196,7 @@ export class ReconcileStack extends cdk.Stack {
         WALLET_CLIENT_ID: ssm.StringParameter.valueForStringParameter(this, SSM_WALLET(environment).walletClientId),
         BILLING_URL: ssm.StringParameter.valueForStringParameter(this, SSM_WALLET(environment).billingUrl),
         BILLING_CLIENT_ID: ssm.StringParameter.valueForStringParameter(this, SSM_WALLET(environment).billingClientId),
+        ALERTS_TOPIC_ARN: alertsTopicArn,
         // AWS_REGION is a reserved Lambda variable — set by the runtime, never here.
       },
       // NOTE: a Lambda has no /opt/app/start.sh, so WALLET_CLIENT_SECRET (and

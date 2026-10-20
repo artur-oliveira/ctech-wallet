@@ -1,6 +1,7 @@
 import * as cdk from 'aws-cdk-lib';
 import {aws_dynamodb} from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
 import {Construct} from 'constructs';
 import {Environment} from './types';
 import {
@@ -11,6 +12,7 @@ import {
   S3_PREFIX,
   SERVICE,
   SSM_ACCOUNT,
+  SSM_ALERTS_TOPIC_ARN,
   SSM_SHARED,
   SSM_WALLET,
   TABLE_AUDIT,
@@ -215,6 +217,18 @@ export class IAMStack extends cdk.Stack {
             `arn:aws:ssm:*:*:parameter${walletSsm.billingClientSecret}`,
             `arn:aws:ssm:*:*:parameter${walletSsm.billingEventSecret}`,
           ],
+        }),
+      ],
+    }));
+
+    // ── Operator alerts ───────────────────────────────────────────────────────
+    // Publish-only on the shared topic, for failed refunds and reversals.
+    this.apiRole.addManagedPolicy(new iam.ManagedPolicy(this, 'AlertsPolicy', {
+      managedPolicyName: `${environment}-${SERVICE}-alerts-policy`,
+      statements: [
+        new iam.PolicyStatement({
+          actions: ['sns:Publish'],
+          resources: [ssm.StringParameter.valueForStringParameter(this, SSM_ALERTS_TOPIC_ARN(environment))],
         }),
       ],
     }));

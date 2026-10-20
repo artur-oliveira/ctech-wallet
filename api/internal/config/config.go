@@ -59,6 +59,9 @@ type Config struct {
 	// deletion lock, the purge consumer and the self-exclusion carry-over
 	// are ON; empty = OFF (local dev only).
 	ErasureQueueURL string `env:"ERASURE_QUEUE_URL"`
+	// AlertsTopicARN is the shared SNS topic for operator alerts (failed refunds and reversals).
+	// Empty = alerts.Nop (local dev, test deployments); never a startup error.
+	AlertsTopicARN string `env:"ALERTS_TOPIC_ARN"`
 	// ErasureQueueVisibility is the queue's own visibility timeout
 	// (cdk/lib/erasure-stack.ts, 5 min). While a purge or an export runs, the
 	// consumer keeps the message invisible by setting that timeout again every third

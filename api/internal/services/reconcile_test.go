@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
+	"gopkg.aoctech.app/api-commons/alerts"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
 	"gopkg.aoctech.app/wallet/api/internal/rail"
@@ -87,7 +89,10 @@ func TestReconcileAlarmsOnFailedReversal(t *testing.T) {
 	repo.withdrawals["wd3"] = &repo.processing[0]
 	fake := rail.NewFake()
 
-	_, reversed, alarmed, err := newReconSvc(repo, fake).ReconcileWithdrawals(context.Background())
+	svc := newReconSvc(repo, fake)
+	sent := &recordingAlerts{}
+	svc.SetAlerts(sent)
+	_, reversed, alarmed, err := svc.ReconcileWithdrawals(context.Background())
 	if err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
@@ -96,6 +101,9 @@ func TestReconcileAlarmsOnFailedReversal(t *testing.T) {
 	}
 	if repo.withdrawals["wd3"].Status != wallet.WithdrawRefundFail {
 		t.Errorf("status = %q, want refund_failed", repo.withdrawals["wd3"].Status)
+	}
+	if len(sent.got) != 1 || sent.got[0].Job != alertJobWithdrawReversal || !strings.Contains(sent.got[0].Detail, "wd3") {
+		t.Errorf("alerts = %+v, want one %s alert naming wd3", sent.got, alertJobWithdrawReversal)
 	}
 }
 
@@ -194,3 +202,7 @@ func TestReconcileReversalReturnsTheDailyWithdrawSlot(t *testing.T) {
 		t.Fatalf("slot not returned: %+v", got)
 	}
 }
+
+type recordingAlerts struct{ got []alerts.Alert }
+
+func (r *recordingAlerts) Alert(_ context.Context, a alerts.Alert) { r.got = append(r.got, a) }

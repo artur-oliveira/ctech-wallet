@@ -16,6 +16,7 @@ import {
   S3_PREFIX,
   SERVICE,
   SSM_ACCOUNT,
+  SSM_ALERTS_TOPIC_ARN,
   SSM_SHARED,
   SSM_WALLET,
   tablePrefix,
@@ -140,6 +141,8 @@ export class ApiStack extends cdk.Stack {
       `AWS_USE_DUALSTACK_ENDPOINT=true`,
       `PORT=${APP_PORT}`,
       `ERASURE_QUEUE_URL=${erasureQueueUrl}`,
+      // Shared operator-alert topic (failed refunds/reversals); not a secret.
+      `ALERTS_TOPIC_ARN=${ssm.StringParameter.valueForStringParameter(this, SSM_ALERTS_TOPIC_ARN(environment))}`,
       `TRUSTED_PROXIES=127.0.0.1`,
       `ENV`,
     );
