@@ -7,11 +7,12 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
+	"gopkg.aoctech.app/api-commons/problem"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
-	"gopkg.aoctech.app/wallet/api/internal/problem"
 	"gopkg.aoctech.app/wallet/api/internal/rail"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
+	"gopkg.aoctech.app/wallet/api/internal/walletproblem"
 )
 
 // --- stubs ---
@@ -505,7 +506,7 @@ func TestConfirmDepositRefundAfterConfirmReversesCredit(t *testing.T) {
 func TestConfirmDepositRefundReversalFailureFlagsRefundFailed(t *testing.T) {
 	repo := newStubRepo()
 	repo.deposit = &wallet.PixDeposit{Txid: "tx1", WalletID: "w-real", UserID: "u1", AmountExpected: 5000, Status: wallet.DepositConfirmed, E2EID: "E2E-1"}
-	repo.debitErr = problem.InsufficientBalance()
+	repo.debitErr = walletproblem.InsufficientBalance()
 	fake := rail.NewFake()
 	fake.StageCharge("tx1", 5000, rail.ChargeCompleted, "", "E2E-1")
 	fake.StageChargeRefund("tx1", "RTR1", 5000, rail.RefundCompleted)
@@ -621,16 +622,16 @@ func TestDebitRealHappyPath(t *testing.T) {
 
 func TestDebitRealInsufficientBalance(t *testing.T) {
 	repo := newStubRepo()
-	repo.debitErr = problem.InsufficientBalance()
+	repo.debitErr = walletproblem.InsufficientBalance()
 	svc := newSvc(repo, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{CPF: "1"}})
 	_, err := svc.DebitReal(context.Background(), "u1", 5000, "charge-1", "subscription", "")
-	isProblem(t, err, problem.TypeInsufficientBalance)
+	isProblem(t, err, walletproblem.TypeInsufficientBalance)
 }
 
 func TestDebitRealWalletBusy(t *testing.T) {
 	svc := newSvc(newStubRepo(), &stubLocker{busy: true}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{CPF: "1"}})
 	_, err := svc.DebitReal(context.Background(), "u1", 5000, "charge-1", "subscription", "")
-	isProblem(t, err, problem.TypeWalletBusy)
+	isProblem(t, err, walletproblem.TypeWalletBusy)
 }
 
 // --- holds on `real` (skill-game integration, e.g. ctech-poker) ---
@@ -658,16 +659,16 @@ func TestHoldGameHappyPath(t *testing.T) {
 
 func TestHoldGameInsufficientBalance(t *testing.T) {
 	repo := newStubRepo()
-	repo.createHoldErr = problem.InsufficientBalance()
+	repo.createHoldErr = walletproblem.InsufficientBalance()
 	svc := newSvc(repo, &stubLocker{}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 	_, err := svc.HoldGame(context.Background(), "u1", 5000, "table-1", "idem-1")
-	isProblem(t, err, problem.TypeInsufficientBalance)
+	isProblem(t, err, walletproblem.TypeInsufficientBalance)
 }
 
 func TestHoldGameWalletBusy(t *testing.T) {
 	svc := newSvc(newStubRepo(), &stubLocker{busy: true}, rail.NewFake(), &stubKYC{rec: &kycclient.KYC{}})
 	_, err := svc.HoldGame(context.Background(), "u1", 5000, "table-1", "idem-1")
-	isProblem(t, err, problem.TypeWalletBusy)
+	isProblem(t, err, walletproblem.TypeWalletBusy)
 }
 
 func TestReleaseHoldRefundsFullAmount(t *testing.T) {

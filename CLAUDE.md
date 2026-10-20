@@ -100,7 +100,7 @@ Generic rules (DRY, named constants, RFC 7807 via go-common, zero-warning lint, 
 never assume, no secrets, documentation with the change, family-first) live in the `ctech-dev-standards` skill; they are
 not repeated here. The wallet's own error codes: `insufficient-balance`, `wallet-busy`, `withdraw-cpf-mismatch`,
 `kyc-not-verified`, `idempotency-conflict`, `step-up-required`, `daily-deposit-limit`, `daily-withdraw-limit`
-(`api/internal/problem/problem.go`). Never commit PIX/Inter certificates, webhook secrets or real CPFs.
+(`api/internal/walletproblem` and go-common `problem`). Never commit PIX/Inter certificates, webhook secrets or real CPFs.
 
 ### Money math
 
@@ -198,7 +198,7 @@ elsewhere into a money path, check whether this repo already does it better.
 
 ## Known gaps vs the standard (code, not docs; do not "fix" by editing docs)
 
-- Local `internal/problem` (wraps go-common `problem` and adds wallet types) and local `internal/middleware` (auth, scope, step-up, revocation) instead of go-common's guards.
+- Local `internal/walletproblem` (wallet types on top of go-common `problem`) and local `internal/middleware` (auth, scope, step-up, revocation) instead of go-common's guards.
 - No app-level rate limiting (go-common `ratelimit`); only nginx `limit_req` at the edge of each instance.
 - No go-common `alerts` (SNS): failures that need a human are `ALARM` log lines only (reconcile, quarantined deposits,
   stale holds).

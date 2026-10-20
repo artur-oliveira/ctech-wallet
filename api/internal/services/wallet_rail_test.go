@@ -10,9 +10,9 @@ import (
 
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/kycclient"
-	"gopkg.aoctech.app/wallet/api/internal/problem"
 	"gopkg.aoctech.app/wallet/api/internal/rail"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
+	"gopkg.aoctech.app/wallet/api/internal/walletproblem"
 )
 
 var railKYC = &kycclient.KYC{Level: "enhanced", CPF: "12345678901"}
@@ -33,7 +33,7 @@ func TestInitiateDepositRejectsOverDailyCapBeforeCharge(t *testing.T) {
 	svc := newRailSvc(repo, users, fake)
 
 	_, _, err := svc.InitiateDeposit(context.Background(), "u1", wallet.KYCVerified, 20000, "k1")
-	isProblem(t, err, problem.TypeDailyDepositLimit)
+	isProblem(t, err, walletproblem.TypeDailyDepositLimit)
 	if len(fake.CreatedCharges) != 0 {
 		t.Fatal("a charge was opened for a rejected amount")
 	}
@@ -70,7 +70,7 @@ func TestInitiateDepositReplayWithDifferentAmountConflicts(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, _, err := svc.InitiateDeposit(context.Background(), "u1", wallet.KYCVerified, 6000, "k1")
-	isProblem(t, err, problem.TypeIdempotencyConflict)
+	isProblem(t, err, walletproblem.TypeIdempotencyConflict)
 }
 
 func TestInitiateDepositRequiresKYC(t *testing.T) {
@@ -84,7 +84,7 @@ func TestInitiateDepositAmountOutsideRange(t *testing.T) {
 	fake := rail.NewFake()
 	svc := newRailSvc(newStubRepo(), &stubUserRepo{}, fake)
 	_, _, err := svc.InitiateDeposit(context.Background(), "u1", wallet.KYCVerified, 50, "k1")
-	isProblem(t, err, problem.TypeDepositOutOfRange)
+	isProblem(t, err, walletproblem.TypeDepositOutOfRange)
 	if len(fake.CreatedCharges) != 0 {
 		t.Fatal("charge opened for out-of-range amount")
 	}
@@ -179,7 +179,7 @@ func TestWithdrawSecondOfTheDayIsRejected(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := svc.Withdraw(context.Background(), "u1", wallet.KYCVerified, 10000, "k2")
-	isProblem(t, err, problem.TypeDailyWithdrawLimit)
+	isProblem(t, err, walletproblem.TypeDailyWithdrawLimit)
 	if len(fake.Transfers) != 1 {
 		t.Fatalf("transfers = %d, want 1", len(fake.Transfers))
 	}
@@ -188,7 +188,7 @@ func TestWithdrawSecondOfTheDayIsRejected(t *testing.T) {
 func TestWithdrawOverDailyAmountCap(t *testing.T) {
 	_, _, fake, svc := withdrawFixture(500000)
 	_, err := svc.Withdraw(context.Background(), "u1", wallet.KYCVerified, 100001, "k1")
-	isProblem(t, err, problem.TypeDailyWithdrawLimit)
+	isProblem(t, err, walletproblem.TypeDailyWithdrawLimit)
 	if len(fake.Transfers) != 0 {
 		t.Fatal("payout sent for a rejected withdrawal")
 	}
@@ -213,7 +213,7 @@ func TestWithdrawKeyNotFoundReverseGivesTheSlotBack(t *testing.T) {
 	repo, users, fake, svc := withdrawFixture(50000)
 	fake.TransferErr = rail.ErrKeyNotFound
 	_, err := svc.Withdraw(context.Background(), "u1", wallet.KYCVerified, 10000, "k1")
-	isProblem(t, err, problem.TypePixKeyNotFound)
+	isProblem(t, err, walletproblem.TypePixKeyNotFound)
 	if len(repo.creditCalls) != 1 || repo.creditCalls[0].EntryType != wallet.EntryReversal {
 		t.Fatalf("not refunded: %+v", repo.creditCalls)
 	}
@@ -264,7 +264,7 @@ func TestWithdrawSameKeyDifferentAmountConflicts(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := svc.Withdraw(context.Background(), "u1", wallet.KYCVerified, 20000, "k1")
-	isProblem(t, err, problem.TypeIdempotencyConflict)
+	isProblem(t, err, walletproblem.TypeIdempotencyConflict)
 	if len(fake.Transfers) != 1 {
 		t.Fatalf("transfers = %d, want 1", len(fake.Transfers))
 	}
@@ -277,7 +277,7 @@ func TestWithdrawWithoutKYCCPFIsRejectedBeforeDebit(t *testing.T) {
 	fake := rail.NewFake()
 	svc := NewWalletService(repo, &stubUserRepo{}, &stubAudit{}, &stubLocker{}, fake, &stubKYC{rec: &kycclient.KYC{Level: "enhanced"}})
 	_, err := svc.Withdraw(context.Background(), "u1", wallet.KYCVerified, 10000, "k1")
-	isProblem(t, err, problem.TypeKYCNotVerified)
+	isProblem(t, err, walletproblem.TypeKYCNotVerified)
 	if len(repo.debitCalls) != 0 || len(fake.Transfers) != 0 {
 		t.Fatal("money moved without a destination CPF")
 	}
@@ -341,7 +341,7 @@ func TestWithdrawReversalSurvivesTheRequestDeadline(t *testing.T) {
 	svc := NewWalletService(ctxRepo{repo}, &stubUserRepo{}, &stubAudit{}, &stubLocker{}, cancellingRail{fake, cancel}, &stubKYC{rec: railKYC})
 
 	_, err := svc.Withdraw(ctx, "u1", wallet.KYCVerified, 10000, "k1")
-	isProblem(t, err, problem.TypePixKeyNotFound)
+	isProblem(t, err, walletproblem.TypePixKeyNotFound)
 	if len(repo.creditCalls) != 1 || repo.creditCalls[0].EntryType != wallet.EntryReversal {
 		t.Fatalf("the reversal did not reach the ledger after the request context ended: %+v", repo.creditCalls)
 	}

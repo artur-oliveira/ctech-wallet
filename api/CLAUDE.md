@@ -36,7 +36,7 @@ api/
 ├── cmd/reconcile/main.go       # withdrawal reconciliation job
 ├── internal/
 │   ├── config/                 # 12-Factor env config (caarlos0/env)
-│   ├── problem/                # wraps api-commons/problem; adds wallet problem types
+│   ├── walletproblem/          # wallet problem types and constructors on api-commons/problem
 │   ├── validation/             # go-playground/validator singleton
 │   ├── awsclient/              # aws-sdk-go-v2 (DynamoDB only)
 │   ├── lock/                   # per-wallet lock (wraps api-commons/lock; `wallet:` key prefix)
@@ -61,7 +61,7 @@ api/
 
 Generic rules (workflow, DRY, named constants, RFC 7807 via `sendProblem`/`problem.*`, layer separation, fx DI, no
 goroutines in handlers, RS256 only, zero-warning lint, tests with the change, no secrets) are in the skill. Wallet
-specifics: route errors go through `sendProblem(c, err)`; the wallet problem types are in `internal/problem`
+specifics: route errors go through `sendProblem(c, err)`; the wallet problem types are in `internal/walletproblem`
 (`InsufficientBalance`, `WalletBusy`, `WithdrawCPFMismatch`, `KYCNotVerified`, `IdempotencyConflict`, `StepUpRequired`,
 `DailyDepositLimit`, `DailyWithdrawLimit`, `AccountErasurePending`, `RouteRetired`, ...). The deployed binary is named `app`.
 Never commit Billing/Inter credentials, webhook secrets, JWT keys, AWS credentials or real CPFs.
@@ -167,7 +167,7 @@ different scope on a different service. Do not conflate it with
   constants exist (`docs/specs/2026-08-16-withdrawal-fee-removal.md`).
 - Production fails closed on an empty `VALKEY_URL`, `SERVICE_AUDIENCE`, `CTECH_ISSUER_URL`, CORS, `ERASURE_QUEUE_URL` or
   `VALKEY_REVOCATION_URL` (`internal/config/config.go`).
-- Gaps vs the standard (code changes, tracked in the root `CLAUDE.md`): local `internal/problem`/`middleware`, no go-common
+- Gaps vs the standard (code changes, tracked in the root `CLAUDE.md`): local `internal/middleware`, no go-common
   `alerts` (failures are `ALARM` log lines), no app-level rate limit.
 
 ---

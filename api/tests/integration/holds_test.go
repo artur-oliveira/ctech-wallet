@@ -12,9 +12,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	dtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
+	"gopkg.aoctech.app/api-commons/problem"
 	"gopkg.aoctech.app/wallet/api/internal/domain/id"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
-	"gopkg.aoctech.app/wallet/api/internal/problem"
+	"gopkg.aoctech.app/wallet/api/internal/walletproblem"
 )
 
 // backdateHold simulates a hold that has sat `held` past the stale-hold
@@ -88,7 +89,7 @@ func TestHoldCannotOverdraw(t *testing.T) {
 	user := funded(t, h, 3000)
 
 	_, err := h.svc.HoldGame(ctx, user, 3001, "table-1", "idem-hold-over")
-	wantProblem(t, err, problem.TypeInsufficientBalance)
+	wantProblem(t, err, walletproblem.TypeInsufficientBalance)
 
 	if bal := realBalance(t, h, user); bal != 3000 {
 		t.Fatalf("failed hold must not move money: real = %d, want 3000", bal)
@@ -101,7 +102,7 @@ func TestHoldNeedsAWallet(t *testing.T) {
 	h := newHarness(verified())
 
 	_, err := h.svc.HoldGame(ctx, "u-"+id.New(), 1000, "table-1", "idem-hold")
-	wantProblem(t, err, problem.TypeGamblingNotActivated)
+	wantProblem(t, err, walletproblem.TypeGamblingNotActivated)
 }
 
 func TestReleaseHoldRefundsInFullAndIsIdempotent(t *testing.T) {

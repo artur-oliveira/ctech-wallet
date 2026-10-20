@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
-	"gopkg.aoctech.app/wallet/api/internal/problem"
+	"gopkg.aoctech.app/wallet/api/internal/walletproblem"
 )
 
 // StepUpMaxAge is the freshness window for step-up-protected routes (withdrawals),
@@ -19,7 +19,7 @@ func RequireRecentMFA(maxAge time.Duration) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		cl := GetClaims(c)
 		if cl == nil || cl.LastMFAAt == 0 || time.Since(time.Unix(cl.LastMFAAt, 0)) > maxAge {
-			return problem.StepUpRequired(int(maxAge.Seconds())).Send(c)
+			return walletproblem.StepUpRequired(int(maxAge.Seconds())).Send(c)
 		}
 		return c.Next()
 	}

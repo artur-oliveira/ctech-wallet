@@ -7,7 +7,7 @@ import (
 
 	"gopkg.aoctech.app/api-commons/cache"
 	"gopkg.aoctech.app/api-commons/jwtverify"
-	"gopkg.aoctech.app/wallet/api/internal/problem"
+	"gopkg.aoctech.app/api-commons/problem"
 
 	"github.com/gofiber/fiber/v3"
 )

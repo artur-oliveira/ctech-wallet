@@ -5,7 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"gopkg.aoctech.app/wallet/api/internal/problem"
+	"gopkg.aoctech.app/api-commons/problem"
+	"gopkg.aoctech.app/wallet/api/internal/walletproblem"
 )
 
 type recordingLocker struct {
@@ -46,7 +47,7 @@ func TestAcquireWallet(t *testing.T) {
 	t.Run("maps contention to wallet busy", func(t *testing.T) {
 		_, err := acquireWallet(context.Background(), &recordingLocker{}, "wallet-1")
 		var p *problem.Problem
-		if !errors.As(err, &p) || p.Type != problem.TypeWalletBusy {
+		if !errors.As(err, &p) || p.Type != walletproblem.TypeWalletBusy {
 			t.Fatalf("expected wallet-busy problem, got %v", err)
 		}
 	})

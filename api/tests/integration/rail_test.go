@@ -10,11 +10,12 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"gopkg.aoctech.app/api-commons/problem"
 	"gopkg.aoctech.app/wallet/api/internal/domain/id"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
-	"gopkg.aoctech.app/wallet/api/internal/problem"
 	"gopkg.aoctech.app/wallet/api/internal/rail"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
+	"gopkg.aoctech.app/wallet/api/internal/walletproblem"
 )
 
 // fundReal credits the user's real wallet directly (a legacy deposit stand-in).
@@ -115,7 +116,7 @@ func TestWithdrawalConcurrentSameDayOnlyOneSucceeds(t *testing.T) {
 			switch {
 			case err == nil:
 				ok.Add(1)
-			case errors.As(err, &p) && (p.Type == problem.TypeDailyWithdrawLimit || p.Type == problem.TypeWalletBusy):
+			case errors.As(err, &p) && (p.Type == walletproblem.TypeDailyWithdrawLimit || p.Type == walletproblem.TypeWalletBusy):
 			default:
 				t.Errorf("unexpected error: %v", err)
 			}

@@ -10,10 +10,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
+	"gopkg.aoctech.app/api-commons/problem"
 	"gopkg.aoctech.app/wallet/api/internal/config"
 	"gopkg.aoctech.app/wallet/api/internal/domain/id"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
-	"gopkg.aoctech.app/wallet/api/internal/problem"
+	"gopkg.aoctech.app/wallet/api/internal/walletproblem"
 )
 
 // WalletRepository owns all wallet persistence: balances (authoritative),
@@ -754,7 +755,7 @@ func (r *WalletRepository) checkReplay(ctx context.Context, idemKey, reqHash str
 		return nil, nil, err
 	}
 	if g.ReqHash != reqHash {
-		return nil, problem.IdempotencyConflict(), nil
+		return nil, walletproblem.IdempotencyConflict(), nil
 	}
 	entry, err := r.loadEntry(ctx, g.WalletID, g.EntrySK)
 	if err != nil {
@@ -792,7 +793,7 @@ func (r *WalletRepository) resolveTxErr(ctx context.Context, idemKey, reqHash st
 		return prior, true, nil
 	}
 	if sign < 0 {
-		return nil, false, problem.InsufficientBalance()
+		return nil, false, walletproblem.InsufficientBalance()
 	}
 	return nil, false, problem.InternalServer("transação de crédito falhou na condição")
 }

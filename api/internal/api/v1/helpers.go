@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"log/slog"
 
+	"gopkg.aoctech.app/api-commons/problem"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
-	"gopkg.aoctech.app/wallet/api/internal/problem"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
 	"gopkg.aoctech.app/wallet/api/internal/validation"
 
