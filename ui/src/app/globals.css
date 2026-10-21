@@ -87,9 +87,12 @@
 
     /* Minimal map of the semantic tokens @aoctech/ui components read that the
        wallet does not define (brand-*, background, foreground, border, ring and
-       muted-foreground already exist above). warning = the package's wallet theme. */
+       muted-foreground already exist above). status colours (success, warning, danger) = the package's wallet theme. */
     --color-surface: var(--muted);
     --color-warning: oklch(0.46 0.12 70);
+    --color-success: oklch(0.5 0.13 150);
+    --color-danger: oklch(0.55 0.19 22);
+    --color-danger-strong: oklch(0.47 0.175 22);
 
     --color-ring: var(--ring);
     --color-input: var(--input);

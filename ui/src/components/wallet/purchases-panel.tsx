@@ -3,7 +3,7 @@
 import {useState} from 'react'
 import {useInfiniteQuery} from '@tanstack/react-query'
 import {useTranslation} from 'react-i18next'
-import {Button} from '@aoctech/ui'
+import {Badge, Button, type BadgeTone} from '@aoctech/ui'
 import {QueryErrorState} from '@/components/query-error-state'
 import {apiClient} from '@/lib/api/client'
 import {useInfiniteSentinel} from '@/lib/hooks/useInfiniteSentinel'
@@ -15,12 +15,12 @@ type PurchaseRecord = SandboxPurchase | ProductPurchase
 
 const KINDS: PurchaseKind[] = ['sandbox', 'product']
 
-const STATUS_STYLE: Record<PurchaseStatus, string> = {
-  pending: 'bg-gray-100 text-gray-700',
-  confirmed: 'bg-brand-50 text-brand-700',
-  refund_pending: 'bg-gray-100 text-gray-700',
-  refunded: 'bg-gray-100 text-gray-700',
-  expired: 'bg-gray-100 text-gray-700',
+const STATUS_TONE: Record<PurchaseStatus, BadgeTone> = {
+  pending: 'attention',
+  confirmed: 'positive',
+  refund_pending: 'attention',
+  refunded: 'neutral',
+  expired: 'neutral',
 }
 
 const FETCHERS: Record<PurchaseKind, (cursor?: string) => Promise<PurchasePage<PurchaseRecord>>> = {
@@ -86,9 +86,9 @@ function PurchaseList({kind}: { kind: PurchaseKind }) {
                 <p className="text-sm font-medium text-foreground">
                   {t(`purchases.sku.${purchase.sku}`, {defaultValue: readableSKU(purchase.sku)})}
                 </p>
-                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[purchase.status]}`}>
+                <Badge tone={STATUS_TONE[purchase.status]}>
                   {t(`purchases.status.${purchase.status}`)}
-                </span>
+                </Badge>
               </div>
               {purchase.description && (
                 <p className="mt-1 line-clamp-2 text-sm text-foreground">{purchase.description}</p>
