@@ -6,7 +6,7 @@ import {useTranslation} from 'react-i18next'
 import {useAuth} from '@/lib/hooks/useAuth'
 import {exchangeCode} from '@/lib/auth/oauth'
 import {callbackErrorKey} from '@/lib/auth/callback-error'
-import {Button} from '@/components/ui/button'
+import {Button} from '@aoctech/ui'
 import {LanguageSwitcher} from '@/components/language-switcher'
 
 function CallbackInner() {

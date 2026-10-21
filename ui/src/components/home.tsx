@@ -3,7 +3,7 @@
 import {useRouter} from 'next/navigation'
 import Image from 'next/image'
 import {useTranslation} from 'react-i18next'
-import {Button} from '@/components/ui/button'
+import {Button} from '@aoctech/ui'
 import {LanguageSwitcher} from '@/components/language-switcher'
 import {useAuth} from '@/lib/hooks/useAuth'
 import {ACCOUNTS_LEGAL_URL, PRIVACY_POLICY_URL, WALLET_TERMS_URL} from '@/lib/legal'
@@ -39,8 +39,8 @@ export default function Home() {
           </p>
           <Button
             variant="brand"
-            size="lg"
-            className="mt-8 h-auto min-h-9 w-full whitespace-normal py-2 sm:w-auto"
+            
+            className="mt-8 h-auto min-h-11 w-full whitespace-normal py-2 sm:w-auto"
             onClick={authenticated ? openDashboard : loginToDashboard}
             disabled={loading}
           >

@@ -7,7 +7,7 @@ import {useInfiniteSentinel} from '@/lib/hooks/useInfiniteSentinel'
 import {formatBalance, formatSigned} from '@/lib/utils/money'
 import {walletHasMonetaryValue} from '@/lib/utils/wallet-semantics'
 import type {WalletType} from '@/lib/types/api'
-import {Button} from '@/components/ui/button'
+import {Button} from '@aoctech/ui'
 import {QueryErrorState} from '@/components/query-error-state'
 
 const SANDBOX_PURCHASE_REFERENCE_PREFIX = 'sbxp'

@@ -2,9 +2,6 @@
 
 import * as React from 'react'
 import {Dialog as DialogPrimitive} from '@base-ui/react/dialog'
-import {X} from 'lucide-react'
-import {useTranslation} from 'react-i18next'
-import {Button} from '@/components/ui/button'
 import {cn} from '@/lib/utils'
 
 function Dialog(props: DialogPrimitive.Root.Props) {
@@ -31,10 +28,8 @@ function DialogOverlay({className, ...props}: DialogPrimitive.Backdrop.Props) {
 function DialogContent({
                          className,
                          children,
-                         showCloseButton = false,
                          ...props
-                       }: DialogPrimitive.Popup.Props & { showCloseButton?: boolean }) {
-  const {t} = useTranslation()
+                       }: DialogPrimitive.Popup.Props) {
   return (
     <DialogPortal>
       <DialogOverlay/>
@@ -51,14 +46,6 @@ function DialogContent({
           {...props}
         >
           {children}
-          {showCloseButton && (
-            <DialogPrimitive.Close
-              render={<Button variant="ghost" size="icon-sm" className="absolute right-2 top-2"/>}
-            >
-              <X aria-hidden="true"/>
-              <span className="sr-only">{t('common.close')}</span>
-            </DialogPrimitive.Close>
-          )}
         </DialogPrimitive.Popup>
       </DialogPrimitive.Viewport>
     </DialogPortal>

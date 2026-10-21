@@ -52,7 +52,7 @@
     --destructive: oklch(0.577 0.245 27.325);
     --border: oklch(0.922 0 0);
     --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
+    --ring: var(--brand-600); /* wallet theme in @aoctech/ui: focus = brand-600 */
     --radius: 0.625rem;
 }
 

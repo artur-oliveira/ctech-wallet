@@ -12,7 +12,7 @@ import {useAuth} from '@/lib/hooks/useAuth'
 import {ProtectedRoute} from '@/components/protected-route'
 import {BalanceCards} from '@/components/wallet/balance-cards'
 import {LedgerTabs} from '@/components/wallet/ledger-tabs'
-import {Button} from '@/components/ui/button'
+import {Button} from '@aoctech/ui'
 import {QueryErrorState} from '@/components/query-error-state'
 import {LanguageSwitcher} from '@/components/language-switcher'
 import {useWalletRealtime} from '@/lib/hooks/useWalletRealtime'
@@ -167,7 +167,7 @@ function DashboardInner() {
             {name &&
                 <span className="hidden max-w-[10rem] truncate text-sm text-muted-foreground lg:inline">{name}</span>}
             <LanguageSwitcher/>
-            <Button variant="ghost" size="icon-sm" onClick={logout} aria-label={t('dashboard.logout')}>
+            <Button variant="ghost" size="icon" onClick={logout} aria-label={t('dashboard.logout')}>
               <LogOut size={16}/>
             </Button>
           </div>

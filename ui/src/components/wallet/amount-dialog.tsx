@@ -5,7 +5,7 @@ import {Controller, useForm} from 'react-hook-form'
 import {zodResolver} from '@hookform/resolvers/zod'
 import {z} from 'zod'
 import {useTranslation} from 'react-i18next'
-import {Button} from '@/components/ui/button'
+import {Button} from '@aoctech/ui'
 import {
   formatBRL,
   formatCredits,
