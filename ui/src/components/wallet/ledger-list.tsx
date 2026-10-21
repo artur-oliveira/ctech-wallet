@@ -7,7 +7,7 @@ import {useInfiniteSentinel} from '@/lib/hooks/useInfiniteSentinel'
 import {formatBalance, formatSigned} from '@/lib/utils/money'
 import {walletHasMonetaryValue} from '@/lib/utils/wallet-semantics'
 import type {WalletType} from '@/lib/types/api'
-import {Button} from '@aoctech/ui'
+import {Button, EmptyState} from '@aoctech/ui'
 import {QueryErrorState} from '@/components/query-error-state'
 
 const SANDBOX_PURCHASE_REFERENCE_PREFIX = 'sbxp'
@@ -77,11 +77,7 @@ export function LedgerList({type}: { type: WalletType }) {
   }
 
   if (items.length === 0) {
-    return (
-      <p className="px-5 py-10 text-center text-sm text-muted-foreground">
-        {t(`dashboard.ledger.empty.${type}`)}
-      </p>
-    )
+    return <EmptyState title={t(`dashboard.ledger.empty.${type}`)} className="rounded-none border-0 py-10"/>
   }
 
   return (

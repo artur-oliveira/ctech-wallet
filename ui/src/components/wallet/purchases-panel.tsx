@@ -3,7 +3,7 @@
 import {useState} from 'react'
 import {useInfiniteQuery} from '@tanstack/react-query'
 import {useTranslation} from 'react-i18next'
-import {Badge, Button, type BadgeTone, Segmented} from '@aoctech/ui'
+import {Badge, Button, type BadgeTone, EmptyState, Segmented} from '@aoctech/ui'
 import {QueryErrorState} from '@/components/query-error-state'
 import {apiClient} from '@/lib/api/client'
 import {useInfiniteSentinel} from '@/lib/hooks/useInfiniteSentinel'
@@ -73,7 +73,7 @@ function PurchaseList({kind}: { kind: PurchaseKind }) {
     )
   }
   if (items.length === 0) {
-    return <p className="px-5 py-8 text-center text-sm text-muted-foreground">{t(`purchases.empty.${kind}`)}</p>
+    return <EmptyState title={t(`purchases.empty.${kind}`)} className="rounded-none border-0 py-8"/>
   }
 
   return (
