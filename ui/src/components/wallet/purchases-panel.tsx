@@ -3,7 +3,7 @@
 import {useState} from 'react'
 import {useInfiniteQuery} from '@tanstack/react-query'
 import {useTranslation} from 'react-i18next'
-import {Badge, Button, type BadgeTone} from '@aoctech/ui'
+import {Badge, Button, type BadgeTone, Segmented} from '@aoctech/ui'
 import {QueryErrorState} from '@/components/query-error-state'
 import {apiClient} from '@/lib/api/client'
 import {useInfiniteSentinel} from '@/lib/hooks/useInfiniteSentinel'
@@ -134,19 +134,13 @@ export function PurchasesPanel() {
   const [kind, setKind] = useState<PurchaseKind>('sandbox')
   return (
     <div>
-      <div className="flex gap-2 border-b border-border px-5 py-3" role="group" aria-label={t('purchases.filter')}>
-        {KINDS.map((k) => (
-          <Button
-            key={k}
-            type="button"
-            size="sm"
-            variant={kind === k ? 'brand' : 'outline'}
-            aria-pressed={kind === k}
-            onClick={() => setKind(k)}
-          >
-            {t(`purchases.kind.${k}`)}
-          </Button>
-        ))}
+      <div className="border-b border-border px-5 py-3">
+        <Segmented
+          label={t('purchases.filter')}
+          value={kind}
+          onValueChange={setKind}
+          options={KINDS.map((k) => ({value: k, label: t(`purchases.kind.${k}`)}))}
+        />
       </div>
       <PurchaseList key={kind} kind={kind}/>
     </div>
