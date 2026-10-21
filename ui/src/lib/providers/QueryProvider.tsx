@@ -12,9 +12,9 @@ export function QueryProvider({children}: { children: ReactNode }) {
           queries: {
             staleTime: 60_000,
             /**
-             * The axios layer already retries safe/idempotent requests with
+             * The API client already retries safe/idempotent requests with
              * jittered backoff and refuses to retry into a known outage
-             * (lib/api/client.ts, lib/network/liveness.ts). A second retry
+             * (withRetry in lib/api/client.ts, lib/network/api-reachability.ts). A second retry
              * budget on top of it multiplies attempts instead of adding
              * resilience, so this one only covers what axios deliberately does
              * not: a request that failed for a reason worth a fresh attempt

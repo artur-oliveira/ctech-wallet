@@ -2,6 +2,12 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
+/* Tailwind does not scan node_modules: without this, @aoctech/ui's OfflineBanner,
+   UnavailableScreen and ErrorState render unstyled. Deliberately NOT importing
+   @aoctech/ui/styles.css or touch.css: they would repaint the app / change the
+   hit area of the wallet's own data-slot="button" controls. */
+@source "../../node_modules/@aoctech/ui/dist";
+
 :root {
     color-scheme: only light;
 
@@ -78,6 +84,12 @@
     --color-primary-700: var(--brand-700);
     --color-primary-800: var(--brand-800);
     --color-primary-900: var(--brand-900);
+
+    /* Minimal map of the semantic tokens @aoctech/ui components read that the
+       wallet does not define (brand-*, background, foreground, border, ring and
+       muted-foreground already exist above). warning = the package's wallet theme. */
+    --color-surface: var(--muted);
+    --color-warning: oklch(0.46 0.12 70);
 
     --color-ring: var(--ring);
     --color-input: var(--input);

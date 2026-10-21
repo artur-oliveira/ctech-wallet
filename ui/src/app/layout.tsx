@@ -7,6 +7,7 @@ import './globals.css'
 import {AuthProvider} from '@/lib/context/AuthContext'
 import {QueryProvider} from '@/lib/providers/QueryProvider'
 import {I18nProvider} from '@/lib/providers/I18nProvider'
+import {NetworkBoundary} from '@/components/network-boundary'
 import {Toaster} from 'sonner'
 
 const LIGHT_THEME_COLOR = '#f8fafc'
@@ -109,7 +110,7 @@ export default function RootLayout({
     >
     <QueryProvider>
       <AuthProvider>
-        <I18nProvider>{children}</I18nProvider>
+        <I18nProvider><NetworkBoundary>{children}</NetworkBoundary></I18nProvider>
       </AuthProvider>
     </QueryProvider>
 
