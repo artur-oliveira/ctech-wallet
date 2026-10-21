@@ -3,7 +3,7 @@
 import {useState} from 'react'
 import {useInfiniteQuery} from '@tanstack/react-query'
 import {useTranslation} from 'react-i18next'
-import {Badge, Button, type BadgeTone, EmptyState, Segmented} from '@aoctech/ui'
+import {Badge, Button, type BadgeTone, EmptyState, Segmented, Skeleton} from '@aoctech/ui'
 import {QueryErrorState} from '@/components/query-error-state'
 import {apiClient} from '@/lib/api/client'
 import {useInfiniteSentinel} from '@/lib/hooks/useInfiniteSentinel'
@@ -58,7 +58,7 @@ function PurchaseList({kind}: { kind: PurchaseKind }) {
   if (query.isLoading) {
     return (
       <div role="status" className="space-y-3 px-5 py-5" aria-label={t('purchases.loading')}>
-        <div className="h-14 animate-pulse rounded-lg bg-muted motion-reduce:animate-none"/>
+        <Skeleton className="h-14 rounded-lg"/>
       </div>
     )
   }

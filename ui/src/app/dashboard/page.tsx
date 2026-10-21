@@ -12,7 +12,7 @@ import {useAuth} from '@/lib/hooks/useAuth'
 import {ProtectedRoute} from '@/components/protected-route'
 import {BalanceCards} from '@/components/wallet/balance-cards'
 import {LedgerTabs} from '@/components/wallet/ledger-tabs'
-import {Button} from '@aoctech/ui'
+import {Button, Skeleton} from '@aoctech/ui'
 import {QueryErrorState} from '@/components/query-error-state'
 import {LanguageSwitcher} from '@/components/language-switcher'
 import {useWalletRealtime} from '@/lib/hooks/useWalletRealtime'
@@ -176,7 +176,8 @@ function DashboardInner() {
 
       <main className="mx-auto max-w-4xl space-y-6 px-4 py-8 sm:px-6">
         {balances.isLoading && (
-          <div className="h-44 animate-pulse rounded-2xl bg-muted" role="status">
+          <div role="status">
+            <Skeleton className="h-44 rounded-2xl"/>
             <span className="sr-only">{t('dashboard.loadingBalances')}</span>
           </div>
         )}
