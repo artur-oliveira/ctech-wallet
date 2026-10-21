@@ -61,3 +61,5 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+- **Bundle budget:** `npm run bundle:check` (run after `npm run build`; CI does it) holds each route's first-load JS to `bundle-budget.json` +8%. Re-pin with `npm run bundle:pin` only in a deliberate commit that states why the number moved.
