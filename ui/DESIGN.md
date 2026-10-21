@@ -133,7 +133,8 @@ Flat by default. A surface earns a shadow only when it lifts (card hover) or ove
 ## 5. Components
 
 ### Buttons
-- **Shape:** gently rounded (10px radius, `rounded-lg`), height 32px, text-sm, medium weight.
+- **Source:** `Button` from `@aoctech/ui` (no local copy). The whole app sits in `<DensityScope density="compact">` (root layout) and imports only `@aoctech/ui/touch.css`, never `styles.css` (it would repaint the app). Dialogs portal out of the scope, so `DialogContent`'s viewport carries `data-density="compact"` too.
+- **Shape:** gently rounded (10px radius, `rounded-lg`), height 32px with a mouse, text-sm, medium weight. Under touch (`pointer: coarse` or below `sm`) it is drawn 36px with an invisible 44px hit area (`::after`); an icon button stays square (32px, 36px on touch). Keep 8px between neighbouring buttons.
 - **Primary (brand):** Signal Violet fill, white label. The single CTA per screen. Hover deepens to #6d28d9.
 - **Outline:** white surface, 1px Signal Violet border at 60% (`border-brand-400/60`), violet label — used for *secondary* money actions on the violet card (withdraw) and for neutral secondary actions elsewhere. Hover tints the fill.
 - **Ghost:** transparent, ink label; for low-emphasis controls (logout icon, dialog cancel). Hover fills a muted gray.
@@ -152,6 +153,11 @@ Flat by default. A surface earns a shadow only when it lifts (card hover) or ove
 - **Border:** 1px Line on neutral cards; the sandbox card uses a 1px dashed Line.
 - **Shadow Strategy:** see Elevation — resting `card`, hover `card-hover`.
 - **Internal Padding:** 24px (balance cards), 20px (ledger panel), 24px (dialog).
+
+### Segmented, Badge, Tabs
+- **Segmented** (`@aoctech/ui`): the purchases kind filter (sandbox credits / digital product), a pill group with a raised active segment. The ledger tabs (Real / Sandbox / Purchases) stay local text tabs with a violet underline.
+- **Badge** (`@aoctech/ui`): purchase status. Tone follows status (confirmed = positive green, pending and refund pending = attention, refunded and expired = neutral), never brand violet: violet stays the action signal.
+- **Tokens:** surfaces, text, border and radius come from the wallet's own `:root` variables mapped into Tailwind (`bg-card`, `text-muted-foreground`, `border-border`); `@aoctech/ui` components read the same names, so nothing from `@aoctech/ui/styles.css` is loaded.
 
 ### Navigation
 - **Style:** a single top bar, white with a 1px bottom Line, max-width 4xl, 24px vertical padding. The canonical `public/app.svg` concentric-circle mark sits beside “CTech Wallet” on both the public entry page and authenticated top bar; generic wallet glyphs are reserved for actions or content, never product identity.

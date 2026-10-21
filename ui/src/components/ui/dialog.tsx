@@ -35,6 +35,7 @@ function DialogContent({
       <DialogOverlay/>
       <DialogPrimitive.Viewport
         data-slot="dialog-viewport"
+        data-density="compact"
         className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain [padding-top:max(1rem,env(safe-area-inset-top))] [padding-right:max(1rem,env(safe-area-inset-right))] [padding-bottom:max(1rem,env(safe-area-inset-bottom))] [padding-left:max(1rem,env(safe-area-inset-left))]"
       >
         <DialogPrimitive.Popup

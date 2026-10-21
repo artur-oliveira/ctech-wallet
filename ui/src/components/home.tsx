@@ -40,7 +40,7 @@ export default function Home() {
           <Button
             variant="brand"
             
-            className="mt-8 h-auto min-h-11 w-full whitespace-normal py-2 sm:w-auto"
+            className="mt-8 h-auto min-h-9 w-full whitespace-normal py-1.5 sm:w-auto"
             onClick={authenticated ? openDashboard : loginToDashboard}
             disabled={loading}
           >

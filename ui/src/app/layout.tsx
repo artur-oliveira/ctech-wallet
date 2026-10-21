@@ -9,6 +9,7 @@ import {QueryProvider} from '@/lib/providers/QueryProvider'
 import {I18nProvider} from '@/lib/providers/I18nProvider'
 import {NetworkBoundary} from '@/components/network-boundary'
 import {Toaster} from 'sonner'
+import {DensityScope} from '@aoctech/ui'
 
 const LIGHT_THEME_COLOR = '#f8fafc'
 
@@ -110,7 +111,7 @@ export default function RootLayout({
     >
     <QueryProvider>
       <AuthProvider>
-        <I18nProvider><NetworkBoundary>{children}</NetworkBoundary></I18nProvider>
+        <I18nProvider><DensityScope density="compact"><NetworkBoundary>{children}</NetworkBoundary></DensityScope></I18nProvider>
       </AuthProvider>
     </QueryProvider>
 
