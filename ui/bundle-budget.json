@@ -1,0 +1,16 @@
+{
+  "_comment": "Per-route first-load JS in bytes, pinned by `npm run bundle:pin` from the static export in out/ (every /_next JS file a route's own HTML references). Measured with plain `npm run build` (next build, Turbopack, no post-processing step) because that is the artifact the deploy publishes; NEXT_PUBLIC_* differ per environment but only inline short strings. Webpack splits chunks differently, so its numbers are not comparable; _builder records which one these were pinned with and check-bundle-budget.mjs refuses a mismatch. Tolerance 8% (same as ctech-poker) over the pinned value, from a single build at @aoctech/ui 0.9.1. Re-pin deliberately, in the same commit as the change that moved a number, stating the reason.",
+  "_builder": "turbopack",
+  "tolerance": 0.08,
+  "routes": {
+    "/": 861266,
+    "/_not-found": 837285,
+    "/404": 837285,
+    "/callback": 844844,
+    "/dashboard": 904305,
+    "/en": 861970,
+    "/login": 844159,
+    "/pt-BR": 861970,
+    "/unavailable": 837874
+  }
+}

@@ -110,3 +110,5 @@ probe.
 Sandbox credits are whole numbers shown with **₡** (U+20A1), never "R$" and never with decimals
 (`lib/utils/credits-format.ts`, used by `formatCreditsAmount`/`formatBalance`/`formatSigned`). The glyph lives in
 IBM Plex's `latin-ext` subset, so `layout.tsx` loads it for both families; do not drop that subset.
+
+- **Bundle budget:** `npm run bundle:check` (run after `npm run build`; CI does it) holds each route's first-load JS to `bundle-budget.json` +8%. Re-pin with `npm run bundle:pin` only in a deliberate commit that states why the number moved.

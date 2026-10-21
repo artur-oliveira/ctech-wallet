@@ -7,6 +7,8 @@
     "start": "next start",
     "build": "next build",
     "lint": "eslint",
+    "bundle:check": "node scripts/check-bundle-budget.mjs",
+    "bundle:pin": "node scripts/check-bundle-budget.mjs --update",
     "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test --experimental-test-isolation=none"
   },
   "dependencies": {
