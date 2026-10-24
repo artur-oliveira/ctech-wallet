@@ -118,6 +118,7 @@ func newSupervisor(lc fx.Lifecycle) *supervisor.Supervisor {
 	lc.Append(fx.Hook{OnStop: sup.Shutdown})
 	return sup
 }
+
 // newDrainTracker owns the live WebSocket connections; startServer drains it before
 // the listener stops so clients reconnect to another instance.
 func newDrainTracker() *drain.Tracker { return &drain.Tracker{} }
