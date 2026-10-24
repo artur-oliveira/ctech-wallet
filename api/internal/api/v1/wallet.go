@@ -114,8 +114,11 @@ func (h *handlers) getLedger(c fiber.Ctx) error {
 	if target == nil {
 		return sendProblem(c, walletproblem.GamblingNotActivated())
 	}
-	limit := historyLimit(c)
-	startKey := decodeCursor(c.Query(queryParamCursor))
+	limit, startKey, err := pageStart(c, target.WalletID)
+	if err != nil {
+		return sendProblem(c, err)
+	}
+	// The owner tag is not a signature: also pin the key to this wallet's partition.
 	if !cursorMatchesWallet(startKey, target.WalletID) {
 		return sendProblem(c, problem.BadRequest("cursor inválido"))
 	}
@@ -123,5 +126,5 @@ func (h *handlers) getLedger(c fiber.Ctx) error {
 	if err != nil {
 		return sendProblem(c, err)
 	}
-	return sendStatement(c, res)
+	return sendStatement(c, res, target.WalletID)
 }
