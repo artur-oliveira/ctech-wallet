@@ -165,6 +165,13 @@ export const TABLE_LEDGER = 'wallet_ledger_entries';
  */
 export const TABLE_PIX_DEPOSITS = 'wallet_pix_deposits';
 
+/**
+ * Idempotency-Key claims and replayable HTTP answers of the user money routes (go-common
+ * idempotency.DynamoStore: pk IDEM#sub, sk KEY#key, TTL on `ttl`). Distinct from
+ * `wallet_idempotency`, whose permanent IDEM#key rows guard the ledger.
+ */
+export const TABLE_HTTP_IDEMPOTENCY = 'wallet_http_idempotency';
+
 /** Open game-wallet reservations queried by the stale-hold sweep. */
 export const TABLE_HOLDS = 'wallet_holds';
 

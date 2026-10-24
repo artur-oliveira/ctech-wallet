@@ -31,6 +31,7 @@ only**; encryption AWS-managed key; `RETAIN` outside dev, `DESTROY` in dev. All 
 | `wallets` | `gsi_user` | authoritative balance |
 | `wallet_ledger_entries` | `gsi_idem` | **append-only** |
 | `wallet_idempotency` | none | permanent `IDEM#{key}` guards |
+| `wallet_http_idempotency` | none | `Idempotency-Key` claims + replayable answers of deposits/withdrawals (go-common `idempotency`; pk+sk, TTL on `ttl`); the API role may also `DeleteItem` here to release a claim |
 | `wallet_pix_deposits` | `gsi_status`, `gsi_user` | keyed by txid; **no table TTL** (expiry closes the charge, never deletes the record) |
 | `wallet_withdrawals` | `gsi_status`, `gsi_user` | `processing` rows drive reconcile |
 | `wallet_users` | none | per-user state; TTL on carried self-exclusions |

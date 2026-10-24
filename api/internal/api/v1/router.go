@@ -68,6 +68,7 @@ func Register(app *fiber.App, c cache.Backend, revocation cache.Backend, cfg *co
 	oauthresource.Register(app, cfg.ServiceAudience, cfg.CtechIssuerURL)
 
 	limit := newUserLimits(c)
+	idem := newMoneyIdempotency(clients, cfg)
 
 	v1 := app.Group("/v1.0")
 
@@ -85,8 +86,8 @@ func Register(app *fiber.App, c cache.Backend, revocation cache.Backend, cfg *co
 	// User routes — Bearer user JWT.
 	w := v1.Group("/wallet", auth, middleware.RequireUser)
 	w.Get("/", limit.read, middleware.RequireUserScope(middleware.ScopeWalletBalancesRead), h.getWallet)
-	w.Post("/deposits", limit.money, middleware.RequireUserScope(middleware.ScopeWalletDepositsWrite), middleware.RequireKYC(middleware.KYCVerified), fresh, h.createDeposit)
-	w.Post("/withdrawals", limit.money, middleware.RequireUserScope(middleware.ScopeWalletWithdrawalsWrite), middleware.RequireKYC(middleware.KYCVerified), authguard.RequireRecentMFA(authguard.DefaultStepUpMaxAge), fresh, h.createWithdrawal)
+	w.Post("/deposits", limit.money, middleware.RequireUserScope(middleware.ScopeWalletDepositsWrite), middleware.RequireKYC(middleware.KYCVerified), fresh, idem, h.createDeposit)
+	w.Post("/withdrawals", limit.money, middleware.RequireUserScope(middleware.ScopeWalletWithdrawalsWrite), middleware.RequireKYC(middleware.KYCVerified), authguard.RequireRecentMFA(authguard.DefaultStepUpMaxAge), fresh, idem, h.createWithdrawal)
 	// The sale of Sandbox packs and goods moved to Poker, through Billing: the writes answer 410.
 	w.Post("/sandbox/purchase", retired)
 	w.Post("/sandbox/purchases", retired)

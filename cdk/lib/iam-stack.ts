@@ -16,6 +16,7 @@ import {
   SSM_SHARED,
   SSM_WALLET,
   TABLE_AUDIT,
+  TABLE_HTTP_IDEMPOTENCY,
   TABLE_LEDGER,
 } from './constants';
 
@@ -106,6 +107,13 @@ export class IAMStack extends cdk.Stack {
             'dynamodb:DescribeTable',
           ],
           resources: mutableTableArns,
+        }),
+        // The idempotency middleware releases a claim whose answer is not replayable (a 5xx,
+        // a 409): the only table the API role may delete from.
+        new iam.PolicyStatement({
+          sid: 'HttpIdempotencyReleaseClaim',
+          actions: ['dynamodb:DeleteItem'],
+          resources: [dynamoDBTables.get(TABLE_HTTP_IDEMPOTENCY)!.tableArn],
         }),
         // Append-only: create + read, never update, never delete.
         new iam.PolicyStatement({

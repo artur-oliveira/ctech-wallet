@@ -65,6 +65,7 @@ var exportInventory = map[string]string{
 	wallet.TableWallets:          "exported: wallets.json",
 	wallet.TableLedger:           "exported: ledger-<wallet type>.json, the whole statement; the other side of a transfer is an opaque wallet id",
 	wallet.TableIdempotency:      "excluded: request keys and cached responses, no data of the person's own",
+	wallet.TableHTTPIdempotency:  "excluded: 24 h replay cache of HTTP answers to the money routes (expires by TTL), nothing the exports above do not already hold",
 	wallet.TablePixDeposits:      "exported: deposits.json; the payer's name and CPF only on a confirmed deposit (the CPF check passed), never on any other status",
 	wallet.TableWithdrawals:      "exported: withdrawals.json (the PIX key the person typed)",
 	wallet.TableUsers:            "exported: settings.json (terms, self-exclusion, limits, counters)",

@@ -105,6 +105,12 @@ func createTables(ctx context.Context) error {
 			BillingMode:          dtypes.BillingModePayPerRequest,
 		},
 		{
+			TableName:            aws.String(table(wallet.TableHTTPIdempotency)),
+			AttributeDefinitions: []dtypes.AttributeDefinition{s("pk"), s("sk")},
+			KeySchema:            []dtypes.KeySchemaElement{hashKey("pk"), rangeKey("sk")},
+			BillingMode:          dtypes.BillingModePayPerRequest,
+		},
+		{
 			TableName:              aws.String(table(wallet.TablePixDeposits)),
 			AttributeDefinitions:   []dtypes.AttributeDefinition{s("pk"), s("status"), s("user_id"), s("created_at")},
 			KeySchema:              []dtypes.KeySchemaElement{hashKey("pk")},
@@ -182,7 +188,7 @@ func createTables(ctx context.Context) error {
 
 func dropTables(ctx context.Context) error {
 	for _, t := range []string{
-		wallet.TableWallets, wallet.TableLedger, wallet.TableIdempotency,
+		wallet.TableWallets, wallet.TableLedger, wallet.TableIdempotency, wallet.TableHTTPIdempotency,
 		wallet.TablePixDeposits, wallet.TableWithdrawals, wallet.TableUsers,
 		wallet.TableAudit, wallet.TableHolds, wallet.TableSandboxPurchases, wallet.TableProductPurchases,
 		wallet.TableErasureRetention,

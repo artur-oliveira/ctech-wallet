@@ -3,7 +3,7 @@ import {RemovalPolicy} from 'aws-cdk-lib';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import {Billing} from 'aws-cdk-lib/aws-dynamodb';
 import {Construct} from 'constructs';
-import {TABLE_ERASURE_RETENTION, TABLE_ERASURE_STATE, TABLE_HOLDS, TABLE_PIX_DEPOSITS} from './constants';
+import {TABLE_ERASURE_RETENTION, TABLE_ERASURE_STATE, TABLE_HOLDS, TABLE_HTTP_IDEMPOTENCY, TABLE_PIX_DEPOSITS} from './constants';
 import {Environment} from './types';
 
 /**
@@ -21,6 +21,7 @@ export type TableName = (
   'wallet_audit' |
   'wallet_ledger_entries' |
   'wallet_idempotency' |
+  typeof TABLE_HTTP_IDEMPOTENCY |
   typeof TABLE_PIX_DEPOSITS |
   'wallet_withdrawals' |
   'wallet_users' |
@@ -144,6 +145,11 @@ export class DynamoDBStack extends cdk.Stack {
 
     // ── wallet_idempotency: permanent IDEM#{key} guards ───────────────────────
     table('wallet_idempotency');
+
+    // ── wallet_http_idempotency: Idempotency-Key claims + replayable answers of the
+    // user money routes. Schema owned by ctech-go-common idempotency.DynamoStore
+    // (pk IDEM#sub, sk KEY#key); rows expire by TTL (24 h answers, 2 min claims).
+    table(TABLE_HTTP_IDEMPOTENCY, {sortKey: true, ttl: true});
 
     // ── wallet_pix_deposits: durable charges keyed by txid ────────────────────
     // gsi_status backs reconciliation of pending deposits. Business expiration

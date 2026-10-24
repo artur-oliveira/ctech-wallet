@@ -96,3 +96,26 @@ test('user lookups (R21): deposits, withdrawals and holds carry gsi_user on user
     });
   }
 });
+
+test('http idempotency: pk+sk with TTL, the API role may delete only there to release a claim', () => {
+  Template.fromStack(new DynamoDBStack(new cdk.App(), 'D0', {env, environment: 'prod', tablePrefix: 'prod'})).hasResourceProperties('AWS::DynamoDB::GlobalTable', {
+    TableName: 'prod_wallet_http_idempotency',
+    KeySchema: [{AttributeName: 'pk', KeyType: 'HASH'}, {AttributeName: 'sk', KeyType: 'RANGE'}],
+    TimeToLiveSpecification: {AttributeName: 'ttl', Enabled: true},
+  });
+  const app = new cdk.App();
+  const db = new DynamoDBStack(app, 'D', {env, environment: 'prod', tablePrefix: 'prod'});
+  const iamStack = new IAMStack(app, 'I', {
+    env, environment: 'prod',
+    deploymentsBucketArn: 'arn:aws:s3:::d', logsBucketArn: 'arn:aws:s3:::l',
+    dynamoDBTables: db.tables,
+    erasureQueueArn: 'arn:aws:sqs:us-east-1:868899309401:prod-ctech-wallet-erasure',
+    retentionTableArn: db.retentionTable.tableArn,
+  });
+  const statements = Object.values(Template.fromStack(iamStack).findResources('AWS::IAM::ManagedPolicy'))
+    .flatMap((p: any) => p.Properties.PolicyDocument.Statement);
+  const release = statements.find((x: any) => x.Sid === 'HttpIdempotencyReleaseClaim');
+  assert.ok(release, 'missing HttpIdempotencyReleaseClaim');
+  assert.deepEqual([].concat(release.Action), ['dynamodb:DeleteItem']);
+  assert.equal(release.Effect, 'Allow');
+});

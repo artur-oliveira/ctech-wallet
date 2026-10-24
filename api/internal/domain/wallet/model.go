@@ -88,11 +88,15 @@ const (
 	TableWallets     = "wallets"
 	TableLedger      = "wallet_ledger_entries"
 	TableIdempotency = "wallet_idempotency"
-	TablePixDeposits = "wallet_pix_deposits"
-	TableWithdrawals = "wallet_withdrawals"
-	TableUsers       = "wallet_users"
-	TableAudit       = "wallet_audit"
-	TableHolds       = "wallet_holds"
+	// TableHTTPIdempotency holds the Idempotency-Key claims and replayable HTTP answers of the user
+	// money routes (go-common idempotency; pk IDEM#sub, sk KEY#key; TTL on `ttl`). Distinct from
+	// TableIdempotency, whose permanent IDEM#key rows guard the ledger.
+	TableHTTPIdempotency = "wallet_http_idempotency"
+	TablePixDeposits     = "wallet_pix_deposits"
+	TableWithdrawals     = "wallet_withdrawals"
+	TableUsers           = "wallet_users"
+	TableAudit           = "wallet_audit"
+	TableHolds           = "wallet_holds"
 
 	TableSandboxPurchases = "wallet_sandbox_purchases" // §9 — decoupled from wallet ledger tables on purpose
 )
