@@ -76,6 +76,7 @@ itself (a SecureString never goes into a Lambda's environment).
 | `wallets`               | `TableWallets` (`model.go`) | authoritative balance (centavos for real, credits for sandbox; old `game` rows are retired, read‑only)   |
 | `wallet_ledger_entries` | `TableLedger`          | append‑only audit; GSI `gsi_idem` for replay                          |
 | `wallet_idempotency`    | `TableIdempotency`     | Permanent `IDEM#{key}` guard rows; financial replays never expire     |
+| `wallet_http_idempotency` | `TableHTTPIdempotency` | `Idempotency-Key` claims + replayable HTTP answers of deposits/withdrawals (go-common `idempotency`, 24 h TTL) |
 | `wallet_pix_deposits`   | `TablePixDeposits`     | durable deposit records (reference = the Billing invoice); GSI `gsi_status` for pending sweep            |
 | `wallet_withdrawals`    | `TableWithdrawals`     | `processing`/`completed`/`reversed`/`refund_failed`; GSI `gsi_status` |
 | `wallet_users`          | `TableUsers`           | terms acceptance, daily counters, and the old gambling state (read‑only; Poker owns the rules)                                  |

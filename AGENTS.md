@@ -56,7 +56,7 @@ it is.
    immutable audit trail — never updated, never deleted, never used to derive balance.
 3. **Every operation is idempotent.** All mutations require an idempotency key (`Idempotency-Key` header for
    user routes; `txid` or `wallet_id#round_id` for internal). Replay with the same key returns the prior result
-   and never duplicates a ledger entry. Enforced by a unique GSI on `idempotency_key`.
+   and never duplicates a ledger entry. Enforced by a unique GSI on `idempotency_key`; the user deposit/withdrawal routes also run go-common `idempotency` (`wallet_http_idempotency`: replays the first answer, refuses concurrent duplicates, fails closed).
 4. **One operation per wallet at a time.** Serialize via Valkey `SETNX wallet:{id}` with a short TTL (10s) +
    retry/backoff. Fail safe if the process dies (TTL releases the lock). Contention → `409 wallet-busy`.
 5. **Cross-wallet ops take locks in one fixed total order** to avoid deadlock.
