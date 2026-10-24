@@ -13,11 +13,13 @@ import (
 	"gopkg.aoctech.app/api-commons/cache"
 	"gopkg.aoctech.app/api-commons/dataexport"
 	"gopkg.aoctech.app/api-commons/deadline"
+	"gopkg.aoctech.app/api-commons/drain"
 	"gopkg.aoctech.app/api-commons/erasure"
 	"gopkg.aoctech.app/api-commons/oauth2client"
 	fiberobs "gopkg.aoctech.app/api-commons/observability/fiber"
 	"gopkg.aoctech.app/api-commons/problem"
 	"gopkg.aoctech.app/api-commons/resilient"
+	"gopkg.aoctech.app/api-commons/supervisor"
 	"gopkg.aoctech.app/api-commons/ws"
 	apiv1 "gopkg.aoctech.app/wallet/api/internal/api/v1"
 	"gopkg.aoctech.app/wallet/api/internal/awsclient"
@@ -40,6 +42,9 @@ import (
 	"go.uber.org/fx"
 )
 
+// drainTimeout bounds telling the WebSocket clients to reconnect at shutdown.
+const drainTimeout = 5 * time.Second
+
 // Module is the root Fx module for the wallet API.
 var Module = fx.Options(
 	fx.Provide(
@@ -51,6 +56,8 @@ var Module = fx.Options(
 		newSQSClient,
 		newErasureStore,
 		newLocker,
+		newSupervisor,
+		newDrainTracker,
 		newWsRegistry,
 		newKYCClient,
 		newBillingClient,
@@ -103,6 +110,18 @@ func newCacheBackend(lc fx.Lifecycle, cfg *config.Config) (cache.Backend, error)
 	slog.Info("cache: Redis backend active", "url", cfg.RedisURL)
 	return rb, nil
 }
+
+// newSupervisor owns the in-process background workers: their context is
+// cancelled when the app stops and the stop waits for them (bounded by fx's stop timeout).
+func newSupervisor(lc fx.Lifecycle) *supervisor.Supervisor {
+	sup := supervisor.New(context.Background(), supervisor.Config{})
+	lc.Append(fx.Hook{OnStop: sup.Shutdown})
+	return sup
+}
+
+// newDrainTracker owns the live WebSocket connections; startServer drains it before
+// the listener stops so clients reconnect to another instance.
+func newDrainTracker() *drain.Tracker { return &drain.Tracker{} }
 
 func newLocker(c cache.Backend) *lock.Locker {
 	return lock.NewLocker(c)
@@ -209,14 +228,15 @@ func newFiberApp(cfg *config.Config) *fiber.App {
 	return app
 }
 
-func registerRoutes(bc *billingclient.Client, app *fiber.App, c cache.Backend, rev RevocationCache, cfg *config.Config, clients *awsclient.Clients, svc *services.WalletService, userSvc *services.UserService, erasureSvc *services.ErasureService, wsRegistry ws.Registry) {
+func registerRoutes(bc *billingclient.Client, app *fiber.App, c cache.Backend, rev RevocationCache, cfg *config.Config, clients *awsclient.Clients, svc *services.WalletService, userSvc *services.UserService, erasureSvc *services.ErasureService, wsRegistry ws.Registry, tracker *drain.Tracker) {
 	svc.SetBroadcaster(wsRegistry)
 	var opts []apiv1.Option
+	opts = append(opts, apiv1.WithDrain(tracker))
 	opts = append(opts, apiv1.WithBillingEvents(&apiv1.BillingEvents{Secret: cfg.BillingEventSecret, Invoices: bc, Confirm: svc, Withdrawals: svc}))
 	apiv1.Register(app, c, rev, cfg, clients, svc, userSvc, erasureSvc, wsRegistry, opts...)
 }
 
-func startServer(lc fx.Lifecycle, app *fiber.App, cfg *config.Config) {
+func startServer(lc fx.Lifecycle, app *fiber.App, cfg *config.Config, tracker *drain.Tracker) {
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {
 			addr := fmt.Sprintf(":%d", cfg.Port)
@@ -235,6 +255,12 @@ func startServer(lc fx.Lifecycle, app *fiber.App, cfg *config.Config) {
 		},
 		OnStop: func(ctx context.Context) error {
 			slog.Info("shutting down server")
+			// Before the listener closes: every WebSocket is told to reconnect elsewhere.
+			drainCtx, cancel := context.WithTimeout(ctx, drainTimeout)
+			defer cancel()
+			if err := tracker.Drain(drainCtx); err != nil {
+				slog.Warn("ws drain incomplete", "err", err)
+			}
 			return app.ShutdownWithContext(ctx)
 		},
 	})
@@ -305,9 +331,10 @@ func newErasureService(repo *repositories.WalletRepository, users *repositories.
 }
 
 // startErasureConsumer runs the account-deletion SQS consumer for the process
-// lifetime. Every API instance runs one: the consumer takes one message per
+// lifetime under the supervisor (cancelled at shutdown, restarted with backoff if it
+// fails or panics). Every API instance runs one: the consumer takes one message per
 // receive and erasure.Store uses optimistic concurrency, so replicas are safe.
-func startErasureConsumer(lc fx.Lifecycle, cfg *config.Config, sqsClient *sqs.Client, store *erasure.Store, svc *services.ErasureService, exporter *services.DataExporter) {
+func startErasureConsumer(lc fx.Lifecycle, sup *supervisor.Supervisor, cfg *config.Config, sqsClient *sqs.Client, store *erasure.Store, svc *services.ErasureService, exporter *services.DataExporter) {
 	if store == nil {
 		slog.Warn("ERASURE_QUEUE_URL not set — account-deletion lock and purge are OFF (dev only)")
 		return
@@ -325,23 +352,10 @@ func startErasureConsumer(lc fx.Lifecycle, cfg *config.Config, sqsClient *sqs.Cl
 	handler := dataexport.NewStreamHandler(wallet.ErasureServiceID, exporter.Write, uploads, exportAcks)
 	consumer := erasure.NewConsumer(sqsClient, cfg.ErasureQueueURL, wallet.ErasureServiceID, store, svc.Purge, acks).
 		WithExporter(handler.Handle).WithVisibilityHeartbeat(cfg.ErasureQueueVisibility)
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {
-			go func() {
-				defer close(done)
-				_ = consumer.Run(ctx)
-			}()
-			return nil
-		},
-		OnStop: func(stopCtx context.Context) error {
-			cancel()
-			select {
-			case <-done:
-			case <-stopCtx.Done():
-			}
-			return nil
+			// Every instance runs the consumer (no Locker): see the doc above.
+			return sup.Run(context.Background(), "erasure-consumer", consumer.Run)
 		},
 	})
 }
