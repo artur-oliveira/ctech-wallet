@@ -34,7 +34,7 @@ Safety Invariants below are non-negotiable and override convenience.
 | `api/`  | Go REST API — Fiber v3, DynamoDB, Valkey; rail = Billing | `api/CLAUDE.md` |
 | `ui/`   | Next.js 16 static-export SPA — TypeScript, on Cloudflare Workers Static Assets | `ui/CLAUDE.md`  |
 | `cdk/`  | AWS CDK infrastructure — TypeScript                   | `cdk/CLAUDE.md` |
-| `rpc-contract/` | Go module: money constants shared by api and ui (`money.json`) | `rpc-contract/README.md` |
+| `rpc-contract/` | `money.json`: money constants shared by api and ui (no Go module) | `rpc-contract/README.md` |
 
 Layering, fx DI, RFC 7807, resilience and infra rules follow the family standard (the skill above); this file only holds
 what is specific to the wallet. **Always read the relevant subproject `CLAUDE.md` before making a change.**
@@ -105,7 +105,7 @@ not repeated here. The wallet's own error codes: `insufficient-balance`, `wallet
 ### Money math
 
 All balances and amounts are **integer centavos** — never floats. Sandbox credits are whole numbers; the rate
-(`SANDBOX_CREDITS_PER_CENTAVO`) and `MAX_AMOUNT_CENTS` live in `rpc-contract/money.json` and are pinned by a Go test and
+(`SANDBOX_CREDITS_PER_CENTAVO`) and `MAX_AMOUNT_CENTS` live in `rpc-contract/money.json` and are pinned by a Go test (`TestMoneyConstantsMatchJSON`) and
 a UI test.
 
 **There is no withdrawal fee**, per `docs/specs/2026-08-16-withdrawal-fee-removal.md`. A withdrawal debits

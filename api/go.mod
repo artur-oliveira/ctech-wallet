@@ -22,10 +22,8 @@ require (
 	github.com/valyala/fasthttp v1.75.0
 	go.uber.org/fx v1.24.0
 	gopkg.aoctech.app/api-commons v1.38.0
-	gopkg.aoctech.app/wallet/rpc-contract v0.0.0
 )
 
-replace gopkg.aoctech.app/wallet/rpc-contract => ../rpc-contract
 
 require (
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.20.1 // indirect
