@@ -73,11 +73,13 @@ export interface LedgerEntry {
   created_at: string
 }
 
-export interface LedgerPage {
-  items: LedgerEntry[]
+/** List envelope of the API (go-common `dynamo.Page`): `next_cursor` null is the end of the list. */
+export interface Page<T> {
+  data: T[]
   next_cursor: string | null
-  has_next: boolean
 }
+
+export type LedgerPage = Page<LedgerEntry>
 
 export type PurchaseStatus = 'pending' | 'confirmed' | 'refund_pending' | 'refunded' | 'expired'
 
@@ -106,11 +108,7 @@ export interface ProductPurchase {
   updated_at: string
 }
 
-export interface PurchasePage<T> {
-  items: T[]
-  next_cursor: string | null
-  has_next: boolean
-}
+export type PurchasePage<T> = Page<T>
 
 /** Name-related profile claims decoded from the OIDC id_token. */
 export interface Profile {
