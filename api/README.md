@@ -23,7 +23,7 @@ api/
 │   ├── validation/           # go-playground/validator singleton
 │   ├── awsclient/            # aws-sdk-go-v2 (DynamoDB, SQS, SSM)
 │   ├── lock/                 # per-wallet lock over api-commons/lock (Valkey SETNX, fail-safe TTL)
-│   ├── middleware/           # auth (JWKS), scope, KYC, step-up, revocation
+│   ├── middleware/           # auth (JWKS), user scope, KYC (guards: go-common authguard)
 │   ├── oauthresource/        # RFC 9728 metadata + scope-manifest.json
 │   ├── secrets/              # SSM reader
 │   ├── rail/                 # Rail iface, BillingRail (the only rail), types, test fake

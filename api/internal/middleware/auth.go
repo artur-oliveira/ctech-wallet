@@ -5,6 +5,7 @@ package middleware
 import (
 	"strings"
 
+	"gopkg.aoctech.app/api-commons/authguard"
 	"gopkg.aoctech.app/api-commons/cache"
 	"gopkg.aoctech.app/api-commons/jwtverify"
 	"gopkg.aoctech.app/api-commons/problem"
@@ -38,7 +39,7 @@ func (v *Verifier) Middleware() fiber.Handler {
 			return problem.Unauthorized("invalid credentials").Send(c)
 		}
 
-		c.Locals(ClaimsKey, claims)
+		authguard.SetClaims(c, claims)
 		c.Locals(UserIDKey, claims.Sub)
 		return c.Next()
 	}
