@@ -64,6 +64,8 @@ goroutines in handlers, RS256 only, zero-warning lint, tests with the change, no
 specifics: route errors go through `sendProblem(c, err)`; the wallet problem types are in `internal/walletproblem`
 (`InsufficientBalance`, `WalletBusy`, `WithdrawCPFMismatch`, `KYCNotVerified`, `IdempotencyConflict`, `StepUpRequired`,
 `DailyDepositLimit`, `DailyWithdrawLimit`, `AccountErasurePending`, `RouteRetired`, ...). The deployed binary is named `app`.
+In-process background loops (the erasure SQS consumer) run on go-common `supervisor` (`app.newSupervisor`): cancellable context, restart with backoff, stopped at shutdown. No `go func()` with `context.Background()`.
+Shutdown drains the `/ws` connections through go-common `drain` (`app.newDrainTracker`, `apiv1.WithDrain`): close 1001 so clients reconnect to another instance, then `ShutdownWithContext`.
 Never commit Billing/Inter credentials, webhook secrets, JWT keys, AWS credentials or real CPFs.
 
 ### Outbound calls (Billing, KYC)
