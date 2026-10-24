@@ -98,13 +98,13 @@ test('user lookups (R21): deposits, withdrawals and holds carry gsi_user on user
 });
 
 test('http idempotency: pk+sk with TTL, the API role may delete only there to release a claim', () => {
-  const app = new cdk.App();
-  const db = new DynamoDBStack(app, 'D', {env, environment: 'prod', tablePrefix: 'prod'});
-  Template.fromStack(db).hasResourceProperties('AWS::DynamoDB::GlobalTable', {
+  Template.fromStack(new DynamoDBStack(new cdk.App(), 'D0', {env, environment: 'prod', tablePrefix: 'prod'})).hasResourceProperties('AWS::DynamoDB::GlobalTable', {
     TableName: 'prod_wallet_http_idempotency',
     KeySchema: [{AttributeName: 'pk', KeyType: 'HASH'}, {AttributeName: 'sk', KeyType: 'RANGE'}],
     TimeToLiveSpecification: {AttributeName: 'ttl', Enabled: true},
   });
+  const app = new cdk.App();
+  const db = new DynamoDBStack(app, 'D', {env, environment: 'prod', tablePrefix: 'prod'});
   const iamStack = new IAMStack(app, 'I', {
     env, environment: 'prod',
     deploymentsBucketArn: 'arn:aws:s3:::d', logsBucketArn: 'arn:aws:s3:::l',
