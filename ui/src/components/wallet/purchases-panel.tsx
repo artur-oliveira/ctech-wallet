@@ -38,11 +38,11 @@ function PurchaseList({kind}: { kind: PurchaseKind }) {
     queryKey: ['purchases', kind],
     queryFn: ({pageParam}) => FETCHERS[kind](pageParam),
     initialPageParam: undefined as string | undefined,
-    getNextPageParam: (page) => (page.has_next && page.next_cursor ? page.next_cursor : undefined),
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
     // A focus refetch would re-request EVERY loaded page.
     refetchOnWindowFocus: false,
   })
-  const items = query.data?.pages.flatMap((page) => page.items) ?? []
+  const items = query.data?.pages.flatMap((page) => page.data) ?? []
   // A hook: must run before any early return below.
   const sentinelRef = useInfiniteSentinel({
     hasNextPage: !!query.hasNextPage,

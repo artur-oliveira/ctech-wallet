@@ -2,16 +2,13 @@ package v1
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
-	"fmt"
 
+	"gopkg.aoctech.app/api-commons/dynamo"
 	"gopkg.aoctech.app/api-commons/problem"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
 
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/gofiber/fiber/v3"
 )
@@ -19,23 +16,7 @@ import (
 // HeaderIdempotencyKey is the client-supplied idempotency header on user mutations.
 const HeaderIdempotencyKey = "Idempotency-Key"
 
-const (
-	queryParamCursor    = "cursor"
-	queryParamLimit     = "limit"
-	defaultHistoryLimit = 50
-	maxHistoryLimit     = 200
-)
-
-// PaginatedResponse is the standard envelope for list endpoints.
-type PaginatedResponse struct {
-	Items      any     `json:"items"`
-	NextCursor *string `json:"next_cursor"`
-	HasNext    bool    `json:"has_next"`
-}
-
-type cursorPayload struct {
-	Key map[string]any `json:"k"`
-}
+const queryParamCursor, queryParamLimit = "cursor", "limit"
 
 // sendProblem writes an RFC 7807 Problem response. Detects *problem.Problem for
 // the correct status; all other errors become 500.
@@ -61,68 +42,16 @@ func requireIdempotencyKey(c fiber.Ctx) (string, *problem.Problem) {
 	return k, nil
 }
 
-func intQuery(c fiber.Ctx, key string, def int) int {
-	s := c.Query(key)
-	if s == "" {
-		return def
-	}
-	var v int
-	if _, err := fmt.Sscanf(s, "%d", &v); err != nil {
-		return def
-	}
-	return v
+// pageStart reads the list query: the page size (go-common policy: default 25, max 100) and the
+// ExclusiveStartKey from the opaque cursor, which must have been issued for owner. A malformed or
+// foreign cursor is a 400 (never a silent restart from page 1).
+func pageStart(c fiber.Ctx, owner string) (int, map[string]types.AttributeValue, error) {
+	startKey, err := dynamo.DecodeCursor(c.Query(queryParamCursor), owner)
+	return dynamo.ParseLimit(c.Query(queryParamLimit)), startKey, err
 }
 
-func historyLimit(c fiber.Ctx) int {
-	limit := intQuery(c, queryParamLimit, defaultHistoryLimit)
-	if limit < 1 {
-		return defaultHistoryLimit
-	}
-	if limit > maxHistoryLimit {
-		return maxHistoryLimit
-	}
-	return limit
-}
-
-// buildNextCursor encodes a DynamoDB LastEvaluatedKey as an opaque next-page cursor.
-func buildNextCursor(key map[string]types.AttributeValue) *string {
-	if len(key) == 0 {
-		return nil
-	}
-	var plainKey map[string]any
-	if err := attributevalue.UnmarshalMap(key, &plainKey); err != nil {
-		return nil
-	}
-	raw, err := json.Marshal(cursorPayload{Key: plainKey})
-	if err != nil {
-		return nil
-	}
-	s := base64.StdEncoding.EncodeToString(raw)
-	return &s
-}
-
-// decodeCursor extracts the DynamoDB ExclusiveStartKey from an opaque cursor.
-func decodeCursor(cursor string) map[string]types.AttributeValue {
-	if cursor == "" {
-		return nil
-	}
-	raw, err := base64.StdEncoding.DecodeString(cursor)
-	if err != nil {
-		return nil
-	}
-	var payload cursorPayload
-	if err := json.Unmarshal(raw, &payload); err != nil || len(payload.Key) == 0 {
-		return nil
-	}
-	avKey, err := attributevalue.MarshalMap(payload.Key)
-	if err != nil {
-		return nil
-	}
-	return avKey
-}
-
-// sendStatement writes a ledger page as a paginated JSON response.
-func sendStatement(c fiber.Ctx, result *repositories.QueryResult) error {
+// sendStatement writes a ledger page as the shared {data, next_cursor} envelope; owner is the wallet.
+func sendStatement(c fiber.Ctx, result *repositories.QueryResult, owner string) error {
 	entries, err := repositories.DecodeItems[wallet.LedgerEntry](result.Items)
 	if err != nil {
 		return sendProblem(c, err)
@@ -131,9 +60,5 @@ func sendStatement(c fiber.Ctx, result *repositories.QueryResult) error {
 	for _, e := range entries {
 		items = append(items, newLedgerEntryView(e))
 	}
-	return c.JSON(PaginatedResponse{
-		Items:      items,
-		NextCursor: buildNextCursor(result.LastEvaluatedKey),
-		HasNext:    len(result.LastEvaluatedKey) > 0,
-	})
+	return c.JSON(dynamo.NewPage(items, result.LastEvaluatedKey, owner))
 }

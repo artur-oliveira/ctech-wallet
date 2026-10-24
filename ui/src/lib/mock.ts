@@ -170,14 +170,14 @@ export class MockApiClient {
 
   async getLedger(type: WalletType): Promise<LedgerPage> {
     const items = state.ledger.filter((e) => e.wallet_id === `w_${type}`)
-    return {items, next_cursor: null, has_next: false}
+    return {data: items, next_cursor: null}
   }
 
   async getSandboxPurchases(): Promise<PurchasePage<SandboxPurchase>> {
-    return {items: state.sandboxPurchases, next_cursor: null, has_next: false}
+    return {data: state.sandboxPurchases, next_cursor: null}
   }
 
   async getProductPurchases(): Promise<PurchasePage<ProductPurchase>> {
-    return {items: state.productPurchases, next_cursor: null, has_next: false}
+    return {data: state.productPurchases, next_cursor: null}
   }
 }

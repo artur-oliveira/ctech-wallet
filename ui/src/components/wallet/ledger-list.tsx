@@ -36,14 +36,12 @@ export function LedgerList({type}: { type: WalletType }) {
     queryKey: ['ledger', type],
     queryFn: ({pageParam}) => apiClient.getLedger(type, pageParam),
     initialPageParam: undefined as string | undefined,
-    getNextPageParam: (lastPage) => lastPage.has_next && lastPage.next_cursor
-      ? lastPage.next_cursor
-      : undefined,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     // A focus refetch would re-request EVERY loaded page.
     refetchOnWindowFocus: false,
   })
 
-  const items = data?.pages.flatMap((page) => page.items) ?? []
+  const items = data?.pages.flatMap((page) => page.data) ?? []
   // A hook: must run before any early return below.
   const sentinelRef = useInfiniteSentinel({
     hasNextPage: !!hasNextPage,

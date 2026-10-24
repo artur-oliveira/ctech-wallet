@@ -2,7 +2,9 @@ import axios, {AxiosError, type AxiosInstance, type AxiosRequestConfig, type Axi
 import type {
   Balances,
   DepositResult,
+  LedgerEntry,
   LedgerPage,
+  Page,
   MeResponse,
   ProductPurchase,
   PurchasePage,
@@ -247,20 +249,30 @@ class ApiClient {
   async getLedger(type: WalletType, cursor?: string, limit = 50): Promise<LedgerPage> {
     const params = new URLSearchParams({limit: String(limit)})
     if (cursor) params.set('cursor', cursor)
-    return this.call({method: 'get', url: `/v1.0/wallet/${type}/ledger?${params}`})
+    return asPage(await this.call<RawPage<LedgerEntry>>({method: 'get', url: `/v1.0/wallet/${type}/ledger?${params}`}))
   }
 
   async getSandboxPurchases(cursor?: string, limit = 50): Promise<PurchasePage<SandboxPurchase>> {
     const params = new URLSearchParams({limit: String(limit)})
     if (cursor) params.set('cursor', cursor)
-    return this.call({method: 'get', url: `${SANDBOX_PURCHASES_PATH}?${params}`})
+    return asPage(await this.call<RawPage<SandboxPurchase>>({method: 'get', url: `${SANDBOX_PURCHASES_PATH}?${params}`}))
   }
 
   async getProductPurchases(cursor?: string, limit = 50): Promise<PurchasePage<ProductPurchase>> {
     const params = new URLSearchParams({limit: String(limit)})
     if (cursor) params.set('cursor', cursor)
-    return this.call({method: 'get', url: `${PRODUCT_PURCHASES_PATH}?${params}`})
+    return asPage(await this.call<RawPage<ProductPurchase>>({method: 'get', url: `${PRODUCT_PURCHASES_PATH}?${params}`}))
   }
+}
+
+/**
+ * Pages are `{data, next_cursor}`. The previous API answered `{items, next_cursor, has_next}`; accept
+ * both while the two deploy separately, so neither order of rollout breaks a list.
+ */
+type RawPage<T> = { data?: T[]; items?: T[]; next_cursor?: string | null }
+
+function asPage<T>(raw: RawPage<T>): Page<T> {
+  return {data: raw.data ?? raw.items ?? [], next_cursor: raw.next_cursor ?? null}
 }
 
 export const apiClient = USE_MOCK
