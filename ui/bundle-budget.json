@@ -3,14 +3,14 @@
   "_builder": "turbopack",
   "tolerance": 0.08,
   "routes": {
-    "/": 861266,
-    "/_not-found": 837285,
-    "/404": 837285,
-    "/callback": 844844,
-    "/dashboard": 904305,
-    "/en": 861970,
-    "/login": 844159,
-    "/pt-BR": 861970,
-    "/unavailable": 837874
+    "/": 853241,
+    "/_not-found": 832017,
+    "/404": 832017,
+    "/callback": 836828,
+    "/dashboard": 898917,
+    "/en": 853945,
+    "/login": 836134,
+    "/pt-BR": 853945,
+    "/unavailable": 832606
   }
 }

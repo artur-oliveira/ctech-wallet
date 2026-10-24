@@ -1,6 +1,6 @@
 'use client'
 
-import {Button} from '@/components/ui/button'
+import {Button} from '@aoctech/ui'
 import {cn} from '@/lib/utils'
 import {useTranslation} from 'react-i18next'
 

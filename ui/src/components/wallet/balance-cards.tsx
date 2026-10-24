@@ -2,7 +2,7 @@
 
 import {ArrowUpFromLine, Gamepad2, Plus} from 'lucide-react'
 import {useTranslation} from 'react-i18next'
-import {Button} from '@/components/ui/button'
+import {Button} from '@aoctech/ui'
 import {formatBRL, formatCreditsAmount} from '@/lib/utils/money'
 import type {Balances} from '@/lib/types/api'
 

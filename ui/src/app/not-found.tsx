@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import {ErrorState} from '@aoctech/ui'
 import {useTranslation} from 'react-i18next'
-import {Button} from '@/components/ui/button'
+import {Button} from '@aoctech/ui'
 import {normalizeLocale} from '@/lib/locale'
 import {useAuth} from '@/lib/hooks/useAuth'
 
@@ -18,7 +18,7 @@ export default function NotFound() {
       title={t('notFound.header')}
       description={`${t('notFound.description')} ${t('systemState.reassurance')}`}
       action={
-        <Button variant="brand" size="lg" render={<Link href={authenticated ? '/dashboard' : '/login'}/>}>
+        <Button variant="brand"  render={<Link href={authenticated ? '/dashboard' : '/login'}/>}>
           {authenticated ? t('notFound.backToAccount') : t('notFound.backToLogin')}
         </Button>
       }

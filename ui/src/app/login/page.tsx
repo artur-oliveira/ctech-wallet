@@ -5,7 +5,7 @@ import {useRouter} from 'next/navigation'
 import {Wallet as WalletIcon} from 'lucide-react'
 import {useTranslation} from 'react-i18next'
 import {useAuth} from '@/lib/hooks/useAuth'
-import {Button} from '@/components/ui/button'
+import {Button} from '@aoctech/ui'
 import {LanguageSwitcher} from '@/components/language-switcher'
 
 export default function LoginPage() {
@@ -30,7 +30,7 @@ export default function LoginPage() {
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
           {t('login.subtitle')}
         </p>
-        <Button variant="brand" size="lg" className="mt-6 h-auto min-h-9 w-full whitespace-normal py-2"
+        <Button variant="brand" className="mt-6 h-auto min-h-9 w-full whitespace-normal py-1.5"
                 onClick={() => login()}
                 disabled={loading || authenticated}>
           {t('login.button')}

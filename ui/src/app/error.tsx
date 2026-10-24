@@ -4,7 +4,7 @@ import {useEffect} from 'react'
 import Link from 'next/link'
 import {ErrorState} from '@aoctech/ui'
 import {useTranslation} from 'react-i18next'
-import {Button} from '@/components/ui/button'
+import {Button} from '@aoctech/ui'
 import {ACCOUNT_SUPPORT_URL} from '@/lib/legal'
 import {normalizeLocale} from '@/lib/locale'
 import {useAuth} from '@/lib/hooks/useAuth'
@@ -37,11 +37,11 @@ export default function ErrorPage({error, reset}: { error: Error & { digest?: st
       ].join(' ')}
       action={
         <>
-          <Button variant="brand" size="lg" onClick={reset}>{t('systemState.retry')}</Button>
-          <Button variant="outline" size="lg" render={<Link href={authenticated ? '/dashboard' : '/login'}/>}>
+          <Button variant="brand"  onClick={reset}>{t('systemState.retry')}</Button>
+          <Button variant="outline"  render={<Link href={authenticated ? '/dashboard' : '/login'}/>}>
             {authenticated ? t('systemState.backToDashboard') : t('systemState.backToLogin')}
           </Button>
-          <Button variant="ghost" size="lg" render={<a href={ACCOUNT_SUPPORT_URL}/>}>{t('systemState.support')}</Button>
+          <Button variant="ghost"  render={<a href={ACCOUNT_SUPPORT_URL}/>}>{t('systemState.support')}</Button>
         </>
       }
     />

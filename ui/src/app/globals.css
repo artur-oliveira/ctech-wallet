@@ -2,10 +2,13 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-/* Tailwind does not scan node_modules: without this, @aoctech/ui's OfflineBanner,
-   UnavailableScreen and ErrorState render unstyled. Deliberately NOT importing
-   @aoctech/ui/styles.css or touch.css: they would repaint the app / change the
-   hit area of the wallet's own data-slot="button" controls. */
+/* Compact density: a button is 32px for a mouse, drawn 36px with a 44px hit
+   area under touch. Only touch.css, not styles.css: styles.css brings
+   themes.css, which would repaint the app. Same as billing. */
+@import "@aoctech/ui/touch.css";
+
+/* Tailwind does not scan node_modules: without this, @aoctech/ui's components
+   render unstyled. */
 @source "../../node_modules/@aoctech/ui/dist";
 
 :root {
@@ -52,7 +55,7 @@
     --destructive: oklch(0.577 0.245 27.325);
     --border: oklch(0.922 0 0);
     --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
+    --ring: var(--brand-600); /* wallet theme in @aoctech/ui: focus = brand-600 */
     --radius: 0.625rem;
 }
 
@@ -87,9 +90,12 @@
 
     /* Minimal map of the semantic tokens @aoctech/ui components read that the
        wallet does not define (brand-*, background, foreground, border, ring and
-       muted-foreground already exist above). warning = the package's wallet theme. */
+       muted-foreground already exist above). status colours (success, warning, danger) = the package's wallet theme. */
     --color-surface: var(--muted);
     --color-warning: oklch(0.46 0.12 70);
+    --color-success: oklch(0.5 0.13 150);
+    --color-danger: oklch(0.55 0.19 22);
+    --color-danger-strong: oklch(0.47 0.175 22);
 
     --color-ring: var(--ring);
     --color-input: var(--input);

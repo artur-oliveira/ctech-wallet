@@ -3,7 +3,7 @@
 import {useState} from 'react'
 import {useInfiniteQuery} from '@tanstack/react-query'
 import {useTranslation} from 'react-i18next'
-import {Button} from '@/components/ui/button'
+import {Badge, Button, type BadgeTone, EmptyState, Segmented, Skeleton} from '@aoctech/ui'
 import {QueryErrorState} from '@/components/query-error-state'
 import {apiClient} from '@/lib/api/client'
 import {useInfiniteSentinel} from '@/lib/hooks/useInfiniteSentinel'
@@ -15,12 +15,12 @@ type PurchaseRecord = SandboxPurchase | ProductPurchase
 
 const KINDS: PurchaseKind[] = ['sandbox', 'product']
 
-const STATUS_STYLE: Record<PurchaseStatus, string> = {
-  pending: 'bg-gray-100 text-gray-700',
-  confirmed: 'bg-brand-50 text-brand-700',
-  refund_pending: 'bg-gray-100 text-gray-700',
-  refunded: 'bg-gray-100 text-gray-700',
-  expired: 'bg-gray-100 text-gray-700',
+const STATUS_TONE: Record<PurchaseStatus, BadgeTone> = {
+  pending: 'attention',
+  confirmed: 'positive',
+  refund_pending: 'attention',
+  refunded: 'neutral',
+  expired: 'neutral',
 }
 
 const FETCHERS: Record<PurchaseKind, (cursor?: string) => Promise<PurchasePage<PurchaseRecord>>> = {
@@ -58,7 +58,7 @@ function PurchaseList({kind}: { kind: PurchaseKind }) {
   if (query.isLoading) {
     return (
       <div role="status" className="space-y-3 px-5 py-5" aria-label={t('purchases.loading')}>
-        <div className="h-14 animate-pulse rounded-lg bg-muted motion-reduce:animate-none"/>
+        <Skeleton className="h-14 rounded-lg"/>
       </div>
     )
   }
@@ -73,7 +73,7 @@ function PurchaseList({kind}: { kind: PurchaseKind }) {
     )
   }
   if (items.length === 0) {
-    return <p className="px-5 py-8 text-center text-sm text-muted-foreground">{t(`purchases.empty.${kind}`)}</p>
+    return <EmptyState title={t(`purchases.empty.${kind}`)} className="rounded-none border-0 py-8"/>
   }
 
   return (
@@ -86,9 +86,9 @@ function PurchaseList({kind}: { kind: PurchaseKind }) {
                 <p className="text-sm font-medium text-foreground">
                   {t(`purchases.sku.${purchase.sku}`, {defaultValue: readableSKU(purchase.sku)})}
                 </p>
-                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[purchase.status]}`}>
+                <Badge tone={STATUS_TONE[purchase.status]}>
                   {t(`purchases.status.${purchase.status}`)}
-                </span>
+                </Badge>
               </div>
               {purchase.description && (
                 <p className="mt-1 line-clamp-2 text-sm text-foreground">{purchase.description}</p>
@@ -134,19 +134,13 @@ export function PurchasesPanel() {
   const [kind, setKind] = useState<PurchaseKind>('sandbox')
   return (
     <div>
-      <div className="flex gap-2 border-b border-border px-5 py-3" role="group" aria-label={t('purchases.filter')}>
-        {KINDS.map((k) => (
-          <Button
-            key={k}
-            type="button"
-            size="sm"
-            variant={kind === k ? 'brand' : 'outline'}
-            aria-pressed={kind === k}
-            onClick={() => setKind(k)}
-          >
-            {t(`purchases.kind.${k}`)}
-          </Button>
-        ))}
+      <div className="border-b border-border px-5 py-3">
+        <Segmented
+          label={t('purchases.filter')}
+          value={kind}
+          onValueChange={setKind}
+          options={KINDS.map((k) => ({value: k, label: t(`purchases.kind.${k}`)}))}
+        />
       </div>
       <PurchaseList key={kind} kind={kind}/>
     </div>
