@@ -1,81 +1,65 @@
 package v1
 
 import (
-	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"gopkg.aoctech.app/api-commons/cache"
+	"gopkg.aoctech.app/wallet/api/internal/awsclient"
+	"gopkg.aoctech.app/wallet/api/internal/config"
 
 	"github.com/gofiber/fiber/v3"
 )
 
-const (
-	testTime      = "2026-07-12T00:00:00Z"
-	testCacheSize = 8
-)
+// testCacheSize is the in-memory cache size the route tests use.
+const testCacheSize = 8
 
-func TestAggregate(t *testing.T) {
-	entry := func(status string) healthEntry {
-		return healthEntry{Status: status}
+func healthTestApp() *fiber.App {
+	app := fiber.New()
+	// No DynamoDB client: the primary check must fail closed (503) while liveness stays 200.
+	RegisterHealth(app.Group("/v1.0"), &awsclient.Clients{}, cache.NewMemoryBackend(testCacheSize), nil, &config.Config{AppVersion: "test-rel"})
+	return app
+}
+
+func getHealth(t *testing.T, path string) (int, string, string) {
+	t.Helper()
+	resp, err := healthTestApp().Test(httptest.NewRequest(http.MethodGet, path, nil))
+	if err != nil {
+		t.Fatal(err)
 	}
+	defer func() { _ = resp.Body.Close() }()
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, resp.Header.Get("Content-Type"), string(b)
+}
 
-	tests := []struct {
-		name       string
-		checks     map[string]healthEntry
-		wantStatus string
-		wantCode   int
-	}{
-		{
-			name:       "all pass",
-			checks:     map[string]healthEntry{componentDynamoDB: entry(statusPass), componentCache: entry(statusPass)},
-			wantStatus: statusPass,
-			wantCode:   fiber.StatusOK,
-		},
-		{
-			name:       "degraded dependency warns without leaving the load balancer",
-			checks:     map[string]healthEntry{componentDynamoDB: entry(statusPass), componentCache: entry(statusWarn)},
-			wantStatus: statusWarn,
-			wantCode:   statusMultiStatus,
-		},
-		{
-			name:       "dynamodb down fails the probe",
-			checks:     map[string]healthEntry{componentDynamoDB: entry(statusFail), componentCache: entry(statusPass)},
-			wantStatus: statusFail,
-			wantCode:   fiber.StatusServiceUnavailable,
-		},
-		{
-			name:       "fail outranks warn",
-			checks:     map[string]healthEntry{componentDynamoDB: entry(statusFail), componentCache: entry(statusWarn)},
-			wantStatus: statusFail,
-			wantCode:   fiber.StatusServiceUnavailable,
-		},
+// Liveness is the probe nginx/deploy and the UI hit: dependency-free, 200, and
+// it carries releaseId and serviceId.
+func TestLivenessIsDependencyFree(t *testing.T) {
+	code, ct, body := getHealth(t, "/v1.0/health")
+	if code != http.StatusOK {
+		t.Fatalf("liveness = %d, want 200", code)
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gotStatus, gotCode := aggregate(tt.checks)
-			if gotStatus != tt.wantStatus || gotCode != tt.wantCode {
-				t.Fatalf("aggregate() = (%s, %d), want (%s, %d)", gotStatus, gotCode, tt.wantStatus, tt.wantCode)
-			}
-		})
+	if !strings.HasPrefix(ct, "application/health+json") {
+		t.Fatalf("content-type = %q", ct)
+	}
+	for _, want := range []string{`"status":"pass"`, `"releaseId":"test-rel"`, `"serviceId":"CTech Wallet"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("liveness body %s missing %s", body, want)
+		}
 	}
 }
 
-func TestCheckCache(t *testing.T) {
-	got := checkCache(context.Background(), cache.NewMemoryBackend(testCacheSize), testTime)
-	if got.Status != statusPass {
-		t.Fatalf("healthy cache: status = %s, want %s", got.Status, statusPass)
+// DynamoDB is the only primary check: unreachable means 503; the missing JWKS
+// verifier is only a warning.
+func TestReportFailsClosedWithoutDynamo(t *testing.T) {
+	code, _, body := getHealth(t, "/v1.0/health-check")
+	if code != http.StatusServiceUnavailable {
+		t.Fatalf("report = %d, want 503 (%s)", code, body)
 	}
-
-	got = checkCache(context.Background(), nil, testTime)
-	if got.Status != statusWarn || got.ObservedValue != healthUnavailableV {
-		t.Fatalf("missing cache: got (%s, %v), want (%s, %v)", got.Status, got.ObservedValue, statusWarn, float64(healthUnavailableV))
-	}
-}
-
-func TestCheckJWKSMissingVerifier(t *testing.T) {
-	got := checkJWKS(context.Background(), nil, testTime)
-	if got.Status != statusWarn {
-		t.Fatalf("no verifier: status = %s, want %s", got.Status, statusWarn)
+	if !strings.Contains(body, `"jwks"`) || !strings.Contains(body, `"dynamodb"`) {
+		t.Fatalf("report missing components: %s", body)
 	}
 }
