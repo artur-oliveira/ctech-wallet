@@ -111,7 +111,7 @@ enforcement map.
 - Sibling services: [`../ui/README.md`](../ui/README.md),
   [`../cdk/README.md`](../cdk/README.md),
   [`../rpc-contract/README.md`](../rpc-contract/README.md)
-- Shared money constants: [`../rpc-contract/money.go`](../rpc-contract/money.go)
+- Shared money constants: [`../rpc-contract/money.json`](../rpc-contract/money.json)
 - Design: `docs/specs/2026-10-14-wallet-ledger-billing-rail.md` in `ctech-billing`. The older specs in `../docs/specs/`
   (wallet design, three-wallet topology, responsible gambling) describe the system before it and are history.
 

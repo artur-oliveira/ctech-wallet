@@ -173,7 +173,7 @@ different scope on a different service. Do not conflate it with
 ## Notes and known gaps
 
 - Money constants shared with the UI (`SANDBOX_CREDITS_PER_CENTAVO` = 100, `MAX_AMOUNT_CENTS`) live in
-  `../rpc-contract/money.json`; Go (`rpc-contract/money_test.go`) and UI (`money-contract.test.mjs`) tests pin them. No fee
+  `../rpc-contract/money.json`; Go (`TestMoneyConstantsMatchJSON` in `internal/domain/wallet/model_test.go`) and UI (`money-contract.test.mjs`) tests pin them. No fee
   constants exist (`docs/specs/2026-08-16-withdrawal-fee-removal.md`).
 - Production fails closed on an empty `VALKEY_URL`, `SERVICE_AUDIENCE`, `CTECH_ISSUER_URL`, CORS, `ERASURE_QUEUE_URL` or
   `VALKEY_REVOCATION_URL` (`internal/config/config.go`).
