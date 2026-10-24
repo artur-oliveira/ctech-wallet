@@ -13,6 +13,7 @@ import (
 	"gopkg.aoctech.app/api-commons/cache"
 	"gopkg.aoctech.app/api-commons/dataexport"
 	"gopkg.aoctech.app/api-commons/deadline"
+	"gopkg.aoctech.app/api-commons/drain"
 	"gopkg.aoctech.app/api-commons/erasure"
 	"gopkg.aoctech.app/api-commons/oauth2client"
 	fiberobs "gopkg.aoctech.app/api-commons/observability/fiber"
@@ -41,6 +42,9 @@ import (
 	"go.uber.org/fx"
 )
 
+// drainTimeout bounds telling the WebSocket clients to reconnect at shutdown.
+const drainTimeout = 5 * time.Second
+
 // Module is the root Fx module for the wallet API.
 var Module = fx.Options(
 	fx.Provide(
@@ -53,6 +57,7 @@ var Module = fx.Options(
 		newErasureStore,
 		newLocker,
 		newSupervisor,
+		newDrainTracker,
 		newWsRegistry,
 		newKYCClient,
 		newBillingClient,
@@ -113,6 +118,10 @@ func newSupervisor(lc fx.Lifecycle) *supervisor.Supervisor {
 	lc.Append(fx.Hook{OnStop: sup.Shutdown})
 	return sup
 }
+
+// newDrainTracker owns the live WebSocket connections; startServer drains it before
+// the listener stops so clients reconnect to another instance.
+func newDrainTracker() *drain.Tracker { return &drain.Tracker{} }
 
 func newLocker(c cache.Backend) *lock.Locker {
 	return lock.NewLocker(c)
@@ -219,14 +228,15 @@ func newFiberApp(cfg *config.Config) *fiber.App {
 	return app
 }
 
-func registerRoutes(bc *billingclient.Client, app *fiber.App, c cache.Backend, rev RevocationCache, cfg *config.Config, clients *awsclient.Clients, svc *services.WalletService, userSvc *services.UserService, erasureSvc *services.ErasureService, wsRegistry ws.Registry) {
+func registerRoutes(bc *billingclient.Client, app *fiber.App, c cache.Backend, rev RevocationCache, cfg *config.Config, clients *awsclient.Clients, svc *services.WalletService, userSvc *services.UserService, erasureSvc *services.ErasureService, wsRegistry ws.Registry, tracker *drain.Tracker) {
 	svc.SetBroadcaster(wsRegistry)
 	var opts []apiv1.Option
+	opts = append(opts, apiv1.WithDrain(tracker))
 	opts = append(opts, apiv1.WithBillingEvents(&apiv1.BillingEvents{Secret: cfg.BillingEventSecret, Invoices: bc, Confirm: svc, Withdrawals: svc}))
 	apiv1.Register(app, c, rev, cfg, clients, svc, userSvc, erasureSvc, wsRegistry, opts...)
 }
 
-func startServer(lc fx.Lifecycle, app *fiber.App, cfg *config.Config) {
+func startServer(lc fx.Lifecycle, app *fiber.App, cfg *config.Config, tracker *drain.Tracker) {
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {
 			addr := fmt.Sprintf(":%d", cfg.Port)
@@ -245,6 +255,12 @@ func startServer(lc fx.Lifecycle, app *fiber.App, cfg *config.Config) {
 		},
 		OnStop: func(ctx context.Context) error {
 			slog.Info("shutting down server")
+			// Before the listener closes: every WebSocket is told to reconnect elsewhere.
+			drainCtx, cancel := context.WithTimeout(ctx, drainTimeout)
+			defer cancel()
+			if err := tracker.Drain(drainCtx); err != nil {
+				slog.Warn("ws drain incomplete", "err", err)
+			}
 			return app.ShutdownWithContext(ctx)
 		},
 	})

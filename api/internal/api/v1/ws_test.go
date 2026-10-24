@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.aoctech.app/api-commons/drain"
+
 	fws "github.com/fasthttp/websocket"
 )
 
@@ -59,5 +61,40 @@ func TestStartHeartbeat_MissingPongClosesReadLoop(t *testing.T) {
 		// expected: the server's read loop unblocked once the deadline tripped
 	case <-time.After(2 * time.Second):
 		t.Fatal("server did not close a connection that never sent a pong within pongWait")
+	}
+}
+
+// Draining a tracker tells a registered connection to reconnect elsewhere
+// (close 1001) and refuses new registrations.
+func TestDrainAsksClientsToReconnect(t *testing.T) {
+	var tracker drain.Tracker
+	registered := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := (&fws.Upgrader{}).Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		tracker.Register("c1", func(context.Context) error { return closeGoingAway(conn) })
+		close(registered)
+		_, _, _ = conn.ReadMessage() // returns once closeGoingAway drops the socket
+	}))
+	defer srv.Close()
+
+	client, _, err := (&fws.Dialer{}).Dial("ws"+strings.TrimPrefix(srv.URL, "http"), nil)
+	if err != nil {
+		t.Fatalf("client dial: %v", err)
+	}
+	defer client.Close()
+	<-registered
+
+	if err := tracker.Drain(t.Context()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	_, _, err = client.ReadMessage()
+	if !fws.IsCloseError(err, fws.CloseGoingAway) {
+		t.Fatalf("client read error = %v, want close 1001", err)
+	}
+	if tracker.Register("c2", func(context.Context) error { return nil }) {
+		t.Fatal("a connection registered after drain started")
 	}
 }

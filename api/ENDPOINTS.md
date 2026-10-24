@@ -30,7 +30,7 @@ All errors are RFC 7807 Problem JSON (`problem/*`); never raw errors or `fiber.M
 |--------|----------------------|-------|
 | GET    | `/v1.0/health`       | Liveness. `{status:"pass",releaseId,serviceId}`. Dependency-free. |
 | GET    | `/v1.0/health-check` | Detailed health check (go-common `health`, `application/health+json`). Returns **200** or **207** (degraded) or `503`; HAProxy routing uses the dependency-free `/v1.0/health`, not this endpoint. DynamoDB is the only dependency that can make it `503`; cache and JWKS degrade to `warn`. There is no Inter or Pix check: Billing owns that connection. |
-| GET    | `/v1.0/ws`           | WebSocket upgrade. **Auth is the first post-upgrade text frame** (`{"token":"<jwt>"}`), never a `?token=` query parameter. Origin policy mirrors CORS. Fans `deposit_confirmed` and `withdraw_*` events to the user's connections. |
+| GET    | `/v1.0/ws`           | WebSocket upgrade. **Auth is the first post-upgrade text frame** (`{"token":"<jwt>"}`), never a `?token=` query parameter. Origin policy mirrors CORS. Fans `deposit_confirmed` and `withdraw_*` events to the user's connections. On shutdown or restart the server closes it with code 1001 (going away): reconnect. |
 
 ---
 
