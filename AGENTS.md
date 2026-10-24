@@ -26,6 +26,7 @@ describe the system before that and are history. This service custodies real thi
 Safety Invariants below are non-negotiable and override convenience.
 
 ---
+- **Standards gate:** `scripts/standards-check.sh` (canonical copy in ctech-skills, identical bytes; CI job "Family standards"; reads `FAMILY_GOCOMMON_MINOR`, default v1.38, bump it on a go-common minor). Debt hidden: none (clean baseline). One-off lines carry a trailing `standards:allow <reason>`.
 
 ## Projects
 

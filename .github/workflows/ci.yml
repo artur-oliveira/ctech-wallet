@@ -17,6 +17,16 @@ permissions:
   contents: read
 
 jobs:
+  standards:
+    name: Family standards
+    runs-on: ubuntu-26.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - run: bash scripts/standards-check.sh
+        env:
+          # no baselined debt; see scripts/standards-check.sh for STANDARDS_SKIP
+          STANDARDS_SKIP: ""
+
   changes:
     name: Detect changes
     runs-on: ubuntu-26.04-arm
@@ -144,7 +154,7 @@ jobs:
   ci:
     name: CI
     if: always()
-    needs: [ changes, api, ui, cdk ]
+    needs: [ changes, standards, api, ui, cdk ]
     runs-on: ubuntu-26.04-arm
     steps:
       - name: Fail if any job failed or was cancelled
