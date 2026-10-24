@@ -10,10 +10,6 @@ import {Environment} from './types';
 export const AWS_ACCOUNT = '868899309401';
 export const AWS_REGION = 'us-east-1';
 
-// Wildcard *.aoctech.app cert — owned by ctech-cdk, referenced here for CloudFront.
-export const CERT_ARN =
-  'arn:aws:acm:us-east-1:868899309401:certificate/29678869-bfc3-4688-b81b-55aa5b1d7443';
-
 // GitHub OIDC provider — owned by ctech-cdk (Ctech-Global stack). Imported by ARN.
 export const OIDC_PROVIDER_ARN =
   `arn:aws:iam::${AWS_ACCOUNT}:oidc-provider/token.actions.githubusercontent.com`;
@@ -24,16 +20,9 @@ export const GITHUB_REPO_DEFAULT = 'artur-oliveira/ctech-wallet';
 export const SERVICE = 'ctech-wallet';
 export const BASE_DOMAIN = 'aoctech.app';
 
-/** ALB (api) host prefix. */
+/** API host prefix (wallet-api.aoctech.app). */
 export const API_DOMAIN_PREFIX = 'wallet-api';
 export const ACCOUNTS_DOMAIN_PREFIX = 'accounts-api';
-
-/**
- * Shared HTTPS listener rule priorities on the ctech-cdk ALB.
- * 10 = ctech-dfe api, 20 = ctech-account api, 30 = ctech-wallet api.
- * Must stay unique across every service that attaches to the shared listener.
- */
-export const ALB_LISTENER_PRIORITY = 35;
 
 /** Port the Go binary listens on (nginx proxies :8080 → :8000). */
 export const APP_PORT = 8000;
