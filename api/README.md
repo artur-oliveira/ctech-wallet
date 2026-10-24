@@ -20,7 +20,6 @@ api/
 │   ├── app/                  # fx wiring (DI), Fiber app, error handler
 │   ├── config/               # 12-Factor env (caarlos0/env)
 │   ├── problem/              # wraps api-commons/problem + wallet problem types
-│   ├── validation/           # go-playground/validator singleton
 │   ├── awsclient/            # aws-sdk-go-v2 (DynamoDB, SQS, SSM)
 │   ├── lock/                 # per-wallet lock over api-commons/lock (Valkey SETNX, fail-safe TTL)
 │   ├── middleware/           # auth (JWKS), scope, KYC, step-up, revocation

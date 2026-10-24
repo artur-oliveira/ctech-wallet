@@ -37,7 +37,6 @@ api/
 ├── internal/
 │   ├── config/                 # 12-Factor env config (caarlos0/env)
 │   ├── walletproblem/          # wallet problem types and constructors on api-commons/problem
-│   ├── validation/             # go-playground/validator singleton
 │   ├── awsclient/              # aws-sdk-go-v2 (DynamoDB only)
 │   ├── lock/                   # per-wallet lock (wraps api-commons/lock; `wallet:` key prefix)
 │   ├── billingclient/          # ctech-billing HTTP client (invoices, payouts, customers)
