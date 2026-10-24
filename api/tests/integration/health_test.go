@@ -84,8 +84,8 @@ func TestHealthCheckReportsDependencies(t *testing.T) {
 	if dynamo.Status != "pass" {
 		t.Fatalf("dynamodb = %s, want pass", dynamo.Status)
 	}
-	if dynamo.ObservedUnit != "ms" {
-		t.Fatalf("dynamodb unit = %q, want ms", dynamo.ObservedUnit)
+	if dynamo.ObservedUnit != "millisecond" {
+		t.Fatalf("dynamodb unit = %q, want millisecond", dynamo.ObservedUnit)
 	}
 
 	for name, want := range map[string]string{"cache": "pass", "jwks": "warn"} {

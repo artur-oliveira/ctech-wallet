@@ -42,7 +42,7 @@ api/
 │   ├── billingclient/          # ctech-billing HTTP client (invoices, payouts, customers)
 │   ├── oauthresource/          # RFC 9728 metadata + scope-manifest.json
 │   ├── secrets/                # SSM reader
-│   ├── middleware/             # auth (JWKS), scope, KYC, step-up, revocation
+│   ├── middleware/             # auth (JWKS), user scope, KYC (guards: go-common authguard)
 │   ├── rail/                   # Rail iface, BillingRail (the only rail), types and a Fake for tests
 │   ├── kycclient/              # ctech-account internal KYC client
 │   ├── domain/wallet/          # models, constants, deposit/daily limits, erasure
@@ -63,6 +63,8 @@ goroutines in handlers, RS256 only, zero-warning lint, tests with the change, no
 specifics: route errors go through `sendProblem(c, err)`; the wallet problem types are in `internal/walletproblem`
 (`InsufficientBalance`, `WalletBusy`, `WithdrawCPFMismatch`, `KYCNotVerified`, `IdempotencyConflict`, `StepUpRequired`,
 `DailyDepositLimit`, `DailyWithdrawLimit`, `AccountErasurePending`, `RouteRetired`, ...). The deployed binary is named `app`.
+In-process background loops (the erasure SQS consumer) run on go-common `supervisor` (`app.newSupervisor`): cancellable context, restart with backoff, stopped at shutdown. No `go func()` with `context.Background()`.
+Shutdown drains the `/ws` connections through go-common `drain` (`app.newDrainTracker`, `apiv1.WithDrain`): close 1001 so clients reconnect to another instance, then `ShutdownWithContext`.
 Never commit Billing/Inter credentials, webhook secrets, JWT keys, AWS credentials or real CPFs.
 
 ### Outbound calls (Billing, KYC)
@@ -172,7 +174,7 @@ different scope on a different service. Do not conflate it with
 ## Notes and known gaps
 
 - Money constants shared with the UI (`SANDBOX_CREDITS_PER_CENTAVO` = 100, `MAX_AMOUNT_CENTS`) live in
-  `../rpc-contract/money.json`; Go (`rpc-contract/money_test.go`) and UI (`money-contract.test.mjs`) tests pin them. No fee
+  `../rpc-contract/money.json`; Go (`TestMoneyConstantsMatchJSON` in `internal/domain/wallet/model_test.go`) and UI (`money-contract.test.mjs`) tests pin them. No fee
   constants exist (`docs/specs/2026-08-16-withdrawal-fee-removal.md`).
 - Production fails closed on an empty `VALKEY_URL`, `SERVICE_AUDIENCE`, `CTECH_ISSUER_URL`, CORS, `ERASURE_QUEUE_URL` or
   `VALKEY_REVOCATION_URL` (`internal/config/config.go`).

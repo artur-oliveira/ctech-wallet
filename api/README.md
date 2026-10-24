@@ -22,7 +22,7 @@ api/
 │   ├── problem/              # wraps api-commons/problem + wallet problem types
 │   ├── awsclient/            # aws-sdk-go-v2 (DynamoDB, SQS, SSM)
 │   ├── lock/                 # per-wallet lock over api-commons/lock (Valkey SETNX, fail-safe TTL)
-│   ├── middleware/           # auth (JWKS), scope, KYC, step-up, revocation
+│   ├── middleware/           # auth (JWKS), user scope, KYC (guards: go-common authguard)
 │   ├── oauthresource/        # RFC 9728 metadata + scope-manifest.json
 │   ├── secrets/              # SSM reader
 │   ├── rail/                 # Rail iface, BillingRail (the only rail), types, test fake
@@ -110,7 +110,7 @@ enforcement map.
 - Sibling services: [`../ui/README.md`](../ui/README.md),
   [`../cdk/README.md`](../cdk/README.md),
   [`../rpc-contract/README.md`](../rpc-contract/README.md)
-- Shared money constants: [`../rpc-contract/money.go`](../rpc-contract/money.go)
+- Shared money constants: [`../rpc-contract/money.json`](../rpc-contract/money.json)
 - Design: `docs/specs/2026-10-14-wallet-ledger-billing-rail.md` in `ctech-billing`. The older specs in `../docs/specs/`
   (wallet design, three-wallet topology, responsible gambling) describe the system before it and are history.
 
