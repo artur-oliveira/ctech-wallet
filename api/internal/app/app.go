@@ -18,6 +18,7 @@ import (
 	fiberobs "gopkg.aoctech.app/api-commons/observability/fiber"
 	"gopkg.aoctech.app/api-commons/problem"
 	"gopkg.aoctech.app/api-commons/resilient"
+	"gopkg.aoctech.app/api-commons/supervisor"
 	"gopkg.aoctech.app/api-commons/ws"
 	apiv1 "gopkg.aoctech.app/wallet/api/internal/api/v1"
 	"gopkg.aoctech.app/wallet/api/internal/awsclient"
@@ -51,6 +52,7 @@ var Module = fx.Options(
 		newSQSClient,
 		newErasureStore,
 		newLocker,
+		newSupervisor,
 		newWsRegistry,
 		newKYCClient,
 		newBillingClient,
@@ -102,6 +104,14 @@ func newCacheBackend(lc fx.Lifecycle, cfg *config.Config) (cache.Backend, error)
 	})
 	slog.Info("cache: Redis backend active", "url", cfg.RedisURL)
 	return rb, nil
+}
+
+// newSupervisor owns the in-process background workers: their context is
+// cancelled when the app stops and the stop waits for them (bounded by fx's stop timeout).
+func newSupervisor(lc fx.Lifecycle) *supervisor.Supervisor {
+	sup := supervisor.New(context.Background(), supervisor.Config{})
+	lc.Append(fx.Hook{OnStop: sup.Shutdown})
+	return sup
 }
 
 func newLocker(c cache.Backend) *lock.Locker {
@@ -305,9 +315,10 @@ func newErasureService(repo *repositories.WalletRepository, users *repositories.
 }
 
 // startErasureConsumer runs the account-deletion SQS consumer for the process
-// lifetime. Every API instance runs one: the consumer takes one message per
+// lifetime under the supervisor (cancelled at shutdown, restarted with backoff if it
+// fails or panics). Every API instance runs one: the consumer takes one message per
 // receive and erasure.Store uses optimistic concurrency, so replicas are safe.
-func startErasureConsumer(lc fx.Lifecycle, cfg *config.Config, sqsClient *sqs.Client, store *erasure.Store, svc *services.ErasureService, exporter *services.DataExporter) {
+func startErasureConsumer(lc fx.Lifecycle, sup *supervisor.Supervisor, cfg *config.Config, sqsClient *sqs.Client, store *erasure.Store, svc *services.ErasureService, exporter *services.DataExporter) {
 	if store == nil {
 		slog.Warn("ERASURE_QUEUE_URL not set — account-deletion lock and purge are OFF (dev only)")
 		return
@@ -325,23 +336,10 @@ func startErasureConsumer(lc fx.Lifecycle, cfg *config.Config, sqsClient *sqs.Cl
 	handler := dataexport.NewStreamHandler(wallet.ErasureServiceID, exporter.Write, uploads, exportAcks)
 	consumer := erasure.NewConsumer(sqsClient, cfg.ErasureQueueURL, wallet.ErasureServiceID, store, svc.Purge, acks).
 		WithExporter(handler.Handle).WithVisibilityHeartbeat(cfg.ErasureQueueVisibility)
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {
-			go func() {
-				defer close(done)
-				_ = consumer.Run(ctx)
-			}()
-			return nil
-		},
-		OnStop: func(stopCtx context.Context) error {
-			cancel()
-			select {
-			case <-done:
-			case <-stopCtx.Done():
-			}
-			return nil
+			// Every instance runs the consumer (no Locker): see the doc above.
+			return sup.Run(context.Background(), "erasure-consumer", consumer.Run)
 		},
 	})
 }
