@@ -3,12 +3,14 @@ package middleware
 import (
 	"github.com/gofiber/fiber/v3"
 
+	"gopkg.aoctech.app/api-commons/authguard"
 	"gopkg.aoctech.app/api-commons/jwtverify"
 )
 
-// Fiber locals keys.
+// ClaimsKey is the Fiber locals key of the caller's claims (go-common authguard owns it).
+// UserIDKey holds the subject.
 const (
-	ClaimsKey = "claims"
+	ClaimsKey = authguard.LocalsClaims
 	UserIDKey = "user_id"
 )
 
@@ -19,10 +21,7 @@ const (
 type Claims = jwtverify.Claims
 
 // GetClaims returns the authenticated caller's claims from Fiber locals.
-func GetClaims(c fiber.Ctx) *Claims {
-	cl, _ := c.Locals(ClaimsKey).(*Claims)
-	return cl
-}
+func GetClaims(c fiber.Ctx) *Claims { return authguard.GetClaims(c) }
 
 // GetUserID returns the authenticated caller's subject.
 func GetUserID(c fiber.Ctx) string {

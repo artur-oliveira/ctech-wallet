@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.aoctech.app/api-commons/authguard"
 	"gopkg.aoctech.app/api-commons/cache"
 	"gopkg.aoctech.app/api-commons/jwtverify"
 )
@@ -16,7 +17,8 @@ func (downCache) Get(context.Context, string) ([]byte, bool, error) {
 	return nil, false, errors.New("valkey down")
 }
 
-func TestRequireUnrevoked(t *testing.T) {
+// The wallet re-checks revocation on money/consent writes with the fail-closed policy.
+func TestMoneyWriteRevocationFailsClosed(t *testing.T) {
 	rev := cache.NewMemoryBackend(10)
 	cutoff := time.Now()
 	if err := jwtverify.Revoke(context.Background(), rev, "u-locked", cutoff, jwtverify.RevocationTTL); err != nil {
@@ -36,7 +38,7 @@ func TestRequireUnrevoked(t *testing.T) {
 		{"no claims", nil, rev, 401},
 	}
 	for _, tc := range cases {
-		if got := gateApp(t, tc.claim, RequireUnrevoked(tc.rev)); got != tc.want {
+		if got := gateApp(t, tc.claim, authguard.RequireUnrevoked(tc.rev, authguard.PolicyWriteClosed)); got != tc.want {
 			t.Errorf("%s: got %d want %d", tc.name, got, tc.want)
 		}
 	}

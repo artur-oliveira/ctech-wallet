@@ -90,19 +90,6 @@ const (
 	KYCVerified = wallet.KYCVerified
 )
 
-// RequireScope gates an /internal route on an M2M client_credentials token.
-// A non-empty SID means a user/session token — never allowed on internal routes,
-// even if it somehow carries the scope. Must be registered after the auth middleware.
-func RequireScope(scope string) fiber.Handler {
-	return func(c fiber.Ctx) error {
-		cl := GetClaims(c)
-		if cl == nil || cl.SID != "" || !cl.HasScope(scope) {
-			return problem.Forbidden("scope insuficiente para rota interna").Send(c)
-		}
-		return c.Next()
-	}
-}
-
 // RequireUser rejects client_credentials tokens on user-facing routes. The
 // account contract uses an empty sid for M2M tokens; accepting one here would
 // blur the user/M2M trust boundary even when its sub cannot normally collide

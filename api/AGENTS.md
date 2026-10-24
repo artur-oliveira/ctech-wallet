@@ -43,7 +43,7 @@ api/
 │   ├── billingclient/          # ctech-billing HTTP client (invoices, payouts, customers)
 │   ├── oauthresource/          # RFC 9728 metadata + scope-manifest.json
 │   ├── secrets/                # SSM reader
-│   ├── middleware/             # auth (JWKS), scope, KYC, step-up, revocation
+│   ├── middleware/             # auth (JWKS), user scope, KYC (guards: go-common authguard)
 │   ├── rail/                   # Rail iface, BillingRail (the only rail), types and a Fake for tests
 │   ├── kycclient/              # ctech-account internal KYC client
 │   ├── domain/wallet/          # models, constants, deposit/daily limits, erasure
