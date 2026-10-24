@@ -2,6 +2,7 @@ package v1
 
 import (
 	"context"
+	"gopkg.aoctech.app/api-commons/validation"
 
 	"github.com/gofiber/fiber/v3"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
@@ -14,7 +15,7 @@ import (
 // LambdaPixClient before crediting anything (Financial Safety Invariant 11).
 func (h *handlers) confirmDeposit(c fiber.Ctx) error {
 	var body ConfirmDepositRequest
-	if p := bindJSON(c, &body); p != nil {
+	if p := validation.BindJSON(c.Body(), &body); p != nil {
 		return sendProblem(c, p)
 	}
 	if err := h.svc.ConfirmDeposit(c.Context(), body.Txid, body.PayerCPF, body.PayerName, false); err != nil {
@@ -48,7 +49,7 @@ type movementOp func(context.Context, string, int64, string, string, string) (*w
 // retains all wallet type, locking, idempotency, and balance semantics.
 func (h *handlers) movement(c fiber.Ctx, op movementOp) error {
 	var body MovementOpRequest
-	if p := bindJSON(c, &body); p != nil {
+	if p := validation.BindJSON(c.Body(), &body); p != nil {
 		return sendProblem(c, p)
 	}
 	if p := h.checkDescription(body.Description); p != nil {
@@ -65,7 +66,7 @@ func (h *handlers) movement(c fiber.Ctx, op movementOp) error {
 // internal:wallet:game-hold — e.g. ctech-poker at table-join).
 func (h *handlers) holdGame(c fiber.Ctx) error {
 	var body HoldRequest
-	if p := bindJSON(c, &body); p != nil {
+	if p := validation.BindJSON(c.Body(), &body); p != nil {
 		return sendProblem(c, p)
 	}
 	hold, err := h.svc.HoldGame(c.Context(), body.UserID, body.Amount, body.TableRef, body.IdempotencyKey)
@@ -79,7 +80,7 @@ func (h *handlers) holdGame(c fiber.Ctx) error {
 // internal:wallet:game-hold — e.g. a table/hand that never played).
 func (h *handlers) releaseHold(c fiber.Ctx) error {
 	var body ReleaseRequest
-	if p := bindJSON(c, &body); p != nil {
+	if p := validation.BindJSON(c.Body(), &body); p != nil {
 		return sendProblem(c, p)
 	}
 	hold, err := h.svc.ReleaseHold(c.Context(), body.UserID, c.Params("hold_id"), body.IdempotencyKey)
@@ -94,7 +95,7 @@ func (h *handlers) releaseHold(c fiber.Ctx) error {
 // bounded by the sum of the listed holds — see WalletService.CashoutGame.
 func (h *handlers) cashoutGame(c fiber.Ctx) error {
 	var body CashoutRequest
-	if p := bindJSON(c, &body); p != nil {
+	if p := validation.BindJSON(c.Body(), &body); p != nil {
 		return sendProblem(c, p)
 	}
 	if p := h.checkDescription(body.Description); p != nil {

@@ -44,13 +44,6 @@ func newProblem(status int, typ, title, detail string) *problem.Problem {
 	return problem.New(status, typ, title, detail)
 }
 
-// Validation is a 422 carrying field-level failures, with the wallet's detail text.
-func Validation(errs []problem.FieldError) *problem.Problem {
-	p := problem.Validation(errs)
-	p.Detail = "the request body failed validation"
-	return p
-}
-
 func InsufficientBalance() *problem.Problem {
 	return newProblem(http.StatusConflict, TypeInsufficientBalance, "Insufficient Balance", "saldo insuficiente para a operação")
 }

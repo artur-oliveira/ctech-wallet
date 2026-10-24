@@ -1,18 +1,15 @@
 package v1
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 
 	"gopkg.aoctech.app/api-commons/problem"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/repositories"
-	"gopkg.aoctech.app/wallet/api/internal/validation"
 
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
@@ -50,24 +47,6 @@ func sendProblem(c fiber.Ctx, err error) error {
 		return problem.GatewayTimeout("a requisição demorou demais; tente novamente").WithCause(err).Send(c)
 	}
 	return problem.InternalServer("erro interno").WithCause(err).Send(c)
-}
-
-// bindJSON strictly decodes the JSON body into dst (rejecting unknown fields)
-// then runs struct validation. Returns nil on success, or a *problem.Problem.
-func bindJSON[T any](c fiber.Ctx, dst *T) *problem.Problem {
-	dec := json.NewDecoder(bytes.NewReader(c.Body()))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(dst); err != nil {
-		// The client-facing message stays generic — it must not echo the parse
-		// error, which can reveal internal struct field names. But swallowing it
-		// entirely left every bad-request rejection unauditable (e.g. an M2M
-		// caller sending a field this deployed version doesn't know yet), so log
-		// the real cause server-side only. Never log the raw body: request
-		// payloads carry payer CPF and other PII that must not land in logs.
-		slog.WarnContext(c.Context(), "bind json failed", "path", c.Path(), "err", err)
-		return problem.BadRequest("corpo JSON inválido")
-	}
-	return validation.Struct(dst)
 }
 
 // requireIdempotencyKey reads the Idempotency-Key header, or returns a 400 problem.

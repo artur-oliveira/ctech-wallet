@@ -2,6 +2,7 @@ package v1
 
 import (
 	"gopkg.aoctech.app/api-commons/problem"
+	"gopkg.aoctech.app/api-commons/validation"
 	"gopkg.aoctech.app/wallet/api/internal/domain/wallet"
 	"gopkg.aoctech.app/wallet/api/internal/middleware"
 	"gopkg.aoctech.app/wallet/api/internal/walletproblem"
@@ -40,7 +41,7 @@ func walletBalancesResponse(realw, gamew, sandboxw *wallet.Wallet) fiber.Map {
 // createDeposit opens a PIX charge for the caller's real wallet.
 func (h *handlers) createDeposit(c fiber.Ctx) error {
 	var body DepositRequest
-	if p := bindJSON(c, &body); p != nil {
+	if p := validation.BindJSON(c.Body(), &body); p != nil {
 		return sendProblem(c, p)
 	}
 	cl := middleware.GetClaims(c)
@@ -65,7 +66,7 @@ func (h *handlers) createDeposit(c fiber.Ctx) error {
 // createWithdrawal debits amount and initiates a PIX payout to the caller's KYC CPF.
 func (h *handlers) createWithdrawal(c fiber.Ctx) error {
 	var body WithdrawRequest
-	if p := bindJSON(c, &body); p != nil {
+	if p := validation.BindJSON(c.Body(), &body); p != nil {
 		return sendProblem(c, p)
 	}
 	idemKey, p := requireIdempotencyKey(c)
