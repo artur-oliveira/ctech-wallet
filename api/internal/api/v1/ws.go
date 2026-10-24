@@ -3,11 +3,13 @@ package v1
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"strings"
 	"sync"
 	"time"
 
+	"gopkg.aoctech.app/api-commons/drain"
 	"gopkg.aoctech.app/api-commons/observability"
 	"gopkg.aoctech.app/api-commons/ws"
 	"gopkg.aoctech.app/wallet/api/internal/middleware"
@@ -88,7 +90,11 @@ func wsAllowedOrigin(ctx *fasthttp.RequestCtx, allowed []string) bool {
 // leaked into ALB/CloudFront access logs and browser history). The client now
 // sends it as the first post-upgrade text frame — see readAuthToken below. A
 // short read deadline fails closed if that frame never arrives.
-func RegisterWS(router fiber.Router, verifier *middleware.Verifier, reg ws.Registry, allowedOrigins []string) {
+//
+// tracker (nil in tests) is go-common drain: at shutdown every live connection is
+// told to reconnect elsewhere (close 1001) before the listener stops, and a
+// connection that authenticates while draining is turned away.
+func RegisterWS(router fiber.Router, verifier *middleware.Verifier, reg ws.Registry, allowedOrigins []string, tracker *drain.Tracker) {
 	upgrader := fws.FastHTTPUpgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
@@ -142,6 +148,13 @@ func RegisterWS(router fiber.Router, verifier *middleware.Verifier, reg ws.Regis
 			userID := claims.Sub
 
 			connID := uuid.NewString()
+			if tracker != nil {
+				if !tracker.Register(connID, func(context.Context) error { return closeGoingAway(conn) }) {
+					_ = closeGoingAway(conn)
+					return
+				}
+				defer tracker.Unregister(connID)
+			}
 			reg.Register(userID, connID, safeConn)
 			defer reg.Unregister(userID, connID)
 
@@ -202,6 +215,14 @@ func startHeartbeat(ctx context.Context, conn *fws.Conn, done <-chan struct{}, p
 			return
 		}
 	}
+}
+
+// closeGoingAway asks the client to reconnect (close code 1001) and drops the socket, which ends
+// the handler's read loop. Control frames may be written concurrently with data frames.
+func closeGoingAway(conn *fws.Conn) error {
+	msg := fws.FormatCloseMessage(fws.CloseGoingAway, "server restarting")
+	err := conn.WriteControl(fws.CloseMessage, msg, time.Now().Add(wsWriteWait))
+	return errors.Join(err, conn.Close())
 }
 
 func closeWS(ctx context.Context, conn *fws.Conn, reason string) {

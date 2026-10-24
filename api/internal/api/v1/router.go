@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"gopkg.aoctech.app/api-commons/cache"
+	"gopkg.aoctech.app/api-commons/drain"
 	"gopkg.aoctech.app/api-commons/ws"
 	"gopkg.aoctech.app/wallet/api/internal/awsclient"
 	"gopkg.aoctech.app/wallet/api/internal/config"
@@ -29,6 +30,12 @@ type Option func(*registerOptions)
 
 type registerOptions struct {
 	billingEvents *BillingEvents
+	drain         *drain.Tracker
+}
+
+// WithDrain makes the /ws connections drainable at shutdown (go-common drain).
+func WithDrain(t *drain.Tracker) Option {
+	return func(o *registerOptions) { o.drain = t }
 }
 
 // WithBillingEvents mounts Billing's signed invoice.paid route. It is an option
@@ -67,7 +74,7 @@ func Register(app *fiber.App, c cache.Backend, revocation cache.Backend, cfg *co
 	// /v1.0/health-check is the detailed dependency report the ALB target group
 	// probes (it accepts 200 and 207).
 	RegisterHealth(v1, clients, c, verifier, cfg)
-	RegisterWS(v1, verifier, wsRegistry, cfg.CorsAllowedOrigins)
+	RegisterWS(v1, verifier, wsRegistry, cfg.CorsAllowedOrigins, o.drain)
 
 	// Caller state + terms addendum acceptance.
 	a := v1.Group("/auth", auth, middleware.RequireUser)
