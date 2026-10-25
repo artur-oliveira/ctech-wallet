@@ -20,9 +20,8 @@ require (
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/valyala/fasthttp v1.75.0
 	go.uber.org/fx v1.24.0
-	gopkg.aoctech.app/api-commons v1.38.0
+	gopkg.aoctech.app/api-commons v1.39.0
 )
-
 
 require (
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.20.1 // indirect

@@ -350,7 +350,9 @@ func startErasureConsumer(lc fx.Lifecycle, sup *supervisor.Supervisor, cfg *conf
 	exportAcks := dataexport.NewAckClient(uploads, base+wallet.PathAccountExportAck,
 		oauth2client.New(httpClient, nil, base+kycclient.PathToken, cfg.ErasureClientID, cfg.ErasureClientSecret, wallet.ScopeAccountExportAck))
 	handler := dataexport.NewStreamHandler(wallet.ErasureServiceID, exporter.Write, uploads, exportAcks)
-	consumer := erasure.NewConsumer(sqsClient, cfg.ErasureQueueURL, wallet.ErasureServiceID, store, services.AlertingPurge(svc.Purge, services.NewAlerts(context.Background(), cfg.AWSRegion, cfg.AlertsTopicARN, cfg.Env)), acks).
+	pub := services.NewAlerts(context.Background(), cfg.AWSRegion, cfg.AlertsTopicARN, cfg.Env)
+	consumer := erasure.NewConsumer(sqsClient, cfg.ErasureQueueURL, wallet.ErasureServiceID, store, erasure.AlertingPurge(svc.Purge, pub), acks).
+		OnFailure(erasure.AlertFailures(pub)).
 		WithExporter(handler.Handle).WithVisibilityHeartbeat(cfg.ErasureQueueVisibility)
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {
