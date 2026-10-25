@@ -8,7 +8,7 @@ Queues (CDK `cdk/lib/erasure-stack.ts`, names from `erasureQueueName` in `cdk/li
 
 ## Alert
 
-None fires on DLQ depth: the family declined CloudWatch alarms (wallet #103). The symptom is a deletion stuck in `purging` in ctech-account (see OPERATIONS.md §2a for the ack client). Money-affecting failures raise go-common `alerts` to `ctech-{env}-alerts`, and a failed account-deletion purge also alerts (`erasure-purge-failed`, each redelivery), so a message heading for the DLQ is announced before it lands there. Nothing alerts on DLQ depth itself.
+None fires on DLQ depth: the family declined CloudWatch alarms (wallet #103). The symptom is a deletion stuck in `purging` in ctech-account (see OPERATIONS.md §2a for the ack client). Money-affecting failures raise go-common `alerts` to `ctech-{env}-alerts`, and a failed account-deletion purge, decode or ack also alerts (go-common `erasure.AlertingPurge`/`AlertFailures`: `erasure-purge-failed`, `erasure-decode-failed`, `erasure-ack-failed`, each redelivery), so a message heading for the DLQ is announced before it lands there. Nothing alerts on DLQ depth itself.
 
 ## Inspect
 
