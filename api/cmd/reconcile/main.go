@@ -74,6 +74,9 @@ func handler(ctx context.Context) (*Result, error) {
 	return res, nil
 }
 
+// secretStore is reused across warm invocations of the container.
+var secretStore *secrets.Store
+
 func run(ctx context.Context) (*Result, error) {
 	cfg, err := config.LoadReconcile()
 	if err != nil {
@@ -84,8 +87,13 @@ func run(ctx context.Context) (*Result, error) {
 		return nil, fmt.Errorf("aws: %w", err)
 	}
 	// A Lambda's environment never holds a SecureString, so the client secrets it
-	// needs are read from SSM once per run (the role already allows these paths).
-	store := secrets.NewStore(clients.SSM, cfg.Env)
+	// needs are read from SSM (the role already allows these paths). The store
+	// outlives the invocation and caches for secrets.CacheTTL: decrypting every
+	// 5 minutes is the KMS bill this avoids.
+	if secretStore == nil {
+		secretStore = secrets.NewStore(clients.SSM, cfg.Env)
+	}
+	store := secretStore
 	if cfg.WalletClientSecret == "" {
 		// Not fatal: withdrawal reconciliation needs no KYC lookup, and failing the
 		// whole run for a secret only the deposit sweep uses would trade a small
