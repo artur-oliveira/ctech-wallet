@@ -286,3 +286,18 @@ The erasure queue also carries `user.export` from ctech-account (spec ctech-acco
 - `TestEveryTableIsClassifiedForTheExport` reads the CDK table names: a new table must be exported or excluded with a reason, **next
   to its erasure treatment**. The four retired `wallet_*` tables (baas, transfer intents, settlement legs, MED receivables) are
   excluded as no longer written; they are not in the purge either, so confirm they hold no person data before deleting them.
+
+## 8. KMS policy (SecureStrings, DynamoDB, S3)
+
+The KMS bill must stay ~0 (free tier 20k requests/month); every SecureString read with
+decryption and every request to a table on the `aws/dynamodb` key is a billed KMS request.
+
+- **Decrypt at boot/cold start, cache.** The API takes its secrets from the environment
+  loaded by `start.sh` at service start. The reconcile Lambda (every 5 min) reads them
+  through `secrets.Store`, which caches for `secrets.CacheTTL` (1h) and lives across warm
+  invocations. Tradeoff: a rotated `billing-client-secret`/`wallet-client-secret` reaches a
+  warm Lambda within 1h (a cold start or redeploy is immediate); the API picks it up on restart.
+- **DynamoDB uses the AWS-owned key** (`TableEncryptionV2.dynamoOwnedKey()` in
+  `cdk/lib/dynamodb-stack.ts`, asserted by `cdk/test/dynamodb-encryption.test.ts`). Switching
+  is an in-place update (`cdk diff`: SSESpecification only, no replacement).
+- **S3 is SSE-S3 (AES256)**, never `aws:kms` (wallet owns no bucket today).

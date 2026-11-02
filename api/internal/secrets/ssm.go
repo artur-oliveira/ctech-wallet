@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
@@ -29,14 +31,57 @@ type SSMAPI interface {
 	GetParameter(ctx context.Context, in *ssm.GetParameterInput, opts ...func(*ssm.Options)) (*ssm.GetParameterOutput, error)
 }
 
-// Store reads api's secrets from SSM.
+// CacheTTL bounds how long a decrypted value is reused. Every SecureString read
+// is a billed KMS Decrypt (free tier 20k/month), and the reconcile Lambda runs
+// every 5 minutes, so it must not decrypt per invocation. Tradeoff: a rotated
+// secret reaches a warm container within CacheTTL (a cold start reads fresh).
+const CacheTTL = time.Hour
+
+type cacheEntry struct {
+	value string
+	at    time.Time
+}
+
+// Store reads api's secrets from SSM. Non-empty values are cached for CacheTTL;
+// a missing parameter is never cached, so it is retried on the next call.
 type Store struct {
 	client SSMAPI
 	env    string
+	now    func() time.Time
+
+	mu    sync.Mutex
+	cache map[string]cacheEntry
 }
 
 func NewStore(client SSMAPI, environment string) *Store {
-	return &Store{client: client, env: environment}
+	return &Store{client: client, env: environment, now: time.Now, cache: map[string]cacheEntry{}}
+}
+
+// get is the single decrypting read; both Load* methods go through it.
+func (s *Store) get(ctx context.Context, name string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if e, ok := s.cache[name]; ok && s.now().Sub(e.at) < CacheTTL {
+		return e.value, nil
+	}
+	out, err := s.client.GetParameter(ctx, &ssm.GetParameterInput{
+		Name:           aws.String(name),
+		WithDecryption: aws.Bool(true),
+	})
+	if err != nil {
+		if _, ok := errors.AsType[*ssmtypes.ParameterNotFound](err); ok {
+			return "", nil
+		}
+		return "", fmt.Errorf("ssm: get %s: %w", name, err)
+	}
+	if out.Parameter == nil || out.Parameter.Value == nil {
+		return "", nil
+	}
+	v := *out.Parameter.Value
+	if v != "" {
+		s.cache[name] = cacheEntry{value: v, at: s.now()}
+	}
+	return v, nil
 }
 
 // LoadM2MClients fetches the raw M2M client registry JSON (plan: M2M
@@ -45,20 +90,7 @@ func NewStore(client SSMAPI, environment string) *Store {
 // empty registry, not fail startup.
 func (s *Store) LoadM2MClients(ctx context.Context) (string, error) {
 	name := fmt.Sprintf(m2mClientsParamFmt, s.env)
-	out, err := s.client.GetParameter(ctx, &ssm.GetParameterInput{
-		Name:           aws.String(name),
-		WithDecryption: aws.Bool(true),
-	})
-	if err != nil {
-		if _, ok := errors.AsType[*ssmtypes.ParameterNotFound](err); ok {
-			return "", nil
-		}
-		return "", fmt.Errorf("ssm: get %s: %w", name, err)
-	}
-	if out.Parameter == nil || out.Parameter.Value == nil {
-		return "", nil
-	}
-	return *out.Parameter.Value, nil
+	return s.get(ctx, name)
 }
 
 // Load reads one of the wallet's own SecureString parameters by its leaf name
@@ -66,18 +98,5 @@ func (s *Store) LoadM2MClients(ctx context.Context) (string, error) {
 // not an error: the caller decides whether the empty value is fatal.
 func (s *Store) Load(ctx context.Context, leaf string) (string, error) {
 	name := fmt.Sprintf("/ctech-wallet/%s/%s", s.env, leaf)
-	out, err := s.client.GetParameter(ctx, &ssm.GetParameterInput{
-		Name:           aws.String(name),
-		WithDecryption: aws.Bool(true),
-	})
-	if err != nil {
-		if _, ok := errors.AsType[*ssmtypes.ParameterNotFound](err); ok {
-			return "", nil
-		}
-		return "", fmt.Errorf("ssm: get %s: %w", name, err)
-	}
-	if out.Parameter == nil || out.Parameter.Value == nil {
-		return "", nil
-	}
-	return *out.Parameter.Value, nil
+	return s.get(ctx, name)
 }

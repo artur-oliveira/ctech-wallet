@@ -113,7 +113,7 @@ export class DynamoDBStack extends cdk.Stack {
         }),
         removalPolicy: opts.retired || opts.restricted ? RemovalPolicy.RETAIN : removalPolicy,
         pointInTimeRecoverySpecification,
-        encryption: dynamodb.TableEncryptionV2.awsManagedKey(),
+        encryption: dynamodb.TableEncryptionV2.dynamoOwnedKey(),
       });
       if (!opts.retired && !opts.restricted) this.tables.set(name as TableName, t);
       // The IAM/Reconcile stacks imported this ARN until now; keep the export
