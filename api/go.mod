@@ -20,7 +20,7 @@ require (
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/valyala/fasthttp v1.75.0
 	go.uber.org/fx v1.24.0
-	gopkg.aoctech.app/api-commons v1.39.0
+	gopkg.aoctech.app/api-commons v1.40.0
 )
 
 require (
