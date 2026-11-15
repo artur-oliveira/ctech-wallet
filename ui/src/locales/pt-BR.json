@@ -74,7 +74,7 @@
   "balance": {
     "real": {
       "label": "Saldo real",
-      "subtitle": "Depósitos e saques via PIX estão temporariamente indisponíveis."
+      "subtitle": "Depósitos e saques via PIX."
     },
     "sandbox": {
       "label": "Créditos sandbox",
